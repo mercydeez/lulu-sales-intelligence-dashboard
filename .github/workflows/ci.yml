@@ -25,6 +25,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev gcc
+        working-directory: .
+
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
@@ -35,16 +41,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run tests with coverage
+      - name: Run tests
         env:
           ENVIRONMENT: testing
           JWT_SECRET_KEY: ci-test-secret-key-minimum-32-chars-long
           SECRET_KEY: ci-test-app-secret-key-minimum-32-characters
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/testdb
           REDIS_URL: redis://localhost:6379/1
-        run: |
-          pytest tests/ -v --tb=short --co -q 2>/dev/null || true
-          pytest tests/test_config.py tests/test_security.py -v --tb=short
+        run: pytest tests/test_config.py tests/test_security.py -v --tb=short
 
   # =========================================================================
   # Frontend — Lint + Build
@@ -64,11 +68,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --legacy-peer-deps
+        run: npm install --legacy-peer-deps
 
       - name: TypeScript type check
         run: npx tsc --noEmit --pretty 2>&1 || true
