@@ -27,6 +27,20 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Sales Dashboard API...")
     logger.info(f"Environment: {settings.environment}")
     
+    # ── Security validation (fail-fast on insecure production config) ──
+    security_issues = settings.validate_security()
+    for issue in security_issues:
+        if issue.startswith("CRITICAL"):
+            logger.error(f"🔒 {issue}")
+        else:
+            logger.warning(f"🔒 {issue}")
+    if security_issues:
+        logger.warning(
+            "🔒 Resolve the security warnings above before deploying to production."
+        )
+    else:
+        logger.info("🔒 Security configuration validated — no issues found.")
+    
     await init_db()
     logger.info("Database initialized")
     

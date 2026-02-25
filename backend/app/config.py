@@ -1,8 +1,21 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, List
 import logging
 import sys
+import secrets
+import warnings
+
+
+# Known weak/default secrets that must not be used in production
+_INSECURE_SECRETS = {
+    "your-secret-key-change-in-production",
+    "super-secret-change-in-production-2026",
+    "changeme",
+    "secret",
+    "password",
+    "",
+}
 
 
 class Settings(BaseSettings):
@@ -47,6 +60,54 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+
+    # =========================================================================
+    # SECURITY VALIDATION
+    # =========================================================================
+    def validate_security(self) -> List[str]:
+        """
+        Validate security-critical settings.
+        Returns a list of warning/error messages.
+        In production, raises RuntimeError on insecure defaults.
+        """
+        issues: List[str] = []
+        is_prod = self.environment.lower() in ("production", "prod", "staging")
+
+        # --- JWT secret ---
+        if self.jwt_secret_key.lower() in _INSECURE_SECRETS:
+            msg = "CRITICAL: jwt_secret_key is using an insecure default value!"
+            if is_prod:
+                raise RuntimeError(
+                    f"{msg} Set a strong JWT_SECRET_KEY env variable before deploying."
+                )
+            issues.append(msg)
+
+        if len(self.jwt_secret_key) < 32:
+            msg = "WARNING: jwt_secret_key is shorter than 32 characters — consider a longer secret."
+            if is_prod:
+                raise RuntimeError(msg)
+            issues.append(msg)
+
+        # --- App secret ---
+        if self.secret_key.lower() in _INSECURE_SECRETS:
+            msg = "CRITICAL: secret_key is using an insecure default value!"
+            if is_prod:
+                raise RuntimeError(
+                    f"{msg} Set a strong SECRET_KEY env variable before deploying."
+                )
+            issues.append(msg)
+
+        # --- Debug mode in production ---
+        if is_prod and self.debug:
+            msg = "WARNING: debug=True in a production environment. Disabling is strongly recommended."
+            issues.append(msg)
+
+        # --- Database uses default credentials ---
+        if is_prod and "salespass" in self.database_url:
+            msg = "CRITICAL: Database URL contains default credentials!"
+            raise RuntimeError(msg)
+
+        return issues
 
 
 @lru_cache()
