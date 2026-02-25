@@ -2,6 +2,7 @@
 
 > **Enterprise-grade real-time sales analytics platform for Lulu Hypermarket UAE** — featuring live streaming data, AI-powered insights, role-based access control, and comprehensive retail operations management.
 
+[![CI Pipeline](https://github.com/mercydeez/lulu-sales-intelligence-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/mercydeez/lulu-sales-intelligence-dashboard/actions/workflows/ci.yml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688?logo=fastapi)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?logo=nextdotjs)](https://nextjs.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql)](https://www.postgresql.org)
@@ -280,11 +281,37 @@ docker compose -f docker-compose.production.yml up -d
 
 ## Testing
 
-### Backend API Tests
+The project includes a **pytest-based test suite** covering security validation, configuration, health checks, and middleware.
+
+### Running Tests Locally
 
 ```bash
-docker exec sales_backend python -m pytest tests/ -v
+# Inside the backend container
+docker exec sales_backend python -m pytest tests/ -v --tb=short
+
+# Or locally (with dependencies installed)
+cd backend
+pytest tests/ -v
 ```
+
+### Test Modules
+
+| Module | Description |
+|--------|-------------|
+| `test_security.py` | Validates insecure-default detection, production fail-fast, staging checks |
+| `test_config.py` | Settings defaults, overrides, and logger setup |
+| `test_health.py` | `/health` endpoint response structure and fields |
+| `test_middleware.py` | Request ID generation, rate limiting, security headers |
+
+### CI/CD Pipeline
+
+Every push and pull request to `main` triggers a **GitHub Actions** workflow that:
+
+1. **Backend** — Installs Python 3.11, runs pytest
+2. **Frontend** — Installs Node 20, TypeScript check, Next.js production build
+3. **Docker** — Validates compose config, builds both images
+
+See the badge at the top of this README for current build status.
 
 ### Health Check Verification
 
@@ -301,6 +328,23 @@ Expected response:
   "version": "1.0.0"
 }
 ```
+
+### Error Handling
+
+All API errors return a **consistent JSON structure**:
+
+```json
+{
+  "error": true,
+  "status_code": 422,
+  "message": "Validation failed",
+  "details": [{"field": "body → email", "message": "invalid email", "type": "value_error"}],
+  "path": "/api/auth/login",
+  "timestamp": "2026-02-25T12:00:00+00:00"
+}
+```
+
+Three global handlers cover: HTTP errors, validation errors, and unhandled exceptions (logged server-side, safe 500 returned to clients).
 
 ---
 
@@ -357,11 +401,16 @@ Expected response:
 
 ## Future Improvements
 
+### Completed
+- [x] **Security validation** — Fail-fast on insecure defaults in production/staging
+- [x] **Test suite** — pytest-based tests for security, config, health, and middleware
+- [x] **CI/CD pipeline** — GitHub Actions for backend tests, frontend builds, and Docker validation
+- [x] **Global error handlers** — Consistent JSON error responses with structured validation details
+
+### Planned
 - [ ] **ML forecasting** — Replace statistical models with LSTM/Prophet trained on historical data
 - [ ] **WebSocket upgrade** — Bidirectional real-time communication replacing SSE
-- [ ] **Test suite** — pytest + React Testing Library with 80%+ coverage
-- [ ] **CI/CD pipeline** — GitHub Actions for automated testing, linting, and deployment
-- [ ] **Kubernetes** — Helm charts for production orchestration
+- [ ] **Frontend tests** — React Testing Library with component-level coverage
 - [ ] **Internationalization** — Arabic, Hindi, Urdu support for UAE workforce
 - [ ] **Mobile views** — Responsive layouts for store managers on the floor
 - [ ] **2FA** — Two-factor authentication (DB schema already prepared)
@@ -372,15 +421,25 @@ Expected response:
 ## Project Structure
 
 ```
+├── .github/
+│   └── workflows/
+│       └── ci.yml            # GitHub Actions CI pipeline
 ├── backend/                  # FastAPI Python backend
 │   ├── app/
-│   │   ├── main.py          # Application entry point & lifespan
-│   │   ├── config.py        # Pydantic settings management
+│   │   ├── main.py          # Application entry point, lifespan & error handlers
+│   │   ├── config.py        # Pydantic settings with security validation
 │   │   ├── middleware.py     # Security middleware stack
 │   │   ├── models/          # SQLAlchemy ORM models
 │   │   ├── routes/          # API route handlers
 │   │   ├── services/        # Business logic layer
 │   │   └── utils/           # Shared utilities
+│   ├── tests/               # pytest test suite
+│   │   ├── conftest.py      # Shared fixtures
+│   │   ├── test_security.py # Security validation tests
+│   │   ├── test_config.py   # Configuration tests
+│   │   ├── test_health.py   # Health endpoint tests
+│   │   └── test_middleware.py # Middleware tests
+│   ├── pytest.ini           # pytest configuration
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/                 # Next.js TypeScript frontend
