@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 from functools import lru_cache
 from typing import Optional, List
 import logging
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
     
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+    model_config = {"env_file": ".env", "case_sensitive": False}
 
     # =========================================================================
     # SECURITY VALIDATION
