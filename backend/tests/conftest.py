@@ -3,7 +3,6 @@ Pytest configuration and shared fixtures for the Lulu Intelligence Dashboard tes
 """
 import os
 import pytest
-import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
 
 # Force test environment BEFORE any app imports
@@ -12,14 +11,6 @@ os.environ["JWT_SECRET_KEY"] = "test-secret-key-minimum-32-chars-long-for-testin
 os.environ["SECRET_KEY"] = "test-app-secret-key-minimum-32-chars-for-testing"
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://testuser:testpass@localhost:5432/testdb"
 os.environ["REDIS_URL"] = "redis://localhost:6379/1"
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an event loop for the entire test session."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture

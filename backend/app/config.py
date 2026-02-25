@@ -1,10 +1,8 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 from typing import Optional, List
 import logging
 import sys
-import secrets
-import warnings
 
 
 # Known weak/default secrets that must not be used in production
@@ -57,9 +55,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
     # =========================================================================
     # SECURITY VALIDATION
