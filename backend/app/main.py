@@ -1,7 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from contextlib import asynccontextmanager
 import asyncio
+import traceback
 from datetime import datetime, timezone
 
 from app.config import get_settings, logger
@@ -81,6 +85,68 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# =============================================================================
+# Global Exception Handlers
+# =============================================================================
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Handle HTTP exceptions with a consistent JSON structure."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": True,
+            "status_code": exc.status_code,
+            "message": exc.detail or "An error occurred",
+            "path": str(request.url.path),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle request validation errors with field-level detail."""
+    errors = []
+    for err in exc.errors():
+        errors.append({
+            "field": " → ".join(str(loc) for loc in err.get("loc", [])),
+            "message": err.get("msg", "Invalid value"),
+            "type": err.get("type", "value_error"),
+        })
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": True,
+            "status_code": 422,
+            "message": "Validation failed",
+            "details": errors,
+            "path": str(request.url.path),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Catch-all for unhandled exceptions — log full trace, return safe message."""
+    logger.error(
+        f"Unhandled exception on {request.method} {request.url.path}: "
+        f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
+    )
+    # Never leak internal details to the client
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": True,
+            "status_code": 500,
+            "message": "Internal server error",
+            "path": str(request.url.path),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
 
 # =============================================================================
 # Middleware (order matters - first added = last executed)
