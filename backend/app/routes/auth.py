@@ -1,7 +1,7 @@
 """
 Authentication Routes - Login, Logout, Token Management
 """
-from fastapi import APIRouter, HTTPException, Depends, Request, Response
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import Optional, List
@@ -330,4 +330,40 @@ async def issue_stream_ticket(user: dict = Depends(get_current_user)):
         expires_delta=timedelta(seconds=60)
     )
     return {"ticket": ticket, "expires_in": 60}
+
+
+async def get_current_user_from_ticket(
+    ticket: Optional[str] = Query(None, description="Short-lived SSE stream ticket")
+) -> dict:
+    """Dependency to validate the short-lived ticket for SSE streams"""
+    if not ticket:
+        raise HTTPException(status_code=401, detail="Missing stream ticket")
+    
+    # Verify that it's a valid ticket token
+    from jose import jwt, JWTError
+    from app.services.auth_service import SECRET_KEY, ALGORITHM
+    
+    try:
+        payload = jwt.decode(ticket, SECRET_KEY, algorithms=[ALGORITHM])
+        if not payload.get("ticket"):
+            raise HTTPException(status_code=401, detail="Invalid stream ticket")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired stream ticket")
+        
+    token_data = decode_token(ticket)
+    if not token_data:
+        raise HTTPException(status_code=401, detail="Invalid stream ticket")
+    
+    if token_data.exp < datetime.utcnow():
+        raise HTTPException(status_code=401, detail="Stream ticket expired")
+        
+    user = await AuthService.get_user_by_id(token_data.user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+        
+    if user['status'] != 'active':
+        raise HTTPException(status_code=401, detail="Account is not active")
+        
+    return user
+
 

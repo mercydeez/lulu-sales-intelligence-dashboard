@@ -19,7 +19,7 @@ from app.models.employee import (
 from app.models.sales import Store
 from app.services.employee_performance_streamer import get_live_employee_metrics
 from app.config import logger
-from app.routes.auth import get_current_user
+from app.routes.auth import get_current_user, get_current_user_from_ticket
 
 router = APIRouter()
 
@@ -740,7 +740,10 @@ async def get_live_metrics(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/employees/live/stream")
-async def stream_employee_performance(request: Request, current_user: dict = Depends(get_current_user)):
+async def stream_employee_performance(
+    request: Request,
+    current_user: dict = Depends(get_current_user_from_ticket)
+):
     """SSE endpoint for real-time employee performance updates"""
     from sse_starlette.sse import EventSourceResponse
     from app.services.redis_client import get_redis

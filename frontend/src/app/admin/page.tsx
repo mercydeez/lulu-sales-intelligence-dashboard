@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Shield, Users, Store, Settings, Key, Activity,
   Plus, Edit2, Trash2, Check, X, Search, RefreshCw,
@@ -8,6 +8,7 @@ import {
   Briefcase, TrendingUp, Award, Zap
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useEventStream } from '@/hooks/useEventStream';
 import { ROLE_DISPLAY_NAMES, UserRole } from '@/types/auth';
 
 interface User {
@@ -270,27 +271,36 @@ export default function AdminPage() {
     emp.store_name?.toLowerCase().includes(employeeSearch.toLowerCase())
   );
 
-  // SSE for real-time performance updates
-  useEffect(() => {
-    if (activeTab !== 'employees') return;
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    let eventSource: EventSource | null = null;
-    try {
-      eventSource = new EventSource(`${API_URL}/api/employees/employees/performance/live`);
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.updates) {
-            setLivePerformance(data.updates);
-          }
-        } catch (e) { /* ignore parse errors */ }
-      };
-      eventSource.onerror = () => {
-        eventSource?.close();
-      };
-    } catch (e) { /* SSE not supported */ }
-    return () => { eventSource?.close(); };
-  }, [activeTab]);
+  // SSE for real-time performance updates using useEventStream hook
+  const employeeEventHandlers = useMemo(() => ({
+    initial: (data: any) => {
+      if (data.top_performers) {
+        const mapped = data.top_performers.map((perf: any) => ({
+          employee_id: perf.employee_id,
+          employee_name: perf.full_name,
+          score: perf.today?.customer_rating * 20 || 85,
+          metric: `AED ${perf.today?.sales || 0} Sales`
+        }));
+        setLivePerformance(mapped);
+      }
+    },
+    update: (message: any) => {
+      if (message.data) {
+        const mapped = message.data.map((perf: any) => ({
+          employee_id: perf.employee_id,
+          employee_name: perf.full_name,
+          score: perf.today?.customer_rating * 20 || 85,
+          metric: `AED ${perf.today?.sales || 0} Sales`
+        }));
+        setLivePerformance(mapped);
+      }
+    }
+  }), []);
+
+  useEventStream(
+    activeTab === 'employees' ? '/api/employees/employees/live/stream' : null,
+    { eventHandlers: employeeEventHandlers }
+  );
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-AE', {

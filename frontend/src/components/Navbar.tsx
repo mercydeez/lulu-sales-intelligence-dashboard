@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useEventStream } from '@/hooks/useEventStream';
 import { 
   LayoutDashboard, 
   Package, 
@@ -117,7 +118,7 @@ const notificationConfig = {
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isAuthenticated, logout, hasRole, hasPermission } = useAuth();
+  const { user, isAuthenticated, logout, hasRole, hasPermission, authFetch } = useAuth();
   
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -126,57 +127,39 @@ export default function Navbar() {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
 
-  // SSE Connection for real-time notifications
+  // Connect to SSE using useEventStream hook
+  const eventHandlers = useMemo(() => ({
+    alert: (alert: any) => {
+      const newNotification: NotificationItem = {
+        id: alert.id,
+        title: alert.title,
+        message: alert.message,
+        type: alert.severity === 'critical' ? 'critical' : 
+              alert.severity === 'warning' ? 'warning' : 
+              alert.severity === 'success' ? 'success' : 'info',
+        category: alert.category || 'inventory',
+        time: 'Just now',
+        read: false,
+      };
+      
+      setNotifications(prev => {
+        // Avoid duplicates and keep max 15 notifications
+        const exists = prev.some(n => n.id === newNotification.id);
+        if (exists) return prev;
+        return [newNotification, ...prev].slice(0, 15);
+      });
+    }
+  }), []);
+
+  useEventStream(isAuthenticated ? '/stream/alerts' : null, { eventHandlers });
+
+  // Fetch initial notifications
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    const connectSSE = () => {
-      // Connect to alerts stream
-      eventSource = new EventSource(`${API_URL}/stream/alerts`);
-
-      eventSource.addEventListener('alert', (event) => {
-        try {
-          const alert = JSON.parse(event.data);
-          const newNotification: NotificationItem = {
-            id: alert.id,
-            title: alert.title,
-            message: alert.message,
-            type: alert.severity === 'critical' ? 'critical' : 
-                  alert.severity === 'warning' ? 'warning' : 
-                  alert.severity === 'success' ? 'success' : 'info',
-            category: alert.category || 'inventory',
-            time: 'Just now',
-            read: false,
-          };
-          
-          setNotifications(prev => {
-            // Avoid duplicates and keep max 15 notifications
-            const exists = prev.some(n => n.id === newNotification.id);
-            if (exists) return prev;
-            return [newNotification, ...prev].slice(0, 15);
-          });
-        } catch (e) {
-          console.error('Failed to parse alert:', e);
-        }
-      });
-
-      eventSource.onerror = () => {
-        eventSource?.close();
-        // Reconnect after 5 seconds
-        reconnectTimeout = setTimeout(connectSSE, 5000);
-      };
-    };
-
-    // Start SSE connection
-    connectSSE();
-
-    // Also fetch initial notifications
     const fetchInitialNotifications = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/alerts/recent?limit=10`);
+        const response = await authFetch('/api/alerts/recent?limit=10');
         if (response.ok) {
           const data = await response.json();
           const apiNotifications = (data.alerts || []).map((alert: any) => ({
@@ -201,12 +184,7 @@ export default function Navbar() {
     };
 
     fetchInitialNotifications();
-
-    return () => {
-      eventSource?.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, authFetch]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 

@@ -9,6 +9,7 @@ import {
   CheckCircle, FileText, Download
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useEventStream } from '@/hooks/useEventStream';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -106,73 +107,45 @@ export default function InventoryPage() {
   const [showProcurementModal, setShowProcurementModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [procurementQuantity, setProcurementQuantity] = useState<number>(0);
-  const [isLiveConnected, setIsLiveConnected] = useState(false);
 
   const canManageInventory = hasPermission('can_manage_inventory');
   const canApproveProcurement = hasPermission('can_approve_procurement') || hasPermission('can_manage_inventory');
 
-  // SSE Connection for real-time inventory alerts
-  useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  // SSE Connection for real-time inventory alerts using useEventStream hook
+  const eventHandlers = useMemo(() => ({
+    alert: (alert: any) => {
+      // Only process inventory-related alerts
+      if (alert.category === 'inventory' || ['out_of_stock', 'low_stock', 'overstocked', 'reorder'].includes(alert.type)) {
+        const newAlert: InventoryAlert = {
+          id: alert.id,
+          item_name: alert.item_name || alert.title,
+          store_name: alert.store_name || 'Unknown Store',
+          type: alert.type,
+          message: alert.message,
+          severity: alert.severity,
+          timestamp: alert.timestamp || new Date().toISOString(),
+          acknowledged: false,
+        };
+        
+        setAlerts(prev => {
+          const exists = prev.some(a => a.id === newAlert.id);
+          if (exists) return prev;
+          return [newAlert, ...prev].slice(0, 50);
+        });
 
-    const connectSSE = () => {
-      eventSource = new EventSource(`${API_URL}/stream/alerts`);
-
-      eventSource.addEventListener('connected', () => {
-        setIsLiveConnected(true);
-      });
-
-      eventSource.addEventListener('alert', (event) => {
-        try {
-          const alert = JSON.parse(event.data);
-          // Only process inventory-related alerts
-          if (alert.category === 'inventory' || ['out_of_stock', 'low_stock', 'overstocked', 'reorder'].includes(alert.type)) {
-            const newAlert: InventoryAlert = {
-              id: alert.id,
-              item_name: alert.item_name || alert.title,
-              store_name: alert.store_name || 'Unknown Store',
-              type: alert.type,
-              message: alert.message,
-              severity: alert.severity,
-              timestamp: alert.timestamp || new Date().toISOString(),
-              acknowledged: false,
-            };
-            
-            setAlerts(prev => {
-              const exists = prev.some(a => a.id === newAlert.id);
-              if (exists) return prev;
-              return [newAlert, ...prev].slice(0, 50);
-            });
-
-            // Update stock summary based on alert type
-            if (alert.type === 'out_of_stock') {
-              setSummary(prev => prev ? {...prev, out_of_stock_count: (prev.out_of_stock_count || 0) + 1} : prev);
-            } else if (alert.type === 'low_stock') {
-              setSummary(prev => prev ? {...prev, low_stock_count: (prev.low_stock_count || 0) + 1} : prev);
-            } else if (alert.type === 'overstocked') {
-              setSummary(prev => prev ? {...prev, overstocked_count: (prev.overstocked_count || 0) + 1} : prev);
-            }
-          }
-        } catch (e) {
-          console.error('Failed to parse inventory alert:', e);
+        // Update stock summary based on alert type
+        if (alert.type === 'out_of_stock') {
+          setSummary(prev => prev ? {...prev, out_of_stock_count: (prev.out_of_stock_count || 0) + 1} : prev);
+        } else if (alert.type === 'low_stock') {
+          setSummary(prev => prev ? {...prev, low_stock_count: (prev.low_stock_count || 0) + 1} : prev);
+        } else if (alert.type === 'overstocked') {
+          setSummary(prev => prev ? {...prev, overstocked_count: (prev.overstocked_count || 0) + 1} : prev);
         }
-      });
+      }
+    }
+  }), []);
 
-      eventSource.onerror = () => {
-        setIsLiveConnected(false);
-        eventSource?.close();
-        reconnectTimeout = setTimeout(connectSSE, 5000);
-      };
-    };
-
-    connectSSE();
-
-    return () => {
-      eventSource?.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    };
-  }, []);
+  const { isConnected: isLiveConnected } = useEventStream('/stream/alerts', { eventHandlers });
 
   // Generate mock data for demonstration when API returns empty
   const generateMockInventory = (): InventoryItem[] => {

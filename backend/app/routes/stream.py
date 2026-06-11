@@ -16,7 +16,7 @@ import random
 from app.services.database import get_db
 from app.services.redis_client import get_redis, CHANNEL_SALES_STREAM, CHANNEL_ALERTS_STREAM, CHANNEL_INVENTORY_STREAM, publish_alert, publish_inventory_update
 from app.models.sales import Sale, Store, Item
-from app.routes.auth import get_current_user, get_current_user_optional
+from app.routes.auth import get_current_user, get_current_user_optional, get_current_user_from_ticket
 
 router = APIRouter()
 
@@ -111,7 +111,10 @@ async def event_generator(request: Request):
 
 
 @router.get("/sales")
-async def stream_sales(request: Request):
+async def stream_sales(
+    request: Request,
+    current_user: dict = Depends(get_current_user_from_ticket)
+):
     """
     SSE endpoint for real-time sales streaming.
     
@@ -451,7 +454,10 @@ async def inventory_event_generator(request: Request):
 
 
 @router.get("/alerts")
-async def stream_alerts(request: Request):
+async def stream_alerts(
+    request: Request,
+    current_user: dict = Depends(get_current_user_from_ticket)
+):
     """
     SSE endpoint for real-time alerts streaming.
     
@@ -465,7 +471,10 @@ async def stream_alerts(request: Request):
 
 
 @router.get("/inventory")
-async def stream_inventory(request: Request):
+async def stream_inventory(
+    request: Request,
+    current_user: dict = Depends(get_current_user_from_ticket)
+):
     """
     SSE endpoint for real-time inventory updates streaming.
     

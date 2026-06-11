@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useEventStream } from './useEventStream';
 
 export interface LiveAlert {
   id: number;
@@ -34,67 +35,21 @@ export interface InventoryUpdate {
   timestamp: string;
 }
 
-const ALERTS_SSE_URL = process.env.NEXT_PUBLIC_ALERTS_SSE_URL || 'http://localhost:8000/stream/alerts';
-const INVENTORY_SSE_URL = process.env.NEXT_PUBLIC_INVENTORY_SSE_URL || 'http://localhost:8000/stream/inventory';
-
 export function useAlertStream(maxAlerts: number = 50) {
   const [alerts, setAlerts] = useState<LiveAlert[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  const connect = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
+
+  const eventHandlers = useMemo(() => ({
+    alert: (alert: LiveAlert) => {
+      setAlerts((prev) => {
+        // Avoid duplicates
+        const exists = prev.some(a => a.id === alert.id);
+        if (exists) return prev;
+        return [alert, ...prev].slice(0, maxAlerts);
+      });
     }
-    
-    const eventSource = new EventSource(ALERTS_SSE_URL);
-    eventSourceRef.current = eventSource;
-    
-    eventSource.addEventListener('connected', () => {
-      setIsConnected(true);
-      setError(null);
-    });
-    
-    eventSource.addEventListener('alert', (event) => {
-      try {
-        const alert: LiveAlert = JSON.parse(event.data);
-        setAlerts((prev) => {
-          // Avoid duplicates
-          const exists = prev.some(a => a.id === alert.id);
-          if (exists) return prev;
-          return [alert, ...prev].slice(0, maxAlerts);
-        });
-      } catch (e) {
-        console.error('Failed to parse alert SSE data:', e);
-      }
-    });
-    
-    eventSource.onerror = () => {
-      setIsConnected(false);
-      setError('Connection lost. Reconnecting...');
-      eventSource.close();
-      
-      // Reconnect after 5 seconds
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connect();
-      }, 5000);
-    };
-  }, [maxAlerts]);
-  
-  useEffect(() => {
-    connect();
-    
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
-  }, [connect]);
+  }), [maxAlerts]);
+
+  const { isConnected, error } = useEventStream('/stream/alerts', { eventHandlers });
 
   const markAsRead = useCallback((alertId: number) => {
     setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, read: true } : a));
@@ -127,68 +82,25 @@ export function useAlertStream(maxAlerts: number = 50) {
 
 export function useInventoryStream(maxUpdates: number = 100) {
   const [updates, setUpdates] = useState<InventoryUpdate[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  const connect = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
+
+  const eventHandlers = useMemo(() => ({
+    inventory_update: (update: InventoryUpdate) => {
+      setUpdates((prev) => {
+        // Replace if same item+store, otherwise add
+        const existingIndex = prev.findIndex(
+          u => u.item_id === update.item_id && u.store_id === update.store_id
+        );
+        if (existingIndex >= 0) {
+          const newUpdates = [...prev];
+          newUpdates[existingIndex] = update;
+          return newUpdates;
+        }
+        return [update, ...prev].slice(0, maxUpdates);
+      });
     }
-    
-    const eventSource = new EventSource(INVENTORY_SSE_URL);
-    eventSourceRef.current = eventSource;
-    
-    eventSource.addEventListener('connected', () => {
-      setIsConnected(true);
-      setError(null);
-    });
-    
-    eventSource.addEventListener('inventory_update', (event) => {
-      try {
-        const update: InventoryUpdate = JSON.parse(event.data);
-        setUpdates((prev) => {
-          // Replace if same item+store, otherwise add
-          const existingIndex = prev.findIndex(
-            u => u.item_id === update.item_id && u.store_id === update.store_id
-          );
-          if (existingIndex >= 0) {
-            const newUpdates = [...prev];
-            newUpdates[existingIndex] = update;
-            return newUpdates;
-          }
-          return [update, ...prev].slice(0, maxUpdates);
-        });
-      } catch (e) {
-        console.error('Failed to parse inventory SSE data:', e);
-      }
-    });
-    
-    eventSource.onerror = () => {
-      setIsConnected(false);
-      setError('Connection lost. Reconnecting...');
-      eventSource.close();
-      
-      // Reconnect after 5 seconds
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connect();
-      }, 5000);
-    };
-  }, [maxUpdates]);
-  
-  useEffect(() => {
-    connect();
-    
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
-  }, [connect]);
+  }), [maxUpdates]);
+
+  const { isConnected, error } = useEventStream('/stream/inventory', { eventHandlers });
 
   // Computed stats
   const outOfStockCount = updates.filter(u => u.status === 'out_of_stock').length;
