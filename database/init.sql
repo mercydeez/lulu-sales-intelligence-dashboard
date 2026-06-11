@@ -181,6 +181,27 @@ FROM temp_sales;
 DROP TABLE temp_sales;
 
 -- =============================================================================
+-- DATE-SHIFT: Move historical data so max date = yesterday
+-- This ensures dashboards always show recent data regardless of deployment date.
+-- =============================================================================
+DO $$
+DECLARE
+    max_hist_date DATE;
+    shift_days INTEGER;
+BEGIN
+    SELECT MAX(date) INTO max_hist_date FROM sales_historical;
+    IF max_hist_date IS NOT NULL THEN
+        shift_days := (CURRENT_DATE - 1) - max_hist_date;
+        IF shift_days <> 0 THEN
+            UPDATE sales_historical SET date = date + shift_days;
+            UPDATE sales SET date = date + shift_days WHERE is_streaming = FALSE;
+            RAISE NOTICE '📅 Date-shifted historical data by % days (max date now: %)',
+                shift_days, (CURRENT_DATE - 1);
+        END IF;
+    END IF;
+END $$;
+
+-- =============================================================================
 -- UNIFIED VIEW: sales_fact_view (Historical UNION Streaming)
 -- =============================================================================
 CREATE OR REPLACE VIEW sales_fact_view AS

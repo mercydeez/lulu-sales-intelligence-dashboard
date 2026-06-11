@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.services.database import get_db
 from app.models.sales import Sale, SalesHistorical, Store, Item
+from app.routes.auth import get_current_user
 
 router = APIRouter()
 
@@ -42,7 +43,8 @@ async def get_history(
     item: Optional[int] = Query(None, description="Item ID filter"),
     limit: int = Query(100, le=1000, description="Max records to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get historical sales data with optional filters.
@@ -84,7 +86,7 @@ async def get_history(
 
 
 @router.get("/range")
-async def get_date_range(db: AsyncSession = Depends(get_db)):
+async def get_date_range(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get the date range of historical data"""
     query = select(
         func.min(Sale.date).label("min_date"),
@@ -103,7 +105,7 @@ async def get_date_range(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/stores")
-async def get_stores(db: AsyncSession = Depends(get_db)):
+async def get_stores(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get all stores"""
     result = await db.execute(select(Store))
     stores = result.scalars().all()
@@ -111,7 +113,7 @@ async def get_stores(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/items")
-async def get_items(db: AsyncSession = Depends(get_db)):
+async def get_items(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get all items"""
     result = await db.execute(select(Item))
     items = result.scalars().all()

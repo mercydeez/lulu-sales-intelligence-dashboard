@@ -13,6 +13,7 @@ from app.services.database import get_db
 from app.models.sales import Sale
 from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE_TTL
 from app.config import logger
+from app.routes.auth import get_current_user
 
 router = APIRouter()
 
@@ -33,7 +34,7 @@ class KPIResponse(BaseModel):
 
 
 @router.get("", response_model=KPIResponse)
-async def get_kpis(db: AsyncSession = Depends(get_db)):
+async def get_kpis(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """
     Get key performance indicators for the dashboard.
     Optimized with single query and caching.

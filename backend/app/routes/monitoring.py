@@ -2,7 +2,7 @@
 Monitoring Routes
 Provides endpoints for metrics, health checks, and system status.
 """
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 from datetime import datetime
 from typing import Dict, Any
 
@@ -10,6 +10,7 @@ from app.config import get_settings, logger
 from app.services.metrics import get_metrics
 from app.services.database import engine, async_session
 from app.services.redis_client import get_redis
+from app.routes.auth import get_current_user
 from sqlalchemy import text
 
 
@@ -18,7 +19,7 @@ settings = get_settings()
 
 
 @router.get("/metrics")
-async def prometheus_metrics():
+async def prometheus_metrics(current_user: dict = Depends(get_current_user)):
     """
     Prometheus metrics endpoint.
     Returns metrics in Prometheus text format for scraping.
@@ -29,7 +30,7 @@ async def prometheus_metrics():
 
 
 @router.get("/metrics/json")
-async def metrics_json() -> Dict[str, Any]:
+async def metrics_json(current_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """
     JSON metrics endpoint.
     Returns metrics in JSON format for dashboard consumption.
@@ -39,7 +40,7 @@ async def metrics_json() -> Dict[str, Any]:
 
 
 @router.get("/health/detailed")
-async def detailed_health_check() -> Dict[str, Any]:
+async def detailed_health_check(current_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Detailed health check endpoint.
     Provides comprehensive system status including:
@@ -161,7 +162,7 @@ async def liveness_check() -> Dict[str, str]:
 
 
 @router.get("/stats")
-async def system_stats() -> Dict[str, Any]:
+async def system_stats(current_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """
     System statistics endpoint.
     Returns aggregated statistics about the system.

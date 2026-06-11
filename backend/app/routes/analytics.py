@@ -14,6 +14,7 @@ from app.services.database import get_db
 from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE_TTL
 from app.models.sales import Sale, Store, Item
 from app.config import logger
+from app.routes.auth import get_current_user
 
 router = APIRouter()
 
@@ -62,7 +63,8 @@ class AnalyticsSummary(BaseModel):
 async def get_sales_trend(
     days: int = Query(30, ge=7, le=365, description="Number of days for trend"),
     include_forecast: bool = Query(True, description="Include forecast data"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get daily sales trend with optional forecasting.
@@ -123,7 +125,8 @@ async def get_sales_trend(
 
 @router.get("/stores")
 async def get_store_distribution(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get sales distribution by store for pie chart.
@@ -166,7 +169,8 @@ async def get_store_distribution(
 @router.get("/top-items")
 async def get_top_items(
     limit: int = Query(10, ge=5, le=50),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get top selling items for bar chart.
@@ -207,7 +211,8 @@ async def get_top_items(
 
 @router.get("/categories")
 async def get_category_breakdown(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get sales breakdown by category for donut chart.
@@ -247,7 +252,8 @@ async def get_category_breakdown(
 
 @router.get("/streaming-trend")
 async def get_streaming_trend(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get streaming sales trend (today's live data).
@@ -287,7 +293,8 @@ async def get_streaming_trend(
 
 @router.get("/summary")
 async def get_analytics_summary(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get comprehensive analytics summary for executive dashboard.
@@ -352,7 +359,8 @@ async def get_analytics_summary(
 
 @router.get("/returns-by-category")
 async def get_returns_by_category(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get returns (negative sales) breakdown by category for donut chart.
@@ -395,7 +403,8 @@ async def get_returns_by_category(
 
 @router.get("/returns-by-store")
 async def get_returns_by_store(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get returns (negative sales) breakdown by store for bar chart.
@@ -437,7 +446,8 @@ async def get_returns_by_store(
 
 @router.get("/returns-summary")
 async def get_returns_summary(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get comprehensive returns summary for the live returns feed component.

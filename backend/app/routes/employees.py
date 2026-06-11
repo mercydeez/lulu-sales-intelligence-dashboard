@@ -19,6 +19,7 @@ from app.models.employee import (
 from app.models.sales import Store
 from app.services.employee_performance_streamer import get_live_employee_metrics
 from app.config import logger
+from app.routes.auth import get_current_user
 
 router = APIRouter()
 
@@ -109,7 +110,8 @@ async def get_employees(
     status: Optional[str] = Query("active", description="Filter by status"),
     search: Optional[str] = Query(None, description="Search by name or email"),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100)
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get paginated list of employees with filters"""
     try:
@@ -186,7 +188,7 @@ async def get_employees(
 
 
 @router.get("/employees/{employee_id}", response_model=Dict[str, Any])
-async def get_employee(employee_id: int):
+async def get_employee(employee_id: int, current_user: dict = Depends(get_current_user)):
     """Get detailed employee information including performance history"""
     try:
         async with async_session() as session:
@@ -263,7 +265,7 @@ async def get_employee(employee_id: int):
 
 
 @router.post("/employees", response_model=Dict[str, Any])
-async def create_employee(employee: EmployeeCreate):
+async def create_employee(employee: EmployeeCreate, current_user: dict = Depends(get_current_user)):
     """Create a new employee with full validation"""
     try:
         async with async_session() as session:
@@ -409,7 +411,7 @@ async def create_employee(employee: EmployeeCreate):
 
 
 @router.put("/employees/{employee_id}", response_model=Dict[str, Any])
-async def update_employee(employee_id: int, update: EmployeeUpdate):
+async def update_employee(employee_id: int, update: EmployeeUpdate, current_user: dict = Depends(get_current_user)):
     """Update an employee with validation"""
     try:
         async with async_session() as session:
@@ -487,7 +489,8 @@ async def update_employee(employee_id: int, update: EmployeeUpdate):
 async def get_employee_performance(
     employee_id: int,
     period_type: Optional[str] = Query("monthly"),
-    limit: int = Query(12, ge=1, le=36)
+    limit: int = Query(12, ge=1, le=36),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get employee performance history"""
     try:
@@ -518,7 +521,7 @@ async def get_employee_performance(
 # =============================================================================
 
 @router.get("/employees/analytics/by-role", response_model=Dict[str, Any])
-async def get_performance_by_role():
+async def get_performance_by_role(current_user: dict = Depends(get_current_user)):
     """Get aggregated performance metrics by role"""
     try:
         async with async_session() as session:
@@ -560,7 +563,7 @@ async def get_performance_by_role():
 
 
 @router.get("/employees/analytics/by-store", response_model=Dict[str, Any])
-async def get_performance_by_store():
+async def get_performance_by_store(current_user: dict = Depends(get_current_user)):
     """Get aggregated performance metrics by store"""
     try:
         async with async_session() as session:
@@ -604,7 +607,8 @@ async def get_performance_by_store():
 @router.get("/employees/analytics/top-performers", response_model=Dict[str, Any])
 async def get_top_performers(
     limit: int = Query(10, ge=1, le=50),
-    role: Optional[str] = Query(None)
+    role: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get top performing employees"""
     try:
@@ -662,7 +666,7 @@ async def get_top_performers(
 
 
 @router.get("/employees/analytics/summary", response_model=Dict[str, Any])
-async def get_employee_summary():
+async def get_employee_summary(current_user: dict = Depends(get_current_user)):
     """Get overall employee statistics summary"""
     try:
         async with async_session() as session:
@@ -725,7 +729,7 @@ async def get_employee_summary():
 # =============================================================================
 
 @router.get("/employees/live/metrics", response_model=Dict[str, Any])
-async def get_live_metrics():
+async def get_live_metrics(current_user: dict = Depends(get_current_user)):
     """Get live employee performance metrics from cache"""
     try:
         metrics = await get_live_employee_metrics()
@@ -736,7 +740,7 @@ async def get_live_metrics():
 
 
 @router.get("/employees/live/stream")
-async def stream_employee_performance(request: Request):
+async def stream_employee_performance(request: Request, current_user: dict = Depends(get_current_user)):
     """SSE endpoint for real-time employee performance updates"""
     from sse_starlette.sse import EventSourceResponse
     from app.services.redis_client import get_redis
@@ -780,7 +784,8 @@ async def get_performance_chart_data(
     role: Optional[str] = Query(None),
     store_id: Optional[int] = Query(None),
     period_type: str = Query("monthly"),
-    periods: int = Query(6, ge=1, le=12)
+    periods: int = Query(6, ge=1, le=12),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get performance data formatted for charts"""
     try:

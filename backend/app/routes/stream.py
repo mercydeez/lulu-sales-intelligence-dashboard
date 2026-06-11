@@ -16,6 +16,7 @@ import random
 from app.services.database import get_db
 from app.services.redis_client import get_redis, CHANNEL_SALES_STREAM, CHANNEL_ALERTS_STREAM, CHANNEL_INVENTORY_STREAM, publish_alert, publish_inventory_update
 from app.models.sales import Sale, Store, Item
+from app.routes.auth import get_current_user, get_current_user_optional
 
 router = APIRouter()
 
@@ -38,7 +39,8 @@ class LatestSaleResponse(BaseModel):
 @router.get("/latest", response_model=List[LatestSaleResponse])
 async def get_latest(
     limit: int = Query(20, le=100, description="Number of records to return"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get latest sales records (both historical and streaming).
@@ -125,7 +127,8 @@ async def stream_sales(request: Request):
 @router.post("/generate-returns")
 async def generate_returns(
     count: int = Query(50, ge=10, le=200, description="Number of returns to generate"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Generate bulk return records immediately for visibility in charts.

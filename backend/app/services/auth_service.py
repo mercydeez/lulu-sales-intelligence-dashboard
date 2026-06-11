@@ -162,7 +162,7 @@ def decode_token(token: str) -> Optional[TokenData]:
             email=payload.get("email"),
             role=payload.get("role"),
             permissions=payload.get("permissions", {}),
-            exp=datetime.fromtimestamp(payload.get("exp"))
+            exp=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
         )
     except JWTError as e:
         logger.error(f"JWT decode error: {e}")
@@ -389,23 +389,22 @@ class AuthService:
     @staticmethod
     async def create_tokens(user_data: Dict, remember_me: bool = False) -> Token:
         """Create access and refresh tokens for user"""
+        # Keep JWT payload minimal — permissions are looked up from DB on each request
         token_data = {
             "user_id": user_data["id"],
             "email": user_data["email"],
             "role": user_data["role"],
-            "permissions": user_data["permissions"]
         }
         
-        # Longer expiration if remember_me
-        expires_delta = timedelta(days=7) if remember_me else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        
-        access_token = create_access_token(token_data, expires_delta)
+        # Access token is always short-lived. remember_me only extends the refresh token.
+        access_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(token_data, access_delta)
         refresh_token = create_refresh_token(token_data)
         
         return Token(
             access_token=access_token,
             refresh_token=refresh_token,
-            expires_in=int(expires_delta.total_seconds()),
+            expires_in=int(access_delta.total_seconds()),
             user=user_data
         )
     

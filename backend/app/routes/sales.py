@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.services.database import get_db
 from app.services.predictor import SalesPredictor
 from app.models.sales import Sale, Store, Item
+from app.routes.auth import get_current_user
 
 
 # Pydantic schemas
@@ -67,7 +68,8 @@ async def get_sales(
     streaming_only: bool = Query(False),
     limit: int = Query(100, le=1000),
     offset: int = Query(0),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get sales data with optional filters"""
     query = select(Sale)
@@ -99,7 +101,8 @@ async def get_aggregated_sales(
     end_date: Optional[date] = Query(None),
     store_id: Optional[int] = Query(None),
     item_id: Optional[int] = Query(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get aggregated sales by date"""
     query = select(
@@ -135,7 +138,8 @@ async def get_aggregated_sales(
 async def get_dashboard_metrics(
     store_id: int = Query(1),
     item_id: int = Query(1),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get dashboard metrics"""
     today = date.today()
@@ -215,7 +219,8 @@ async def get_dashboard_metrics(
 async def get_predictions(
     store_id: int = Query(1),
     item_id: int = Query(1),
-    days: int = Query(30, le=90)
+    days: int = Query(30, le=90),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get sales predictions"""
     predictions = await predictor.predict(store_id, item_id, days)
@@ -249,14 +254,14 @@ class ItemResponse(BaseModel):
 
 
 @router.get("/stores", response_model=List[StoreResponse])
-async def get_stores(db: AsyncSession = Depends(get_db)):
+async def get_stores(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get all store locations"""
     result = await db.execute(select(Store).order_by(Store.id))
     return result.scalars().all()
 
 
 @router.get("/items", response_model=List[ItemResponse])
-async def get_items(db: AsyncSession = Depends(get_db)):
+async def get_items(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get all items"""
     result = await db.execute(select(Item).order_by(Item.id))
     return result.scalars().all()

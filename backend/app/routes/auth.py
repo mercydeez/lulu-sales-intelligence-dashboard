@@ -293,3 +293,41 @@ def can_access_store(user: dict, store_id: int) -> bool:
         return True
     accessible = user.get('permissions', {}).get('accessible_stores', [])
     return store_id in accessible
+
+
+def get_accessible_store_ids(user: dict) -> List[int]:
+    """Get list of store IDs the user has access to. Returns empty list for super_admin (meaning all)."""
+    if user['role'] == 'super_admin':
+        return []  # empty = no filter needed (all stores)
+    return user.get('permissions', {}).get('accessible_stores', [])
+
+
+# =============================================================================
+# SSE STREAM TICKET (short-lived token for EventSource connections)
+# =============================================================================
+
+@router.post("/stream-ticket")
+async def issue_stream_ticket(user: dict = Depends(get_current_user)):
+    """
+    Issue a short-lived ticket for SSE stream authentication.
+    
+    EventSource API cannot send custom headers, so the frontend first
+    obtains a stream ticket via this authenticated endpoint, then connects
+    to /stream/sales?ticket=<token>.
+    
+    The ticket expires in 60 seconds and is single-use.
+    """
+    from app.services.auth_service import create_access_token
+    from datetime import timedelta
+    
+    ticket = create_access_token(
+        data={
+            "user_id": user['id'],
+            "email": user['email'],
+            "role": user['role'],
+            "ticket": True,  # marks this as a stream ticket
+        },
+        expires_delta=timedelta(seconds=60)
+    )
+    return {"ticket": ticket, "expires_in": 60}
+
