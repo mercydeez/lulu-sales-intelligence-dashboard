@@ -116,6 +116,12 @@ async def get_employees(
     """Get paginated list of employees with filters"""
     try:
         async with async_session() as session:
+            # Enforce RBAC
+            from app.routes.auth import get_accessible_store_ids, can_access_store
+            if store_id:
+                if not can_access_store(current_user, store_id):
+                    raise HTTPException(status_code=403, detail="Access denied to this store")
+            
             # Base query
             query = select(Employee).options(selectinload(Employee.store))
             
@@ -123,6 +129,10 @@ async def get_employees(
             conditions = []
             if store_id:
                 conditions.append(Employee.store_id == store_id)
+            else:
+                allowed_stores = get_accessible_store_ids(current_user)
+                if allowed_stores:
+                    conditions.append(Employee.store_id.in_(allowed_stores))
             if role:
                 conditions.append(Employee.role == role)
             if department:
@@ -182,6 +192,8 @@ async def get_employees(
                 "total_pages": (total + page_size - 1) // page_size
             }
             
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching employees: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -203,6 +215,10 @@ async def get_employee(employee_id: int, current_user: dict = Depends(get_curren
             
             if not employee:
                 raise HTTPException(status_code=404, detail="Employee not found")
+                
+            from app.routes.auth import can_access_store
+            if employee.store_id and not can_access_store(current_user, employee.store_id):
+                raise HTTPException(status_code=403, detail="Access denied to this employee's store")
             
             emp_dict = employee.to_dict()
             emp_dict["store_name"] = employee.store.name if employee.store else None
@@ -638,6 +654,11 @@ async def get_top_performers(
             if role:
                 query = query.where(Employee.role == role)
             
+            from app.routes.auth import get_accessible_store_ids
+            allowed_stores = get_accessible_store_ids(current_user)
+            if allowed_stores:
+                query = query.where(Employee.store_id.in_(allowed_stores))
+                
             query = query.order_by(desc(EmployeePerformance.performance_score)).limit(limit)
             
             result = await session.execute(query)
@@ -670,11 +691,17 @@ async def get_employee_summary(current_user: dict = Depends(get_current_user)):
     """Get overall employee statistics summary"""
     try:
         async with async_session() as session:
+            from app.routes.auth import get_accessible_store_ids
+            allowed_stores = get_accessible_store_ids(current_user)
+            
             # Total employees by status
             status_query = select(
                 Employee.status,
                 func.count(Employee.id).label("count")
-            ).group_by(Employee.status)
+            )
+            if allowed_stores:
+                status_query = status_query.where(Employee.store_id.in_(allowed_stores))
+            status_query = status_query.group_by(Employee.status)
             status_result = await session.execute(status_query)
             status_counts = {row.status: row.count for row in status_result.all()}
             
@@ -682,7 +709,10 @@ async def get_employee_summary(current_user: dict = Depends(get_current_user)):
             role_query = select(
                 Employee.role,
                 func.count(Employee.id).label("count")
-            ).where(Employee.status == "active").group_by(Employee.role)
+            ).where(Employee.status == "active")
+            if allowed_stores:
+                role_query = role_query.where(Employee.store_id.in_(allowed_stores))
+            role_query = role_query.group_by(Employee.role)
             role_result = await session.execute(role_query)
             role_counts = {row.role: row.count for row in role_result.all()}
             
@@ -691,7 +721,9 @@ async def get_employee_summary(current_user: dict = Depends(get_current_user)):
                 func.avg(EmployeePerformance.performance_score).label("avg_score"),
                 func.avg(EmployeePerformance.attendance_percentage).label("avg_attendance"),
                 func.avg(EmployeePerformance.customer_rating).label("avg_rating")
-            )
+            ).join(Employee, EmployeePerformance.employee_id == Employee.id)
+            if allowed_stores:
+                perf_query = perf_query.where(Employee.store_id.in_(allowed_stores))
             perf_result = await session.execute(perf_query)
             perf_stats = perf_result.one()
             
@@ -700,12 +732,16 @@ async def get_employee_summary(current_user: dict = Depends(get_current_user)):
             new_hires_query = select(func.count(Employee.id)).where(
                 Employee.date_of_joining >= first_of_month
             )
+            if allowed_stores:
+                new_hires_query = new_hires_query.where(Employee.store_id.in_(allowed_stores))
             new_hires = await session.scalar(new_hires_query)
             
             # Resignations this month
             resignations_query = select(func.count(Employee.id)).where(
                 Employee.date_of_resignation >= first_of_month
             )
+            if allowed_stores:
+                resignations_query = resignations_query.where(Employee.store_id.in_(allowed_stores))
             resignations = await session.scalar(resignations_query)
             
             return {
@@ -733,6 +769,11 @@ async def get_live_metrics(current_user: dict = Depends(get_current_user)):
     """Get live employee performance metrics from cache"""
     try:
         metrics = await get_live_employee_metrics()
+        from app.routes.auth import get_accessible_store_ids
+        allowed_stores = get_accessible_store_ids(current_user)
+        if allowed_stores:
+            metrics["by_store"] = {k: v for k, v in metrics.get("by_store", {}).items() if int(k) in allowed_stores}
+            metrics["top_performers"] = [p for p in metrics.get("top_performers", []) if p.get("store_id") in allowed_stores]
         return metrics
     except Exception as e:
         logger.error(f"Error fetching live metrics: {e}")
@@ -749,6 +790,7 @@ async def stream_employee_performance(
     from app.services.redis_client import get_redis
     
     async def event_generator():
+        from app.routes.auth import can_access_store, get_accessible_store_ids
         redis = await get_redis()
         pubsub = redis.pubsub()
         await pubsub.subscribe("employee_performance")
@@ -756,6 +798,11 @@ async def stream_employee_performance(
         try:
             # Send initial data
             initial_data = await get_live_employee_metrics()
+            allowed_stores = get_accessible_store_ids(current_user)
+            if allowed_stores:
+                initial_data["by_store"] = {k: v for k, v in initial_data.get("by_store", {}).items() if int(k) in allowed_stores}
+                initial_data["top_performers"] = [p for p in initial_data.get("top_performers", []) if p.get("store_id") in allowed_stores]
+                
             yield {
                 "event": "initial",
                 "data": json.dumps(initial_data)
@@ -768,9 +815,17 @@ async def stream_employee_performance(
                 
                 message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                 if message and message["type"] == "message":
+                    data_str = message["data"].decode() if isinstance(message["data"], bytes) else message["data"]
+                    try:
+                        update_data = json.loads(data_str)
+                        if "data" in update_data and isinstance(update_data["data"], list):
+                            update_data["data"] = [p for p in update_data["data"] if p.get("store_id") is None or can_access_store(current_user, int(p["store_id"]))]
+                        data_str = json.dumps(update_data)
+                    except Exception as e:
+                        logger.warning(f"Error filtering employee live update: {e}")
                     yield {
                         "event": "update",
-                        "data": message["data"].decode() if isinstance(message["data"], bytes) else message["data"]
+                        "data": data_str
                     }
                 
                 await asyncio.sleep(0.1)
@@ -809,6 +864,11 @@ async def get_performance_chart_data(
                 EmployeePerformance.period_type == period_type
             )
             
+            from app.routes.auth import get_accessible_store_ids, can_access_store
+            if store_id:
+                if not can_access_store(current_user, store_id):
+                    raise HTTPException(status_code=403, detail="Access denied to this store")
+            
             # Apply filters
             if employee_id:
                 query = query.where(EmployeePerformance.employee_id == employee_id)
@@ -816,6 +876,10 @@ async def get_performance_chart_data(
                 query = query.where(Employee.role == role)
             if store_id:
                 query = query.where(Employee.store_id == store_id)
+            else:
+                allowed_stores = get_accessible_store_ids(current_user)
+                if allowed_stores:
+                    query = query.where(Employee.store_id.in_(allowed_stores))
             
             query = query.group_by(
                 EmployeePerformance.period_start,

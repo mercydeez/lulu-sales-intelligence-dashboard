@@ -2,7 +2,7 @@
 History API Routes - Historical data access
 Matches README: GET /api/history
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date, datetime
@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from app.services.database import get_db
 from app.models.sales import Sale, SalesHistorical, Store, Item
-from app.routes.auth import get_current_user
+from app.routes.auth import get_current_user, can_access_store, get_accessible_store_ids
 
 router = APIRouter()
 
@@ -51,6 +51,11 @@ async def get_history(
     
     Example: GET /api/history?from=2024-01-01&to=2024-01-14&store=1&limit=100
     """
+    # Enforce RBAC
+    if store:
+        if not can_access_store(current_user, store):
+            raise HTTPException(status_code=403, detail="Access denied to this store")
+            
     # Build query conditions
     conditions = []
     if start_date:
@@ -59,6 +64,10 @@ async def get_history(
         conditions.append(Sale.date <= end_date)
     if store:
         conditions.append(Sale.store_id == store)
+    else:
+        allowed_stores = get_accessible_store_ids(current_user)
+        if allowed_stores:
+            conditions.append(Sale.store_id.in_(allowed_stores))
     if item:
         conditions.append(Sale.item_id == item)
     
@@ -88,11 +97,14 @@ async def get_history(
 @router.get("/range")
 async def get_date_range(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get the date range of historical data"""
+    allowed_stores = get_accessible_store_ids(current_user)
     query = select(
         func.min(Sale.date).label("min_date"),
         func.max(Sale.date).label("max_date"),
         func.count(Sale.id).label("total_records")
     ).where(Sale.is_streaming == False)
+    if allowed_stores:
+        query = query.where(Sale.store_id.in_(allowed_stores))
     
     result = await db.execute(query)
     row = result.one()
@@ -107,7 +119,11 @@ async def get_date_range(db: AsyncSession = Depends(get_db), current_user: dict 
 @router.get("/stores")
 async def get_stores(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get all stores"""
-    result = await db.execute(select(Store))
+    query = select(Store)
+    allowed_stores = get_accessible_store_ids(current_user)
+    if allowed_stores:
+        query = query.where(Store.id.in_(allowed_stores))
+    result = await db.execute(query.order_by(Store.id))
     stores = result.scalars().all()
     return [{"id": s.id, "name": s.name, "location": s.location} for s in stores]
 

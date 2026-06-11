@@ -16,7 +16,7 @@ import random
 from app.services.database import get_db
 from app.services.redis_client import get_redis, CHANNEL_SALES_STREAM, CHANNEL_ALERTS_STREAM, CHANNEL_INVENTORY_STREAM, publish_alert, publish_inventory_update
 from app.models.sales import Sale, Store, Item
-from app.routes.auth import get_current_user, get_current_user_optional, get_current_user_from_ticket
+from app.routes.auth import get_current_user, get_current_user_optional, get_current_user_from_ticket, can_access_store, get_accessible_store_ids
 
 router = APIRouter()
 
@@ -55,7 +55,11 @@ async def get_latest(
     items = {i.id: i.name for i in items_result.scalars().all()}
     
     # Get latest records
-    query = select(Sale).order_by(Sale.created_at.desc()).limit(limit)
+    allowed_stores = get_accessible_store_ids(current_user)
+    query = select(Sale)
+    if allowed_stores:
+        query = query.where(Sale.store_id.in_(allowed_stores))
+    query = query.order_by(Sale.created_at.desc()).limit(limit)
     result = await db.execute(query)
     records = result.scalars().all()
     
@@ -75,8 +79,8 @@ async def get_latest(
     ]
 
 
-async def event_generator(request: Request):
-    """Generate SSE events from Redis pub/sub"""
+async def event_generator(request: Request, current_user: dict):
+    """Generate SSE events from Redis pub/sub, filtered by store access"""
     redis = await get_redis()
     pubsub = redis.pubsub()
     await pubsub.subscribe(CHANNEL_SALES_STREAM)
@@ -99,10 +103,21 @@ async def event_generator(request: Request):
             
             if message and message['type'] == 'message':
                 data = message['data']
-                yield {
-                    "event": "sales",
-                    "data": data
-                }
+                try:
+                    # Filter event by store_id
+                    sale_data = json.loads(data)
+                    store_id = sale_data.get('store_id')
+                    if store_id is None or can_access_store(current_user, int(store_id)):
+                        yield {
+                            "event": "sales",
+                            "data": data
+                        }
+                except Exception as e:
+                    logger.warning(f"Error filtering streaming sale: {e}")
+                    yield {
+                        "event": "sales",
+                        "data": data
+                    }
             
             await asyncio.sleep(0.1)
     finally:
@@ -124,7 +139,7 @@ async def stream_sales(
     - event: connected - Initial connection confirmation
     - event: sales - New sale data
     """
-    return EventSourceResponse(event_generator(request))
+    return EventSourceResponse(event_generator(request, current_user))
 
 
 @router.post("/generate-returns")
@@ -324,8 +339,8 @@ def generate_inventory_update():
     }
 
 
-async def alerts_event_generator(request: Request):
-    """Generate SSE events for live alerts"""
+async def alerts_event_generator(request: Request, current_user: dict):
+    """Generate SSE events for live alerts, filtered by store access"""
     redis = await get_redis()
     pubsub = redis.pubsub()
     await pubsub.subscribe(CHANNEL_ALERTS_STREAM)
@@ -336,13 +351,15 @@ async def alerts_event_generator(request: Request):
         "data": json.dumps({"message": "Connected to alerts stream"})
     }
     
-    # Send initial batch of alerts
+    # Send initial batch of alerts (filtered by store)
     initial_alerts = [generate_live_alert() for _ in range(3)]
     for alert in initial_alerts:
-        yield {
-            "event": "alert",
-            "data": json.dumps(alert)
-        }
+        store_id = alert.get("store_id")
+        if store_id is None or can_access_store(current_user, int(store_id)):
+            yield {
+                "event": "alert",
+                "data": json.dumps(alert)
+            }
     
     alert_counter = 0
     
@@ -358,10 +375,21 @@ async def alerts_event_generator(request: Request):
             )
             
             if message and message['type'] == 'message':
-                yield {
-                    "event": "alert",
-                    "data": message['data']
-                }
+                data = message['data']
+                try:
+                    alert_data = json.loads(data)
+                    store_id = alert_data.get('store_id')
+                    if store_id is None or can_access_store(current_user, int(store_id)):
+                        yield {
+                            "event": "alert",
+                            "data": data
+                        }
+                except Exception as e:
+                    logger.warning(f"Error filtering streaming alert: {e}")
+                    yield {
+                        "event": "alert",
+                        "data": data
+                    }
             
             # Generate random alerts periodically (every 8-15 seconds)
             alert_counter += 1
@@ -372,10 +400,12 @@ async def alerts_event_generator(request: Request):
                 # Publish to Redis for other subscribers
                 await publish_alert(new_alert)
                 
-                yield {
-                    "event": "alert",
-                    "data": json.dumps(new_alert)
-                }
+                store_id = new_alert.get("store_id")
+                if store_id is None or can_access_store(current_user, int(store_id)):
+                    yield {
+                        "event": "alert",
+                        "data": json.dumps(new_alert)
+                    }
             
             await asyncio.sleep(0.1)
     finally:
@@ -383,8 +413,8 @@ async def alerts_event_generator(request: Request):
         await pubsub.close()
 
 
-async def inventory_event_generator(request: Request):
-    """Generate SSE events for inventory updates"""
+async def inventory_event_generator(request: Request, current_user: dict):
+    """Generate SSE events for inventory updates, filtered by store access"""
     redis = await get_redis()
     pubsub = redis.pubsub()
     await pubsub.subscribe(CHANNEL_INVENTORY_STREAM)
@@ -409,10 +439,21 @@ async def inventory_event_generator(request: Request):
             )
             
             if message and message['type'] == 'message':
-                yield {
-                    "event": "inventory_update",
-                    "data": message['data']
-                }
+                data = message['data']
+                try:
+                    update_data = json.loads(data)
+                    store_id = update_data.get('store_id')
+                    if store_id is None or can_access_store(current_user, int(store_id)):
+                        yield {
+                            "event": "inventory_update",
+                            "data": data
+                        }
+                except Exception as e:
+                    logger.warning(f"Error filtering streaming inventory update: {e}")
+                    yield {
+                        "event": "inventory_update",
+                        "data": data
+                    }
             
             # Generate random inventory updates periodically (every 5-10 seconds)
             update_counter += 1
@@ -423,10 +464,12 @@ async def inventory_event_generator(request: Request):
                 # Publish to Redis
                 await publish_inventory_update(update)
                 
-                yield {
-                    "event": "inventory_update",
-                    "data": json.dumps(update)
-                }
+                store_id = update.get("store_id")
+                if store_id is None or can_access_store(current_user, int(store_id)):
+                    yield {
+                        "event": "inventory_update",
+                        "data": json.dumps(update)
+                    }
                 
                 # If status changed to critical, also generate an alert
                 if update["status"] in ["out_of_stock", "low_stock"]:
@@ -467,7 +510,7 @@ async def stream_alerts(
     - event: connected - Initial connection confirmation
     - event: alert - New alert notification (inventory, sales, system)
     """
-    return EventSourceResponse(alerts_event_generator(request))
+    return EventSourceResponse(alerts_event_generator(request, current_user))
 
 
 @router.get("/inventory")
@@ -484,4 +527,4 @@ async def stream_inventory(
     - event: connected - Initial connection confirmation
     - event: inventory_update - Inventory level change
     """
-    return EventSourceResponse(inventory_event_generator(request))
+    return EventSourceResponse(inventory_event_generator(request, current_user))

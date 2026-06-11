@@ -14,6 +14,8 @@ from app.services.database import init_db, close_db
 from app.services.redis_client import init_redis, close_redis
 from app.services.data_generator import DataGenerator
 from app.services.employee_seeder import initialize_employee_system
+from app.services.migration_runner import run_migrations
+
 from app.routes import sales, history, kpis, stream, analytics, auth
 from app.routes import ai as ai_routes
 from app.routes import inventory, promotions, alerts, admin, reports, monitoring, employees
@@ -47,7 +49,16 @@ async def lifespan(app: FastAPI):
         logger.info("🔒 Security configuration validated — no issues found.")
     
     await init_db()
-    logger.info("Database initialized")
+    logger.info("Database connection tested")
+    
+    try:
+        await run_migrations()
+        logger.info("Database migrations applied successfully")
+    except Exception as e:
+        logger.error(f"Failed to apply database migrations: {e}")
+        # In production, we might want to exit, but let's log it and raise to fail startup if critical.
+        raise e
+
     
     await init_redis()
     logger.info("Redis initialized")

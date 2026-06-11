@@ -27,6 +27,7 @@ class Item(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     category = Column(String(50))
+    unit_price_aed = Column(Float, default=10.00)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     sales = relationship("Sale", back_populates="item")

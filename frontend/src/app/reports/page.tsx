@@ -296,7 +296,7 @@ export default function ReportsPage() {
     return value.toString();
   };
 
-  const accessibleStores = user?.permissions?.accessible_stores || [];
+  const accessibleStores = user?.accessible_stores || user?.permissions?.accessible_stores || [];
 
   return (
     <main className="min-h-screen p-4 md:p-8">

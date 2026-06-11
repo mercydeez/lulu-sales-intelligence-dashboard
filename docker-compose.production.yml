@@ -32,7 +32,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./database/seed_data.sql:/docker-entrypoint-initdb.d/02-seed.sql
-      - ./data/train.csv:/docker-entrypoint-initdb.d/train.csv
+      - ./data/train.csv:/data/train.csv
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-salesuser} -d ${POSTGRES_DB:-salesdb}"]
       interval: 10s

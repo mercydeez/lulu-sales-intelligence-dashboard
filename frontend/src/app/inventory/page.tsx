@@ -441,7 +441,7 @@ export default function InventoryPage() {
     setSelectedItem(null);
   };
 
-  const accessibleStores = user?.permissions?.accessible_stores || [];
+  const accessibleStores = user?.accessible_stores || user?.permissions?.accessible_stores || [];
   const unacknowledgedAlerts = alerts.filter(a => !a.acknowledged).length;
   const pendingProcurement = procurementList.filter(p => p.status === 'pending').length;
 

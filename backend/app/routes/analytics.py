@@ -14,7 +14,7 @@ from app.services.database import get_db
 from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE_TTL
 from app.models.sales import Sale, Store, Item
 from app.config import logger
-from app.routes.auth import get_current_user
+from app.routes.auth import get_current_user, get_accessible_store_ids
 
 router = APIRouter()
 
@@ -70,19 +70,29 @@ async def get_sales_trend(
     Get daily sales trend with optional forecasting.
     Returns historical data + 7-day forecast.
     """
+    allowed_stores = get_accessible_store_ids(current_user)
+    
     # Check cache first
-    cache_key = generate_cache_key("analytics_trend", days=days, forecast=include_forecast)
+    stores_suffix = f"_stores_{','.join(map(str, sorted(allowed_stores)))}" if allowed_stores else "_all"
+    cache_key = generate_cache_key(f"analytics_trend{stores_suffix}", days=days, forecast=include_forecast)
     cached = await get_cached(cache_key)
     if cached:
         return cached
     
-    # Get historical daily sales
+    # Get historical daily sales (AED revenue)
     query = select(
         Sale.date,
-        func.sum(Sale.sales).label('total_sales')
+        func.sum(Sale.sales * Item.unit_price_aed).label('total_sales')
+    ).join(
+        Item, Sale.item_id == Item.id
     ).where(
         Sale.is_streaming == False
-    ).group_by(Sale.date).order_by(Sale.date.desc()).limit(days)
+    )
+    
+    if allowed_stores:
+        query = query.where(Sale.store_id.in_(allowed_stores))
+        
+    query = query.group_by(Sale.date).order_by(Sale.date.desc()).limit(days)
     
     result = await db.execute(query)
     rows = result.fetchall()
@@ -94,7 +104,7 @@ async def get_sales_trend(
         sales_values.append(row.total_sales)
         trend_data.append({
             "date": row.date.isoformat(),
-            "sales": row.total_sales,
+            "sales": float(row.total_sales),
             "forecast": None
         })
     
@@ -131,8 +141,11 @@ async def get_store_distribution(
     """
     Get sales distribution by store for pie chart.
     """
+    allowed_stores = get_accessible_store_ids(current_user)
+    
     # Check cache first
-    cache_key = generate_cache_key("analytics_stores")
+    stores_suffix = f"_stores_{','.join(map(str, sorted(allowed_stores)))}" if allowed_stores else "_all"
+    cache_key = generate_cache_key(f"analytics_stores{stores_suffix}")
     cached = await get_cached(cache_key)
     if cached:
         return cached
@@ -140,25 +153,32 @@ async def get_store_distribution(
     query = select(
         Sale.store_id,
         Store.name.label('store_name'),
-        func.sum(Sale.sales).label('total_sales')
+        func.sum(Sale.sales * Item.unit_price_aed).label('total_sales')
     ).join(
         Store, Sale.store_id == Store.id
-    ).group_by(
+    ).join(
+        Item, Sale.item_id == Item.id
+    )
+    
+    if allowed_stores:
+        query = query.where(Sale.store_id.in_(allowed_stores))
+        
+    query = query.group_by(
         Sale.store_id, Store.name
-    ).order_by(func.sum(Sale.sales).desc())
+    ).order_by(func.sum(Sale.sales * Item.unit_price_aed).desc())
     
     result = await db.execute(query)
     rows = result.fetchall()
     
-    total = sum(row.total_sales for row in rows)
+    total = float(sum(row.total_sales for row in rows))
     
     store_data = []
     for row in rows:
         store_data.append({
             "store_id": row.store_id,
             "store_name": row.store_name,
-            "total_sales": row.total_sales,
-            "percentage": round((row.total_sales / total * 100) if total > 0 else 0, 2)
+            "total_sales": float(row.total_sales),
+            "percentage": round((float(row.total_sales) / total * 100) if total > 0 else 0, 2)
         })
     
     response = {"data": store_data, "total": total}
@@ -175,8 +195,11 @@ async def get_top_items(
     """
     Get top selling items for bar chart.
     """
+    allowed_stores = get_accessible_store_ids(current_user)
+    
     # Check cache first
-    cache_key = generate_cache_key("analytics_top_items", limit=limit)
+    stores_suffix = f"_stores_{','.join(map(str, sorted(allowed_stores)))}" if allowed_stores else "_all"
+    cache_key = generate_cache_key(f"analytics_top_items{stores_suffix}", limit=limit)
     cached = await get_cached(cache_key)
     if cached:
         return cached
@@ -185,12 +208,17 @@ async def get_top_items(
         Sale.item_id,
         Item.name.label('item_name'),
         Item.category,
-        func.sum(Sale.sales).label('total_sales')
+        func.sum(Sale.sales * Item.unit_price_aed).label('total_sales')
     ).join(
         Item, Sale.item_id == Item.id
-    ).group_by(
+    )
+    
+    if allowed_stores:
+        query = query.where(Sale.store_id.in_(allowed_stores))
+        
+    query = query.group_by(
         Sale.item_id, Item.name, Item.category
-    ).order_by(func.sum(Sale.sales).desc()).limit(limit)
+    ).order_by(func.sum(Sale.sales * Item.unit_price_aed).desc()).limit(limit)
     
     result = await db.execute(query)
     rows = result.fetchall()
@@ -201,7 +229,7 @@ async def get_top_items(
             "item_id": row.item_id,
             "item_name": row.item_name,
             "category": row.category,
-            "total_sales": row.total_sales
+            "total_sales": float(row.total_sales)
         })
     
     response = {"data": items_data}
@@ -217,32 +245,40 @@ async def get_category_breakdown(
     """
     Get sales breakdown by category for donut chart.
     """
+    allowed_stores = get_accessible_store_ids(current_user)
+    
     # Check cache first
-    cache_key = generate_cache_key("analytics_categories")
+    stores_suffix = f"_stores_{','.join(map(str, sorted(allowed_stores)))}" if allowed_stores else "_all"
+    cache_key = generate_cache_key(f"analytics_categories{stores_suffix}")
     cached = await get_cached(cache_key)
     if cached:
         return cached
     
     query = select(
         Item.category,
-        func.sum(Sale.sales).label('total_sales')
+        func.sum(Sale.sales * Item.unit_price_aed).label('total_sales')
     ).join(
         Item, Sale.item_id == Item.id
-    ).group_by(
+    )
+    
+    if allowed_stores:
+        query = query.where(Sale.store_id.in_(allowed_stores))
+        
+    query = query.group_by(
         Item.category
-    ).order_by(func.sum(Sale.sales).desc())
+    ).order_by(func.sum(Sale.sales * Item.unit_price_aed).desc())
     
     result = await db.execute(query)
     rows = result.fetchall()
     
-    total = sum(row.total_sales for row in rows)
+    total = float(sum(row.total_sales for row in rows))
     
     category_data = []
     for row in rows:
         category_data.append({
             "category": row.category,
-            "total_sales": row.total_sales,
-            "percentage": round((row.total_sales / total * 100) if total > 0 else 0, 2)
+            "total_sales": float(row.total_sales),
+            "percentage": round((float(row.total_sales) / total * 100) if total > 0 else 0, 2)
         })
     
     response = {"data": category_data, "total": total}
@@ -258,37 +294,45 @@ async def get_streaming_trend(
     """
     Get streaming sales trend (today's live data).
     """
+    allowed_stores = get_accessible_store_ids(current_user)
+    
     query = select(
         Sale.created_at,
         Sale.store_id,
         Store.name.label('store_name'),
         Sale.item_id,
         Item.name.label('item_name'),
-        Sale.sales
+        (Sale.sales * Item.unit_price_aed).label('sales')
     ).join(
         Store, Sale.store_id == Store.id
     ).join(
         Item, Sale.item_id == Item.id
     ).where(
         Sale.is_streaming == True
-    ).order_by(Sale.created_at.asc())
+    )
+    
+    if allowed_stores:
+        query = query.where(Sale.store_id.in_(allowed_stores))
+        
+    query = query.order_by(Sale.created_at.asc())
     
     result = await db.execute(query)
     rows = result.fetchall()
     
     trend_data = []
-    cumulative = 0
+    cumulative = 0.0
     for row in rows:
-        cumulative += row.sales
+        val = float(row.sales)
+        cumulative += val
         trend_data.append({
             "timestamp": row.created_at.isoformat(),
             "store_name": row.store_name,
             "item_name": row.item_name,
-            "sales": row.sales,
-            "cumulative": cumulative
+            "sales": val,
+            "cumulative": round(cumulative, 2)
         })
     
-    return {"data": trend_data, "total_streaming": cumulative}
+    return {"data": trend_data, "total_streaming": round(cumulative, 2)}
 
 
 @router.get("/summary")
@@ -299,11 +343,16 @@ async def get_analytics_summary(
     """
     Get comprehensive analytics summary for executive dashboard.
     """
+    allowed_stores = get_accessible_store_ids(current_user)
+    
     # Get sales trend (last 30 days)
     trend_query = select(
         Sale.date,
-        func.sum(Sale.sales).label('total_sales')
-    ).where(Sale.is_streaming == False).group_by(Sale.date).order_by(Sale.date.desc()).limit(30)
+        func.sum(Sale.sales * Item.unit_price_aed).label('total_sales')
+    ).join(Item, Sale.item_id == Item.id).where(Sale.is_streaming == False)
+    if allowed_stores:
+        trend_query = trend_query.where(Sale.store_id.in_(allowed_stores))
+    trend_query = trend_query.group_by(Sale.date).order_by(Sale.date.desc()).limit(30)
     trend_result = await db.execute(trend_query)
     trend_rows = trend_result.fetchall()
     
@@ -311,8 +360,11 @@ async def get_analytics_summary(
     store_query = select(
         Sale.store_id,
         Store.name.label('store_name'),
-        func.sum(Sale.sales).label('total_sales')
-    ).join(Store, Sale.store_id == Store.id).group_by(Sale.store_id, Store.name).order_by(func.sum(Sale.sales).desc())
+        func.sum(Sale.sales * Item.unit_price_aed).label('total_sales')
+    ).join(Store, Sale.store_id == Store.id).join(Item, Sale.item_id == Item.id)
+    if allowed_stores:
+        store_query = store_query.where(Sale.store_id.in_(allowed_stores))
+    store_query = store_query.group_by(Sale.store_id, Store.name).order_by(func.sum(Sale.sales * Item.unit_price_aed).desc())
     store_result = await db.execute(store_query)
     store_rows = store_result.fetchall()
     
@@ -321,37 +373,43 @@ async def get_analytics_summary(
         Sale.item_id,
         Item.name.label('item_name'),
         Item.category,
-        func.sum(Sale.sales).label('total_sales')
-    ).join(Item, Sale.item_id == Item.id).group_by(Sale.item_id, Item.name, Item.category).order_by(func.sum(Sale.sales).desc()).limit(10)
+        func.sum(Sale.sales * Item.unit_price_aed).label('total_sales')
+    ).join(Item, Sale.item_id == Item.id)
+    if allowed_stores:
+        items_query = items_query.where(Sale.store_id.in_(allowed_stores))
+    items_query = items_query.group_by(Sale.item_id, Item.name, Item.category).order_by(func.sum(Sale.sales * Item.unit_price_aed).desc()).limit(10)
     items_result = await db.execute(items_query)
     items_rows = items_result.fetchall()
     
     # Get category breakdown
     cat_query = select(
         Item.category,
-        func.sum(Sale.sales).label('total_sales')
-    ).join(Item, Sale.item_id == Item.id).group_by(Item.category).order_by(func.sum(Sale.sales).desc())
+        func.sum(Sale.sales * Item.unit_price_aed).label('total_sales')
+    ).join(Item, Sale.item_id == Item.id)
+    if allowed_stores:
+        cat_query = cat_query.where(Sale.store_id.in_(allowed_stores))
+    cat_query = cat_query.group_by(Item.category).order_by(func.sum(Sale.sales * Item.unit_price_aed).desc())
     cat_result = await db.execute(cat_query)
     cat_rows = cat_result.fetchall()
     
     # Build response
-    store_total = sum(row.total_sales for row in store_rows)
-    cat_total = sum(row.total_sales for row in cat_rows)
+    store_total = float(sum(row.total_sales for row in store_rows))
+    cat_total = float(sum(row.total_sales for row in cat_rows))
     
     return {
-        "sales_trend": [{"date": row.date.isoformat(), "sales": row.total_sales} for row in reversed(trend_rows)],
+        "sales_trend": [{"date": row.date.isoformat(), "sales": float(row.total_sales)} for row in reversed(trend_rows)],
         "store_distribution": [
-            {"store_id": row.store_id, "store_name": row.store_name, "total_sales": row.total_sales, 
-             "percentage": round((row.total_sales / store_total * 100) if store_total > 0 else 0, 2)}
+            {"store_id": row.store_id, "store_name": row.store_name, "total_sales": float(row.total_sales), 
+             "percentage": round((float(row.total_sales) / store_total * 100) if store_total > 0 else 0, 2)}
             for row in store_rows
         ],
         "top_items": [
-            {"item_id": row.item_id, "item_name": row.item_name, "category": row.category, "total_sales": row.total_sales}
+            {"item_id": row.item_id, "item_name": row.item_name, "category": row.category, "total_sales": float(row.total_sales)}
             for row in items_rows
         ],
         "category_breakdown": [
-            {"category": row.category, "total_sales": row.total_sales,
-             "percentage": round((row.total_sales / cat_total * 100) if cat_total > 0 else 0, 2)}
+            {"category": row.category, "total_sales": float(row.total_sales),
+             "percentage": round((float(row.total_sales) / cat_total * 100) if cat_total > 0 else 0, 2)}
             for row in cat_rows
         ]
     }
@@ -366,16 +424,23 @@ async def get_returns_by_category(
     Get returns (negative sales) breakdown by category for donut chart.
     Shows which product categories have the most returns.
     """
+    allowed_stores = get_accessible_store_ids(current_user)
+    
     # Query returns (negative sales) grouped by category
     query = select(
         Item.category,
         func.count(Sale.id).label('return_count'),
-        func.sum(func.abs(Sale.sales)).label('return_value')
+        func.sum(func.abs(Sale.sales * Item.unit_price_aed)).label('return_value')
     ).join(
         Item, Sale.item_id == Item.id
     ).where(
         Sale.sales < 0  # Returns have negative sales values
-    ).group_by(
+    )
+    
+    if allowed_stores:
+        query = query.where(Sale.store_id.in_(allowed_stores))
+        
+    query = query.group_by(
         Item.category
     ).order_by(func.count(Sale.id).desc())
     
@@ -383,21 +448,21 @@ async def get_returns_by_category(
     rows = result.fetchall()
     
     total_count = sum(row.return_count for row in rows)
-    total_value = sum(row.return_value for row in rows)
+    total_value = sum(row.return_value for row in rows) if rows else 0
     
     category_data = []
     for row in rows:
         category_data.append({
             "category": row.category,
             "count": row.return_count,
-            "value": int(row.return_value),
+            "value": float(row.return_value),
             "percentage": round((row.return_count / total_count * 100) if total_count > 0 else 0, 2)
         })
     
     return {
         "data": category_data,
         "total_count": total_count,
-        "total_value": int(total_value)
+        "total_value": float(total_value)
     }
 
 
@@ -410,15 +475,24 @@ async def get_returns_by_store(
     Get returns (negative sales) breakdown by store for bar chart.
     Shows which stores have the most returns.
     """
+    allowed_stores = get_accessible_store_ids(current_user)
+    
     query = select(
         Store.name.label('store_name'),
         func.count(Sale.id).label('return_count'),
-        func.sum(func.abs(Sale.sales)).label('return_value')
+        func.sum(func.abs(Sale.sales * Item.unit_price_aed)).label('return_value')
     ).join(
         Store, Sale.store_id == Store.id
+    ).join(
+        Item, Sale.item_id == Item.id
     ).where(
         Sale.sales < 0
-    ).group_by(
+    )
+    
+    if allowed_stores:
+        query = query.where(Sale.store_id.in_(allowed_stores))
+        
+    query = query.group_by(
         Store.name
     ).order_by(func.count(Sale.id).desc())
     
@@ -426,21 +500,21 @@ async def get_returns_by_store(
     rows = result.fetchall()
     
     total_count = sum(row.return_count for row in rows)
-    total_value = sum(row.return_value for row in rows)
+    total_value = sum(row.return_value for row in rows) if rows else 0
     
     store_data = []
     for row in rows:
         store_data.append({
             "store_name": row.store_name,
             "count": row.return_count,
-            "value": int(row.return_value),
+            "value": float(row.return_value),
             "percentage": round((row.return_count / total_count * 100) if total_count > 0 else 0, 2)
         })
     
     return {
         "data": store_data,
         "total_count": total_count,
-        "total_value": int(total_value)
+        "total_value": float(total_value)
     }
 
 
@@ -455,25 +529,30 @@ async def get_returns_summary(
     """
     from datetime import date
     today = date.today()
+    allowed_stores = get_accessible_store_ids(current_user)
     
     # Today's returns count and value
     today_query = select(
         func.count(Sale.id).label('count'),
-        func.sum(func.abs(Sale.sales)).label('value')
-    ).where(
+        func.sum(func.abs(Sale.sales * Item.unit_price_aed)).label('value')
+    ).join(Item, Sale.item_id == Item.id).where(
         and_(
             Sale.sales < 0,
             Sale.date == today
         )
     )
+    if allowed_stores:
+        today_query = today_query.where(Sale.store_id.in_(allowed_stores))
     today_result = await db.execute(today_query)
     today_row = today_result.fetchone()
     
     # All-time returns
     alltime_query = select(
         func.count(Sale.id).label('count'),
-        func.sum(func.abs(Sale.sales)).label('value')
-    ).where(Sale.sales < 0)
+        func.sum(func.abs(Sale.sales * Item.unit_price_aed)).label('value')
+    ).join(Item, Sale.item_id == Item.id).where(Sale.sales < 0)
+    if allowed_stores:
+        alltime_query = alltime_query.where(Sale.store_id.in_(allowed_stores))
     alltime_result = await db.execute(alltime_query)
     alltime_row = alltime_result.fetchone()
     
@@ -481,8 +560,11 @@ async def get_returns_summary(
     store_query = select(
         Store.name.label('store'),
         func.count(Sale.id).label('count'),
-        func.sum(func.abs(Sale.sales)).label('value')
-    ).join(Store, Sale.store_id == Store.id).where(Sale.sales < 0).group_by(Store.name).order_by(func.count(Sale.id).desc()).limit(5)
+        func.sum(func.abs(Sale.sales * Item.unit_price_aed)).label('value')
+    ).join(Store, Sale.store_id == Store.id).join(Item, Sale.item_id == Item.id).where(Sale.sales < 0)
+    if allowed_stores:
+        store_query = store_query.where(Sale.store_id.in_(allowed_stores))
+    store_query = store_query.group_by(Store.name).order_by(func.count(Sale.id).desc()).limit(5)
     store_result = await db.execute(store_query)
     store_rows = store_result.fetchall()
     
@@ -490,8 +572,11 @@ async def get_returns_summary(
     cat_query = select(
         Item.category,
         func.count(Sale.id).label('count'),
-        func.sum(func.abs(Sale.sales)).label('value')
-    ).join(Item, Sale.item_id == Item.id).where(Sale.sales < 0).group_by(Item.category).order_by(func.count(Sale.id).desc()).limit(5)
+        func.sum(func.abs(Sale.sales * Item.unit_price_aed)).label('value')
+    ).join(Item, Sale.item_id == Item.id).where(Sale.sales < 0)
+    if allowed_stores:
+        cat_query = cat_query.where(Sale.store_id.in_(allowed_stores))
+    cat_query = cat_query.group_by(Item.category).order_by(func.count(Sale.id).desc()).limit(5)
     cat_result = await db.execute(cat_query)
     cat_rows = cat_result.fetchall()
     
@@ -502,20 +587,24 @@ async def get_returns_summary(
         Item.name.label('item_name'),
         Item.category,
         func.abs(Sale.sales).label('quantity'),
+        func.abs(Sale.sales * Item.unit_price_aed).label('amount_aed'),
         Sale.created_at
     ).join(Store, Sale.store_id == Store.id).join(Item, Sale.item_id == Item.id).where(
         Sale.sales < 0
-    ).order_by(Sale.created_at.desc()).limit(20)
+    )
+    if allowed_stores:
+        recent_query = recent_query.where(Sale.store_id.in_(allowed_stores))
+    recent_query = recent_query.order_by(Sale.created_at.desc()).limit(20)
     recent_result = await db.execute(recent_query)
     recent_rows = recent_result.fetchall()
     
     return {
         "today_count": today_row.count if today_row.count else 0,
-        "today_value": int(today_row.value) if today_row.value else 0,
+        "today_value": float(today_row.value) if today_row.value else 0.0,
         "all_time_count": alltime_row.count if alltime_row.count else 0,
-        "all_time_value": int(alltime_row.value) if alltime_row.value else 0,
-        "by_store": [{"store": r.store, "count": r.count, "value": int(r.value)} for r in store_rows],
-        "by_category": [{"category": r.category, "count": r.count, "value": int(r.value)} for r in cat_rows],
+        "all_time_value": float(alltime_row.value) if alltime_row.value else 0.0,
+        "by_store": [{"store": r.store, "count": r.count, "value": float(r.value)} for r in store_rows],
+        "by_category": [{"category": r.category, "count": r.count, "value": float(r.value)} for r in cat_rows],
         "recent_items": [
             {
                 "id": r.id,
@@ -523,6 +612,7 @@ async def get_returns_summary(
                 "item_name": r.item_name,
                 "category": r.category,
                 "quantity": int(r.quantity),
+                "amount_aed": float(r.amount_aed),
                 "timestamp": r.created_at.isoformat() if r.created_at else None
             }
             for r in recent_rows
