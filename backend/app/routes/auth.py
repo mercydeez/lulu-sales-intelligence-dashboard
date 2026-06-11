@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.services.auth_service import (
     AuthService, UserLogin, Token, UserResponse, 
@@ -34,7 +34,7 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     
     # Check token expiration
-    if token_data.exp < datetime.utcnow():
+    if token_data.exp < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Token has expired")
     
     # Get fresh user data
@@ -56,7 +56,7 @@ async def get_current_user_optional(
         return None
     
     token_data = decode_token(credentials.credentials)
-    if not token_data or token_data.exp < datetime.utcnow():
+    if not token_data or token_data.exp < datetime.now(timezone.utc):
         return None
     
     return await AuthService.get_user_by_id(token_data.user_id)
@@ -354,7 +354,7 @@ async def get_current_user_from_ticket(
     if not token_data:
         raise HTTPException(status_code=401, detail="Invalid stream ticket")
     
-    if token_data.exp < datetime.utcnow():
+    if token_data.exp < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Stream ticket expired")
         
     user = await AuthService.get_user_by_id(token_data.user_id)
