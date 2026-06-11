@@ -1,0 +1,15 @@
+# Development overrides — merged automatically by `docker compose up`.
+# (Production uses docker-compose.production.yml explicitly and is unaffected.)
+#
+# Backend: the base compose already mounts ./backend/app into the container,
+# but the image's CMD runs uvicorn without --reload, so edits were invisible
+# until a full rebuild. This override enables live reload.
+#
+# Frontend: the production image serves a pre-built standalone bundle, so the
+# ./frontend/src mount has no effect. For frontend development run the dev
+# server on the host against the containerized backend:
+#   cd frontend && npm install --legacy-peer-deps && npm run dev
+
+services:
+  backend:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

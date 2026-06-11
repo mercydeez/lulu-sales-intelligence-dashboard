@@ -366,5 +366,7 @@ FROM users u
 WHERE u.email = 'yash@lulu.ae'
 ON CONFLICT DO NOTHING;
 
-RAISE NOTICE '✅ Authentication system initialized with 3 users';
+DO $$ BEGIN
+    RAISE NOTICE '✅ Authentication system initialized with 3 users';
+END $$;
 

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Sale } from '@/types';
 
-const SSE_URL = process.env.NEXT_PUBLIC_SSE_URL || 'http://localhost:8000/api/stream';
+const SSE_URL = process.env.NEXT_PUBLIC_SSE_URL || 'http://localhost:8000/stream/sales';
 
 export function useSSE() {
   const [streamingSales, setStreamingSales] = useState<Sale[]>([]);

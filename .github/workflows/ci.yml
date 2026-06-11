@@ -81,7 +81,7 @@ jobs:
       - name: Build Next.js
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000
-          NEXT_PUBLIC_SSE_URL: http://localhost:8000/api/stream
+          NEXT_PUBLIC_SSE_URL: http://localhost:8000/stream/sales
         run: npm run build
 
   # =========================================================================

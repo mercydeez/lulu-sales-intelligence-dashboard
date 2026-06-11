@@ -69,7 +69,7 @@ services:
     container_name: sales_frontend
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - NEXT_PUBLIC_SSE_URL=http://localhost:8000/api/stream
+      - NEXT_PUBLIC_SSE_URL=http://localhost:8000/stream/sales
     ports:
       - "3000:3000"
     depends_on:
