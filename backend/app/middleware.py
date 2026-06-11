@@ -141,7 +141,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         
         client_ip = self._get_client_ip(request)
-        allowed, remaining, retry_after = await self._check_rate_limit_redis(client_ip)
+        try:
+            allowed, remaining, retry_after = await self._check_rate_limit_redis(client_ip)
+        except Exception:
+            # Redis path failed unexpectedly — fall back to in-memory limiting
+            allowed, remaining, retry_after = self._check_rate_limit_memory(client_ip)
         
         if not allowed:
             request_id = getattr(request.state, 'request_id', 'unknown')

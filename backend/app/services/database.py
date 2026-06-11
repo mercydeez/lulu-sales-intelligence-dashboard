@@ -10,17 +10,24 @@ from app.models.sales import Base
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-# Optimized connection pooling for production
-engine = create_async_engine(
-    settings.database_url,
-    poolclass=NullPool if settings.environment == "testing" else AsyncAdaptedQueuePool,
-    pool_size=20,           # Base number of connections
-    max_overflow=30,        # Additional connections when pool is exhausted
-    pool_pre_ping=True,     # Test connections before use
-    pool_recycle=1800,      # Recycle connections after 30 minutes
-    pool_timeout=30,        # Wait up to 30 seconds for connection
-    echo=False              # Disable SQL logging in production for speed
-)
+# Optimized connection pooling for production.
+# NullPool (testing) rejects pool sizing kwargs, so only pass them when pooling.
+_engine_kwargs = {
+    "pool_pre_ping": True,  # Test connections before use
+    "echo": False,          # Disable SQL logging in production for speed
+}
+if settings.environment == "testing":
+    _engine_kwargs["poolclass"] = NullPool
+else:
+    _engine_kwargs.update(
+        poolclass=AsyncAdaptedQueuePool,
+        pool_size=20,        # Base number of connections
+        max_overflow=30,     # Additional connections when pool is exhausted
+        pool_recycle=1800,   # Recycle connections after 30 minutes
+        pool_timeout=30,     # Wait up to 30 seconds for connection
+    )
+
+engine = create_async_engine(settings.database_url, **_engine_kwargs)
 
 async_session = async_sessionmaker(
     engine,

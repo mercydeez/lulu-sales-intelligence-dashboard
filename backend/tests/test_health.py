@@ -42,8 +42,8 @@ async def test_health_endpoint_returns_200(mock_db_and_redis):
     from app.main import app
 
     # Patch the actual health-check internals
-    with patch("app.main.engine") as mock_engine, \
-         patch("app.main.get_redis", new_callable=AsyncMock) as mock_get_redis:
+    with patch("app.services.database.engine") as mock_engine, \
+         patch("app.services.redis_client.get_redis", new_callable=AsyncMock) as mock_get_redis:
 
         # Simulate healthy DB
         mock_conn = AsyncMock()
@@ -73,8 +73,8 @@ async def test_health_response_fields(mock_db_and_redis):
     """Ensure all expected fields are present in the health response."""
     from app.main import app
 
-    with patch("app.main.engine") as mock_engine, \
-         patch("app.main.get_redis", new_callable=AsyncMock) as mock_get_redis:
+    with patch("app.services.database.engine") as mock_engine, \
+         patch("app.services.redis_client.get_redis", new_callable=AsyncMock) as mock_get_redis:
 
         mock_conn = AsyncMock()
         mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)

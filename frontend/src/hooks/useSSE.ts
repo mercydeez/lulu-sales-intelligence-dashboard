@@ -25,7 +25,7 @@ export function useSSE() {
       setError(null);
     };
     
-    eventSource.addEventListener('new_sale', (event) => {
+    eventSource.addEventListener('sales', (event) => {
       try {
         const sale: Sale = JSON.parse(event.data);
         setStreamingSales((prev: Sale[]) => [sale, ...prev.slice(0, 99)]);
