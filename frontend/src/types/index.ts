@@ -22,6 +22,27 @@ export interface Prediction {
   confidence_upper: number;
 }
 
+export interface BacktestPoint {
+  date: string;
+  actual: number;
+  predicted: number;
+  baseline: number;
+}
+
+export interface BacktestResult {
+  model_version: string;
+  holdout_days: number;
+  mape: number | null;
+  baseline_mape: number | null;
+  points: BacktestPoint[];
+}
+
+export interface TrendPoint {
+  date: string;
+  sales: number | null;
+  forecast: number | null;
+}
+
 export interface DashboardMetrics {
   total_sales_today: number;
   total_sales_week: number;

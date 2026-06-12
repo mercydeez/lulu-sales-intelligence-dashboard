@@ -251,14 +251,54 @@ async def get_predictions(
         raise HTTPException(status_code=403, detail="Access denied to this store")
         
     predictions = await predictor.predict(store_id, item_id, days)
-    
+
     if not predictions:
         raise HTTPException(
-            status_code=404, 
+            status_code=404,
             detail="Not enough historical data for predictions"
         )
-    
+
     return predictions
+
+
+class BacktestPoint(BaseModel):
+    date: date
+    actual: float
+    predicted: float
+    baseline: float
+
+
+class BacktestResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}  # allow the model_version field
+
+    model_version: str
+    holdout_days: int
+    mape: Optional[float]
+    baseline_mape: Optional[float]
+    points: List[BacktestPoint]
+
+
+@router.get("/predictions/backtest", response_model=BacktestResponse)
+async def backtest_predictions(
+    store_id: int = Query(1),
+    item_id: int = Query(1),
+    holdout_days: int = Query(28, ge=7, le=90),
+    current_user: dict = Depends(get_current_user)
+):
+    """Evaluate forecast accuracy: hold out the last N days, fit on the rest,
+    and report MAPE against the actuals plus a seasonal-naive baseline."""
+    if not can_access_store(current_user, store_id):
+        raise HTTPException(status_code=403, detail="Access denied to this store")
+
+    result = await predictor.backtest(store_id, item_id, holdout_days)
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Not enough historical data for a backtest"
+        )
+
+    return result
 
 
 # Store and Item schemas

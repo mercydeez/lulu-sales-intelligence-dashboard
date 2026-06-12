@@ -13,8 +13,7 @@ import {
   ReferenceLine
 } from 'recharts';
 import { TrendingUp, Calendar, Target } from 'lucide-react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { fetchTrend } from '@/lib/api';
 
 interface TrendDataPoint {
   date: string;
@@ -38,9 +37,7 @@ export default function SalesTrendChart({ days = 30 }: SalesTrendChartProps) {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/analytics/trend?days=${days}&include_forecast=true`);
-        if (!response.ok) throw new Error('Failed to fetch trend data');
-        const result = await response.json();
+        const result = await fetchTrend(days, true);
         setData(result.data);
       } catch (error) {
         console.error('Error fetching trend data:', error);

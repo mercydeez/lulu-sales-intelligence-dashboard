@@ -14,6 +14,7 @@ import {
   ComposedChart, Scatter
 } from 'recharts';
 import { exportAnalyticsPDF } from '@/lib/pdfExport';
+import { ForecastAccuracyChart } from '@/components/charts';
 
 const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
@@ -467,6 +468,11 @@ export default function AnalyticsPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
+        </div>
+
+        {/* Forecast Accuracy (real backtest from the seasonal model) */}
+        <div className="mb-8">
+          <ForecastAccuracyChart storeId={user?.accessible_stores?.[0] ?? 1} itemId={1} holdoutDays={28} />
         </div>
 
         {/* Store Performance Table */}

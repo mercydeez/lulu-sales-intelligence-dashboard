@@ -1,4 +1,4 @@
-import { Sale, SalesAggregation, DashboardMetrics, Prediction, Store, Item } from '@/types';
+import { Sale, SalesAggregation, DashboardMetrics, Prediction, Store, Item, BacktestResult, TrendPoint } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -174,4 +174,19 @@ export async function fetchItems(): Promise<Item[]> {
 
 export async function fetchKPIs(): Promise<DashboardMetrics> {
   return cachedFetch<DashboardMetrics>('/api/kpis', 'kpis');
+}
+
+export async function fetchTrend(days: number = 30, includeForecast: boolean = true): Promise<{ data: TrendPoint[] }> {
+  return cachedFetch<{ data: TrendPoint[] }>('/api/analytics/trend', 'aggregated', {
+    days,
+    include_forecast: includeForecast,
+  });
+}
+
+export async function fetchBacktest(params?: {
+  store_id?: number;
+  item_id?: number;
+  holdout_days?: number;
+}): Promise<BacktestResult> {
+  return cachedFetch<BacktestResult>('/api/sales/predictions/backtest', 'predictions', params as Record<string, unknown>);
 }
