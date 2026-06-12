@@ -25,6 +25,7 @@ SECRET_KEY = settings.jwt_secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
+REMEMBER_ME_REFRESH_TOKEN_EXPIRE_DAYS = 30
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 30
 
@@ -141,15 +142,21 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     """Create JWT access token"""
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire, "type": "access"})
+    to_encode.update({"exp": expire, "type": "access", "jti": secrets.token_hex(8)})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_refresh_token(data: dict) -> str:
-    """Create JWT refresh token"""
+def create_refresh_token(data: dict, remember_me: bool = False) -> str:
+    """Create JWT refresh token. remember_me extends lifetime from 7 to 30 days."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh"})
+    days = REMEMBER_ME_REFRESH_TOKEN_EXPIRE_DAYS if remember_me else REFRESH_TOKEN_EXPIRE_DAYS
+    expire = datetime.now(timezone.utc) + timedelta(days=days)
+    to_encode.update({
+        "exp": expire,
+        "type": "refresh",
+        "jti": secrets.token_hex(8),
+        "remember_me": remember_me,
+    })
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -167,6 +174,39 @@ def decode_token(token: str) -> Optional[TokenData]:
     except JWTError as e:
         logger.error(f"JWT decode error: {e}")
         return None
+
+
+# =============================================================================
+# TOKEN BLACKLIST (Redis-backed; fails open when Redis is down,
+# consistent with SessionInvalidationMiddleware)
+# =============================================================================
+
+def _token_hash(token: str) -> str:
+    import hashlib
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def blacklist_token(token: str, ttl_seconds: int) -> None:
+    """Mark a token as unusable for ttl_seconds (idempotent, best-effort)."""
+    try:
+        from app.services.redis_client import redis_client
+        if redis_client:
+            await redis_client.set(
+                f"blacklisted_token:{_token_hash(token)}", "1", ex=max(ttl_seconds, 1)
+            )
+    except Exception as e:
+        logger.warning(f"Failed to blacklist token in Redis: {e}")
+
+
+async def is_token_blacklisted(token: str) -> bool:
+    """Check the Redis blacklist. Returns False when Redis is unavailable (fail-open)."""
+    try:
+        from app.services.redis_client import redis_client
+        if redis_client:
+            return bool(await redis_client.get(f"blacklisted_token:{_token_hash(token)}"))
+    except Exception as e:
+        logger.warning(f"Failed to check token blacklist in Redis: {e}")
+    return False
 
 
 # =============================================================================
@@ -399,7 +439,7 @@ class AuthService:
         # Access token is always short-lived. remember_me only extends the refresh token.
         access_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(token_data, access_delta)
-        refresh_token = create_refresh_token(token_data)
+        refresh_token = create_refresh_token(token_data, remember_me=remember_me)
         
         return Token(
             access_token=access_token,
@@ -410,16 +450,26 @@ class AuthService:
     
     @staticmethod
     async def refresh_access_token(refresh_token: str) -> Optional[Token]:
-        """Refresh access token using refresh token"""
+        """Refresh access token using refresh token.
+
+        Refresh tokens are single-use: the presented token is blacklisted for
+        its remaining lifetime and a new pair is issued (rotation). A replayed
+        refresh token is rejected.
+        """
         token_data = decode_token(refresh_token)
         if not token_data:
             return None
-        
+
         # Verify it's a refresh token
         payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "refresh":
             return None
-        
+
+        # Reject already-used (rotated) or logged-out refresh tokens
+        if await is_token_blacklisted(refresh_token):
+            logger.warning(f"Replay of rotated refresh token for user_id={token_data.user_id}")
+            return None
+
         # Get fresh user data
         async with async_session() as session:
             from sqlalchemy import text
@@ -431,37 +481,34 @@ class AuthService:
                 {"id": token_data.user_id}
             )
             user_row = result.fetchone()
-            
+
             if not user_row:
                 return None
-            
+
             user = dict(user_row._mapping)
             permissions = await AuthService._get_user_permissions(session, user['id'], user['role'])
-            
+
             user_data = {**user, "permissions": permissions}
-            
-            return await AuthService.create_tokens(user_data)
+
+        # Rotate: retire the used refresh token for its remaining lifetime,
+        # then issue a new pair preserving the original remember_me duration.
+        remaining = int((token_data.exp - datetime.now(timezone.utc)).total_seconds())
+        await blacklist_token(refresh_token, remaining)
+
+        return await AuthService.create_tokens(
+            user_data, remember_me=bool(payload.get("remember_me"))
+        )
     
     @staticmethod
     async def logout(user_id: int, ip_address: str = None, token: str = None):
         """Log user logout and blacklist the token in Redis."""
-        import hashlib
-        
-        # Blacklist the token in Redis so SessionInvalidationMiddleware rejects it
+        # Blacklist the token so SessionInvalidationMiddleware rejects it,
+        # covering the max token lifetime (30-day remember_me refresh tokens)
         if token:
-            try:
-                from app.services.redis_client import redis_client
-                if redis_client:
-                    token_hash = hashlib.sha256(token.encode()).hexdigest()
-                    # Blacklist for the max token lifetime (7 days for refresh tokens)
-                    await redis_client.set(
-                        f"blacklisted_token:{token_hash}",
-                        "1",
-                        ex=7 * 24 * 60 * 60  # 7 days TTL
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to blacklist token in Redis: {e}")
-        
+            await blacklist_token(
+                token, REMEMBER_ME_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+            )
+
         async with async_session() as session:
             await AuthService._log_audit(session, user_id, 'logout', "User logged out", ip_address)
             await session.commit()
