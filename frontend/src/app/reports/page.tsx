@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { FileText, Download, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, Button, Select } from '@/components/ui';
+import { PageHeader, Button, Select, ErrorState, Card } from '@/components/ui';
 import { fetchStores } from '@/lib/api';
 import { generatePDF } from '@/lib/pdfExport';
 import { Store } from '@/types';
@@ -21,6 +21,7 @@ export default function ReportsPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [report, setReport] = useState<SalesReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -29,15 +30,17 @@ export default function ReportsPage() {
 
   const loadReport = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const params = new URLSearchParams({ days: String(REPORT_RANGE_DAYS[range]) });
       if (storeId) params.append('store_id', String(storeId));
       const res = await authFetch(`/api/reports/sales?${params}`);
       if (res.ok) setReport(await res.json());
-      else setReport(null);
+      else { setReport(null); setError(true); }
     } catch (err) {
       console.error('Failed to load report:', err);
       setReport(null);
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -121,18 +124,30 @@ export default function ReportsPage() {
           }
         />
 
-        <ReportKpiCards kpis={report?.kpis ?? null} loading={loading} />
+        {error && !loading ? (
+          <Card variant="glass" padding="lg">
+            <ErrorState
+              title="Couldn't load the report"
+              description="The sales report request failed. Check your connection and try again."
+              onRetry={loadReport}
+            />
+          </Card>
+        ) : (
+          <>
+            <ReportKpiCards kpis={report?.kpis ?? null} loading={loading} />
 
-        <div className="mb-6">
-          <ReportTrendPanel data={report?.daily_sales ?? []} loading={loading} />
-        </div>
+            <div className="mb-6">
+              <ReportTrendPanel data={report?.daily_sales ?? []} loading={loading} />
+            </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <ReportCategoryPanel data={report?.category_breakdown ?? []} loading={loading} />
-          <ReportTopItemsPanel data={report?.top_items ?? []} loading={loading} />
-        </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <ReportCategoryPanel data={report?.category_breakdown ?? []} loading={loading} />
+              <ReportTopItemsPanel data={report?.top_items ?? []} loading={loading} />
+            </div>
 
-        <ReportStoreTable data={report?.store_performance ?? []} loading={loading} />
+            <ReportStoreTable data={report?.store_performance ?? []} loading={loading} />
+          </>
+        )}
       </div>
     </main>
   );

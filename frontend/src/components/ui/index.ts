@@ -30,6 +30,15 @@ export type { ToastVariant, ToastOptions } from './Toast';
 export { EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
 
+export { ErrorState } from './ErrorState';
+export type { ErrorStateProps } from './ErrorState';
+
+export { ConnectionBanner } from './ConnectionBanner';
+export type { ConnectionBannerProps } from './ConnectionBanner';
+
+export { AnimatedNumber } from './AnimatedNumber';
+export type { AnimatedNumberProps } from './AnimatedNumber';
+
 export { ChartFrame } from './ChartFrame';
 export type { ChartFrameProps } from './ChartFrame';
 

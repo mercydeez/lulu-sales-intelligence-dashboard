@@ -428,4 +428,51 @@ body {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
   }
+
+  /* Delta flash — briefly tint a live value when it changes (3.6) */
+  .flash-up {
+    animation: flashUp 0.7s ease-out;
+    border-radius: 6px;
+  }
+  .flash-down {
+    animation: flashDown 0.7s ease-out;
+    border-radius: 6px;
+  }
+  @keyframes flashUp {
+    0% { background-color: rgba(16, 185, 129, 0.28); }
+    100% { background-color: transparent; }
+  }
+  @keyframes flashDown {
+    0% { background-color: rgba(244, 63, 94, 0.24); }
+    100% { background-color: transparent; }
+  }
+}
+
+/* ===============================================
+   Accessibility (3.7)
+   =============================================== */
+
+/* Visible keyboard focus ring across interactive elements */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="tab"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #ff6b5c;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Honor prefers-reduced-motion: neutralize animations & transitions */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

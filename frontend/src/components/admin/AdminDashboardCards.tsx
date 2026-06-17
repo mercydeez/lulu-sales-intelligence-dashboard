@@ -1,7 +1,7 @@
 'use client';
 
 import { Users, UserCheck, Store, ShoppingCart } from 'lucide-react';
-import { StatCard } from '@/components/ui';
+import { StatCard, AnimatedNumber } from '@/components/ui';
 import { AdminDashboard } from './types';
 import { formatCurrency, formatNumber } from './format';
 
@@ -17,7 +17,7 @@ export function AdminDashboardCards({ dashboard, loading }: AdminDashboardCardsP
         variant="gradient"
         tone="coral"
         label="Total Users"
-        value={loading ? '—' : dashboard?.users.total ?? 0}
+        value={loading ? '—' : <AnimatedNumber value={dashboard?.users.total ?? 0} />}
         icon={<Users className="w-5 h-5" />}
         footnote={dashboard ? `${dashboard.users.active} active` : undefined}
         loading={loading}
@@ -33,7 +33,7 @@ export function AdminDashboardCards({ dashboard, loading }: AdminDashboardCardsP
       <StatCard
         tone="teal"
         label="Sales Today"
-        value={loading ? '—' : formatCurrency(dashboard?.today.total_sales ?? 0)}
+        value={loading ? '—' : <AnimatedNumber value={dashboard?.today.total_sales ?? 0} formatter={formatCurrency} flashOnChange />}
         icon={<ShoppingCart className="w-5 h-5" />}
         footnote={dashboard ? `${dashboard.today.active_stores} stores trading` : undefined}
         loading={loading}
@@ -41,7 +41,7 @@ export function AdminDashboardCards({ dashboard, loading }: AdminDashboardCardsP
       <StatCard
         tone="amber"
         label="Items Sold Today"
-        value={loading ? '—' : formatNumber(dashboard?.today.items_sold ?? 0)}
+        value={loading ? '—' : <AnimatedNumber value={dashboard?.today.items_sold ?? 0} formatter={formatNumber} flashOnChange />}
         icon={<UserCheck className="w-5 h-5" />}
         footnote="Live generator + history"
         loading={loading}

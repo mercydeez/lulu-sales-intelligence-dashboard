@@ -53,9 +53,9 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 | 3.2 | `ui/` primitives + `/dev/components` gallery | ✅ Button, Card, StatCard, Badge, Toast, Modal, EmptyState, Skeleton, ChartFrame, LiveIndicator, PageHeader, Tabs, Select, Input, Table (757eb6d) |
 | 3.3 | App shell: sidebar nav, slim top bar, role-shaped home | ✅ sidebar replacing top Navbar (775d4c7) |
 | 3.4 | Rebuild screens: Home → Inventory → Alerts → Analytics/Forecast → Promotions → Employees → Admin → Reports/Monitoring | ✅ 8/8 — home (6404c0b), Inventory (9debab7), Alerts (819b9c4), Analytics/Forecast (bee4aae), Promotions (583f0f4), Employees (f5f007c), Admin (73ad59c), Reports + Monitoring (HEAD). All screens on the Sunset design system with real data. |
-| 3.5 | States pass: skeletons, empty states, error panels, SSE-degraded banner | ❌ |
-| 3.6 | Microinteractions: number tickers, delta flashes, live-row animations, reduced-motion | ❌ |
-| 3.7 | Mobile pass (manager-on-the-floor) → accessibility pass (AA contrast, keyboard, aria-live) | ❌ |
+| 3.5 | States pass: skeletons, empty states, error panels, SSE-degraded banner | ✅ skeletons + empty states already shipped with the rebuilds; added `ui/ErrorState` (wired into KPICards + Reports) and `ui/ConnectionBanner` SSE-degraded banner (wired into Inventory, driven by stream error) |
+| 3.6 | Microinteractions: number tickers, delta flashes, live-row animations, reduced-motion | ✅ shared reduced-motion-aware `ui/AnimatedNumber` (count-up) replacing the KPICards-local dup; `flashOnChange` delta flash (`.flash-up/.flash-down`) on live values (home Live, Admin sales/items); `useReducedMotion` hook + global `prefers-reduced-motion` CSS guard. Live-row animation uses the existing fade/slide keyframes |
+| 3.7 | Mobile pass (manager-on-the-floor) → accessibility pass (AA contrast, keyboard, aria-live) | 🟡 mobile nav drawer already in the shell; added global `:focus-visible` ring (keyboard) + `aria-live`/`role=status` on `LiveIndicator` and `ConnectionBanner`. **AA contrast not yet formally audited** (Sunset palette is light-on-ink by design but unmeasured) — tracked as remaining a11y work |
 | 3.8 | (Stretch) EN/AR with RTL on nav/home/inventory/alerts | ⏭️ deferred — cuttable without harming core story |
 
 ---
@@ -87,7 +87,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 ## Criticality ranking (what to do next)
 
 1. ✅ **3.4 screen rebuilds — COMPLETE** (all 8 screens on the Sunset design system).
-2. 🟠 **3.5–3.7** — states/empty/error pass, microinteractions, mobile + a11y pass (now unblocked — all screens rebuilt).
+2. 🟢 **3.5–3.7** — mostly done (error panels, SSE banner, reduced-motion tickers/flashes, keyboard + aria-live). Remaining: formal **AA contrast audit** (3.7).
 3. 🟡 **Phase 4** — production hardening (can run in parallel with late Phase 3).
 4. 🟢 **Phase 5** — polish/demo (last, once everything looks and works right).
 
@@ -95,6 +95,17 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ## Decision log
 
+- **3.5–3.7 states / microinteractions / a11y pass:** built cross-cutting primitives rather than
+  touching every screen ad-hoc. New: `ui/ErrorState` (retry panel), `ui/ConnectionBanner`
+  (SSE-degraded, `aria-live`), `ui/AnimatedNumber` (count-up, **respects `prefers-reduced-motion`**,
+  optional `flashOnChange` delta flash), `hooks/useReducedMotion`. globals.css gained a global
+  `prefers-reduced-motion` guard (neutralizes all animation/transition), `.flash-up/.flash-down`
+  keyframes, and a `:focus-visible` keyboard ring. Wired: KPICards now uses the shared AnimatedNumber
+  (deleting its local dup) with a delta flash on the live streaming count + ErrorState retry; Admin
+  dashboard cards animate/flash; Inventory shows the ConnectionBanner when its alert stream errors;
+  LiveIndicator + ConnectionBanner expose `role=status`/`aria-live`. **Deliberately deferred:** a formal
+  AA-contrast audit (3.7) — the palette is light-on-ink by design but I haven't measured ratios, so I
+  left it open rather than claim AA. Skeletons/empty states were already delivered during the 3.4 rebuilds.
 - **3.4 Reports + Monitoring rebuild (completes 3.4):**
   - *Monitoring* — restyled the real health/stats/metrics console onto the Sunset system via a new
     `components/monitoring/` folder (`HealthChecksGrid`, `SystemStatsCards`, `MetricsPanel`, `StatusPill`),
@@ -185,7 +196,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 | Date | Commit | What landed |
 |---|---|---|
-| 2026-06-18 | _(HEAD)_ | feat(3.4): rebuild Reports + Monitoring screens — completes 3.4; Reports relabelled units (not AED), Monitoring restyled health/stats/metrics console |
+| 2026-06-18 | _(HEAD)_ | feat(3.5–3.7): states/microinteractions/a11y — ErrorState, SSE ConnectionBanner, reduced-motion AnimatedNumber + delta flash, focus-visible + aria-live |
+| 2026-06-18 | 452d9ab | feat(3.4): rebuild Reports + Monitoring screens — completes 3.4; Reports relabelled units (not AED), Monitoring restyled health/stats/metrics console |
 | 2026-06-18 | 73ad59c | feat(3.4): rebuild Admin screen — honest read-only console (dashboard + trend, users/stores tables, activity feed), super-admin gated |
 | 2026-06-18 | f5f007c | feat(3.4): rebuild Employees/Performance screen — real `/api/employees/*` via authFetch, Sunset bio cards, restyled charts + modals, removed orphaned dupes |
 | 2026-06-18 | 583f0f4 | feat(3.4): rebuild Promotions/Pricing screen — real summary/active/list/categories data, Sunset gradient cards, primitive-based create modal scoped to accessible stores |

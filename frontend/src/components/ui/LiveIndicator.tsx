@@ -34,8 +34,8 @@ const textClasses: Record<LiveIndicatorTone, string> = {
 export function LiveIndicator({ label = 'LIVE', tone = 'teal', size = 'md', className, ...props }: LiveIndicatorProps) {
   const dotSize = size === 'sm' ? 'h-1.5 w-1.5' : 'h-2 w-2';
   return (
-    <span className={cn('inline-flex items-center gap-1.5', className)} {...props}>
-      <span className={cn('relative flex', dotSize)}>
+    <span role="status" aria-label={label ? `${label} — live updates active` : 'Live updates active'} className={cn('inline-flex items-center gap-1.5', className)} {...props}>
+      <span className={cn('relative flex', dotSize)} aria-hidden="true">
         <span className={cn('animate-ping absolute inline-flex h-full w-full rounded-full opacity-75', dotClasses[tone])} />
         <span className={cn('relative inline-flex rounded-full h-full w-full', solidDotClasses[tone])} />
       </span>

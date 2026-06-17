@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Database,
   Activity,
@@ -12,7 +12,7 @@ import {
   X
 } from 'lucide-react';
 import { formatCurrency, formatCurrencyCompact } from '@/lib/formatters';
-import { StatCard, LiveIndicator } from '@/components/ui';
+import { StatCard, LiveIndicator, AnimatedNumber, ErrorState } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface KPIData {
@@ -101,37 +101,6 @@ function InfoButton({ onClick }: { onClick: () => void }) {
       <Info className="w-3.5 h-3.5 text-ink-muted hover:text-ink transition-colors" />
     </button>
   );
-}
-
-function AnimatedNumber({ value, duration = 1000, formatter }: { value: number; duration?: number; formatter?: (val: number) => string }) {
-  const [displayValue, setDisplayValue] = useState(0);
-  const previousValue = useRef(0);
-
-  useEffect(() => {
-    const startValue = previousValue.current;
-    const endValue = value;
-    const startTime = Date.now();
-
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-
-      const easeOutQuart = 1 - Math.pow(1 - progress, 4);
-      const current = Math.floor(startValue + (endValue - startValue) * easeOutQuart);
-
-      setDisplayValue(current);
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else {
-        previousValue.current = endValue;
-      }
-    };
-
-    requestAnimationFrame(animate);
-  }, [value, duration]);
-
-  return <span>{formatter ? formatter(displayValue) : new Intl.NumberFormat().format(displayValue)}</span>;
 }
 
 function formatTimeAgo(timestamp: string | null): string {
@@ -274,11 +243,12 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
 
   if (error) {
     return (
-      <div className="glass rounded-2xl p-6 border border-rose-200">
-        <div className="flex items-center gap-3 text-rose-600">
-          <Activity className="w-5 h-5" />
-          <span>Error loading KPIs: {error}</span>
-        </div>
+      <div className="glass rounded-2xl">
+        <ErrorState
+          title="Couldn't load KPIs"
+          description={error}
+          onRetry={() => { setLoading(true); loadKPIs(); }}
+        />
       </div>
     );
   }
@@ -314,7 +284,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           label="Live"
           tone="teal"
           icon={<Zap className="w-5 h-5" />}
-          value={<AnimatedNumber value={kpis.total_streaming_records} />}
+          value={<AnimatedNumber value={kpis.total_streaming_records} flashOnChange />}
           footnote={`Last: ${formatTimeAgo(kpis.last_stream_timestamp)}`}
         >
           <div className="absolute top-0 right-0 w-24 h-24 bg-teal-400/10 rounded-full blur-2xl" />

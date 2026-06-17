@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Package, Bell, ShoppingCart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEventStream } from '@/hooks/useEventStream';
-import { PageHeader, Tabs, LiveIndicator, Badge } from '@/components/ui';
+import { PageHeader, Tabs, LiveIndicator, Badge, ConnectionBanner } from '@/components/ui';
 import {
   InventoryFilters,
   InventorySummaryCards,
@@ -76,7 +76,7 @@ export default function InventoryPage() {
     }
   }), []);
 
-  const { isConnected: isLiveConnected } = useEventStream('/stream/alerts', { eventHandlers });
+  const { isConnected: isLiveConnected, error: liveError } = useEventStream('/stream/alerts', { eventHandlers });
 
   useEffect(() => {
     fetchData();
@@ -206,6 +206,8 @@ export default function InventoryPage() {
           icon={<Package className="w-5 h-5" />}
           actions={isLiveConnected ? <LiveIndicator tone="teal" /> : undefined}
         />
+
+        <ConnectionBanner connected={isLiveConnected} show={!!liveError} />
 
         <Tabs
           className="mb-6"
