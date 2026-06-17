@@ -2,20 +2,14 @@
 AI Assistant Service - Enhanced with Real-Time Data Integration
 Handles chatbot conversations with actual database queries and intelligent responses
 """
-import os
-import json
 import asyncio
 from typing import Optional, List, Dict, AsyncGenerator
 from datetime import datetime, date, timedelta
-import httpx
 from pydantic import BaseModel
 from sqlalchemy import select, func, and_, desc
 from app.services.database import async_session
 from app.models.sales import Sale, Store, Item
-
-# Get API key from environment
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+from app.services.llm import get_provider_chain, LLMError
 
 
 class Message(BaseModel):
@@ -861,83 +855,26 @@ INSTRUCTIONS: Answer the user's question using the ACTUAL DATA above. Be specifi
     
     context.add_message("user", enhanced_message)
     
-    # Check if API key is available
-    if not OPENAI_API_KEY:
-        fallback = await get_intelligent_fallback(user_message, intent_info)
-        context.add_message("assistant", fallback)
-        # Stream fallback response
-        words = fallback.split(' ')
-        for i, word in enumerate(words):
-            yield word + (' ' if i < len(words) - 1 else '')
-            await asyncio.sleep(0.015)
-        return
-    
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "gpt-4o-mini",
-        "messages": context.get_messages(),
-        "stream": True,
-        "temperature": 0.7,
-        "max_tokens": 1500
-    }
-    
-    full_response = ""
-    
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            async with client.stream(
-                "POST",
-                OPENAI_API_URL,
-                headers=headers,
-                json=payload
-            ) as response:
-                if response.status_code == 429 or response.status_code != 200:
-                    # Use intelligent fallback with real data
-                    fallback = await get_intelligent_fallback(user_message, intent_info)
-                    context.add_message("assistant", fallback)
-                    words = fallback.split(' ')
-                    for i, word in enumerate(words):
-                        yield word + (' ' if i < len(words) - 1 else '')
-                        await asyncio.sleep(0.015)
-                    return
-                
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data = line[6:]
-                        if data == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data)
-                            if "choices" in chunk and len(chunk["choices"]) > 0:
-                                delta = chunk["choices"][0].get("delta", {})
-                                content = delta.get("content", "")
-                                if content:
-                                    full_response += content
-                                    yield content
-                        except json.JSONDecodeError:
-                            continue
-        
-        if full_response:
-            context.add_message("assistant", full_response)
-            
-    except httpx.TimeoutException:
-        fallback = await get_intelligent_fallback(user_message, intent_info)
-        context.add_message("assistant", fallback)
-        words = fallback.split(' ')
-        for i, word in enumerate(words):
-            yield word + (' ' if i < len(words) - 1 else '')
-            await asyncio.sleep(0.015)
-    except Exception as e:
-        fallback = await get_intelligent_fallback(user_message, intent_info)
-        context.add_message("assistant", fallback)
-        words = fallback.split(' ')
-        for i, word in enumerate(words):
-            yield word + (' ' if i < len(words) - 1 else '')
-            await asyncio.sleep(0.015)
+    # Try providers in priority order (Ollama → OpenAI → rule-based fallback)
+    for provider in get_provider_chain():
+        full_response = ""
+        try:
+            async for chunk in provider.stream(context.get_messages()):
+                full_response += chunk
+                yield chunk
+            if full_response:
+                context.add_message("assistant", full_response)
+                return
+        except LLMError:
+            continue  # next provider
+
+    # Rule-based fallback — always works, data-driven
+    fallback = await get_intelligent_fallback(user_message, intent_info)
+    context.add_message("assistant", fallback)
+    words = fallback.split(' ')
+    for i, word in enumerate(words):
+        yield word + (' ' if i < len(words) - 1 else '')
+        await asyncio.sleep(0.015)
 
 
 async def get_chat_response(
@@ -961,45 +898,20 @@ Answer using the actual data above. Be specific with numbers."""
     
     context.add_message("user", enhanced_message)
     
-    if not OPENAI_API_KEY:
-        fallback = await get_intelligent_fallback(user_message, intent_info)
-        context.add_message("assistant", fallback)
-        return fallback
-    
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "gpt-4o-mini",
-        "messages": context.get_messages(),
-        "temperature": 0.7,
-        "max_tokens": 1500
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                OPENAI_API_URL,
-                headers=headers,
-                json=payload
-            )
-            
-            if response.status_code == 429 or response.status_code != 200:
-                fallback = await get_intelligent_fallback(user_message, intent_info)
-                context.add_message("assistant", fallback)
-                return fallback
-            
-            data = response.json()
-            assistant_message = data["choices"][0]["message"]["content"]
-            context.add_message("assistant", assistant_message)
-            return assistant_message
-            
-    except Exception as e:
-        fallback = await get_intelligent_fallback(user_message, intent_info)
-        context.add_message("assistant", fallback)
-        return fallback
+    # Try providers in priority order (Ollama → OpenAI → rule-based fallback)
+    for provider in get_provider_chain():
+        try:
+            response = await provider.complete(context.get_messages())
+            if response:
+                context.add_message("assistant", response)
+                return response
+        except LLMError:
+            continue  # next provider
+
+    # Rule-based fallback — always works, data-driven
+    fallback = await get_intelligent_fallback(user_message, intent_info)
+    context.add_message("assistant", fallback)
+    return fallback
 
 
 def clear_conversation(session_id: str):
