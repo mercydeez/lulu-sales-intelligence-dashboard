@@ -5,13 +5,14 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEventStream } from '@/hooks/useEventStream';
-import { 
-  LayoutDashboard, 
-  Package, 
-  BarChart3, 
-  Bell, 
-  Settings, 
-  LogOut, 
+import { Badge } from '@/components/ui';
+import {
+  LayoutDashboard,
+  Package,
+  BarChart3,
+  Bell,
+  Settings,
+  LogOut,
   ChevronDown,
   User,
   Store,
@@ -54,54 +55,54 @@ interface NotificationItem {
 }
 
 const navItems: NavItem[] = [
-  { 
-    label: 'Dashboard', 
-    href: '/', 
-    icon: <LayoutDashboard className="w-5 h-5" /> 
+  {
+    label: 'Dashboard',
+    href: '/',
+    icon: <LayoutDashboard className="w-5 h-5" />
   },
-  { 
-    label: 'Inventory', 
-    href: '/inventory', 
+  {
+    label: 'Inventory',
+    href: '/inventory',
     icon: <Package className="w-5 h-5" />,
     permission: 'can_manage_inventory'
   },
-  { 
-    label: 'Promotions', 
-    href: '/promotions', 
+  {
+    label: 'Promotions',
+    href: '/promotions',
     icon: <Tag className="w-5 h-5" />,
     permission: 'can_manage_promotions'
   },
-  { 
-    label: 'Analytics', 
-    href: '/analytics', 
-    icon: <BarChart3 className="w-5 h-5" /> 
+  {
+    label: 'Analytics',
+    href: '/analytics',
+    icon: <BarChart3 className="w-5 h-5" />
   },
-  { 
-    label: 'Employees', 
-    href: '/employees', 
+  {
+    label: 'Employees',
+    href: '/employees',
     icon: <Users className="w-5 h-5" />,
     permission: 'can_manage_inventory'
   },
-  { 
-    label: 'Reports', 
-    href: '/reports', 
+  {
+    label: 'Reports',
+    href: '/reports',
     icon: <FileText className="w-5 h-5" />,
     permission: 'can_export'
   },
-  { 
-    label: 'Alerts', 
-    href: '/alerts', 
-    icon: <Bell className="w-5 h-5" /> 
+  {
+    label: 'Alerts',
+    href: '/alerts',
+    icon: <Bell className="w-5 h-5" />
   },
-  { 
-    label: 'Admin', 
-    href: '/admin', 
+  {
+    label: 'Admin',
+    href: '/admin',
     icon: <Shield className="w-5 h-5" />,
     roles: ['super_admin']
   },
-  { 
-    label: 'Monitoring', 
-    href: '/monitoring', 
+  {
+    label: 'Monitoring',
+    href: '/monitoring',
     icon: <Activity className="w-5 h-5" />,
     permission: 'is_admin'
   }
@@ -109,17 +110,23 @@ const navItems: NavItem[] = [
 
 // Notification type config
 const notificationConfig = {
-  critical: { icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10', border: 'border-red-500/30' },
-  warning: { icon: AlertCircle, color: 'text-amber-500', bg: 'bg-amber-500/10', border: 'border-amber-500/30' },
-  info: { icon: Info, color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
-  success: { icon: CheckCircle, color: 'text-emerald-500', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' },
+  critical: { icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-100', border: 'border-rose-200' },
+  warning: { icon: AlertCircle, color: 'text-amber-600', bg: 'bg-amber-100', border: 'border-amber-200' },
+  info: { icon: Info, color: 'text-violet-600', bg: 'bg-violet-100', border: 'border-violet-200' },
+  success: { icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-100', border: 'border-emerald-200' },
+};
+
+const roleBadgeVariant: Record<string, 'violet' | 'teal' | 'coral' | 'neutral'> = {
+  super_admin: 'violet',
+  regional_manager: 'teal',
+  store_manager: 'coral',
 };
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, isAuthenticated, logout, hasRole, hasPermission, authFetch } = useAuth();
-  
+
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -134,14 +141,14 @@ export default function Navbar() {
         id: alert.id,
         title: alert.title,
         message: alert.message,
-        type: alert.severity === 'critical' ? 'critical' : 
-              alert.severity === 'warning' ? 'warning' : 
+        type: alert.severity === 'critical' ? 'critical' :
+              alert.severity === 'warning' ? 'warning' :
               alert.severity === 'success' ? 'success' : 'info',
         category: alert.category || 'inventory',
         time: 'Just now',
         read: false,
       };
-      
+
       setNotifications(prev => {
         // Avoid duplicates and keep max 15 notifications
         const exists = prev.some(n => n.id === newNotification.id);
@@ -227,7 +234,7 @@ export default function Navbar() {
   const filteredNavItems = navItems.filter(canAccessItem);
 
   return (
-    <nav className="sticky top-0 z-50 bg-slate-900/80 backdrop-blur-xl border-b border-slate-700/50">
+    <nav className="sticky top-0 z-50 bg-white/85 backdrop-blur-xl border-b border-coral-100">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
@@ -237,7 +244,7 @@ export default function Navbar() {
             </div>
             <div className="hidden md:block">
               <h1 className="text-lg font-bold gradient-text">Lulu Intelligence</h1>
-              <p className="text-xs text-slate-400 -mt-1">UAE Analytics</p>
+              <p className="text-xs text-ink-muted -mt-1">UAE Analytics</p>
             </div>
           </Link>
 
@@ -250,7 +257,7 @@ export default function Navbar() {
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
                   pathname === item.href
                     ? 'bg-coral-100 text-coral-600'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    : 'text-ink-muted hover:text-ink hover:bg-coral-50'
                 }`}
               >
                 {item.icon}
@@ -263,13 +270,13 @@ export default function Navbar() {
           <div className="flex items-center gap-3">
             {/* Notifications Button & Panel */}
             <div className="relative" ref={notificationRef}>
-              <button 
+              <button
                 onClick={() => setNotificationOpen(!notificationOpen)}
-                className="relative p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all"
+                className="relative p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-coral-50 transition-all"
               >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center animate-pulse">
+                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-rose-500 text-white text-xs font-bold flex items-center justify-center animate-pulse">
                     {unreadCount}
                   </span>
                 )}
@@ -277,30 +284,30 @@ export default function Navbar() {
 
               {/* Notification Dropdown Panel */}
               {notificationOpen && (
-                <div className="absolute right-0 mt-2 w-96 bg-slate-800 rounded-xl border border-slate-700/50 shadow-2xl overflow-hidden z-50">
+                <div className="absolute right-0 mt-2 w-96 glass-strong rounded-xl shadow-2xl overflow-hidden z-50">
                   {/* Header */}
-                  <div className="px-4 py-3 bg-slate-700/50 border-b border-slate-600/50 flex items-center justify-between">
+                  <div className="px-4 py-3 bg-coral-50/80 border-b border-coral-100 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Bell className="w-4 h-4 text-cyan-400" />
-                      <span className="font-semibold text-white">Notifications</span>
+                      <Bell className="w-4 h-4 text-coral-500" />
+                      <span className="font-semibold text-ink">Notifications</span>
                       {unreadCount > 0 && (
-                        <span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-xs font-medium">
+                        <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-600 text-xs font-medium">
                           {unreadCount} new
                         </span>
                       )}
                       {/* Live Streaming Indicator */}
                       <div className="flex items-center gap-1 ml-2">
                         <span className="relative flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
                         </span>
-                        <span className="text-xs text-green-400 font-medium">LIVE</span>
+                        <span className="text-xs text-teal-600 font-medium">LIVE</span>
                       </div>
                     </div>
                     {unreadCount > 0 && (
-                      <button 
+                      <button
                         onClick={markAllAsRead}
-                        className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+                        className="text-xs text-violet-600 hover:text-coral-500 transition-colors"
                       >
                         Mark all read
                       </button>
@@ -311,8 +318,8 @@ export default function Navbar() {
                   <div className="max-h-96 overflow-y-auto">
                     {notifications.length === 0 ? (
                       <div className="p-8 text-center">
-                        <Bell className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                        <p className="text-slate-400">No notifications yet</p>
+                        <Bell className="w-12 h-12 text-coral-200 mx-auto mb-3" />
+                        <p className="text-ink-muted">No notifications yet</p>
                       </div>
                     ) : (
                       notifications.map((notification) => {
@@ -322,8 +329,8 @@ export default function Navbar() {
                           <div
                             key={notification.id}
                             onClick={() => markAsRead(notification.id)}
-                            className={`px-4 py-3 border-b border-slate-700/50 hover:bg-slate-700/30 cursor-pointer transition-all ${
-                              !notification.read ? 'bg-slate-700/20' : ''
+                            className={`px-4 py-3 border-b border-coral-100 hover:bg-coral-50/60 cursor-pointer transition-all ${
+                              !notification.read ? 'bg-coral-50/40' : ''
                             }`}
                           >
                             <div className="flex items-start gap-3">
@@ -332,19 +339,19 @@ export default function Navbar() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <p className={`text-sm font-medium ${!notification.read ? 'text-white' : 'text-slate-300'}`}>
+                                  <p className={`text-sm font-medium ${!notification.read ? 'text-ink' : 'text-ink-soft'}`}>
                                     {notification.title}
                                   </p>
                                   {!notification.read && (
-                                    <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                                    <span className="w-2 h-2 rounded-full bg-coral-500"></span>
                                   )}
                                 </div>
-                                <p className="text-xs text-slate-400 mt-0.5 truncate">{notification.message}</p>
+                                <p className="text-xs text-ink-muted mt-0.5 truncate">{notification.message}</p>
                                 <div className="flex items-center gap-2 mt-1">
                                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${config.bg} ${config.color}`}>
                                     {notification.category}
                                   </span>
-                                  <span className="text-[10px] text-slate-500">{notification.time}</span>
+                                  <span className="text-[10px] text-ink-muted/80">{notification.time}</span>
                                 </div>
                               </div>
                             </div>
@@ -355,11 +362,11 @@ export default function Navbar() {
                   </div>
 
                   {/* Footer */}
-                  <div className="px-4 py-3 bg-slate-700/30 border-t border-slate-600/50">
+                  <div className="px-4 py-3 bg-coral-50/60 border-t border-coral-100">
                     <Link
                       href="/alerts"
                       onClick={() => setNotificationOpen(false)}
-                      className="flex items-center justify-center gap-2 text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
+                      className="flex items-center justify-center gap-2 text-sm text-violet-600 hover:text-coral-500 transition-colors"
                     >
                       <span>View all alerts</span>
                       <ChevronRight className="w-4 h-4" />
@@ -373,51 +380,46 @@ export default function Navbar() {
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
-                className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-700/50 transition-all border border-slate-700/50"
+                className="flex items-center gap-3 px-3 py-2 rounded-xl bg-coral-50 hover:bg-coral-100 transition-all border border-coral-100"
               >
                 <div className="w-8 h-8 rounded-lg sunset-gradient flex items-center justify-center text-white font-semibold text-sm">
                   {user?.first_name?.[0]}{user?.last_name?.[0]}
                 </div>
                 <div className="hidden lg:block text-left">
-                  <p className="text-sm font-medium text-white">
+                  <p className="text-sm font-medium text-ink">
                     {user?.first_name} {user?.last_name}
                   </p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-ink-muted">
                     {ROLE_DISPLAY_NAMES[user?.role as UserRole] || user?.role}
                   </p>
                 </div>
-                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-4 h-4 text-ink-muted transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {/* Dropdown Menu */}
               {userMenuOpen && (
-                <div className="absolute right-0 mt-2 w-64 py-2 bg-slate-800 rounded-xl border border-slate-700/50 shadow-xl">
+                <div className="absolute right-0 mt-2 w-64 py-2 glass-strong rounded-xl shadow-xl">
                   {/* User Info */}
-                  <div className="px-4 py-3 border-b border-slate-700/50">
-                    <p className="text-sm font-medium text-white">
+                  <div className="px-4 py-3 border-b border-coral-100">
+                    <p className="text-sm font-medium text-ink">
                       {user?.first_name} {user?.last_name}
                     </p>
-                    <p className="text-xs text-slate-400 truncate">{user?.email}</p>
+                    <p className="text-xs text-ink-muted truncate">{user?.email}</p>
                     <div className="mt-2 flex items-center gap-2">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        user?.role === 'super_admin' ? 'bg-purple-500/20 text-purple-400' :
-                        user?.role === 'regional_manager' ? 'bg-cyan-500/20 text-cyan-400' :
-                        user?.role === 'store_manager' ? 'bg-emerald-500/20 text-emerald-400' :
-                        'bg-slate-500/20 text-slate-400'
-                      }`}>
+                      <Badge variant={roleBadgeVariant[user?.role as string] || 'neutral'} size="sm">
                         {ROLE_DISPLAY_NAMES[user?.role as UserRole] || user?.role}
-                      </span>
+                      </Badge>
                     </div>
                   </div>
 
                   {/* Accessible Stores Info */}
-                  <div className="px-4 py-2 border-b border-slate-700/50">
-                    <p className="text-xs text-slate-500 mb-1">Access Level</p>
+                  <div className="px-4 py-2 border-b border-coral-100">
+                    <p className="text-xs text-ink-muted mb-1">Access Level</p>
                     <div className="flex items-center gap-2 text-xs">
-                      <Store className="w-3 h-3 text-slate-400" />
-                      <span className="text-slate-300">
-                        {user?.role === 'super_admin' 
-                          ? 'All Stores' 
+                      <Store className="w-3 h-3 text-ink-muted" />
+                      <span className="text-ink-soft">
+                        {user?.role === 'super_admin'
+                          ? 'All Stores'
                           : `${user?.accessible_stores?.length || 0} store(s)`}
                       </span>
                     </div>
@@ -427,7 +429,7 @@ export default function Navbar() {
                   <div className="py-1">
                     <Link
                       href="/profile"
-                      className="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700/50 transition-colors"
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-ink-soft hover:text-ink hover:bg-coral-50 transition-colors"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       <User className="w-4 h-4" />
@@ -435,7 +437,7 @@ export default function Navbar() {
                     </Link>
                     <Link
                       href="/settings"
-                      className="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700/50 transition-colors"
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-ink-soft hover:text-ink hover:bg-coral-50 transition-colors"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       <Settings className="w-4 h-4" />
@@ -444,10 +446,10 @@ export default function Navbar() {
                   </div>
 
                   {/* Logout */}
-                  <div className="pt-1 border-t border-slate-700/50">
+                  <div className="pt-1 border-t border-coral-100">
                     <button
                       onClick={handleLogout}
-                      className="flex items-center gap-3 w-full px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+                      className="flex items-center gap-3 w-full px-4 py-2 text-sm text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition-colors"
                     >
                       <LogOut className="w-4 h-4" />
                       Sign Out
@@ -460,7 +462,7 @@ export default function Navbar() {
             {/* Mobile Menu Button */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all"
+              className="md:hidden p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-coral-50 transition-all"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
@@ -470,7 +472,7 @@ export default function Navbar() {
 
       {/* Mobile Navigation */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-slate-700/50 bg-slate-900/95 backdrop-blur-xl">
+        <div className="md:hidden border-t border-coral-100 bg-white/95 backdrop-blur-xl">
           <div className="px-4 py-4 space-y-2">
             {filteredNavItems.map((item) => (
               <Link
@@ -480,7 +482,7 @@ export default function Navbar() {
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                   pathname === item.href
                     ? 'bg-coral-100 text-coral-600'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    : 'text-ink-muted hover:text-ink hover:bg-coral-50'
                 }`}
               >
                 {item.icon}

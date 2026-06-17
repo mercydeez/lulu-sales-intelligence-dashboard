@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
 
 // Pages that don't require authentication
-const publicPaths = ['/login', '/forgot-password', '/reset-password'];
+const publicPaths = ['/login', '/forgot-password', '/reset-password', '/dev'];
 
 export default function ClientLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();

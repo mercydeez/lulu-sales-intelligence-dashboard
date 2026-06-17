@@ -100,34 +100,6 @@ html.light .border-slate-700\/50,
 html.light .border-slate-600\/50,
 html.light .border-slate-600 { border-color: #f1d9d2 !important; }
 
-/* Warm light navbar */
-html.light nav {
-  background: rgba(255, 255, 255, 0.85) !important;
-  border-color: #f1d9d2 !important;
-}
-
-html.light nav .text-white { color: #1e1b2e !important; }
-html.light nav .text-slate-400 { color: #6b6680 !important; }
-html.light nav .text-slate-300 { color: #4b4763 !important; }
-
-html.light nav .bg-slate-800,
-html.light nav .bg-slate-800\/50 {
-  background: rgba(255, 241, 239, 0.8) !important;
-}
-
-html.light nav .bg-slate-700\/50,
-html.light nav .hover\:bg-slate-700\/50:hover {
-  background: rgba(255, 225, 220, 0.8) !important;
-}
-
-html.light nav .hover\:bg-slate-800\/50:hover {
-  background: rgba(255, 241, 239, 0.9) !important;
-}
-
-html.light nav .border-slate-700\/50 {
-  border-color: #f1d9d2 !important;
-}
-
 /* Warm light cards and panels */
 html.light .bg-slate-800,
 html.light .bg-slate-900 {

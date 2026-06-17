@@ -23,7 +23,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="light">
-      <body className={`${inter.className} text-ink antialiased`}>
+      <body className={`${inter.variable} font-sans text-ink antialiased`}>
         <div className="min-h-screen">
           <AuthProvider>
             <AIProvider>
