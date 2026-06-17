@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { User, LoginCredentials, LoginResponse, AuthState, UserRole } from '@/types/auth';
+import { authFetch as clientAuthFetch, clearApiCache } from '@/lib/apiClient';
 
 declare const process: { env: { NEXT_PUBLIC_API_URL?: string } };
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -79,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    clearApiCache(); // never let one user's cached data outlive their session (M2)
     setState({
       user: null,
       isAuthenticated: false,
@@ -111,6 +113,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const loginResponse: LoginResponse = data;
+
+      // Drop any cache left over from a previous session before this user's data lands (M2)
+      clearApiCache();
 
       // Store tokens and user
       localStorage.setItem(ACCESS_TOKEN_KEY, loginResponse.access_token);
@@ -219,36 +224,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState(prev => ({ ...prev, error: null }));
   }, []);
 
-  // Authenticated fetch function
-  const authFetchInternal = useCallback(async (url: string, options: RequestInit = {}): Promise<Response> => {
-    const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-    const headers: HeadersInit = {
-      ...options.headers,
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    };
-
-    // Prepend API_URL if the url starts with /api
-    const fullUrl = url.startsWith('/api') ? `${API_URL}${url}` : url;
-
-    const response = await fetch(fullUrl, { ...options, headers });
-
-    // If unauthorized, try to refresh token
-    if (response.status === 401) {
-      const refreshed = await refreshTokenInternal();
-      if (refreshed) {
-        const newToken = localStorage.getItem(ACCESS_TOKEN_KEY);
-        return fetch(fullUrl, {
-          ...options,
-          headers: {
-            ...options.headers,
-            'Authorization': `Bearer ${newToken}`
-          }
-        });
-      }
-    }
-
-    return response;
-  }, []);
+  // Authenticated fetch — delegates to the single API client (auth + refresh-retry).
+  const authFetchInternal = useCallback(
+    (url: string, options: RequestInit = {}): Promise<Response> => clientAuthFetch(url, options),
+    [],
+  );
 
   return (
     <AuthContext.Provider
@@ -324,52 +304,6 @@ export function getAuthHeader(): Record<string, string> {
   return token ? { 'Authorization': `Bearer ${token}` } : {};
 }
 
-// Utility to make authenticated API calls
-export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const headers = {
-    ...options.headers,
-    ...getAuthHeader()
-  };
-
-  // Prepend API_URL if the url starts with /api
-  const fullUrl = url.startsWith('/api') ? `${API_URL}${url}` : url;
-
-  const response = await fetch(fullUrl, { ...options, headers });
-
-  // If unauthorized, try to refresh token
-  if (response.status === 401) {
-    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-    if (refreshToken) {
-      const refreshResponse = await fetch(`${API_URL}/api/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken })
-      });
-
-      if (refreshResponse.ok) {
-        const data = await refreshResponse.json();
-        localStorage.setItem(ACCESS_TOKEN_KEY, data.access_token);
-        localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
-
-        // Retry original request
-        return fetch(fullUrl, {
-          ...options,
-          headers: {
-            ...options.headers,
-            'Authorization': `Bearer ${data.access_token}`
-          }
-        });
-      }
-    }
-
-    // Redirect to login
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(ACCESS_TOKEN_KEY);
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
-      window.location.href = '/login';
-    }
-  }
-
-  return response;
-}
+// Module-level authenticated fetch for non-React callers — the single API
+// client (auth header + 401 refresh-retry + redirect-on-failure).
+export const authFetch = clientAuthFetch;

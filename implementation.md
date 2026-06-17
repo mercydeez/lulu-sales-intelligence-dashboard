@@ -44,7 +44,7 @@ model (mig 005), date-shift, token hygiene, migration runner.
 | 2.4 | Seasonal forecast + MAPE backtest | ✅ |
 | 2.5 | AI provider abstraction (`services/llm/`) | 🟡 providers added, integration uncommitted |
 | 2.6 | Single `useEventStream` hook | ✅ |
-| 2.7 | Single frontend API client (auth/refresh/user-aware cache) | ❌ 3 dup auth-fetch impls + 22 raw fetch sites |
+| 2.7 | Single frontend API client (auth/refresh/user-aware cache) | 🟡 foundation done (lib/apiClient.ts; M2+M3 fixed; api.ts+AuthContext wired). 22 call sites migrate during Phase 3 |
 | 2.8 | Backend test expansion (RBAC, alerts, predictor) wired to CI | ✅ ci.yml runs full pytest + strict tsc + docker builds (verified) |
 | 2.9 | Seed pack so no demo screen is empty | ✅ every page populates (fixed inventory/items bug); low-stock empty by design |
 **Phase 3 — UI/UX redesign** ❌ design tokens, `ui/` primitives, app shell, screen rebuilds.
@@ -66,6 +66,11 @@ model (mig 005), date-shift, token hygiene, migration runner.
 ---
 
 ## Decision log
+- **2.7 API client scope:** built the foundation now (`lib/apiClient.ts` — auth,
+  401→refresh single-flight→retry, user-aware cache fixing M2, error-envelope
+  parsing fixing M3) and routed `lib/api.ts` + `AuthContext` through it. The 22
+  scattered raw `fetch()` call sites migrate opportunistically during Phase 3 when
+  those screens are rewritten, to avoid touching them twice.
 - **2.1 sales storage:** adopted the 3-tier design (over collapsing to one table).
   `sales_stream_raw` = live events, `sales_historical` = CSV, `sales_fact_view` = the
   union every reader queries. View is shaped as a drop-in for the old `sales` columns;
