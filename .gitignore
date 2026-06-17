@@ -21,6 +21,7 @@ __pycache__/
 out/
 build/
 dist/
+*.tsbuildinfo
 
 # Logs
 *.log
