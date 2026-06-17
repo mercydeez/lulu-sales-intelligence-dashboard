@@ -111,7 +111,7 @@ class DataSyncService:
                         SUM(sales) as total_sold,
                         AVG(sales) as avg_daily_sales,
                         MAX(date) as last_sale_date
-                    FROM sales
+                    FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                     GROUP BY store_id, item_id
                 ),
@@ -215,7 +215,7 @@ class DataSyncService:
             count_query = f"""
                 WITH recent_sales AS (
                     SELECT store_id, item_id
-                    FROM sales
+                    FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                     GROUP BY store_id, item_id
                 )
@@ -268,7 +268,7 @@ class DataSyncService:
                         item_id,
                         SUM(sales) as total_sold,
                         AVG(sales) as avg_daily_sales
-                    FROM sales
+                    FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                     GROUP BY store_id, item_id
                 ),
@@ -355,7 +355,7 @@ class DataSyncService:
                         item_id,
                         SUM(sales) as total_sold,
                         AVG(sales) as avg_daily_sales
-                    FROM sales
+                    FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                     GROUP BY store_id, item_id
                 ),
@@ -435,7 +435,7 @@ class DataSyncService:
                         item_id,
                         SUM(sales) as total_sold,
                         AVG(sales) as avg_daily_sales
-                    FROM sales
+                    FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                     GROUP BY store_id, item_id
                 ),
@@ -499,7 +499,7 @@ class DataSyncService:
                         i.name as item_name,
                         s.date,
                         s.sales
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     JOIN stores st ON s.store_id = st.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '7 days'
@@ -556,7 +556,7 @@ class DataSyncService:
                         SUM(CASE WHEN s.date >= CURRENT_DATE - INTERVAL '7 days' THEN s.sales ELSE 0 END) as this_week,
                         SUM(CASE WHEN s.date >= CURRENT_DATE - INTERVAL '14 days' 
                                  AND s.date < CURRENT_DATE - INTERVAL '7 days' THEN s.sales ELSE 0 END) as last_week
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN stores st ON s.store_id = st.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '14 days'
                     {store_filter.replace('s.store_id', 's.store_id')}
@@ -621,7 +621,7 @@ class DataSyncService:
                         SUM(s.sales) as total_sales,
                         AVG(s.sales) as avg_daily_sales,
                         COUNT(DISTINCT s.store_id) as store_count
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '30 days'
                     {store_filter}
@@ -758,7 +758,7 @@ class DataSyncService:
                     SELECT 
                         i.category,
                         SUM(s.sales) as total_sales
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '7 days'
                     {store_filter}
@@ -768,7 +768,7 @@ class DataSyncService:
                     SELECT 
                         i.category,
                         SUM(s.sales) as total_sales
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '14 days'
                     AND s.date < CURRENT_DATE - INTERVAL '7 days'

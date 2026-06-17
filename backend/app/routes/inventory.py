@@ -428,7 +428,7 @@ async def get_inventory_analytics(
                     s.date,
                     COUNT(DISTINCT s.item_id) as items_sold,
                     SUM(s.sales) as total_units
-                FROM sales s
+                FROM sales_fact_view s
                 WHERE s.date >= CURRENT_DATE - INTERVAL '{days} days'
                 {store_filter}
                 GROUP BY s.date
@@ -452,7 +452,7 @@ async def get_inventory_analytics(
                     i.category,
                     SUM(s.sales) as total_units,
                     COUNT(DISTINCT s.item_id) as item_count
-                FROM sales s
+                FROM sales_fact_view s
                 JOIN items i ON s.item_id = i.id
                 WHERE s.date >= CURRENT_DATE - INTERVAL '{days} days'
                 {store_filter}

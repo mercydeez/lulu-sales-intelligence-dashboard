@@ -93,7 +93,7 @@ async def get_kpis(db: AsyncSession = Depends(get_db), current_user: dict = Depe
                 COALESCE(SUM(s.sales) FILTER (WHERE s.date >= :two_weeks_ago AND s.date < :week_ago), 0)::integer as prev_week_sales,
                 COALESCE(SUM(s.sales * i.unit_price_aed) FILTER (WHERE s.date >= :week_ago AND s.date < :today), 0)::numeric as last_week_revenue,
                 COALESCE(SUM(s.sales * i.unit_price_aed) FILTER (WHERE s.date >= :two_weeks_ago AND s.date < :week_ago), 0)::numeric as prev_week_revenue
-            FROM sales s
+            FROM sales_fact_view s
             JOIN items i ON s.item_id = i.id
         """
         params = {

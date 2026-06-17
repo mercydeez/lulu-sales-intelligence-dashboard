@@ -5,7 +5,8 @@ import numpy as np
 from sqlalchemy import select, func
 from app.services.database import async_session
 from app.services.redis_client import publish_sale
-from app.models.sales import Sale
+import uuid
+from app.models.sales import Sale, SalesStreamRaw, STREAM_ID_OFFSET
 from app.config import get_settings
 
 settings = get_settings()
@@ -235,14 +236,13 @@ class DataGenerator:
             # Generate sale value with volatility
             sales_value = self._generate_sale_value(store_id, item_id, transaction_type)
             
-            sale = Sale(
-                date=datetime.now().date(),
+            sale = SalesStreamRaw(
+                event_id=uuid.uuid4(),
                 store_id=store_id,
                 item_id=item_id,
                 sales=sales_value,
-                is_streaming=True
             )
-            
+
             session.add(sale)
             await session.commit()
             await session.refresh(sale)
@@ -266,15 +266,15 @@ class DataGenerator:
             
             # Publish to Redis with enriched data
             sale_data = {
-                'id': sale.id,
-                'date': sale.date.isoformat(),
+                'id': sale.id + STREAM_ID_OFFSET,  # match sales_fact_view id space
+                'date': sale.timestamp.date().isoformat(),
                 'store_id': sale.store_id,
                 'store_name': store.name if store else f'Store {store_id}',
                 'item_id': sale.item_id,
                 'item_name': item.name if item else f'Item {item_id}',
                 'category': item.category if item else 'General',
                 'sales': sale.sales,
-                'is_streaming': sale.is_streaming,
+                'is_streaming': True,
                 'created_at': sale.created_at.isoformat(),
                 'timestamp': sale.created_at.isoformat(),
                 'transaction_type': transaction_type,

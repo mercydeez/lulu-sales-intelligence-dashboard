@@ -60,10 +60,10 @@ async def detailed_health_check(current_user: dict = Depends(get_current_user)) 
     # Database check
     try:
         async with engine.connect() as conn:
-            result = await conn.execute(text("SELECT COUNT(*) FROM sales"))
+            result = await conn.execute(text("SELECT COUNT(*) FROM sales_fact_view"))
             sales_count = result.scalar()
             
-            result = await conn.execute(text("SELECT COUNT(*) FROM sales WHERE is_streaming = true"))
+            result = await conn.execute(text("SELECT COUNT(*) FROM sales_fact_view WHERE is_streaming = true"))
             streaming_count = result.scalar()
             
         health_status["checks"]["database"] = {
@@ -185,7 +185,7 @@ async def system_stats(current_user: dict = Depends(get_current_user)) -> Dict[s
                     COUNT(DISTINCT item_id) as active_items,
                     MIN(date) as earliest_date,
                     MAX(date) as latest_date
-                FROM sales
+                FROM sales_fact_view
             """))
             row = result.fetchone()
             
@@ -206,7 +206,7 @@ async def system_stats(current_user: dict = Depends(get_current_user)) -> Dict[s
                     COUNT(*) as count,
                     AVG(sales) as avg_sales,
                     MAX(created_at) as last_generated
-                FROM sales 
+                FROM sales_fact_view 
                 WHERE is_streaming = true 
                 AND created_at > NOW() - INTERVAL '1 hour'
             """))

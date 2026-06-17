@@ -44,16 +44,8 @@ CREATE TABLE IF NOT EXISTS sales_stream_raw (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Legacy sales table (for backward compatibility with existing code)
-CREATE TABLE IF NOT EXISTS sales (
-    id SERIAL PRIMARY KEY,
-    date DATE NOT NULL,
-    store_id INTEGER NOT NULL REFERENCES stores(id),
-    item_id INTEGER NOT NULL REFERENCES items(id),
-    sales INTEGER NOT NULL, -- Allows negative values for returns
-    is_streaming BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
+-- Note: the legacy `sales` table is retired. Live events go to
+-- sales_stream_raw and all readers query sales_fact_view (see migration 007).
 
 -- Create predictions table
 CREATE TABLE IF NOT EXISTS predictions (
@@ -76,9 +68,6 @@ CREATE INDEX IF NOT EXISTS idx_sales_historical_date ON sales_historical(date);
 CREATE INDEX IF NOT EXISTS idx_sales_historical_store_item ON sales_historical(store_id, item_id);
 CREATE INDEX IF NOT EXISTS idx_sales_stream_timestamp ON sales_stream_raw(timestamp);
 CREATE INDEX IF NOT EXISTS idx_sales_stream_store_item ON sales_stream_raw(store_id, item_id);
-CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(date);
-CREATE INDEX IF NOT EXISTS idx_sales_store_item ON sales(store_id, item_id);
-CREATE INDEX IF NOT EXISTS idx_sales_streaming ON sales(is_streaming);
 
 -- =============================================================================
 -- Insert Lulu Hypermarket UAE stores
@@ -221,14 +210,9 @@ FROM '/data/train.csv'
 DELIMITER ','
 CSV HEADER;
 
--- Insert into sales_historical table (README architecture)
+-- Insert into sales_historical table (single source of truth for history)
 INSERT INTO sales_historical (date, store_id, item_id, sales)
 SELECT date, store, item, sales
-FROM temp_sales;
-
--- Also insert into legacy sales table (for backward compatibility)
-INSERT INTO sales (date, store_id, item_id, sales, is_streaming)
-SELECT date, store, item, sales, FALSE
 FROM temp_sales;
 
 -- Drop temp table
@@ -248,7 +232,6 @@ BEGIN
         shift_days := (CURRENT_DATE - 1) - max_hist_date;
         IF shift_days <> 0 THEN
             UPDATE sales_historical SET date = date + shift_days;
-            UPDATE sales SET date = date + shift_days WHERE is_streaming = FALSE;
             RAISE NOTICE '📅 Date-shifted historical data by % days (max date now: %)',
                 shift_days, (CURRENT_DATE - 1);
         END IF;
@@ -258,25 +241,30 @@ END $$;
 -- =============================================================================
 -- UNIFIED VIEW: sales_fact_view (Historical UNION Streaming)
 -- =============================================================================
+-- Shaped as a drop-in for the retired `sales` table (same columns) so the ORM
+-- Sale model and raw-SQL readers work unchanged. Streaming ids are offset by
+-- 1,000,000,000 to stay unique across the union. Kept in sync with migration 007.
 CREATE OR REPLACE VIEW sales_fact_view AS
-SELECT 
+SELECT
     id,
-    date AS timestamp,
+    date,
     store_id,
     item_id,
     sales,
-    'historical' AS source,
+    FALSE AS is_streaming,
+    'historical'::text AS source,
     created_at
 FROM sales_historical
 UNION ALL
-SELECT 
-    id,
-    timestamp::date AS timestamp,
+SELECT
+    id + 1000000000 AS id,
+    timestamp::date AS date,
     store_id,
     item_id,
     sales,
-    'streaming' AS source,
-    created_at
+    TRUE AS is_streaming,
+    'streaming'::text AS source,
+    COALESCE(created_at, timestamp) AS created_at
 FROM sales_stream_raw;
 
 -- =============================================================================

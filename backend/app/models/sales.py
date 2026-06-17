@@ -16,7 +16,7 @@ class Store(Base):
     location = Column(String(100))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    sales = relationship("Sale", back_populates="store")
+    sales = relationship("Sale", back_populates="store", viewonly=True)
     historical_sales = relationship("SalesHistorical", back_populates="store")
     streaming_sales = relationship("SalesStreamRaw", back_populates="store")
 
@@ -30,17 +30,25 @@ class Item(Base):
     unit_price_aed = Column(Float, default=10.00)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    sales = relationship("Sale", back_populates="item")
+    sales = relationship("Sale", back_populates="item", viewonly=True)
     historical_sales = relationship("SalesHistorical", back_populates="item")
     streaming_sales = relationship("SalesStreamRaw", back_populates="item")
 
 
 # =============================================================================
-# LEGACY TABLE (for backward compatibility)
+# READ-ONLY UNIFIED VIEW (single source of truth — see migration 007)
 # =============================================================================
+# `Sale` is mapped to the `sales_fact_view` (sales_historical UNION
+# sales_stream_raw), shaped to match the old legacy `sales` columns so every
+# reader keeps working. Do NOT instantiate/insert `Sale` — writes go to
+# SalesStreamRaw. Streaming ids are offset by STREAM_ID_OFFSET in the view to
+# stay unique across the union.
+STREAM_ID_OFFSET = 1_000_000_000
+
+
 class Sale(Base):
-    __tablename__ = "sales"
-    
+    __tablename__ = "sales_fact_view"
+
     id = Column(Integer, primary_key=True, index=True)
     date = Column(Date, nullable=False)
     store_id = Column(Integer, ForeignKey("stores.id"), nullable=False)
@@ -48,9 +56,9 @@ class Sale(Base):
     sales = Column(Integer, nullable=False)
     is_streaming = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    store = relationship("Store", back_populates="sales")
-    item = relationship("Item", back_populates="sales")
+
+    store = relationship("Store", back_populates="sales", viewonly=True)
+    item = relationship("Item", back_populates="sales", viewonly=True)
 
 
 # =============================================================================

@@ -47,7 +47,7 @@ async def get_sales_report(
                     date,
                     SUM(sales) as total_sales,
                     COUNT(*) as transactions
-                FROM sales s
+                FROM sales_fact_view s
                 WHERE date >= CURRENT_DATE - INTERVAL '{days} days'
                 {store_filter}
                 GROUP BY date
@@ -70,7 +70,7 @@ async def get_sales_report(
                     i.category,
                     SUM(s.sales) as total_sales,
                     COUNT(*) as transactions
-                FROM sales s
+                FROM sales_fact_view s
                 JOIN items i ON s.item_id = i.id
                 WHERE s.date >= CURRENT_DATE - INTERVAL '{days} days'
                 {store_filter}
@@ -98,7 +98,7 @@ async def get_sales_report(
                     st.location,
                     SUM(s.sales) as total_sales,
                     COUNT(*) as transactions
-                FROM sales s
+                FROM sales_fact_view s
                 JOIN stores st ON s.store_id = st.id
                 WHERE s.date >= CURRENT_DATE - INTERVAL '{days} days'
                 {store_filter}
@@ -125,7 +125,7 @@ async def get_sales_report(
                     i.name as item_name,
                     i.category,
                     SUM(s.sales) as total_sales
-                FROM sales s
+                FROM sales_fact_view s
                 JOIN items i ON s.item_id = i.id
                 WHERE s.date >= CURRENT_DATE - INTERVAL '{days} days'
                 {store_filter}
@@ -151,7 +151,7 @@ async def get_sales_report(
                     SUM(sales) as total_sales,
                     COUNT(*) as total_transactions,
                     AVG(sales) as avg_basket_size
-                FROM sales s
+                FROM sales_fact_view s
                 WHERE date >= CURRENT_DATE - INTERVAL '{days} days'
                 {store_filter}
             """))
@@ -160,7 +160,7 @@ async def get_sales_report(
             # Calculate growth (compare to previous period)
             prev_query = await session.execute(text(f"""
                 SELECT SUM(sales) as prev_sales
-                FROM sales s
+                FROM sales_fact_view s
                 WHERE date >= CURRENT_DATE - INTERVAL '{days * 2} days'
                 AND date < CURRENT_DATE - INTERVAL '{days} days'
                 {store_filter}
@@ -235,7 +235,7 @@ async def get_inventory_report(
                         s.item_id,
                         SUM(s.sales) as total_sold,
                         1000 - SUM(s.sales) % 1000 as estimated_stock
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '30 days'
                     {store_filter}
@@ -299,7 +299,7 @@ async def get_performance_report(
                         st.name as store_name,
                         st.location,
                         SUM(s.sales) as current_sales
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN stores st ON s.store_id = st.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '{days} days'
                     {store_filter}
@@ -309,7 +309,7 @@ async def get_performance_report(
                     SELECT 
                         store_id,
                         SUM(sales) as previous_sales
-                    FROM sales s
+                    FROM sales_fact_view s
                     WHERE s.date >= CURRENT_DATE - INTERVAL '{days * 2} days'
                     AND s.date < CURRENT_DATE - INTERVAL '{days} days'
                     {store_filter}

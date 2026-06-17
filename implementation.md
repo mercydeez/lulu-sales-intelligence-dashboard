@@ -38,7 +38,7 @@ model (mig 005), date-shift, token hygiene, migration runner.
 **Phase 2 — MVP completion** 🟡 *(active phase)*
 | # | Task | Status |
 |---|---|---|
-| 2.1 | Unify 3 sales tables → one source of truth | ❌ readers still on legacy `sales` |
+| 2.1 | Unify 3 sales tables → one source of truth | ✅ view is single read source; generator→stream_raw; legacy `sales` dropped (mig 007) |
 | 2.2 | Inventory batches + expiry (mig 006) | 🟡 migration present, wiring uncommitted |
 | 2.3 | Alerts → tasks (acknowledge/assign/resolve) | 🟡 `alert_service.py` uncommitted |
 | 2.4 | Seasonal forecast + MAPE backtest | ✅ |
@@ -66,7 +66,12 @@ model (mig 005), date-shift, token hygiene, migration runner.
 ---
 
 ## Decision log
-- _(record key decisions here as we go — e.g. chosen sales-table strategy, AI default model)_
+- **2.1 sales storage:** adopted the 3-tier design (over collapsing to one table).
+  `sales_stream_raw` = live events, `sales_historical` = CSV, `sales_fact_view` = the
+  union every reader queries. View is shaped as a drop-in for the old `sales` columns;
+  streaming ids offset by 1e9 to keep the ORM identity map correct. Legacy `sales`
+  table dropped (migration 007). Pending integration proof: clean-volume boot.
 
 ## Phase changelog
-- _(append one line per completed phase with the commit hash)_
+- Phase 2.2/2.3 backend committed (c69bb47); Phase 3 UI groundwork (b9502fa).
+- Phase 2.1 sales-table unification — this branch.

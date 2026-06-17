@@ -153,7 +153,9 @@ async def generate_returns(
     This creates immediate return data that will show in all return graphs.
     """
     import random
-    from datetime import date, timedelta
+    import uuid
+    from datetime import date, timedelta, datetime as _datetime
+    from app.models.sales import SalesStreamRaw, STREAM_ID_OFFSET
     from app.services.redis_client import publish_sale
     
     # Get stores and items
@@ -179,21 +181,23 @@ async def generate_returns(
         # Random date in the last 7 days (some today, some recent)
         days_ago = random.choices([0, 0, 0, 1, 1, 2, 3, 4, 5, 6], k=1)[0]  # Weighted toward today
         return_date = today - timedelta(days=days_ago)
-        
-        sale = Sale(
-            date=return_date,
+        # Back-date the event via its timestamp (view derives date = timestamp::date)
+        return_ts = _datetime.combine(return_date, _datetime.now().time())
+
+        sale = SalesStreamRaw(
+            event_id=uuid.uuid4(),
+            timestamp=return_ts,
             store_id=store.id,
             item_id=item.id,
             sales=return_value,
-            is_streaming=True
         )
-        
+
         db.add(sale)
         await db.flush()  # Get the ID
-        
+
         return_data = {
-            'id': sale.id,
-            'date': sale.date.isoformat(),
+            'id': sale.id + STREAM_ID_OFFSET,
+            'date': return_date.isoformat(),
             'store_id': sale.store_id,
             'store_name': store.name,
             'item_id': sale.item_id,
@@ -202,7 +206,7 @@ async def generate_returns(
             'sales': sale.sales,
             'is_streaming': True,
             'created_at': sale.created_at.isoformat() if sale.created_at else datetime.now().isoformat(),
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': return_ts.isoformat(),
             'transaction_type': 'return',
             'transaction_label': '🔄 RETURN',
             'return_reason': random.choice(['defective', 'wrong_item', 'changed_mind', 'expired', 'quality_issue']),
