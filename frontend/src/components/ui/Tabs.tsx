@@ -5,6 +5,8 @@ export interface TabItem {
   id: string;
   label: string;
   icon?: ReactNode;
+  /** Optional trailing count pill, e.g. unread alerts */
+  badge?: ReactNode;
 }
 
 export interface TabsProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onChange'> {
@@ -36,6 +38,7 @@ export function Tabs({ items, value, onChange, className, ...props }: TabsProps)
           >
             {item.icon}
             {item.label}
+            {item.badge}
           </button>
         );
       })}
