@@ -52,7 +52,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 | 3.1 | Design tokens, fonts, light/dark CSS vars, Tailwind config | ✅ Sunset Pop palette (coral/teal/violet/amber) + Inter via `next/font`; legacy dark-slate overrides removed |
 | 3.2 | `ui/` primitives + `/dev/components` gallery | ✅ Button, Card, StatCard, Badge, Toast, Modal, EmptyState, Skeleton, ChartFrame, LiveIndicator, PageHeader, Tabs, Select, Input, Table (757eb6d) |
 | 3.3 | App shell: sidebar nav, slim top bar, role-shaped home | ✅ sidebar replacing top Navbar (775d4c7) |
-| 3.4 | Rebuild screens: Home → Inventory → Alerts → Analytics/Forecast → Promotions → Employees → **Admin** → Reports/Monitoring | 🟡 6/8 done — Live Operations home (6404c0b), Inventory/Procurement (9debab7), Alerts/Tasks (819b9c4), Analytics/Forecast (bee4aae), Promotions/Pricing (583f0f4), Employees/Performance (HEAD — real `/api/employees/*` data via authFetch, Sunset bio cards, overview/employees/analytics tabs, restyled charts + create/detail modals, old dupe components removed). **Next: Admin.** Then Reports/Monitoring |
+| 3.4 | Rebuild screens: Home → Inventory → Alerts → Analytics/Forecast → Promotions → Employees → Admin → **Reports/Monitoring** | 🟡 7/8 done — Live Operations home (6404c0b), Inventory/Procurement (9debab7), Alerts/Tasks (819b9c4), Analytics/Forecast (bee4aae), Promotions/Pricing (583f0f4), Employees/Performance (f5f007c), Admin (HEAD — honest read-only console: dashboard cards + trend, users/stores tables, activity feed; super-admin gated). **Next: Reports/Monitoring** (last screen). |
 | 3.5 | States pass: skeletons, empty states, error panels, SSE-degraded banner | ❌ |
 | 3.6 | Microinteractions: number tickers, delta flashes, live-row animations, reduced-motion | ❌ |
 | 3.7 | Mobile pass (manager-on-the-floor) → accessibility pass (AA contrast, keyboard, aria-live) | ❌ |
@@ -86,7 +86,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ## Criticality ranking (what to do next)
 
-1. 🔴 **3.4 remaining screens** — Admin next, then Reports/Monitoring.
+1. 🔴 **3.4 remaining screens** — Reports/Monitoring (last screen), then 3.4 is complete.
 2. 🟠 **3.5–3.7** — states/empty/error pass, microinteractions, mobile + a11y pass once all screens are rebuilt.
 3. 🟡 **Phase 4** — production hardening (can run in parallel with late Phase 3).
 4. 🟢 **Phase 5** — polish/demo (last, once everything looks and works right).
@@ -95,6 +95,15 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ## Decision log
 
+- **3.4 Admin rebuild:** the admin backend is **GET-only** (`/users`, `/stores`, `/dashboard`,
+  `/activity` — all super-admin gated; no create/update/delete despite `UserCreate`/`UserUpdate` models
+  existing). The old page shipped non-functional Add-User / Edit / Save-Settings UI plus a big mock-user
+  fallback and an employees tab duplicating the Employees screen. Rebuilt as an **honest read-only
+  console** over `components/admin/`: super-admin access gate (EmptyState for others),
+  `AdminDashboardCards` + `AdminTrendChart` (real `/dashboard`), `UsersTable` (search), `StoresTable`,
+  `ActivityFeed` (real `/activity`). Four tabs (Overview/Users/Stores/Activity). **Dropped** the fake
+  mutation UI and Settings tab — user/store management needs real POST/PUT endpoints first (tracked as a
+  backend gap, same rationale as the Alerts assignee-picker decision). Verified: tsc clean + build passes.
 - **3.4 Employees/Performance rebuild:** the old page already used real `/api/employees/*` data
   but via raw unauthenticated `fetch(API_URL)` with inline-defined sub-components and dark gray/blue
   styling. Rebuilt as a thin composer over a new `components/employees/` folder: `EmployeeSummaryCards`,
@@ -164,7 +173,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 | Date | Commit | What landed |
 |---|---|---|
-| 2026-06-18 | _(HEAD)_ | feat(3.4): rebuild Employees/Performance screen — real `/api/employees/*` via authFetch, Sunset bio cards, restyled charts + modals, removed orphaned dupes |
+| 2026-06-18 | _(HEAD)_ | feat(3.4): rebuild Admin screen — honest read-only console (dashboard + trend, users/stores tables, activity feed), super-admin gated |
+| 2026-06-18 | f5f007c | feat(3.4): rebuild Employees/Performance screen — real `/api/employees/*` via authFetch, Sunset bio cards, restyled charts + modals, removed orphaned dupes |
 | 2026-06-18 | 583f0f4 | feat(3.4): rebuild Promotions/Pricing screen — real summary/active/list/categories data, Sunset gradient cards, primitive-based create modal scoped to accessible stores |
 | 2026-06-18 | bee4aae | feat(3.4): rebuild Analytics/Forecast screen — real `/api/analytics/*` data, Sunset-palette charts, Overview/Forecast tabs, interactive MAPE backtest |
 | 2026-06-18 | 819b9c4 | feat(3.4): rebuild Alerts/Tasks screen — real ack/resolve+notes/my-tasks workflow |
