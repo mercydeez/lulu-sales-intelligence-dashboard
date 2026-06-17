@@ -39,38 +39,24 @@ derived via `unit_price_aed` (migration 005). Historical data is 2013–2017, da
 **Phase 1 — critical fixes** ✅  auth on all data routers, server-side store/region scoping, revenue
 model (mig 005), date-shift, token hygiene, migration runner.
 
-**Phase 2 — MVP completion** ✅ *(all items committed on `phase-2-mvp-completion`)*
-
-| # | Task | Status |
-|---|---|---|
-| 2.1 | Unify 3 sales tables → one source of truth | ✅ `sales_fact_view` is single read source; generator→`sales_stream_raw`; legacy `sales` dropped (mig 007); clean-boot verified |
-| 2.2 | Inventory batches + expiry (mig 006) | ✅ migration + wiring committed (c69bb47) |
-| 2.3 | Alerts → tasks (acknowledge/assign/resolve) | ✅ `alert_service.py` committed (c69bb47) |
-| 2.4 | Seasonal forecast + MAPE backtest | ✅ committed (b14ad81) |
-| 2.5 | AI provider abstraction (`services/llm/`) | ✅ Ollama→OpenAI→rule-based chain wired; `LLMError` exported (cefbef1) |
-| 2.6 | Single `useEventStream` hook | ✅ committed |
-| 2.7 | Single frontend API client (auth/refresh/user-aware cache) | ✅ `lib/apiClient.ts` + `api.ts` + `AuthContext` wired (eed2632); 22 legacy call sites migrate opportunistically in Phase 3 |
-| 2.8 | Backend tests wired to CI | ✅ `ci.yml` runs full `pytest` + strict `tsc` + docker builds |
-| 2.9 | Seed pack — no empty demo screens | ✅ fixed inventory/items bug; every nav page populates |
+**Phase 2 — MVP completion** ✅ all 9 items (sales unification, inventory/expiry, alerts→tasks,
+seasonal forecast, AI provider chain, `useEventStream`, API client foundation, CI, seed pack)
+committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ---
 
-**Phase 3 — UI/UX redesign** 🟡 *(active phase)*
+**Phase 3 — UI/UX redesign** 🟡 *(active phase — following `docs/IMPLEMENTATION_ROADMAP.md` §3 order)*
 
 | # | Task | Status |
 |---|---|---|
-| 3.1 | Design tokens + `globals.css` reset | 🟡 groundwork in b9502fa — needs finalising (color palette, spacing scale, typography) |
-| 3.2 | `src/components/ui/` primitive library | ❌ Button, Card, Badge, Input, Select, Table, Modal, Skeleton |
-| 3.3 | App shell & Navbar rebuild | ❌ responsive sidebar, role-aware nav links, user avatar/logout |
-| 3.4 | Login page rebuild | 🟡 WIP in b9502fa — needs error states, loading UX, redirect-after-login |
-| 3.5 | Dashboard / KPI cards rebuild | 🟡 WIP in b9502fa — needs Skeleton loaders, SSE-wired live numbers |
-| 3.6 | Sales analytics screen | ❌ trend chart, store/item filters, date range picker |
-| 3.7 | Inventory & expiry screen | ❌ table with batch rows, expiry countdown badges, low-stock highlight |
-| 3.8 | Alerts → tasks screen | ❌ kanban or list view, acknowledge/assign/resolve actions |
-| 3.9 | Employees screen | ❌ org-chart or table, department filter |
-| 3.10 | Promotions screen | ❌ active/scheduled/expired tabs |
-| 3.11 | AI chatbot panel | ❌ streaming response render, session reset, copy button |
-| 3.12 | Migrate 22 raw `fetch()` call sites → `apiClient` | ❌ opportunistic during each screen rebuild above |
+| 3.1 | Design tokens, fonts, light/dark CSS vars, Tailwind config | ✅ Sunset Pop palette (coral/teal/violet/amber) + Inter via `next/font`; legacy dark-slate overrides removed |
+| 3.2 | `ui/` primitives + `/dev/components` gallery | ✅ Button, Card, StatCard, Badge, Toast, Modal, EmptyState, Skeleton, ChartFrame, LiveIndicator, PageHeader, Tabs, Select, Input, Table (757eb6d) |
+| 3.3 | App shell: sidebar nav, slim top bar, role-shaped home | ✅ sidebar replacing top Navbar (775d4c7) |
+| 3.4 | Rebuild screens: Home → Inventory → Alerts → **Analytics/Forecast** → Promotions → Employees → Admin → Reports/Monitoring | 🟡 3/8 done — Live Operations home (6404c0b), Inventory/Procurement (9debab7), Alerts/Tasks (819b9c4, real ack/resolve+notes/my-tasks workflow). **Next: Analytics/Forecast.** Then Promotions, Employees, Admin, Reports/Monitoring |
+| 3.5 | States pass: skeletons, empty states, error panels, SSE-degraded banner | ❌ |
+| 3.6 | Microinteractions: number tickers, delta flashes, live-row animations, reduced-motion | ❌ |
+| 3.7 | Mobile pass (manager-on-the-floor) → accessibility pass (AA contrast, keyboard, aria-live) | ❌ |
+| 3.8 | (Stretch) EN/AR with RTL on nav/home/inventory/alerts | ⏭️ deferred — cuttable without harming core story |
 
 ---
 
@@ -100,8 +86,8 @@ model (mig 005), date-shift, token hygiene, migration runner.
 
 ## Criticality ranking (what to do next)
 
-1. 🔴 **3.1–3.5** — design tokens + primitive library + app shell + login + KPIs: the "first impression" screens every reviewer sees in 30 seconds.
-2. 🟠 **3.6–3.11** — screen-by-screen rebuilds (migrate call sites as each screen is touched).
+1. 🔴 **3.4 remaining screens** — Analytics/Forecast next, then Promotions, Employees, Admin, Reports/Monitoring.
+2. 🟠 **3.5–3.7** — states/empty/error pass, microinteractions, mobile + a11y pass once all screens are rebuilt.
 3. 🟡 **Phase 4** — production hardening (can run in parallel with late Phase 3).
 4. 🟢 **Phase 5** — polish/demo (last, once everything looks and works right).
 
@@ -109,6 +95,11 @@ model (mig 005), date-shift, token hygiene, migration runner.
 
 ## Decision log
 
+- **3.4 Alerts/Tasks rebuild:** switched the page off client-mocked alerts onto the real persisted
+  `alerts` table workflow the backend already exposed but the old page never called — acknowledge,
+  resolve-with-notes, and a "My Tasks" tab (`/api/alerts/my-tasks`). Deliberately dropped the
+  assign-to-user picker: the only assignee-listing endpoint (`/api/admin/users`) is super-admin-only,
+  so a proper picker needs a new backend endpoint — out of scope for a UI decomposition pass.
 - **2.5 AI providers:** Ollama is the zero-cost default; OpenAI is opt-in via env var. Both providers raise `LLMError` on any upstream failure and the caller falls through to the rule-based responder, which always answers with live DB data. No paid key required for the demo.
 - **2.7 API client scope:** built the foundation now (`lib/apiClient.ts` — auth,
   401→refresh single-flight→retry, user-aware cache fixing M2, error-envelope
@@ -136,6 +127,12 @@ model (mig 005), date-shift, token hygiene, migration runner.
 
 | Date | Commit | What landed |
 |---|---|---|
+| 2026-06-18 | 819b9c4 | feat(3.4): rebuild Alerts/Tasks screen — real ack/resolve+notes/my-tasks workflow |
+| 2026-06-18 | 9debab7 | feat(3.4): rebuild Inventory/Procurement screen |
+| 2026-06-17 | 6404c0b | feat(3.4): rebuild Live Operations home screen |
+| 2026-06-17 | 775d4c7 | feat(3.3): sidebar app shell replacing top Navbar |
+| 2026-06-17 | 757eb6d | feat(3.2): ui/ primitives gallery + finish Navbar restyle |
+| 2026-06-17 | 4991f87 | docs: expand implementation tracker — Phase 3 task table, fix stale 2.x statuses |
 | 2026-06-17 | c4c4c91 | docs: tracker updated, Phase 2 marked complete |
 | 2026-06-17 | cefbef1 | feat(2.5): LLM provider chain wired into `ai_assistant.py` |
 | 2026-06-17 | eed2632 | feat(2.7): single frontend API client foundation |
