@@ -16,6 +16,8 @@ export interface StatCardProps extends HTMLAttributes<HTMLDivElement> {
   trendLabel?: string;
   footnote?: ReactNode;
   loading?: boolean;
+  /** Absolutely-positioned overlay content (tooltip, decorative blur orb) — caller controls its own positioning classes. */
+  children?: ReactNode;
 }
 
 const toneChipClasses: Record<StatCardTone, string> = {
@@ -55,6 +57,7 @@ export function StatCard({
   footnote,
   loading = false,
   className,
+  children,
   ...props
 }: StatCardProps) {
   if (loading) {
@@ -85,13 +88,14 @@ export function StatCard({
           {footnote && <div className="mt-2 text-sm text-white/80">{footnote}</div>}
         </div>
         <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/15 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500" />
+        {children}
       </div>
     );
   }
 
   return (
-    <div className={cn('glass rounded-2xl p-6 card-hover group', className)} {...props}>
-      <div className="flex items-center justify-between mb-4">
+    <div className={cn('relative overflow-hidden glass rounded-2xl p-6 card-hover group', className)} {...props}>
+      <div className="flex items-center justify-between mb-4 relative">
         {icon && (
           <div className={cn('p-2 rounded-xl group-hover:scale-110 transition-transform', toneChipClasses[tone])}>
             {icon}
@@ -104,9 +108,10 @@ export function StatCard({
           </span>
         )}
       </div>
-      <div className="text-3xl font-bold text-ink mb-1">{value}</div>
-      <div className="text-sm text-ink-muted">{label}</div>
-      {footnote && <div className="text-xs text-ink-muted/80 mt-0.5">{footnote}</div>}
+      <div className="text-3xl font-bold text-ink mb-1 relative">{value}</div>
+      <div className="text-sm text-ink-muted relative">{label}</div>
+      {footnote && <div className="text-xs text-ink-muted/80 mt-0.5 relative">{footnote}</div>}
+      {children}
     </div>
   );
 }
