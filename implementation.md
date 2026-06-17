@@ -44,9 +44,9 @@ model (mig 005), date-shift, token hygiene, migration runner.
 | 2.4 | Seasonal forecast + MAPE backtest | ✅ |
 | 2.5 | AI provider abstraction (`services/llm/`) | 🟡 providers added, integration uncommitted |
 | 2.6 | Single `useEventStream` hook | ✅ |
-| 2.7 | Single frontend API client (auth/refresh/user-aware cache) | ❓ to verify |
-| 2.8 | Backend test expansion (RBAC, alerts, predictor) wired to CI | 🟡 tests added, CI wiring TBD |
-| 2.9 | Seed pack so no demo screen is empty | 🟡 `seed_data.sql` started |
+| 2.7 | Single frontend API client (auth/refresh/user-aware cache) | ❌ 3 dup auth-fetch impls + 22 raw fetch sites |
+| 2.8 | Backend test expansion (RBAC, alerts, predictor) wired to CI | ✅ ci.yml runs full pytest + strict tsc + docker builds (verified) |
+| 2.9 | Seed pack so no demo screen is empty | ✅ every page populates (fixed inventory/items bug); low-stock empty by design |
 **Phase 3 — UI/UX redesign** ❌ design tokens, `ui/` primitives, app shell, screen rebuilds.
 **Phase 4 — production readiness** ❌ CSP/CORS tightening, logging, indexes, dead-code cleanup.
 **Phase 5 — resume/demo polish** ❌ honest README, demo script, decisions log, pitch one-pager.
@@ -81,6 +81,9 @@ model (mig 005), date-shift, token hygiene, migration runner.
   `department`/`status` were typed `String` while the DB uses PG enums. Mapped the
   attribute to the real column and bound the two enum columns (`values_callable`).
   30 employees now seed on boot; `/api/employees/employees` populated. Model-only fix.
+- ✅ **inventory/items empty fixed:** store filter used `s.store_id` where `s`
+  aliases the `stores` table (key `id`); errored for every scoped request and was
+  caught into an empty list. Filter on `s.id`. Pre-existing; surfaced verifying 2.9.
 - `data_sync.generate_alerts_from_sales` swallows query errors with `except: pass`,
   which poisons the transaction and masks the real failure (made 2.1 alert debugging
   hard). Consider savepoints/rollback per sub-query. Pre-existing design issue.
