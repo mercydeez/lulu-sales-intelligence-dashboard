@@ -75,10 +75,12 @@ model (mig 005), date-shift, token hygiene, migration runner.
   inventory/alerts/materialized-views seed from the view, KPIs/analytics/sales serve
   real data, RBAC scoping holds (store-manager sees only their store), unauth → 401.
 
-## Open findings (surfaced by the clean boot — not yet addressed)
-- **Employee seeding broken on fresh boot:** `column "reports_to_id" of relation
-  "employees" does not exist` (employee_seeder vs migration 004 mismatch). Pre-existing,
-  unrelated to 2.1; employees screen will be empty until fixed.
+## Open findings (surfaced by the clean boot)
+- ✅ **Employee seeding fixed:** the `Employee` ORM model mismatched the DB on two
+  columns — attribute `reports_to_id` mapped to no column (DB has `reports_to`), and
+  `department`/`status` were typed `String` while the DB uses PG enums. Mapped the
+  attribute to the real column and bound the two enum columns (`values_callable`).
+  30 employees now seed on boot; `/api/employees/employees` populated. Model-only fix.
 - `data_sync.generate_alerts_from_sales` swallows query errors with `except: pass`,
   which poisons the transaction and masks the real failure (made 2.1 alert debugging
   hard). Consider savepoints/rollback per sub-query. Pre-existing design issue.
