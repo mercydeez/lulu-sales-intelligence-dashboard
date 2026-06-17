@@ -14,7 +14,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen">
       <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
-      <div className="lg:pl-64">
+      <div className="lg:ps-64">
         <Topbar onMenuClick={() => setMobileNavOpen(true)} />
         {children}
       </div>

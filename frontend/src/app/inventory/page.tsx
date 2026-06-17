@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Package, Bell, ShoppingCart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useEventStream } from '@/hooks/useEventStream';
 import { PageHeader, Tabs, LiveIndicator, Badge, ConnectionBanner } from '@/components/ui';
 import {
@@ -26,6 +27,7 @@ import {
 
 export default function InventoryPage() {
   const { authFetch, hasPermission } = useAuth();
+  const { t } = useLanguage();
   const [summary, setSummary] = useState<InventorySummary | null>(null);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [categories, setCategories] = useState<CategoryData[]>([]);
@@ -201,8 +203,8 @@ export default function InventoryPage() {
     <main className="min-h-screen p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         <PageHeader
-          title="Inventory & Procurement"
-          description="Monitor stock levels, manage alerts, and handle procurement across all stores"
+          title={t('inventory.title')}
+          description={t('inventory.description')}
           icon={<Package className="w-5 h-5" />}
           actions={isLiveConnected ? <LiveIndicator tone="teal" /> : undefined}
         />
@@ -214,13 +216,13 @@ export default function InventoryPage() {
           value={activeTab}
           onChange={(id) => setActiveTab(id as typeof activeTab)}
           items={[
-            { id: 'inventory', label: 'Inventory', icon: <Package className="w-4 h-4" /> },
+            { id: 'inventory', label: t('inventory.tab.inventory'), icon: <Package className="w-4 h-4" /> },
             {
-              id: 'alerts', label: 'Alerts', icon: <Bell className="w-4 h-4" />,
+              id: 'alerts', label: t('inventory.tab.alerts'), icon: <Bell className="w-4 h-4" />,
               badge: unacknowledgedAlerts > 0 && <Badge variant="danger" size="sm">{unacknowledgedAlerts}</Badge>,
             },
             {
-              id: 'procurement', label: 'Procurement', icon: <ShoppingCart className="w-4 h-4" />,
+              id: 'procurement', label: t('inventory.tab.procurement'), icon: <ShoppingCart className="w-4 h-4" />,
               badge: pendingProcurement > 0 && <Badge variant="warning" size="sm">{pendingProcurement}</Badge>,
             },
           ]}

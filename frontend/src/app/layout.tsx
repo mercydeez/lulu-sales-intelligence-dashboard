@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import AIProvider from '@/components/AIProvider';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { LanguageProvider } from '@/contexts/LanguageContext';
 import ClientLayout from '@/components/ClientLayout';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
@@ -25,13 +26,15 @@ export default function RootLayout({
     <html lang="en" className="light">
       <body className={`${inter.variable} font-sans text-ink antialiased`}>
         <div className="min-h-screen">
-          <AuthProvider>
-            <AIProvider>
-              <ClientLayout>
-                {children}
-              </ClientLayout>
-            </AIProvider>
-          </AuthProvider>
+          <LanguageProvider>
+            <AuthProvider>
+              <AIProvider>
+                <ClientLayout>
+                  {children}
+                </ClientLayout>
+              </AIProvider>
+            </AuthProvider>
+          </LanguageProvider>
         </div>
       </body>
     </html>

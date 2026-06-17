@@ -55,7 +55,7 @@ module.exports = {
         ink: {
           DEFAULT: '#1e1b2e',
           soft: '#4b4763',
-          muted: '#8b8699',
+          muted: '#6b6680', // darkened for WCAG AA (5.47:1 on white) — 3.7
         },
       },
       boxShadow: {
@@ -64,9 +64,10 @@ module.exports = {
         soft: '0 10px 30px -12px rgba(30, 27, 46, 0.18)',
       },
       backgroundImage: {
-        'sunset-gradient': 'linear-gradient(135deg, #ff6b5c 0%, #8b5cf6 100%)',
-        'sunset-warm': 'linear-gradient(135deg, #ff6b5c 0%, #fbbf24 100%)',
-        'sunset-cool': 'linear-gradient(135deg, #8b5cf6 0%, #2dd4bf 100%)',
+        // Deepened to 700-level stops so white text clears WCAG AA (>=5:1) — 3.7
+        'sunset-gradient': 'linear-gradient(135deg, #c8351f 0%, #6d28d9 100%)',
+        'sunset-warm': 'linear-gradient(135deg, #c8351f 0%, #b45309 100%)',
+        'sunset-cool': 'linear-gradient(135deg, #6d28d9 0%, #0f766e 100%)',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',

@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/cn';
 import {
   LayoutDashboard,
@@ -24,6 +25,7 @@ import { UserRole } from '@/types/auth';
 
 interface NavItem {
   label: string;
+  tKey: string;
   href: string;
   icon: ReactNode;
   roles?: UserRole[];
@@ -31,15 +33,15 @@ interface NavItem {
 }
 
 export const navItems: NavItem[] = [
-  { label: 'Dashboard', href: '/', icon: <LayoutDashboard className="w-5 h-5" /> },
-  { label: 'Inventory', href: '/inventory', icon: <Package className="w-5 h-5" />, permission: 'can_manage_inventory' },
-  { label: 'Promotions', href: '/promotions', icon: <Tag className="w-5 h-5" />, permission: 'can_manage_promotions' },
-  { label: 'Analytics', href: '/analytics', icon: <BarChart3 className="w-5 h-5" /> },
-  { label: 'Employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
-  { label: 'Reports', href: '/reports', icon: <FileText className="w-5 h-5" />, permission: 'can_export' },
-  { label: 'Alerts', href: '/alerts', icon: <Bell className="w-5 h-5" /> },
-  { label: 'Admin', href: '/admin', icon: <Shield className="w-5 h-5" />, roles: ['super_admin'] },
-  { label: 'Monitoring', href: '/monitoring', icon: <Activity className="w-5 h-5" />, permission: 'is_admin' },
+  { label: 'Dashboard', tKey: 'nav.dashboard', href: '/', icon: <LayoutDashboard className="w-5 h-5" /> },
+  { label: 'Inventory', tKey: 'nav.inventory', href: '/inventory', icon: <Package className="w-5 h-5" />, permission: 'can_manage_inventory' },
+  { label: 'Promotions', tKey: 'nav.promotions', href: '/promotions', icon: <Tag className="w-5 h-5" />, permission: 'can_manage_promotions' },
+  { label: 'Analytics', tKey: 'nav.analytics', href: '/analytics', icon: <BarChart3 className="w-5 h-5" /> },
+  { label: 'Employees', tKey: 'nav.employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
+  { label: 'Reports', tKey: 'nav.reports', href: '/reports', icon: <FileText className="w-5 h-5" />, permission: 'can_export' },
+  { label: 'Alerts', tKey: 'nav.alerts', href: '/alerts', icon: <Bell className="w-5 h-5" /> },
+  { label: 'Admin', tKey: 'nav.admin', href: '/admin', icon: <Shield className="w-5 h-5" />, roles: ['super_admin'] },
+  { label: 'Monitoring', tKey: 'nav.monitoring', href: '/monitoring', icon: <Activity className="w-5 h-5" />, permission: 'is_admin' },
 ];
 
 export interface SidebarProps {
@@ -50,6 +52,7 @@ export interface SidebarProps {
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { hasRole, hasPermission } = useAuth();
+  const { t } = useLanguage();
 
   const canAccessItem = (item: NavItem): boolean => {
     if (item.roles && !hasRole(item.roles)) return false;
@@ -85,7 +88,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               )}
             >
               {item.icon}
-              {item.label}
+              {t(item.tKey)}
             </Link>
           );
         })}
@@ -109,17 +112,17 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   return (
     <>
-      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:left-0 lg:w-64 bg-white/85 backdrop-blur-xl border-r border-coral-100 z-30">
+      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:start-0 lg:w-64 bg-white/85 backdrop-blur-xl border-e border-coral-100 z-30">
         <SidebarContent />
       </aside>
 
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-          <aside className="absolute inset-y-0 left-0 w-72 bg-white shadow-2xl flex flex-col animate-slide-in">
+          <aside className="absolute inset-y-0 start-0 w-72 bg-white shadow-2xl flex flex-col animate-slide-in">
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 p-1.5 rounded-full text-ink-muted hover:text-ink hover:bg-coral-50 transition-colors"
+              className="absolute top-4 end-4 p-1.5 rounded-full text-ink-muted hover:text-ink hover:bg-coral-50 transition-colors"
             >
               <X className="w-4 h-4" />
             </button>

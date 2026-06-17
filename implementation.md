@@ -45,7 +45,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ---
 
-**Phase 3 — UI/UX redesign** 🟡 *(active phase — following `docs/IMPLEMENTATION_ROADMAP.md` §3 order)*
+**Phase 3 — UI/UX redesign** ✅ *(complete — all of 3.1–3.8 done, following `docs/IMPLEMENTATION_ROADMAP.md` §3 order)*
 
 | # | Task | Status |
 |---|---|---|
@@ -55,8 +55,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 | 3.4 | Rebuild screens: Home → Inventory → Alerts → Analytics/Forecast → Promotions → Employees → Admin → Reports/Monitoring | ✅ 8/8 — home (6404c0b), Inventory (9debab7), Alerts (819b9c4), Analytics/Forecast (bee4aae), Promotions (583f0f4), Employees (f5f007c), Admin (73ad59c), Reports + Monitoring (HEAD). All screens on the Sunset design system with real data. |
 | 3.5 | States pass: skeletons, empty states, error panels, SSE-degraded banner | ✅ skeletons + empty states already shipped with the rebuilds; added `ui/ErrorState` (wired into KPICards + Reports) and `ui/ConnectionBanner` SSE-degraded banner (wired into Inventory, driven by stream error) |
 | 3.6 | Microinteractions: number tickers, delta flashes, live-row animations, reduced-motion | ✅ shared reduced-motion-aware `ui/AnimatedNumber` (count-up) replacing the KPICards-local dup; `flashOnChange` delta flash (`.flash-up/.flash-down`) on live values (home Live, Admin sales/items); `useReducedMotion` hook + global `prefers-reduced-motion` CSS guard. Live-row animation uses the existing fade/slide keyframes |
-| 3.7 | Mobile pass (manager-on-the-floor) → accessibility pass (AA contrast, keyboard, aria-live) | 🟡 mobile nav drawer already in the shell; added global `:focus-visible` ring (keyboard) + `aria-live`/`role=status` on `LiveIndicator` and `ConnectionBanner`. **AA contrast not yet formally audited** (Sunset palette is light-on-ink by design but unmeasured) — tracked as remaining a11y work |
-| 3.8 | (Stretch) EN/AR with RTL on nav/home/inventory/alerts | ⏭️ deferred — cuttable without harming core story |
+| 3.7 | Mobile pass (manager-on-the-floor) → accessibility pass (AA contrast, keyboard, aria-live) | ✅ mobile nav drawer in shell; `:focus-visible` ring + `aria-live`/`role=status` on live regions. **AA contrast audit done** (measured ratios via script): darkened `ink-muted` #8b8699→#6b6680 (3.52→5.47), deepened the three sunset gradients + primary button to 700-level stops so white text clears AA (≥5:1 every stop, was 1.67–2.8), fixed coral Tabs/Badge text to coral-700 |
+| 3.8 | EN/AR with RTL on nav/home/inventory/alerts | ✅ `LanguageProvider` (EN/AR dicts, persisted, sets `<html dir/lang>`); topbar language toggle; translated nav + home/inventory/alerts headings & tabs; shell converted to logical utilities (`ps`/`start`/`border-e`) so the sidebar flips to the right in RTL. Arabic uses system font fallback (Inter is latin-only) |
 
 ---
 
@@ -86,15 +86,29 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ## Criticality ranking (what to do next)
 
-1. ✅ **3.4 screen rebuilds — COMPLETE** (all 8 screens on the Sunset design system).
-2. 🟢 **3.5–3.7** — mostly done (error panels, SSE banner, reduced-motion tickers/flashes, keyboard + aria-live). Remaining: formal **AA contrast audit** (3.7).
-3. 🟡 **Phase 4** — production hardening (can run in parallel with late Phase 3).
-4. 🟢 **Phase 5** — polish/demo (last, once everything looks and works right).
+1. ✅ **Phase 3 — COMPLETE** (3.1–3.8: design system, all 8 screens, states, microinteractions, a11y/AA contrast, EN/AR + RTL).
+2. 🟡 **Phase 4** — production hardening (CSP/CORS, structured logging, DB indexes, pagination, `except: pass` fix, dead-code cleanup).
+3. 🟢 **Phase 5** — polish/demo (honest README, demo script, ADRs, pitch one-pager).
 
 ---
 
 ## Decision log
 
+- **3.7 AA contrast audit + 3.8 EN/AR RTL (completes Phase 3):**
+  - *Contrast (3.7):* measured WCAG ratios for the palette with a script. Fixes: `ink-muted`
+    #8b8699→#6b6680 (3.52→**5.47** on white — the pervasive secondary-text colour now passes AA
+    normal); the three `sunset-*` gradients + `btn-sunset` deepened from 500-level to **700-level stops**
+    (coral-700/amber-700/violet-700/teal-700) so white text clears AA at every point (worst was
+    white-on-amber **1.67**, now ≥**5.0**); coral Tabs-active and the coral Badge moved to coral-700 on a
+    lighter tint. Gradient `StatCard` labels bumped to opaque `text-white` semibold. Trade-off: gradients
+    read a touch deeper/richer than the original bright "pop", accepted for genuine AA.
+  - *EN/AR + RTL (3.8):* added `contexts/LanguageContext` (EN/AR dictionaries scoped to nav +
+    home/inventory/alerts, persisted to localStorage, drives `<html dir/lang>`), a topbar globe toggle,
+    and converted the shell's directional classes to **logical utilities** (`lg:start-0`, `lg:ps-64`,
+    `border-e`, `ms-`/`end-`) so the sidebar + content mirror correctly in `dir=rtl`. Flexbox rows mirror
+    automatically under RTL. Scoped to the four areas the roadmap named; data/values and deeper screens
+    stay English. Arabic falls back to a system font (Inter is latin-only) — a bundled Arabic face is a
+    future nicety, not required for the demo.
 - **3.5–3.7 states / microinteractions / a11y pass:** built cross-cutting primitives rather than
   touching every screen ad-hoc. New: `ui/ErrorState` (retry panel), `ui/ConnectionBanner`
   (SSE-degraded, `aria-live`), `ui/AnimatedNumber` (count-up, **respects `prefers-reduced-motion`**,
@@ -196,7 +210,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 | Date | Commit | What landed |
 |---|---|---|
-| 2026-06-18 | _(HEAD)_ | feat(3.5–3.7): states/microinteractions/a11y — ErrorState, SSE ConnectionBanner, reduced-motion AnimatedNumber + delta flash, focus-visible + aria-live |
+| 2026-06-18 | _(HEAD)_ | feat(3.7/3.8): AA contrast audit (deepened gradients + ink-muted) and EN/AR with RTL on nav/home/inventory/alerts — completes Phase 3 |
+| 2026-06-18 | 331334b | feat(3.5–3.7): states/microinteractions/a11y — ErrorState, SSE ConnectionBanner, reduced-motion AnimatedNumber + delta flash, focus-visible + aria-live |
 | 2026-06-18 | 452d9ab | feat(3.4): rebuild Reports + Monitoring screens — completes 3.4; Reports relabelled units (not AED), Monitoring restyled health/stats/metrics console |
 | 2026-06-18 | 73ad59c | feat(3.4): rebuild Admin screen — honest read-only console (dashboard + trend, users/stores tables, activity feed), super-admin gated |
 | 2026-06-18 | f5f007c | feat(3.4): rebuild Employees/Performance screen — real `/api/employees/*` via authFetch, Sunset bio cards, restyled charts + modals, removed orphaned dupes |

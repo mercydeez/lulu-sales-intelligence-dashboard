@@ -269,16 +269,17 @@ body {
     background-clip: text;
   }
 
-  /* Sunset gradient surfaces */
-  .sunset-gradient { background: linear-gradient(135deg, #ff6b5c 0%, #8b5cf6 100%); }
-  .sunset-warm { background: linear-gradient(135deg, #ff6b5c 0%, #fbbf24 100%); }
-  .sunset-cool { background: linear-gradient(135deg, #8b5cf6 0%, #2dd4bf 100%); }
+  /* Sunset gradient surfaces — deepened to 700-level stops so white text
+     clears WCAG AA (every stop >= 5:1 against #fff) — 3.7 contrast audit */
+  .sunset-gradient { background: linear-gradient(135deg, #c8351f 0%, #6d28d9 100%); }
+  .sunset-warm { background: linear-gradient(135deg, #c8351f 0%, #b45309 100%); }
+  .sunset-cool { background: linear-gradient(135deg, #6d28d9 0%, #0f766e 100%); }
 
   /* Playful primary button: gradient + lift + shimmer sheen */
   .btn-sunset {
     position: relative;
     overflow: hidden;
-    background: linear-gradient(135deg, #ff6b5c 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, #c8351f 0%, #6d28d9 100%);
     color: #fff;
     box-shadow: 0 14px 30px -12px rgba(255, 107, 92, 0.55);
     transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;

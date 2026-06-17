@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import KPICards from '@/components/KPICards';
 import LiveTable from '@/components/LiveTable';
 import {
@@ -17,6 +18,7 @@ import { HomeHero, AlertQuickLinks, FinancialOverview, AlertStats } from '@/comp
 
 export default function Home() {
   const { hasRole, authFetch } = useAuth();
+  const { t } = useLanguage();
 
   const [alertStats, setAlertStats] = useState<AlertStats>({
     outOfStock: 12,
@@ -59,10 +61,10 @@ export default function Home() {
         <section>
           <h2 className="text-2xl font-bold text-ink mb-6 flex items-center gap-3">
             <span className="w-1.5 h-8 sunset-gradient rounded-full"></span>
-            Executive Insights
+            {t('home.executiveInsights')}
             {!hasRole(['super_admin']) && (
-              <span className="text-sm font-normal text-ink-muted ml-2">
-                (Filtered to your {hasRole(['regional_manager']) ? 'region' : 'store'})
+              <span className="text-sm font-normal text-ink-muted ms-2">
+                {hasRole(['regional_manager']) ? t('home.filteredRegion') : t('home.filteredStore')}
               </span>
             )}
           </h2>
@@ -99,7 +101,7 @@ export default function Home() {
         <section>
           <h2 className="text-2xl font-bold text-ink mb-6 flex items-center gap-3">
             <span className="w-1.5 h-8 sunset-cool rounded-full"></span>
-            Real-Time Stream
+            {t('home.realTimeStream')}
           </h2>
           <LiveTable />
         </section>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Bell, ClipboardList, Settings, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useEventStream } from '@/hooks/useEventStream';
 import { PageHeader, Tabs, LiveIndicator, Badge, Button } from '@/components/ui';
 import {
@@ -21,6 +22,7 @@ import {
 
 export default function AlertsPage() {
   const { authFetch, hasRole } = useAuth();
+  const { t } = useLanguage();
   const canManageRules = hasRole(['super_admin', 'regional_manager']);
 
   const [summary, setSummary] = useState<AlertSummary | null>(null);
@@ -171,8 +173,8 @@ export default function AlertsPage() {
     <main className="min-h-screen p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         <PageHeader
-          title="Alerts & Tasks"
-          description="Monitor, acknowledge, and resolve operational alerts across all stores"
+          title={t('alerts.title')}
+          description={t('alerts.description')}
           icon={<Bell className="w-5 h-5" />}
           actions={
             <>
@@ -193,11 +195,11 @@ export default function AlertsPage() {
           onChange={(id) => setActiveTab(id as typeof activeTab)}
           items={[
             {
-              id: 'all', label: 'All Alerts', icon: <Bell className="w-4 h-4" />,
+              id: 'all', label: t('alerts.tab.all'), icon: <Bell className="w-4 h-4" />,
               badge: !!summary?.total_active && <Badge variant="danger" size="sm">{summary.total_active}</Badge>,
             },
             {
-              id: 'tasks', label: 'My Tasks', icon: <ClipboardList className="w-4 h-4" />,
+              id: 'tasks', label: t('alerts.tab.tasks'), icon: <ClipboardList className="w-4 h-4" />,
               badge: myTasks.length > 0 && <Badge variant="warning" size="sm">{myTasks.length}</Badge>,
             },
           ]}

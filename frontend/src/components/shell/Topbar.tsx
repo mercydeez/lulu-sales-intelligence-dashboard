@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useEventStream } from '@/hooks/useEventStream';
 import { Badge } from '@/components/ui';
 import {
@@ -70,6 +71,7 @@ export interface TopbarProps {
 export function Topbar({ onMenuClick }: TopbarProps) {
   const router = useRouter();
   const { user, isAuthenticated, logout, authFetch } = useAuth();
+  const { t, toggleLang } = useLanguage();
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -185,6 +187,15 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={toggleLang}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-ink-muted hover:text-ink hover:bg-coral-50 transition-all text-sm font-medium"
+            aria-label="Switch language"
+          >
+            <Globe className="w-4 h-4" />
+            <span className="hidden sm:inline">{t('lang.toggle')}</span>
+          </button>
+
           <div className="relative" ref={notificationRef}>
             <button
               onClick={() => setNotificationOpen(!notificationOpen)}

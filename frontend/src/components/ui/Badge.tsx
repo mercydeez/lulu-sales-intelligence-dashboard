@@ -9,7 +9,7 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const variantClasses: Record<BadgeVariant, string> = {
-  coral: 'bg-coral-100 text-coral-600',
+  coral: 'bg-coral-50 text-coral-700',
   teal: 'bg-teal-100 text-teal-700',
   violet: 'bg-violet-100 text-violet-700',
   amber: 'bg-amber-100 text-amber-700',

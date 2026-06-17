@@ -81,11 +81,11 @@ export function StatCard({
       >
         <div className="relative z-10">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-white/90">{label}</span>
-            {icon && <div className="text-white/80">{icon}</div>}
+            <span className="text-sm font-semibold text-white">{label}</span>
+            {icon && <div className="text-white/90">{icon}</div>}
           </div>
           <div className="text-4xl font-bold text-white">{value}</div>
-          {footnote && <div className="mt-2 text-sm text-white/80">{footnote}</div>}
+          {footnote && <div className="mt-2 text-sm text-white/90">{footnote}</div>}
         </div>
         <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/15 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500" />
         {children}
