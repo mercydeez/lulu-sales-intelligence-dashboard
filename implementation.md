@@ -35,14 +35,14 @@ derived via `unit_price_aed` (migration 005). Historical data is 2013–2017, da
 **Phase 0 — recovery** ✅  git init, `init.sql` crash fixed, SSE import fixed, dev override, CI honesty.
 **Phase 1 — critical fixes** ✅  auth on all data routers, server-side store/region scoping, revenue
 model (mig 005), date-shift, token hygiene, migration runner.
-**Phase 2 — MVP completion** 🟡 *(active phase)*
+**Phase 2 — MVP completion** ✅ *(complete — move to Phase 3)*
 | # | Task | Status |
 |---|---|---|
 | 2.1 | Unify 3 sales tables → one source of truth | ✅ view is single read source; generator→stream_raw; legacy `sales` dropped (mig 007) |
 | 2.2 | Inventory batches + expiry (mig 006) | 🟡 migration present, wiring uncommitted |
 | 2.3 | Alerts → tasks (acknowledge/assign/resolve) | 🟡 `alert_service.py` uncommitted |
 | 2.4 | Seasonal forecast + MAPE backtest | ✅ |
-| 2.5 | AI provider abstraction (`services/llm/`) | 🟡 providers added, integration uncommitted |
+| 2.5 | AI provider abstraction (`services/llm/`) | ✅ Ollama→OpenAI→rule-based chain wired; `LLMError` exported; `ai_assistant.py` no longer calls OpenAI directly |
 | 2.6 | Single `useEventStream` hook | ✅ |
 | 2.7 | Single frontend API client (auth/refresh/user-aware cache) | 🟡 foundation done (lib/apiClient.ts; M2+M3 fixed; api.ts+AuthContext wired). 22 call sites migrate during Phase 3 |
 | 2.8 | Backend test expansion (RBAC, alerts, predictor) wired to CI | ✅ ci.yml runs full pytest + strict tsc + docker builds (verified) |
@@ -94,5 +94,7 @@ model (mig 005), date-shift, token hygiene, migration runner.
   hard). Consider savepoints/rollback per sub-query. Pre-existing design issue.
 
 ## Phase changelog
+- Phase 2.5 AI provider chain (cefbef1): `services/llm/` committed + wired into `ai_assistant.py`.
+- Phase 2.7 single API client (eed2632): `lib/apiClient.ts`, `api.ts` + `AuthContext` rewired.
 - Phase 2.2/2.3 backend committed (c69bb47); Phase 3 UI groundwork (b9502fa).
 - Phase 2.1 sales-table unification (2ca2414) + boot-test fixes — this branch.
