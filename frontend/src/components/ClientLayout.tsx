@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import Navbar from '@/components/Navbar';
+import { AppShell } from '@/components/shell';
 
 // Pages that don't require authentication
 const publicPaths = ['/login', '/forgot-password', '/reset-password', '/dev'];
@@ -44,11 +44,6 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  // Protected pages get navbar
-  return (
-    <>
-      <Navbar />
-      {children}
-    </>
-  );
+  // Protected pages get the app shell (sidebar + topbar)
+  return <AppShell>{children}</AppShell>;
 }
