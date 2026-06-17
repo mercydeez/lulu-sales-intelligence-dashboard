@@ -232,11 +232,11 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+            <div className="w-10 h-10 rounded-xl sunset-gradient flex items-center justify-center shadow-sunset">
               <ShoppingBag className="w-5 h-5 text-white" />
             </div>
             <div className="hidden md:block">
-              <h1 className="text-lg font-bold text-white">Lulu Intelligence</h1>
+              <h1 className="text-lg font-bold gradient-text">Lulu Intelligence</h1>
               <p className="text-xs text-slate-400 -mt-1">UAE Analytics</p>
             </div>
           </Link>
@@ -249,7 +249,7 @@ export default function Navbar() {
                 href={item.href}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
                   pathname === item.href
-                    ? 'bg-slate-700/50 text-cyan-400'
+                    ? 'bg-coral-100 text-coral-600'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                 }`}
               >
@@ -375,7 +375,7 @@ export default function Navbar() {
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
                 className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-700/50 transition-all border border-slate-700/50"
               >
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
+                <div className="w-8 h-8 rounded-lg sunset-gradient flex items-center justify-center text-white font-semibold text-sm">
                   {user?.first_name?.[0]}{user?.last_name?.[0]}
                 </div>
                 <div className="hidden lg:block text-left">
@@ -479,7 +479,7 @@ export default function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                   pathname === item.href
-                    ? 'bg-slate-700/50 text-cyan-400'
+                    ? 'bg-coral-100 text-coral-600'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                 }`}
               >
