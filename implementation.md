@@ -52,7 +52,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 | 3.1 | Design tokens, fonts, light/dark CSS vars, Tailwind config | ✅ Sunset Pop palette (coral/teal/violet/amber) + Inter via `next/font`; legacy dark-slate overrides removed |
 | 3.2 | `ui/` primitives + `/dev/components` gallery | ✅ Button, Card, StatCard, Badge, Toast, Modal, EmptyState, Skeleton, ChartFrame, LiveIndicator, PageHeader, Tabs, Select, Input, Table (757eb6d) |
 | 3.3 | App shell: sidebar nav, slim top bar, role-shaped home | ✅ sidebar replacing top Navbar (775d4c7) |
-| 3.4 | Rebuild screens: Home → Inventory → Alerts → **Analytics/Forecast** → Promotions → Employees → Admin → Reports/Monitoring | 🟡 3/8 done — Live Operations home (6404c0b), Inventory/Procurement (9debab7), Alerts/Tasks (819b9c4, real ack/resolve+notes/my-tasks workflow). **Next: Analytics/Forecast.** Then Promotions, Employees, Admin, Reports/Monitoring |
+| 3.4 | Rebuild screens: Home → Inventory → Alerts → Analytics/Forecast → **Promotions** → Employees → Admin → Reports/Monitoring | 🟡 4/8 done — Live Operations home (6404c0b), Inventory/Procurement (9debab7), Alerts/Tasks (819b9c4), Analytics/Forecast (HEAD of phase-2-mvp-completion — real `/api/analytics/*` data, Sunset palette charts, Overview/Forecast tabs). **Next: Promotions.** Then Employees, Admin, Reports/Monitoring |
 | 3.5 | States pass: skeletons, empty states, error panels, SSE-degraded banner | ❌ |
 | 3.6 | Microinteractions: number tickers, delta flashes, live-row animations, reduced-motion | ❌ |
 | 3.7 | Mobile pass (manager-on-the-floor) → accessibility pass (AA contrast, keyboard, aria-live) | ❌ |
@@ -86,7 +86,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ## Criticality ranking (what to do next)
 
-1. 🔴 **3.4 remaining screens** — Analytics/Forecast next, then Promotions, Employees, Admin, Reports/Monitoring.
+1. 🔴 **3.4 remaining screens** — Promotions next, then Employees, Admin, Reports/Monitoring.
 2. 🟠 **3.5–3.7** — states/empty/error pass, microinteractions, mobile + a11y pass once all screens are rebuilt.
 3. 🟡 **Phase 4** — production hardening (can run in parallel with late Phase 3).
 4. 🟢 **Phase 5** — polish/demo (last, once everything looks and works right).
@@ -95,6 +95,19 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ## Decision log
 
+- **3.4 Analytics/Forecast rebuild:** replaced the mock-data page (random `generateMockData`,
+  fake transactions/conversion/hourly) with a thin composer over a new `components/analytics/`
+  folder fed by the real `/api/analytics/*` endpoints (trend, stores, categories, top-items) plus
+  `/api/kpis`. Two tabs: **Overview** (KPI StatCards, sales trend + 7-day forecast, category mix,
+  store revenue, top items, store-performance table) and **Forecast** (interactive store/item/holdout
+  backtest with MAPE vs seasonal-naive baseline). Charts use a new Sunset Pop `chartTheme` instead of
+  the legacy cyan/slate hex palette. Added typed client helpers (`fetchStoreDistribution`,
+  `fetchCategoryBreakdown`, `fetchTopItems`) routed through `lib/apiClient` per decision 2.7.
+  **Dropped the old `exportAnalyticsPDF`** path (it hardcoded fabricated transactions/conversion);
+  PDF export now uses the generic `generatePDF` over real revenue/category data only — honest figures.
+  The date-range selector intentionally drives only the trend window (the other endpoints are all-time
+  aggregates with no range param). Store-comparison panel is hidden for store managers. Existing shared
+  charts left untouched (the home screen still depends on them). Verified: `tsc --noEmit` clean + `npm run build` passes.
 - **3.4 Alerts/Tasks rebuild:** switched the page off client-mocked alerts onto the real persisted
   `alerts` table workflow the backend already exposed but the old page never called — acknowledge,
   resolve-with-notes, and a "My Tasks" tab (`/api/alerts/my-tasks`). Deliberately dropped the
@@ -127,6 +140,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 | Date | Commit | What landed |
 |---|---|---|
+| 2026-06-18 | _(HEAD)_ | feat(3.4): rebuild Analytics/Forecast screen — real `/api/analytics/*` data, Sunset-palette charts, Overview/Forecast tabs, interactive MAPE backtest |
 | 2026-06-18 | 819b9c4 | feat(3.4): rebuild Alerts/Tasks screen — real ack/resolve+notes/my-tasks workflow |
 | 2026-06-18 | 9debab7 | feat(3.4): rebuild Inventory/Procurement screen |
 | 2026-06-17 | 6404c0b | feat(3.4): rebuild Live Operations home screen |

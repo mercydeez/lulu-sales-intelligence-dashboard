@@ -52,6 +52,26 @@ export interface DashboardMetrics {
   streaming_records_count: number;
 }
 
+export interface StoreDistributionPoint {
+  store_id: number;
+  store_name: string;
+  total_sales: number;
+  percentage: number;
+}
+
+export interface CategoryBreakdownPoint {
+  category: string;
+  total_sales: number;
+  percentage: number;
+}
+
+export interface TopItemPoint {
+  item_id: number;
+  item_name: string;
+  category: string;
+  total_sales: number;
+}
+
 export interface StreamEvent {
   event_type: string;
   data: Sale;

@@ -1,4 +1,7 @@
-import { Sale, SalesAggregation, DashboardMetrics, Prediction, Store, Item, BacktestResult, TrendPoint } from '@/types';
+import {
+  Sale, SalesAggregation, DashboardMetrics, Prediction, Store, Item, BacktestResult, TrendPoint,
+  StoreDistributionPoint, CategoryBreakdownPoint, TopItemPoint,
+} from '@/types';
 import { apiRequest, clearApiCache } from './apiClient';
 
 // Per-endpoint cache TTLs in milliseconds. Caching, auth, refresh-retry and
@@ -87,4 +90,16 @@ export async function fetchBacktest(params?: {
   holdout_days?: number;
 }): Promise<BacktestResult> {
   return cachedFetch<BacktestResult>('/api/sales/predictions/backtest', 'predictions', params as Record<string, unknown>);
+}
+
+export async function fetchStoreDistribution(): Promise<{ data: StoreDistributionPoint[]; total: number }> {
+  return cachedFetch<{ data: StoreDistributionPoint[]; total: number }>('/api/analytics/stores', 'aggregated');
+}
+
+export async function fetchCategoryBreakdown(): Promise<{ data: CategoryBreakdownPoint[]; total: number }> {
+  return cachedFetch<{ data: CategoryBreakdownPoint[]; total: number }>('/api/analytics/categories', 'aggregated');
+}
+
+export async function fetchTopItems(limit: number = 10): Promise<{ data: TopItemPoint[] }> {
+  return cachedFetch<{ data: TopItemPoint[] }>('/api/analytics/top-items', 'aggregated', { limit });
 }
