@@ -100,6 +100,8 @@ services:
       RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-60}
       STREAMING_INTERVAL_SECONDS: ${STREAMING_INTERVAL_SECONDS:-60}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://frontend:3000}
+    volumes:
+      - ./database/migrations:/app/database/migrations:ro
     depends_on:
       postgres:
         condition: service_healthy

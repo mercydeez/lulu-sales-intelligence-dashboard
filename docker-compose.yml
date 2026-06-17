@@ -59,6 +59,7 @@ services:
     volumes:
       - ./backend/app:/app/app
       - ./data:/app/data
+      - ./database/migrations:/app/database/migrations:ro
     networks:
       - sales_network
 

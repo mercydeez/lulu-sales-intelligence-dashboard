@@ -72,10 +72,11 @@ async def run_migrations():
                 logger.error(f"Failed to read migration file {filename}: {e}")
                 raise e
                 
-            # Execute migration SQL
+            # Execute migration SQL with the underlying driver so multi-statement
+            # PostgreSQL scripts (DDL, DO blocks, functions, triggers) run as-is.
             try:
-                # Execute as a single block
-                await conn.execute(text(sql_content))
+                raw_conn = await conn.get_raw_connection()
+                await raw_conn.driver_connection.execute(sql_content)
                 # Record in schema_migrations
                 await conn.execute(
                     text("INSERT INTO schema_migrations (version) VALUES (:version)"),

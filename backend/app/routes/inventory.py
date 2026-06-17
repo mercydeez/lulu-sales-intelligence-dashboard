@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.database import get_db, async_session
 from app.services.data_sync import DataSyncService
 from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE_TTL
-from app.routes.auth import get_current_user
+from app.routes.auth import get_current_user, require_permission
 from app.config import logger
 
 router = APIRouter(tags=["Inventory Management"])
@@ -487,3 +487,216 @@ async def get_inventory_analytics(
                 "top_categories": [],
                 "total_movement": 0
             }
+
+
+# =============================================================================
+# INVENTORY BATCHES & EXPIRY (Phase 2.2)
+# =============================================================================
+
+class BatchCreate(BaseModel):
+    store_id: int
+    item_id: int
+    batch_number: str
+    quantity: int
+    expiry_date: Optional[date] = None
+    unit_cost: float = 0.0
+
+
+def _scoped_store_filter(current_user: dict, store_id: Optional[int],
+                         column: str = "b.store_id"):
+    """Build (sql_fragment, params) enforcing the user's store scope."""
+    accessible = current_user.get("permissions", {}).get("accessible_stores", [])
+    if store_id:
+        if store_id not in accessible:
+            raise HTTPException(status_code=403, detail="Access denied to this store")
+        return f"AND {column} = :store_id", {"store_id": store_id}
+    if accessible:
+        return f"AND {column} = ANY(:stores)", {"stores": accessible}
+    return "", {}
+
+
+@router.get("/batches")
+async def get_inventory_batches(
+    store_id: Optional[int] = None,
+    item_id: Optional[int] = None,
+    status: Optional[str] = Query(None, pattern="^(active|expired|sold_out|disposed)$"),
+    expiring_within: Optional[int] = Query(None, ge=0, le=365,
+                                           description="Only batches expiring within N days"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(get_current_user)
+):
+    """List stock batches with expiry information"""
+    async with async_session() as session:
+        store_sql, params = _scoped_store_filter(current_user, store_id)
+        params.update({"limit": limit, "offset": (page - 1) * limit})
+
+        filters = ""
+        if item_id:
+            filters += " AND b.item_id = :item_id"
+            params["item_id"] = item_id
+        if status:
+            filters += " AND b.status = :status"
+            params["status"] = status
+        if expiring_within is not None:
+            filters += (" AND b.expiry_date IS NOT NULL"
+                        " AND b.expiry_date <= CURRENT_DATE + make_interval(days => :within)")
+            params["within"] = expiring_within
+
+        rows = (await session.execute(text(f"""
+            SELECT b.id, b.store_id, st.name AS store_name, b.item_id,
+                   i.name AS item_name, i.category, b.batch_number,
+                   b.quantity, b.initial_quantity, b.received_date,
+                   b.expiry_date, b.unit_cost, b.status,
+                   CASE WHEN b.expiry_date IS NOT NULL
+                        THEN (b.expiry_date - CURRENT_DATE)
+                   END AS days_to_expiry
+            FROM inventory_batches b
+            JOIN stores st ON b.store_id = st.id
+            JOIN items i ON b.item_id = i.id
+            WHERE 1=1 {store_sql} {filters}
+            ORDER BY b.expiry_date ASC NULLS LAST, b.id
+            LIMIT :limit OFFSET :offset
+        """), params)).fetchall()
+
+        count_params = {k: v for k, v in params.items() if k not in ("limit", "offset")}
+        total = (await session.execute(text(f"""
+            SELECT COUNT(*) FROM inventory_batches b
+            WHERE 1=1 {store_sql} {filters}
+        """), count_params)).scalar() or 0
+
+        batches = [{
+            "id": r.id,
+            "store_id": r.store_id,
+            "store_name": r.store_name,
+            "item_id": r.item_id,
+            "item_name": r.item_name,
+            "category": r.category,
+            "batch_number": r.batch_number,
+            "quantity": r.quantity,
+            "initial_quantity": r.initial_quantity,
+            "received_date": r.received_date.isoformat(),
+            "expiry_date": r.expiry_date.isoformat() if r.expiry_date else None,
+            "days_to_expiry": r.days_to_expiry,
+            "unit_cost": float(r.unit_cost),
+            "value_at_risk": round(r.quantity * float(r.unit_cost), 2),
+            "status": r.status,
+        } for r in rows]
+
+        return {
+            "batches": batches,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "pages": max(1, (total + limit - 1) // limit),
+        }
+
+
+@router.get("/expiry-summary")
+async def get_expiry_summary(
+    store_id: Optional[int] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Expiry risk overview: batch counts and value at risk by time window"""
+    async with async_session() as session:
+        store_sql, params = _scoped_store_filter(current_user, store_id)
+
+        row = (await session.execute(text(f"""
+            SELECT
+                COUNT(*) FILTER (WHERE b.expiry_date < CURRENT_DATE) AS expired,
+                COUNT(*) FILTER (WHERE b.expiry_date >= CURRENT_DATE
+                                 AND b.expiry_date <= CURRENT_DATE + 3) AS within_3d,
+                COUNT(*) FILTER (WHERE b.expiry_date > CURRENT_DATE + 3
+                                 AND b.expiry_date <= CURRENT_DATE + 7) AS within_7d,
+                COUNT(*) FILTER (WHERE b.expiry_date > CURRENT_DATE + 7
+                                 AND b.expiry_date <= CURRENT_DATE + 30) AS within_30d,
+                COALESCE(SUM(b.quantity * b.unit_cost)
+                    FILTER (WHERE b.expiry_date <= CURRENT_DATE + 7), 0) AS value_at_risk_7d,
+                COALESCE(SUM(b.quantity * b.unit_cost)
+                    FILTER (WHERE b.expiry_date < CURRENT_DATE), 0) AS expired_value
+            FROM inventory_batches b
+            WHERE b.status = 'active' AND b.quantity > 0
+              AND b.expiry_date IS NOT NULL
+              {store_sql}
+        """), params)).fetchone()
+
+        return {
+            "expired_batches": row.expired or 0,
+            "expiring_3_days": row.within_3d or 0,
+            "expiring_7_days": row.within_7d or 0,
+            "expiring_30_days": row.within_30d or 0,
+            "value_at_risk_7d": float(row.value_at_risk_7d),
+            "expired_value": float(row.expired_value),
+            "currency": "AED",
+        }
+
+
+@router.post("/batches")
+async def create_inventory_batch(
+    batch: BatchCreate,
+    current_user: dict = Depends(require_permission('can_manage_inventory'))
+):
+    """Register a received stock batch"""
+    accessible = current_user.get("permissions", {}).get("accessible_stores", [])
+    if current_user["role"] != "super_admin" and batch.store_id not in accessible:
+        raise HTTPException(status_code=403, detail="Access denied to this store")
+    if batch.quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be positive")
+
+    async with async_session() as session:
+        try:
+            row = (await session.execute(text("""
+                INSERT INTO inventory_batches
+                    (store_id, item_id, batch_number, quantity, initial_quantity,
+                     expiry_date, unit_cost, status)
+                VALUES (:store_id, :item_id, :batch_number, :quantity, :quantity,
+                        :expiry_date, :unit_cost, 'active')
+                RETURNING id
+            """), {
+                "store_id": batch.store_id,
+                "item_id": batch.item_id,
+                "batch_number": batch.batch_number,
+                "quantity": batch.quantity,
+                "expiry_date": batch.expiry_date,
+                "unit_cost": batch.unit_cost,
+            })).fetchone()
+            await session.commit()
+        except Exception as e:
+            if "unique_store_item_batch" in str(e):
+                raise HTTPException(status_code=409,
+                                    detail="Batch number already exists for this store/item")
+            logger.error(f"Error creating batch: {e}")
+            raise HTTPException(status_code=500, detail="Failed to create batch")
+
+        return {"success": True, "batch_id": row.id, "message": "Batch registered"}
+
+
+@router.post("/batches/{batch_id}/dispose")
+async def dispose_batch(
+    batch_id: int,
+    current_user: dict = Depends(require_permission('can_manage_inventory'))
+):
+    """Mark a batch as disposed (e.g., after expiry) — zeroes its quantity"""
+    async with async_session() as session:
+        batch = (await session.execute(
+            text("SELECT id, store_id, status FROM inventory_batches WHERE id = :id"),
+            {"id": batch_id}
+        )).fetchone()
+
+        if not batch:
+            raise HTTPException(status_code=404, detail="Batch not found")
+
+        accessible = current_user.get("permissions", {}).get("accessible_stores", [])
+        if current_user["role"] != "super_admin" and batch.store_id not in accessible:
+            raise HTTPException(status_code=403, detail="Access denied to this store")
+        if batch.status == "disposed":
+            raise HTTPException(status_code=409, detail="Batch already disposed")
+
+        await session.execute(text("""
+            UPDATE inventory_batches
+            SET status = 'disposed', quantity = 0, updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id
+        """), {"id": batch_id})
+        await session.commit()
+
+        return {"success": True, "batch_id": batch_id, "message": "Batch disposed"}
