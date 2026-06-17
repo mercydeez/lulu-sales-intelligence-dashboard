@@ -1,11 +1,11 @@
 """
 Authentication Routes - Login, Logout, Token Management
 """
-from fastapi import APIRouter, HTTPException, Depends, Request, Response
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.services.auth_service import (
     AuthService, UserLogin, Token, UserResponse, 
@@ -34,7 +34,7 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     
     # Check token expiration
-    if token_data.exp < datetime.utcnow():
+    if token_data.exp < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Token has expired")
     
     # Get fresh user data
@@ -56,7 +56,7 @@ async def get_current_user_optional(
         return None
     
     token_data = decode_token(credentials.credentials)
-    if not token_data or token_data.exp < datetime.utcnow():
+    if not token_data or token_data.exp < datetime.now(timezone.utc):
         return None
     
     return await AuthService.get_user_by_id(token_data.user_id)
@@ -293,3 +293,77 @@ def can_access_store(user: dict, store_id: int) -> bool:
         return True
     accessible = user.get('permissions', {}).get('accessible_stores', [])
     return store_id in accessible
+
+
+def get_accessible_store_ids(user: dict) -> List[int]:
+    """Get list of store IDs the user has access to. Returns empty list for super_admin (meaning all)."""
+    if user['role'] == 'super_admin':
+        return []  # empty = no filter needed (all stores)
+    return user.get('permissions', {}).get('accessible_stores', [])
+
+
+# =============================================================================
+# SSE STREAM TICKET (short-lived token for EventSource connections)
+# =============================================================================
+
+@router.post("/stream-ticket")
+async def issue_stream_ticket(user: dict = Depends(get_current_user)):
+    """
+    Issue a short-lived ticket for SSE stream authentication.
+    
+    EventSource API cannot send custom headers, so the frontend first
+    obtains a stream ticket via this authenticated endpoint, then connects
+    to /stream/sales?ticket=<token>.
+    
+    The ticket expires in 60 seconds and is single-use.
+    """
+    from app.services.auth_service import create_access_token
+    from datetime import timedelta
+    
+    ticket = create_access_token(
+        data={
+            "user_id": user['id'],
+            "email": user['email'],
+            "role": user['role'],
+            "ticket": True,  # marks this as a stream ticket
+        },
+        expires_delta=timedelta(seconds=60)
+    )
+    return {"ticket": ticket, "expires_in": 60}
+
+
+async def get_current_user_from_ticket(
+    ticket: Optional[str] = Query(None, description="Short-lived SSE stream ticket")
+) -> dict:
+    """Dependency to validate the short-lived ticket for SSE streams"""
+    if not ticket:
+        raise HTTPException(status_code=401, detail="Missing stream ticket")
+    
+    # Verify that it's a valid ticket token
+    from jose import jwt, JWTError
+    from app.services.auth_service import SECRET_KEY, ALGORITHM
+    
+    try:
+        payload = jwt.decode(ticket, SECRET_KEY, algorithms=[ALGORITHM])
+        if not payload.get("ticket"):
+            raise HTTPException(status_code=401, detail="Invalid stream ticket")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired stream ticket")
+        
+    token_data = decode_token(ticket)
+    if not token_data:
+        raise HTTPException(status_code=401, detail="Invalid stream ticket")
+    
+    if token_data.exp < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Stream ticket expired")
+        
+    user = await AuthService.get_user_by_id(token_data.user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+        
+    if user['status'] != 'active':
+        raise HTTPException(status_code=401, detail="Account is not active")
+        
+    return user
+
+

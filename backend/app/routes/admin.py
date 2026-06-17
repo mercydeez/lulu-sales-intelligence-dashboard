@@ -205,7 +205,7 @@ async def get_stores(
                     COUNT(DISTINCT sl.item_id) as items_sold,
                     MAX(sl.date) as last_sale_date
                 FROM stores s
-                LEFT JOIN sales sl ON s.id = sl.store_id 
+                LEFT JOIN sales_fact_view sl ON s.id = sl.store_id 
                     AND sl.date >= CURRENT_DATE - INTERVAL '30 days'
                 GROUP BY s.id, s.name, s.location
                 ORDER BY s.id
@@ -268,7 +268,7 @@ async def get_store_details(
                         SUM(CASE WHEN date >= CURRENT_DATE - INTERVAL '30 days' THEN sales ELSE 0 END) as this_month,
                         COUNT(DISTINCT item_id) as unique_items,
                         AVG(sales) as avg_daily_sales
-                    FROM sales
+                    FROM sales_fact_view
                     WHERE store_id = :store_id AND date >= CURRENT_DATE - INTERVAL '30 days'
                 """),
                 {"store_id": store_id}
@@ -284,7 +284,7 @@ async def get_store_details(
             cat_result = await session.execute(
                 text("""
                     SELECT i.category, SUM(s.sales) as total
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.store_id = :store_id AND s.date >= CURRENT_DATE - INTERVAL '30 days'
                     GROUP BY i.category
@@ -352,7 +352,7 @@ async def get_admin_dashboard(
                     COALESCE(SUM(sales), 0) as today_sales,
                     COUNT(DISTINCT store_id) as active_stores,
                     COUNT(DISTINCT item_id) as items_sold
-                FROM sales
+                FROM sales_fact_view
                 WHERE date = CURRENT_DATE
             """))
             sales_row = sales_result.fetchone()
@@ -360,7 +360,7 @@ async def get_admin_dashboard(
             # Get 7-day trend
             trend_result = await session.execute(text("""
                 SELECT date, SUM(sales) as total
-                FROM sales
+                FROM sales_fact_view
                 WHERE date >= CURRENT_DATE - INTERVAL '7 days'
                 GROUP BY date
                 ORDER BY date
@@ -416,7 +416,7 @@ async def get_recent_activity(
                     i.name as item_name,
                     s.sales,
                     s.created_at
-                FROM sales s
+                FROM sales_fact_view s
                 JOIN stores st ON s.store_id = st.id
                 JOIN items i ON s.item_id = i.id
                 ORDER BY s.created_at DESC

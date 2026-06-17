@@ -15,6 +15,8 @@ import {
   Info,
   X
 } from 'lucide-react';
+import { formatCurrency, formatCurrencyCompact } from '@/lib/formatters';
+
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -25,13 +27,19 @@ interface KPIData {
   total_sales_week: number;
   total_sales_month: number;
   average_daily_sales: number;
+  total_revenue_today: number;
+  total_revenue_week: number;
+  total_revenue_month: number;
+  average_daily_revenue: number;
   unique_stores: number;
   unique_items: number;
   data_range_start: string | null;
   data_range_end: string | null;
   last_stream_timestamp: string | null;
   sales_trend: 'up' | 'down' | 'stable';
+  revenue_trend: 'up' | 'down' | 'stable';
 }
+
 
 interface KPICardsProps {
   refreshInterval?: number;
@@ -94,7 +102,7 @@ function InfoButton({ onClick }: { onClick: () => void }) {
 }
 
 // Animated counter component
-function AnimatedNumber({ value, duration = 1000 }: { value: number; duration?: number }) {
+function AnimatedNumber({ value, duration = 1000, formatter }: { value: number; duration?: number; formatter?: (val: number) => string }) {
   const [displayValue, setDisplayValue] = useState(0);
   const previousValue = useRef(0);
 
@@ -123,8 +131,9 @@ function AnimatedNumber({ value, duration = 1000 }: { value: number; duration?: 
     requestAnimationFrame(animate);
   }, [value, duration]);
 
-  return <span>{new Intl.NumberFormat().format(displayValue)}</span>;
+  return <span>{formatter ? formatter(displayValue) : new Intl.NumberFormat().format(displayValue)}</span>;
 }
+
 
 // Time ago formatter
 function formatTimeAgo(timestamp: string | null): string {
@@ -312,8 +321,8 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
             <AnimatedTooltip {...tooltipData.historical} onClose={() => setActiveTooltip(null)} />
           )}
           <div className="flex items-center justify-between mb-4">
-            <div className="p-2 rounded-xl bg-cyan-500/20 group-hover:bg-cyan-500/30 transition-colors">
-              <Database className="w-5 h-5 text-cyan-400" />
+            <div className="p-2 rounded-xl bg-coral-100 text-coral-600 group-hover:scale-110 transition-transform">
+              <Database className="w-5 h-5" />
             </div>
             <div className="flex items-center gap-1">
               <InfoButton onClick={() => setActiveTooltip('historical')} />
@@ -333,18 +342,18 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           {activeTooltip === 'live' && (
             <AnimatedTooltip {...tooltipData.live} onClose={() => setActiveTooltip(null)} />
           )}
-          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl"></div>
+          <div className="absolute top-0 right-0 w-24 h-24 bg-teal-400/10 rounded-full blur-2xl"></div>
           <div className="flex items-center justify-between mb-4 relative">
-            <div className="p-2 rounded-xl bg-emerald-500/20 group-hover:bg-emerald-500/30 transition-colors">
-              <Zap className="w-5 h-5 text-emerald-400" />
+            <div className="p-2 rounded-xl bg-teal-100 text-teal-600 group-hover:scale-110 transition-transform">
+              <Zap className="w-5 h-5" />
             </div>
             <div className="flex items-center gap-2">
               <InfoButton onClick={() => setActiveTooltip('live')} />
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
               </span>
-              <span className="text-xs text-emerald-400 uppercase tracking-wider">Live</span>
+              <span className="text-xs text-teal-600 uppercase tracking-wider">Live</span>
             </div>
           </div>
           <div className="text-3xl font-bold text-white mb-1 relative">
@@ -355,25 +364,28 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           </div>
         </div>
 
-        {/* Weekly Sales */}
+        {/* Weekly Revenue */}
         <div className="glass rounded-2xl p-6 card-hover group relative overflow-hidden">
           {activeTooltip === 'weekly' && (
             <AnimatedTooltip {...tooltipData.weekly} onClose={() => setActiveTooltip(null)} />
           )}
           <div className="flex items-center justify-between mb-4">
-            <div className="p-2 rounded-xl bg-purple-500/20 group-hover:bg-purple-500/30 transition-colors">
-              <BarChart3 className="w-5 h-5 text-purple-400" />
+            <div className="p-2 rounded-xl bg-violet-100 text-violet-600 group-hover:scale-110 transition-transform">
+              <BarChart3 className="w-5 h-5" />
             </div>
             <div className="flex items-center gap-2">
               <InfoButton onClick={() => setActiveTooltip('weekly')} />
-              {getTrendIcon(kpis.sales_trend)}
+              {getTrendIcon(kpis.revenue_trend)}
             </div>
           </div>
           <div className="text-3xl font-bold text-white mb-1">
-            <AnimatedNumber value={kpis.total_sales_week} />
+            <AnimatedNumber value={kpis.total_revenue_week} formatter={formatCurrencyCompact} />
           </div>
-          <div className={`text-sm ${getTrendColor(kpis.sales_trend)}`}>
-            Weekly Sales • {kpis.sales_trend}
+          <div className={`text-sm ${getTrendColor(kpis.revenue_trend)}`}>
+            Weekly Revenue • {kpis.revenue_trend}
+            <span className="text-slate-500 text-xs block mt-0.5">
+              Volume: {new Intl.NumberFormat().format(kpis.total_sales_week)} units
+            </span>
           </div>
         </div>
 
@@ -383,8 +395,8 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
             <AnimatedTooltip {...tooltipData.daily} onClose={() => setActiveTooltip(null)} />
           )}
           <div className="flex items-center justify-between mb-4">
-            <div className="p-2 rounded-xl bg-amber-500/20 group-hover:bg-amber-500/30 transition-colors">
-              <Calendar className="w-5 h-5 text-amber-400" />
+            <div className="p-2 rounded-xl bg-amber-100 text-amber-600 group-hover:scale-110 transition-transform">
+              <Calendar className="w-5 h-5" />
             </div>
             <div className="flex items-center gap-2">
               <InfoButton onClick={() => setActiveTooltip('daily')} />
@@ -392,74 +404,74 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
             </div>
           </div>
           <div className="text-3xl font-bold text-white mb-1">
-            {kpis.average_daily_sales.toFixed(1)}
+            {formatCurrencyCompact(kpis.average_daily_revenue)}
           </div>
           <div className="text-sm text-slate-400">
-            {kpis.unique_stores} stores • {kpis.unique_items} items
+            Avg: {kpis.average_daily_sales.toFixed(0)} units/day
+            <span className="text-slate-500 text-xs block mt-0.5">
+              {kpis.unique_stores} stores • {kpis.unique_items} items
+            </span>
           </div>
         </div>
       </div>
 
       {/* Secondary KPIs - Gradient Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Today's Sales */}
-        <div className="relative overflow-hidden rounded-2xl p-6 card-hover group">
+        {/* Today's Revenue */}
+        <div className="on-sunset relative overflow-hidden rounded-2xl p-6 card-pop group text-white shadow-sunset">
           {activeTooltip === 'today' && (
             <AnimatedTooltip {...tooltipData.today} onClose={() => setActiveTooltip(null)} />
           )}
-          <div className="absolute inset-0 bg-gradient-to-br from-cyan-600 to-cyan-800 opacity-90"></div>
-          <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/20 to-transparent"></div>
+          <div className="absolute inset-0 sunset-warm opacity-95"></div>
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-cyan-100 opacity-90">Today&apos;s Sales</div>
+              <div className="text-sm font-medium text-white/90">Today&apos;s Revenue</div>
               <InfoButton onClick={() => setActiveTooltip('today')} />
             </div>
             <div className="text-4xl font-bold text-white">
-              <AnimatedNumber value={kpis.total_sales_today} />
+              <AnimatedNumber value={kpis.total_revenue_today} formatter={formatCurrency} />
             </div>
-            <div className="mt-2 text-sm text-cyan-200 opacity-75">
-              Real-time tracking
+            <div className="mt-2 text-sm text-white/80">
+              Volume: {new Intl.NumberFormat().format(kpis.total_sales_today)} units
             </div>
           </div>
-          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
+          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/15 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
         </div>
 
-        {/* Monthly Sales */}
-        <div className="relative overflow-hidden rounded-2xl p-6 card-hover group">
+        {/* Monthly Revenue */}
+        <div className="on-sunset relative overflow-hidden rounded-2xl p-6 card-pop group text-white shadow-sunset-violet">
           {activeTooltip === 'monthly' && (
             <AnimatedTooltip {...tooltipData.monthly} onClose={() => setActiveTooltip(null)} />
           )}
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-600 to-emerald-800 opacity-90"></div>
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/20 to-transparent"></div>
+          <div className="absolute inset-0 sunset-gradient opacity-95"></div>
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-emerald-100 opacity-90">Monthly Sales</div>
+              <div className="text-sm font-medium text-white/90">Monthly Revenue</div>
               <InfoButton onClick={() => setActiveTooltip('monthly')} />
             </div>
             <div className="text-4xl font-bold text-white">
-              <AnimatedNumber value={kpis.total_sales_month} />
+              <AnimatedNumber value={kpis.total_revenue_month} formatter={formatCurrencyCompact} />
             </div>
-            <div className="mt-2 text-sm text-emerald-200 opacity-75">
-              Last 30 days
+            <div className="mt-2 text-sm text-white/80">
+              Volume: {new Intl.NumberFormat().format(kpis.total_sales_month)} units
             </div>
           </div>
-          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
+          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/15 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
         </div>
 
         {/* Last Stream */}
-        <div className="relative overflow-hidden rounded-2xl p-6 card-hover group">
+        <div className="on-sunset relative overflow-hidden rounded-2xl p-6 card-pop group text-white shadow-sunset-violet">
           {activeTooltip === 'lastStream' && (
             <AnimatedTooltip {...tooltipData.lastStream} onClose={() => setActiveTooltip(null)} />
           )}
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-600 to-purple-800 opacity-90"></div>
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-transparent"></div>
+          <div className="absolute inset-0 sunset-cool opacity-95"></div>
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-purple-100 opacity-90">Last Stream</div>
+              <div className="text-sm font-medium text-white/90">Last Stream</div>
               <InfoButton onClick={() => setActiveTooltip('lastStream')} />
             </div>
             <div className="text-2xl font-bold text-white">
-              {mounted && kpis.last_stream_timestamp 
+              {mounted && kpis.last_stream_timestamp
                 ? new Date(kpis.last_stream_timestamp).toLocaleTimeString('en-US', {
                     hour: '2-digit',
                     minute: '2-digit',
@@ -468,13 +480,14 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
                   })
                 : kpis.last_stream_timestamp ? '--:--:--' : 'No streams yet'}
             </div>
-            <div className="mt-2 text-sm text-purple-200 opacity-75">
+            <div className="mt-2 text-sm text-white/80">
               {mounted ? formatTimeAgo(kpis.last_stream_timestamp) : '--'}
             </div>
           </div>
-          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
+          <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/15 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
         </div>
       </div>
     </div>
   );
 }
+

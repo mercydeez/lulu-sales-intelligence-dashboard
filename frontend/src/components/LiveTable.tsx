@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Wifi, WifiOff, Clock, Timer, Zap } from 'lucide-react';
+import { useEventStream } from '@/hooks/useEventStream';
+import { authFetch } from '@/contexts/AuthContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -70,13 +72,9 @@ function getTimeAgo(timestamp: string | undefined | null): string {
 
 export default function LiveTable() {
   const [sales, setSales] = useState<StreamSale[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [nextStreamIn, setNextStreamIn] = useState(10);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [mounted, setMounted] = useState(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Update current time every second for "time ago" updates
   useEffect(() => {
@@ -92,7 +90,7 @@ export default function LiveTable() {
   // Fetch initial data
   const fetchLatest = async () => {
     try {
-      const response = await fetch(`${API_URL}/stream/latest?limit=20`);
+      const response = await authFetch('/stream/latest?limit=20');
       if (!response.ok) throw new Error('Failed to fetch latest data');
       const data = await response.json();
       // Normalize timestamp field - API returns 'timestamp' but SSE might use 'created_at'
@@ -106,75 +104,39 @@ export default function LiveTable() {
     }
   };
 
-  // Connect to SSE
-  const connectSSE = () => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
+  // Connect to SSE using useEventStream hook
+  const eventHandlers = useMemo(() => ({
+    sales: (rawSale: any) => {
+      // Normalize: use created_at as timestamp if timestamp is missing
+      const sale = {
+        ...rawSale,
+        timestamp: rawSale.timestamp || rawSale.created_at || new Date().toISOString(),
+        store_name: rawSale.store_name || `Store ${rawSale.store_id}`,
+        item_name: rawSale.item_name || `Item ${rawSale.item_id}`
+      };
+      setNextStreamIn(10); // Reset countdown
+      setSales((prev) => {
+        const newSale = { ...sale, isNew: true };
+        const updated = [newSale, ...prev.slice(0, 19)];
+        
+        // Remove highlight after 2 seconds
+        setTimeout(() => {
+          setSales((current) => 
+            current.map((s) => 
+              s.id === sale.id ? { ...s, isNew: false } : s
+            )
+          );
+        }, 2000);
+        
+        return updated;
+      });
     }
+  }), []);
 
-    const eventSource = new EventSource(`${API_URL}/stream/sales`);
-    eventSourceRef.current = eventSource;
-
-    eventSource.addEventListener('connected', () => {
-      setConnected(true);
-      setError(null);
-    });
-
-    eventSource.addEventListener('sales', (event) => {
-      try {
-        const rawSale = JSON.parse(event.data);
-        // Normalize: use created_at as timestamp if timestamp is missing
-        const sale = {
-          ...rawSale,
-          timestamp: rawSale.timestamp || rawSale.created_at || new Date().toISOString(),
-          store_name: rawSale.store_name || `Store ${rawSale.store_id}`,
-          item_name: rawSale.item_name || `Item ${rawSale.item_id}`
-        };
-        setNextStreamIn(10); // Reset countdown - faster interval
-        setSales((prev) => {
-          const newSale = { ...sale, isNew: true };
-          const updated = [newSale, ...prev.slice(0, 19)];
-          
-          // Remove highlight after 2 seconds for faster feel
-          setTimeout(() => {
-            setSales((current) => 
-              current.map((s) => 
-                s.id === sale.id ? { ...s, isNew: false } : s
-              )
-            );
-          }, 2000);
-          
-          return updated;
-        });
-      } catch (e) {
-        console.error('Failed to parse SSE data:', e);
-      }
-    });
-
-    eventSource.onerror = () => {
-      setConnected(false);
-      setError('Connection lost. Reconnecting...');
-      eventSource.close();
-
-      // Reconnect after 1 second for faster recovery
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connectSSE();
-      }, 1000);
-    };
-  };
+  const { isConnected: connected, error } = useEventStream('/stream/sales', { eventHandlers });
 
   useEffect(() => {
     fetchLatest();
-    connectSSE();
-
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
   }, []);
 
   return (

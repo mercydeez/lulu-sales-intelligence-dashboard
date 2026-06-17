@@ -1,18 +1,9 @@
-import { Sale, SalesAggregation, DashboardMetrics, Prediction, Store, Item } from '@/types';
+import { Sale, SalesAggregation, DashboardMetrics, Prediction, Store, Item, BacktestResult, TrendPoint } from '@/types';
+import { apiRequest, clearApiCache } from './apiClient';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-// ============================================================================
-// SIMPLE IN-MEMORY CACHE FOR API RESPONSES
-// ============================================================================
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
-}
-
-const cache = new Map<string, CacheEntry<unknown>>();
-
-// Cache TTLs in milliseconds
+// Per-endpoint cache TTLs in milliseconds. Caching, auth, refresh-retry and
+// error handling all live in apiClient now; this module just maps the typed
+// endpoints to a TTL.
 const CACHE_TTL: Record<string, number> = {
   'kpis': 15000,              // 15 seconds
   'sales': 10000,             // 10 seconds
@@ -27,111 +18,18 @@ const CACHE_TTL: Record<string, number> = {
   'default': 20000            // 20 seconds default
 };
 
-function getCacheKey(endpoint: string, params?: Record<string, unknown>): string {
-  const paramsStr = params ? JSON.stringify(params) : '';
-  return `${endpoint}:${paramsStr}`;
-}
-
-function getCachedData<T>(key: string, ttlKey: string): T | null {
-  const entry = cache.get(key) as CacheEntry<T> | undefined;
-  if (!entry) return null;
-  
-  const ttl = CACHE_TTL[ttlKey] || CACHE_TTL.default;
-  if (Date.now() - entry.timestamp > ttl) {
-    cache.delete(key);
-    return null;
-  }
-  
-  return entry.data;
-}
-
-function setCachedData<T>(key: string, data: T): void {
-  cache.set(key, { data, timestamp: Date.now() });
-  
-  // Clear old cache entries periodically (keep cache under 100 entries)
-  if (cache.size > 100) {
-    const keysToDelete: string[] = [];
-    cache.forEach((entry, k) => {
-      if (Date.now() - entry.timestamp > 300000) {
-        keysToDelete.push(k);
-      }
-    });
-    keysToDelete.forEach(k => cache.delete(k));
-  }
-}
-
-// Helper to get auth header — uses same key as AuthContext
-function getAuthHeaders(): HeadersInit {
-  if (typeof window === 'undefined') return {};
-  const token = localStorage.getItem('lulu_access_token');
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
-}
-
-// Fast fetch with timeout and caching
+// Thin wrapper kept so the typed functions below read unchanged.
 async function cachedFetch<T>(
-  endpoint: string, 
+  endpoint: string,
   ttlKey: string,
   params?: Record<string, unknown>,
-  options: RequestInit = {}
 ): Promise<T> {
-  const cacheKey = getCacheKey(endpoint, params);
-  const cached = getCachedData<T>(cacheKey, ttlKey);
-  if (cached) return cached;
-  
-  // Build URL with params
-  let url = `${API_URL}${endpoint}`;
-  if (params && Object.keys(params).length > 0) {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        searchParams.append(key, String(value));
-      }
-    });
-    url += `?${searchParams}`;
-  }
-  
-  // Create abort controller for timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-  
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-        ...options.headers
-      }
-    });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    setCachedData(cacheKey, data);
-    return data;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
-  }
+  return apiRequest<T>(endpoint, { params, ttl: CACHE_TTL[ttlKey] ?? CACHE_TTL.default });
 }
 
-// Clear specific cache entries
+/** Clear cached responses (delegates to the shared user-aware cache). */
 export function clearCache(pattern?: string): void {
-  if (!pattern) {
-    cache.clear();
-    return;
-  }
-  
-  cache.forEach((_, key) => {
-    if (key.includes(pattern)) {
-      cache.delete(key);
-    }
-  });
+  clearApiCache(pattern);
 }
 
 // ============================================================================
@@ -174,4 +72,19 @@ export async function fetchItems(): Promise<Item[]> {
 
 export async function fetchKPIs(): Promise<DashboardMetrics> {
   return cachedFetch<DashboardMetrics>('/api/kpis', 'kpis');
+}
+
+export async function fetchTrend(days: number = 30, includeForecast: boolean = true): Promise<{ data: TrendPoint[] }> {
+  return cachedFetch<{ data: TrendPoint[] }>('/api/analytics/trend', 'aggregated', {
+    days,
+    include_forecast: includeForecast,
+  });
+}
+
+export async function fetchBacktest(params?: {
+  store_id?: number;
+  item_id?: number;
+  holdout_days?: number;
+}): Promise<BacktestResult> {
+  return cachedFetch<BacktestResult>('/api/sales/predictions/backtest', 'predictions', params as Record<string, unknown>);
 }

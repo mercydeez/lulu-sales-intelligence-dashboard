@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   AreaChart,
   Area,
@@ -17,8 +17,8 @@ import {
   Line
 } from 'recharts';
 import { Activity, Zap, Clock, ShoppingBag, Store, TrendingUp, Package, ArrowDown, ArrowUp, RefreshCw } from 'lucide-react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { useEventStream } from '@/hooks/useEventStream';
+import { authFetch } from '@/contexts/AuthContext';
 
 interface StreamingDataPoint {
   timestamp: string;
@@ -65,18 +65,16 @@ export default function LiveStreamChart() {
   const [storeItemMap, setStoreItemMap] = useState<StoreItemMap>({ stores: {}, items: {} });
   const [salesByStore, setSalesByStore] = useState<Record<string, number>>({});
   const [salesByCategory, setSalesByCategory] = useState<Record<string, number>>({});
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Fetch returns summary data from API
+  // Fetch returns summary data from API using authFetch
   useEffect(() => {
     const fetchReturnsSummary = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/analytics/returns-summary`);
+        const response = await authFetch('/api/analytics/returns-summary');
         if (response.ok) {
           const data = await response.json();
           setTodayReturns(data.today_count || 0);
@@ -95,13 +93,13 @@ export default function LiveStreamChart() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch store and item mappings for enriching live data
+  // Fetch store and item mappings for enriching live data using authFetch
   useEffect(() => {
     const fetchMappings = async () => {
       try {
         const [storesRes, itemsRes] = await Promise.all([
-          fetch(`${API_URL}/api/analytics/stores`),
-          fetch(`${API_URL}/api/analytics/top-items?limit=50`)
+          authFetch('/api/analytics/stores'),
+          authFetch('/api/analytics/top-items?limit=50')
         ]);
         
         if (storesRes.ok) {
@@ -128,11 +126,11 @@ export default function LiveStreamChart() {
     fetchMappings();
   }, []);
 
-  // Fetch initial streaming data
+  // Fetch initial streaming data using authFetch
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/analytics/streaming-trend`);
+        const response = await authFetch('/api/analytics/streaming-trend');
         if (!response.ok) throw new Error('Failed to fetch streaming data');
         const result = await response.json();
         setData(result.data || []);
@@ -140,7 +138,6 @@ export default function LiveStreamChart() {
         
         // Calculate sales by store and category from historical data
         const byStore: Record<string, number> = {};
-        const byCategory: Record<string, number> = {};
         result.data?.forEach((point: StreamingDataPoint) => {
           byStore[point.store_name] = (byStore[point.store_name] || 0) + point.sales;
         });
@@ -157,86 +154,61 @@ export default function LiveStreamChart() {
     return () => clearInterval(interval);
   }, []);
 
-  // SSE Connection for real-time updates
-  const connectSSE = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
+  // Connect to SSE for real-time updates using useEventStream hook
+  const eventHandlers = useMemo(() => ({
+    sales: (saleData: any) => {
+      // Detect if this is a return (negative sales value)
+      const isReturn = saleData.sales < 0;
+      
+      // Enrich with store/item names
+      const storeName = storeItemMap.stores[saleData.store_id] || `Store ${saleData.store_id}`;
+      const itemInfo = storeItemMap.items[saleData.item_id] || { name: `Item ${saleData.item_id}`, category: 'General' };
+      
+      const enrichedSale: LiveSaleEvent = {
+        ...saleData,
+        store_name: storeName,
+        item_name: itemInfo.name,
+        category: itemInfo.category,
+        isReturn
+      };
 
-    const eventSource = new EventSource(`${API_URL}/stream/sales`);
-    eventSourceRef.current = eventSource;
-
-    eventSource.addEventListener('sales', (event) => {
-      try {
-        const saleData: LiveSaleEvent = JSON.parse(event.data);
-        
-        // Detect if this is a return (negative sales value)
-        const isReturn = saleData.sales < 0;
-        
-        // Enrich with store/item names
-        const storeName = storeItemMap.stores[saleData.store_id] || `Store ${saleData.store_id}`;
-        const itemInfo = storeItemMap.items[saleData.item_id] || { name: `Item ${saleData.item_id}`, category: 'General' };
-        
-        const enrichedSale: LiveSaleEvent = {
-          ...saleData,
+      // Add to recent sales (keep last 10)
+      setRecentSales(prev => [enrichedSale, ...prev.slice(0, 9)]);
+      
+      // Update totals (returns reduce the total)
+      setTotalStreaming(prev => prev + saleData.sales);
+      
+      // Track returns separately
+      if (isReturn) {
+        setTotalReturns(prev => prev + Math.abs(saleData.sales));
+        setReturnCount(prev => prev + 1);
+      }
+      
+      // Update sales by store
+      setSalesByStore(prev => ({
+        ...prev,
+        [storeName]: (prev[storeName] || 0) + saleData.sales
+      }));
+      
+      // Update chart data with return information
+      setData(prev => {
+        const lastCumulative = prev.length > 0 ? prev[prev.length - 1].cumulative : 0;
+        const newPoint: StreamingDataPoint = {
+          timestamp: saleData.created_at,
           store_name: storeName,
           item_name: itemInfo.name,
-          category: itemInfo.category,
-          isReturn
+          sales: saleData.sales,
+          cumulative: lastCumulative + saleData.sales,
+          isReturn,
+          transactionType: isReturn ? 'RETURN' : 'SALE'
         };
-
-        // Add to recent sales (keep last 10)
-        setRecentSales(prev => [enrichedSale, ...prev.slice(0, 9)]);
-        
-        // Update totals (returns reduce the total)
-        setTotalStreaming(prev => prev + saleData.sales);
-        
-        // Track returns separately
-        if (isReturn) {
-          setTotalReturns(prev => prev + Math.abs(saleData.sales));
-          setReturnCount(prev => prev + 1);
-        }
-        
-        // Update sales by store
-        setSalesByStore(prev => ({
-          ...prev,
-          [storeName]: (prev[storeName] || 0) + saleData.sales
-        }));
-        
-        // Update chart data with return information
-        setData(prev => {
-          const lastCumulative = prev.length > 0 ? prev[prev.length - 1].cumulative : 0;
-          const newPoint: StreamingDataPoint = {
-            timestamp: saleData.created_at,
-            store_name: storeName,
-            item_name: itemInfo.name,
-            sales: saleData.sales,
-            cumulative: lastCumulative + saleData.sales,
-            isReturn,
-            transactionType: isReturn ? 'RETURN' : 'SALE'
-          };
-          return [...prev.slice(-49), newPoint]; // Keep last 50 points
-        });
-      } catch (e) {
-        console.error('Failed to parse SSE data:', e);
-      }
-    });
-
-    eventSource.onerror = () => {
-      eventSource.close();
-      reconnectTimeoutRef.current = setTimeout(connectSSE, 5000);
-    };
-  }, [storeItemMap]);
-
-  useEffect(() => {
-    if (Object.keys(storeItemMap.stores).length > 0) {
-      connectSSE();
+        return [...prev.slice(-49), newPoint]; // Keep last 50 points
+      });
     }
-    return () => {
-      if (eventSourceRef.current) eventSourceRef.current.close();
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-    };
-  }, [connectSSE, storeItemMap.stores]);
+  }), [storeItemMap]);
+
+  const hasMappings = Object.keys(storeItemMap.stores).length > 0;
+  useEventStream(hasMappings ? '/stream/sales' : null, { eventHandlers });
 
   const formatTime = (timestamp: string) => {
     if (!mounted || !timestamp) return '--:--';

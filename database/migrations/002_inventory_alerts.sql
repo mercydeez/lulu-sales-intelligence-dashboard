@@ -357,7 +357,7 @@ SELECT
     GREATEST(COALESCE(AVG(s.sales), 10) * 7, 50) AS reorder_point,  -- 1 week supply minimum
     GREATEST(COALESCE(AVG(s.sales), 10) * 14, 100) AS reorder_quantity,  -- 2 week supply
     COALESCE(AVG(s.sales), 0) AS average_daily_sales
-FROM sales s
+FROM sales_fact_view s
 WHERE s.date >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY s.store_id, s.item_id
 ON CONFLICT (store_id, item_id) DO UPDATE SET

@@ -83,13 +83,14 @@ class DataSyncService:
             filters = []
             params = {"limit": limit, "offset": offset}
             
-            # Build store filter
+            # Build store filter. Both the main and count queries alias the
+            # `stores` table as `s` (whose key column is `id`), so filter on s.id.
             if store_id:
-                filters.append("s.store_id = :store_id")
+                filters.append("s.id = :store_id")
                 params["store_id"] = store_id
             elif accessible_stores:
                 store_list = ','.join(map(str, accessible_stores))
-                filters.append(f"s.store_id IN ({store_list})")
+                filters.append(f"s.id IN ({store_list})")
             
             if category:
                 filters.append("i.category = :category")
@@ -111,7 +112,7 @@ class DataSyncService:
                         SUM(sales) as total_sold,
                         AVG(sales) as avg_daily_sales,
                         MAX(date) as last_sale_date
-                    FROM sales
+                    FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                     GROUP BY store_id, item_id
                 ),
@@ -215,7 +216,7 @@ class DataSyncService:
             count_query = f"""
                 WITH recent_sales AS (
                     SELECT store_id, item_id
-                    FROM sales
+                    FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                     GROUP BY store_id, item_id
                 )
@@ -268,7 +269,7 @@ class DataSyncService:
                         item_id,
                         SUM(sales) as total_sold,
                         AVG(sales) as avg_daily_sales
-                    FROM sales
+                    FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                     GROUP BY store_id, item_id
                 ),
@@ -355,7 +356,7 @@ class DataSyncService:
                         item_id,
                         SUM(sales) as total_sold,
                         AVG(sales) as avg_daily_sales
-                    FROM sales
+                    FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                     GROUP BY store_id, item_id
                 ),
@@ -423,10 +424,10 @@ class DataSyncService:
             if accessible_stores:
                 store_list = ','.join(map(str, accessible_stores))
                 store_filter = f"AND s.store_id IN ({store_list})"
-            
+
             alerts = []
             alert_id = 1
-            
+
             # 1. Low stock alerts
             low_stock_query = f"""
                 WITH recent_sales AS (
@@ -435,7 +436,7 @@ class DataSyncService:
                         item_id,
                         SUM(sales) as total_sold,
                         AVG(sales) as avg_daily_sales
-                    FROM sales
+                    FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                     GROUP BY store_id, item_id
                 ),
@@ -461,7 +462,7 @@ class DataSyncService:
                     FROM recent_sales rs
                     JOIN items i ON rs.item_id = i.id
                     JOIN stores st ON rs.store_id = st.id
-                    WHERE 1=1 {store_filter}
+                    WHERE 1=1 {store_filter.replace('s.store_id', 'rs.store_id')}
                 )
                 SELECT store_id, store_name, item_id, item_name, category, quantity, reorder_level
                 FROM inventory_calc
@@ -499,7 +500,7 @@ class DataSyncService:
                         i.name as item_name,
                         s.date,
                         s.sales
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     JOIN stores st ON s.store_id = st.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '7 days'
@@ -556,7 +557,7 @@ class DataSyncService:
                         SUM(CASE WHEN s.date >= CURRENT_DATE - INTERVAL '7 days' THEN s.sales ELSE 0 END) as this_week,
                         SUM(CASE WHEN s.date >= CURRENT_DATE - INTERVAL '14 days' 
                                  AND s.date < CURRENT_DATE - INTERVAL '7 days' THEN s.sales ELSE 0 END) as last_week
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN stores st ON s.store_id = st.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '14 days'
                     {store_filter.replace('s.store_id', 's.store_id')}
@@ -621,7 +622,7 @@ class DataSyncService:
                         SUM(s.sales) as total_sales,
                         AVG(s.sales) as avg_daily_sales,
                         COUNT(DISTINCT s.store_id) as store_count
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '30 days'
                     {store_filter}
@@ -758,7 +759,7 @@ class DataSyncService:
                     SELECT 
                         i.category,
                         SUM(s.sales) as total_sales
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '7 days'
                     {store_filter}
@@ -768,7 +769,7 @@ class DataSyncService:
                     SELECT 
                         i.category,
                         SUM(s.sales) as total_sales
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '14 days'
                     AND s.date < CURRENT_DATE - INTERVAL '7 days'

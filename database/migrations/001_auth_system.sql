@@ -294,23 +294,10 @@ WHERE u.email = 'yash@lulu.ae' AND s.id = 1
 ON CONFLICT DO NOTHING;
 
 -- =============================================================================
--- ROW LEVEL SECURITY POLICIES
+-- (Row-level security on the legacy `sales` table was removed: access control
+-- is enforced in the application layer, and the table is retired in migration
+-- 007 in favour of sales_fact_view.)
 -- =============================================================================
-
--- Enable RLS on sales table
-ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
-
--- Policy: Super admins see all
-CREATE POLICY IF NOT EXISTS sales_super_admin ON sales
-    FOR ALL
-    TO PUBLIC
-    USING (
-        EXISTS (
-            SELECT 1 FROM users 
-            WHERE users.role = 'super_admin' 
-            AND users.id = current_setting('app.current_user_id', true)::integer
-        )
-    );
 
 -- =============================================================================
 -- HELPER FUNCTIONS
@@ -396,11 +383,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
 CREATE TRIGGER update_users_updated_at
     BEFORE UPDATE ON users
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_user_permissions_updated_at ON user_permissions;
 CREATE TRIGGER update_user_permissions_updated_at
     BEFORE UPDATE ON user_permissions
     FOR EACH ROW

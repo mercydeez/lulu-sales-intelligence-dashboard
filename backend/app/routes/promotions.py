@@ -314,7 +314,7 @@ async def get_promotion_performance(
                         i.category,
                         s.date,
                         SUM(s.sales) as daily_sales
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '{days} days'
                     {store_filter}
@@ -426,7 +426,7 @@ async def get_promotion_suggestions(
                         i.category,
                         AVG(s.sales) as avg_daily_sales,
                         SUM(s.sales) as total_sales
-                    FROM sales s
+                    FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '30 days'
                     {store_filter}

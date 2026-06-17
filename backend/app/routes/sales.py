@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.services.database import get_db
 from app.services.predictor import SalesPredictor
 from app.models.sales import Sale, Store, Item
+from app.routes.auth import get_current_user, can_access_store, get_accessible_store_ids
 
 
 # Pydantic schemas
@@ -67,9 +68,15 @@ async def get_sales(
     streaming_only: bool = Query(False),
     limit: int = Query(100, le=1000),
     offset: int = Query(0),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get sales data with optional filters"""
+    # Enforce RBAC
+    if store_id:
+        if not can_access_store(current_user, store_id):
+            raise HTTPException(status_code=403, detail="Access denied to this store")
+            
     query = select(Sale)
     
     conditions = []
@@ -79,6 +86,10 @@ async def get_sales(
         conditions.append(Sale.date <= end_date)
     if store_id:
         conditions.append(Sale.store_id == store_id)
+    else:
+        allowed_stores = get_accessible_store_ids(current_user)
+        if allowed_stores:
+            conditions.append(Sale.store_id.in_(allowed_stores))
     if item_id:
         conditions.append(Sale.item_id == item_id)
     if streaming_only:
@@ -99,9 +110,15 @@ async def get_aggregated_sales(
     end_date: Optional[date] = Query(None),
     store_id: Optional[int] = Query(None),
     item_id: Optional[int] = Query(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get aggregated sales by date"""
+    # Enforce RBAC
+    if store_id:
+        if not can_access_store(current_user, store_id):
+            raise HTTPException(status_code=403, detail="Access denied to this store")
+            
     query = select(
         Sale.date,
         func.sum(Sale.sales).label('total_sales')
@@ -114,6 +131,10 @@ async def get_aggregated_sales(
         conditions.append(Sale.date <= end_date)
     if store_id:
         conditions.append(Sale.store_id == store_id)
+    else:
+        allowed_stores = get_accessible_store_ids(current_user)
+        if allowed_stores:
+            conditions.append(Sale.store_id.in_(allowed_stores))
     if item_id:
         conditions.append(Sale.item_id == item_id)
     
@@ -135,9 +156,14 @@ async def get_aggregated_sales(
 async def get_dashboard_metrics(
     store_id: int = Query(1),
     item_id: int = Query(1),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get dashboard metrics"""
+    # Enforce RBAC
+    if not can_access_store(current_user, store_id):
+        raise HTTPException(status_code=403, detail="Access denied to this store")
+        
     today = date.today()
     week_ago = today - timedelta(days=7)
     month_ago = today - timedelta(days=30)
@@ -177,11 +203,12 @@ async def get_dashboard_metrics(
     )
     avg_daily = avg_result.scalar() or 0
     
-    # Streaming records count
-    streaming_result = await db.execute(
-        select(func.count(Sale.id))
-        .where(Sale.is_streaming == True)
-    )
+    # Streaming records count (scoped to allowed stores)
+    streaming_query = select(func.count(Sale.id)).where(Sale.is_streaming == True)
+    allowed_stores = get_accessible_store_ids(current_user)
+    if allowed_stores:
+        streaming_query = streaming_query.where(Sale.store_id.in_(allowed_stores))
+    streaming_result = await db.execute(streaming_query)
     streaming_count = streaming_result.scalar() or 0
     
     # Trend calculation (compare last 7 days with previous 7 days)
@@ -215,18 +242,63 @@ async def get_dashboard_metrics(
 async def get_predictions(
     store_id: int = Query(1),
     item_id: int = Query(1),
-    days: int = Query(30, le=90)
+    days: int = Query(30, le=90),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get sales predictions"""
+    # Enforce RBAC
+    if not can_access_store(current_user, store_id):
+        raise HTTPException(status_code=403, detail="Access denied to this store")
+        
     predictions = await predictor.predict(store_id, item_id, days)
-    
+
     if not predictions:
         raise HTTPException(
-            status_code=404, 
+            status_code=404,
             detail="Not enough historical data for predictions"
         )
-    
+
     return predictions
+
+
+class BacktestPoint(BaseModel):
+    date: date
+    actual: float
+    predicted: float
+    baseline: float
+
+
+class BacktestResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}  # allow the model_version field
+
+    model_version: str
+    holdout_days: int
+    mape: Optional[float]
+    baseline_mape: Optional[float]
+    points: List[BacktestPoint]
+
+
+@router.get("/predictions/backtest", response_model=BacktestResponse)
+async def backtest_predictions(
+    store_id: int = Query(1),
+    item_id: int = Query(1),
+    holdout_days: int = Query(28, ge=7, le=90),
+    current_user: dict = Depends(get_current_user)
+):
+    """Evaluate forecast accuracy: hold out the last N days, fit on the rest,
+    and report MAPE against the actuals plus a seasonal-naive baseline."""
+    if not can_access_store(current_user, store_id):
+        raise HTTPException(status_code=403, detail="Access denied to this store")
+
+    result = await predictor.backtest(store_id, item_id, holdout_days)
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Not enough historical data for a backtest"
+        )
+
+    return result
 
 
 # Store and Item schemas
@@ -243,20 +315,26 @@ class ItemResponse(BaseModel):
     id: int
     name: str
     category: Optional[str] = None
+    unit_price_aed: float
     
     class Config:
         from_attributes = True
 
 
 @router.get("/stores", response_model=List[StoreResponse])
-async def get_stores(db: AsyncSession = Depends(get_db)):
+async def get_stores(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get all store locations"""
-    result = await db.execute(select(Store).order_by(Store.id))
+    # Enforce RBAC: return only accessible stores
+    query = select(Store)
+    allowed_stores = get_accessible_store_ids(current_user)
+    if allowed_stores:
+        query = query.where(Store.id.in_(allowed_stores))
+    result = await db.execute(query.order_by(Store.id))
     return result.scalars().all()
 
 
 @router.get("/items", response_model=List[ItemResponse])
-async def get_items(db: AsyncSession = Depends(get_db)):
+async def get_items(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get all items"""
     result = await db.execute(select(Item).order_by(Item.id))
     return result.scalars().all()

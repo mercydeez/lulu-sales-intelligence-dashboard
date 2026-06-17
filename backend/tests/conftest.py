@@ -11,6 +11,10 @@ os.environ["JWT_SECRET_KEY"] = "test-secret-key-minimum-32-chars-long-for-testin
 os.environ["SECRET_KEY"] = "test-app-secret-key-minimum-32-chars-for-testing"
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://testuser:testpass@localhost:5432/testdb"
 os.environ["REDIS_URL"] = "redis://localhost:6379/1"
+# Docker compose injects these as empty strings, which Settings would read as ""
+# instead of the documented None default — drop them for deterministic tests.
+os.environ.pop("OPENAI_API_KEY", None)
+os.environ.pop("DEEPGRAM_API_KEY", None)
 
 
 @pytest.fixture

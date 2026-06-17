@@ -2,7 +2,7 @@
 AI Assistant API Routes
 Chatbot and Voice Assistant endpoints
 """
-from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Request, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
@@ -24,6 +24,7 @@ from app.services.voice_service import (
     synthesize_speech,
     get_voices
 )
+from app.routes.auth import get_current_user
 
 router = APIRouter()
 
@@ -59,7 +60,7 @@ class ClearConversationRequest(BaseModel):
 
 # Chat Endpoints
 @router.post("/chat")
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, current_user: dict = Depends(get_current_user)):
     """
     Send a message to the AI chatbot (non-streaming)
     """
@@ -96,7 +97,7 @@ async def chat(request: ChatRequest):
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_current_user)):
     """
     Send a message to the AI chatbot with SSE streaming response
     """
@@ -128,7 +129,7 @@ async def chat_stream(request: ChatRequest):
 
 
 @router.post("/chat/clear")
-async def clear_chat(request: ClearConversationRequest):
+async def clear_chat(request: ClearConversationRequest, current_user: dict = Depends(get_current_user)):
     """
     Clear conversation history for a session
     """
@@ -137,7 +138,7 @@ async def clear_chat(request: ClearConversationRequest):
 
 
 @router.get("/chat/summary/{session_id}")
-async def get_chat_summary(session_id: str):
+async def get_chat_summary(session_id: str, current_user: dict = Depends(get_current_user)):
     """
     Get conversation summary for a session
     """
@@ -147,7 +148,7 @@ async def get_chat_summary(session_id: str):
 
 # Voice Endpoints
 @router.post("/voice/transcribe")
-async def voice_transcribe(request: VoiceTranscribeRequest):
+async def voice_transcribe(request: VoiceTranscribeRequest, current_user: dict = Depends(get_current_user)):
     """
     Transcribe audio to text using Deepgram STT
     """
@@ -173,7 +174,8 @@ async def voice_transcribe(request: VoiceTranscribeRequest):
 async def voice_transcribe_file(
     audio: UploadFile = File(...),
     language: str = Form("en"),
-    detect_language: bool = Form(False)
+    detect_language: bool = Form(False),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Transcribe uploaded audio file to text
@@ -195,7 +197,7 @@ async def voice_transcribe_file(
 
 
 @router.post("/voice/synthesize")
-async def voice_synthesize(request: VoiceSynthesizeRequest):
+async def voice_synthesize(request: VoiceSynthesizeRequest, current_user: dict = Depends(get_current_user)):
     """
     Synthesize text to speech using Deepgram TTS
     """
@@ -214,7 +216,7 @@ async def voice_synthesize(request: VoiceSynthesizeRequest):
 
 
 @router.get("/voice/voices")
-async def get_available_voices():
+async def get_available_voices(current_user: dict = Depends(get_current_user)):
     """
     Get list of available TTS voices
     """
@@ -227,7 +229,8 @@ async def voice_chat(
     audio: UploadFile = File(...),
     session_id: Optional[str] = Form(None),
     voice: str = Form("aura-asteria-en"),
-    language: str = Form("en")
+    language: str = Form("en"),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Complete voice chat: transcribe audio, get AI response, synthesize speech

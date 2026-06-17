@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from app.services.database import async_session
 from app.services.data_sync import DataSyncService
+from app.services.alert_service import AlertService
 from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE_TTL
 from app.routes.auth import get_current_user
 from app.config import logger
@@ -31,6 +32,14 @@ class AlertCreate(BaseModel):
     item_id: Optional[int] = None
 
 
+class AlertAssign(BaseModel):
+    user_id: int
+
+
+class AlertResolve(BaseModel):
+    notes: Optional[str] = None
+
+
 class AlertRuleCreate(BaseModel):
     name: str
     rule_type: str  # low_stock, high_sales, low_sales, expiry
@@ -48,49 +57,24 @@ class AlertRuleCreate(BaseModel):
 async def get_alerts_summary(
     current_user: dict = Depends(get_current_user)
 ):
-    """Get alerts summary dashboard from real sales data"""
+    """Get alerts summary from the persisted alerts table (after syncing
+    freshly detected conditions into it)."""
     accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
-    
-    # Check cache first
+
     cache_key = generate_cache_key("alerts_summary", stores=accessible_stores)
     cached = await get_cached(cache_key)
     if cached:
         return cached
-    
+
     async with async_session() as session:
         try:
-            alerts = await DataSyncService.generate_alerts_from_sales(
-                session,
-                accessible_stores=accessible_stores
-            )
-            
-            critical = len([a for a in alerts if a["severity"] == "critical" and a["status"] == "active"])
-            warnings = len([a for a in alerts if a["severity"] == "warning" and a["status"] == "active"])
-            info = len([a for a in alerts if a["severity"] == "info" and a["status"] == "active"])
-            
-            result = {
-                "critical_alerts": critical,
-                "warning_alerts": warnings,
-                "info_alerts": info,
-                "acknowledged": 0,
-                "resolved_today": 0,
-                "total_active": critical + warnings + info
-            }
-            
-            # Cache result
+            await AlertService.sync_alerts(session, accessible_stores=accessible_stores)
+            result = await AlertService.summary(session, accessible_stores=accessible_stores)
             await set_cached(cache_key, result, CACHE_TTL['alerts_summary'])
             return result
-            
         except Exception as e:
             logger.error(f"Alerts summary error: {e}")
-            return {
-                "critical_alerts": 3,
-                "warning_alerts": 12,
-                "info_alerts": 8,
-                "acknowledged": 5,
-                "resolved_today": 15,
-                "total_active": 23
-            }
+            raise HTTPException(status_code=503, detail="Alerts summary unavailable")
 
 
 @router.get("/list")
@@ -99,55 +83,37 @@ async def get_alerts(
     severity: Optional[str] = None,
     alert_type: Optional[str] = None,
     store_id: Optional[int] = None,
+    assigned_to: Optional[int] = None,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     current_user: dict = Depends(get_current_user)
 ):
-    """Get alerts with filtering from real sales data"""
+    """Get persisted alerts with filtering"""
     async with async_session() as session:
         try:
             accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
-            
+
             if store_id and store_id not in accessible_stores:
                 raise HTTPException(status_code=403, detail="Access denied to this store")
-            
-            alerts = await DataSyncService.generate_alerts_from_sales(
+
+            await AlertService.sync_alerts(session, accessible_stores=accessible_stores)
+
+            return await AlertService.list_alerts(
                 session,
-                accessible_stores=[store_id] if store_id else accessible_stores
+                accessible_stores=accessible_stores,
+                status=status,
+                severity=severity,
+                category=alert_type,
+                store_id=store_id,
+                assigned_to=assigned_to,
+                page=page,
+                limit=limit,
             )
-            
-            # Apply filters
-            if status:
-                alerts = [a for a in alerts if a["status"] == status]
-            if severity:
-                alerts = [a for a in alerts if a["severity"] == severity]
-            if alert_type:
-                alerts = [a for a in alerts if a["alert_type"] == alert_type]
-            
-            # Pagination
-            total = len(alerts)
-            offset = (page - 1) * limit
-            alerts = alerts[offset:offset + limit]
-            
-            return {
-                "alerts": alerts,
-                "total": total,
-                "page": page,
-                "limit": limit,
-                "pages": max(1, (total + limit - 1) // limit)
-            }
-            
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Get alerts error: {e}")
-            return {
-                "alerts": [],
-                "total": 0,
-                "page": page,
-                "limit": limit,
-                "pages": 0
-            }
+            raise HTTPException(status_code=503, detail="Alerts unavailable")
 
 
 @router.get("/recent")
@@ -155,24 +121,36 @@ async def get_recent_alerts(
     limit: int = Query(10, ge=1, le=50),
     current_user: dict = Depends(get_current_user)
 ):
-    """Get most recent alerts"""
+    """Get most recent open alerts"""
     async with async_session() as session:
         try:
             accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
-            
-            alerts = await DataSyncService.generate_alerts_from_sales(
-                session,
-                accessible_stores=accessible_stores
+            await AlertService.sync_alerts(session, accessible_stores=accessible_stores)
+            result = await AlertService.list_alerts(
+                session, accessible_stores=accessible_stores, page=1, limit=limit
             )
-            
-            # Sort by created_at and return most recent
-            alerts.sort(key=lambda x: x["created_at"], reverse=True)
-            
-            return {"alerts": alerts[:limit], "total": len(alerts)}
-            
+            return {"alerts": result["alerts"], "total": result["total"]}
         except Exception as e:
             logger.error(f"Recent alerts error: {e}")
             return {"alerts": [], "total": 0}
+
+
+@router.get("/my-tasks")
+async def get_my_tasks(
+    current_user: dict = Depends(get_current_user)
+):
+    """Alerts assigned to the current user that are still open"""
+    async with async_session() as session:
+        accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
+        result = await AlertService.list_alerts(
+            session,
+            accessible_stores=accessible_stores,
+            assigned_to=current_user["id"],
+            page=1,
+            limit=100,
+        )
+        open_tasks = [a for a in result["alerts"] if a["status"] in ("active", "acknowledged")]
+        return {"tasks": open_tasks, "total": len(open_tasks)}
 
 
 @router.get("/stats")
@@ -244,31 +222,84 @@ async def acknowledge_alert(
     alert_id: int,
     current_user: dict = Depends(get_current_user)
 ):
-    """Acknowledge an alert"""
-    # In a real implementation, this would update the database
-    return {
-        "success": True,
-        "message": "Alert acknowledged",
-        "alert_id": alert_id,
-        "acknowledged_by": f"{current_user.get('first_name')} {current_user.get('last_name')}",
-        "acknowledged_at": datetime.now().isoformat()
-    }
+    """Acknowledge an alert (active → acknowledged)"""
+    async with async_session() as session:
+        try:
+            result = await AlertService.acknowledge(session, alert_id, current_user)
+        except PermissionError:
+            raise HTTPException(status_code=403, detail="Access denied to this alert")
+
+        if result is None:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        if not result["updated"]:
+            raise HTTPException(status_code=409, detail="Alert is not in 'active' state")
+
+        return {
+            "success": True,
+            "message": "Alert acknowledged",
+            "alert_id": alert_id,
+            "acknowledged_by": f"{current_user.get('first_name')} {current_user.get('last_name')}",
+            "acknowledged_at": datetime.now().isoformat()
+        }
+
+
+@router.post("/{alert_id}/assign")
+async def assign_alert(
+    alert_id: int,
+    payload: AlertAssign,
+    current_user: dict = Depends(get_current_user)
+):
+    """Assign an open alert to a user as a task"""
+    async with async_session() as session:
+        try:
+            result = await AlertService.assign(session, alert_id, payload.user_id, current_user)
+        except PermissionError:
+            raise HTTPException(status_code=403, detail="Access denied to this alert")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        if result is None:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        if not result["updated"]:
+            raise HTTPException(status_code=409, detail="Alert is already resolved or closed")
+
+        return {
+            "success": True,
+            "message": "Alert assigned",
+            "alert_id": alert_id,
+            "assigned_to": payload.user_id,
+            "assigned_by": f"{current_user.get('first_name')} {current_user.get('last_name')}",
+        }
 
 
 @router.post("/{alert_id}/resolve")
 async def resolve_alert(
     alert_id: int,
+    payload: AlertResolve = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Resolve an alert"""
-    # In a real implementation, this would update the database
-    return {
-        "success": True,
-        "message": "Alert resolved",
-        "alert_id": alert_id,
-        "resolved_by": f"{current_user.get('first_name')} {current_user.get('last_name')}",
-        "resolved_at": datetime.now().isoformat()
-    }
+    """Resolve an open alert, optionally with resolution notes"""
+    async with async_session() as session:
+        try:
+            result = await AlertService.resolve(
+                session, alert_id, current_user,
+                notes=payload.notes if payload else None
+            )
+        except PermissionError:
+            raise HTTPException(status_code=403, detail="Access denied to this alert")
+
+        if result is None:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        if not result["updated"]:
+            raise HTTPException(status_code=409, detail="Alert is already resolved or closed")
+
+        return {
+            "success": True,
+            "message": "Alert resolved",
+            "alert_id": alert_id,
+            "resolved_by": f"{current_user.get('first_name')} {current_user.get('last_name')}",
+            "resolved_at": datetime.now().isoformat()
+        }
 
 
 @router.get("/rules")

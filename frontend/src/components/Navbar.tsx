@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useEventStream } from '@/hooks/useEventStream';
 import { 
   LayoutDashboard, 
   Package, 
@@ -117,7 +118,7 @@ const notificationConfig = {
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isAuthenticated, logout, hasRole, hasPermission } = useAuth();
+  const { user, isAuthenticated, logout, hasRole, hasPermission, authFetch } = useAuth();
   
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -126,57 +127,39 @@ export default function Navbar() {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
 
-  // SSE Connection for real-time notifications
+  // Connect to SSE using useEventStream hook
+  const eventHandlers = useMemo(() => ({
+    alert: (alert: any) => {
+      const newNotification: NotificationItem = {
+        id: alert.id,
+        title: alert.title,
+        message: alert.message,
+        type: alert.severity === 'critical' ? 'critical' : 
+              alert.severity === 'warning' ? 'warning' : 
+              alert.severity === 'success' ? 'success' : 'info',
+        category: alert.category || 'inventory',
+        time: 'Just now',
+        read: false,
+      };
+      
+      setNotifications(prev => {
+        // Avoid duplicates and keep max 15 notifications
+        const exists = prev.some(n => n.id === newNotification.id);
+        if (exists) return prev;
+        return [newNotification, ...prev].slice(0, 15);
+      });
+    }
+  }), []);
+
+  useEventStream(isAuthenticated ? '/stream/alerts' : null, { eventHandlers });
+
+  // Fetch initial notifications
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    const connectSSE = () => {
-      // Connect to alerts stream
-      eventSource = new EventSource(`${API_URL}/stream/alerts`);
-
-      eventSource.addEventListener('alert', (event) => {
-        try {
-          const alert = JSON.parse(event.data);
-          const newNotification: NotificationItem = {
-            id: alert.id,
-            title: alert.title,
-            message: alert.message,
-            type: alert.severity === 'critical' ? 'critical' : 
-                  alert.severity === 'warning' ? 'warning' : 
-                  alert.severity === 'success' ? 'success' : 'info',
-            category: alert.category || 'inventory',
-            time: 'Just now',
-            read: false,
-          };
-          
-          setNotifications(prev => {
-            // Avoid duplicates and keep max 15 notifications
-            const exists = prev.some(n => n.id === newNotification.id);
-            if (exists) return prev;
-            return [newNotification, ...prev].slice(0, 15);
-          });
-        } catch (e) {
-          console.error('Failed to parse alert:', e);
-        }
-      });
-
-      eventSource.onerror = () => {
-        eventSource?.close();
-        // Reconnect after 5 seconds
-        reconnectTimeout = setTimeout(connectSSE, 5000);
-      };
-    };
-
-    // Start SSE connection
-    connectSSE();
-
-    // Also fetch initial notifications
     const fetchInitialNotifications = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/alerts/recent?limit=10`);
+        const response = await authFetch('/api/alerts/recent?limit=10');
         if (response.ok) {
           const data = await response.json();
           const apiNotifications = (data.alerts || []).map((alert: any) => ({
@@ -201,12 +184,7 @@ export default function Navbar() {
     };
 
     fetchInitialNotifications();
-
-    return () => {
-      eventSource?.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, authFetch]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -254,11 +232,11 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+            <div className="w-10 h-10 rounded-xl sunset-gradient flex items-center justify-center shadow-sunset">
               <ShoppingBag className="w-5 h-5 text-white" />
             </div>
             <div className="hidden md:block">
-              <h1 className="text-lg font-bold text-white">Lulu Intelligence</h1>
+              <h1 className="text-lg font-bold gradient-text">Lulu Intelligence</h1>
               <p className="text-xs text-slate-400 -mt-1">UAE Analytics</p>
             </div>
           </Link>
@@ -271,7 +249,7 @@ export default function Navbar() {
                 href={item.href}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
                   pathname === item.href
-                    ? 'bg-slate-700/50 text-cyan-400'
+                    ? 'bg-coral-100 text-coral-600'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                 }`}
               >
@@ -397,7 +375,7 @@ export default function Navbar() {
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
                 className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-700/50 transition-all border border-slate-700/50"
               >
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
+                <div className="w-8 h-8 rounded-lg sunset-gradient flex items-center justify-center text-white font-semibold text-sm">
                   {user?.first_name?.[0]}{user?.last_name?.[0]}
                 </div>
                 <div className="hidden lg:block text-left">
@@ -501,7 +479,7 @@ export default function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
                   pathname === item.href
-                    ? 'bg-slate-700/50 text-cyan-400'
+                    ? 'bg-coral-100 text-coral-600'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                 }`}
               >

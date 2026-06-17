@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # API Keys (optional - for AI features)
     openai_api_key: Optional[str] = None
     deepgram_api_key: Optional[str] = None
+
+    # Local LLM via Ollama (preferred provider when configured — zero paid keys)
+    ollama_url: Optional[str] = None  # e.g. http://ollama:11434
+    ollama_model: str = "llama3.2"
     
     # Streaming - 10 seconds for fast real-time updates
     streaming_interval_seconds: int = 10

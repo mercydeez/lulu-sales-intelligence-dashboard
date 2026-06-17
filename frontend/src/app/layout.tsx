@@ -8,7 +8,7 @@ import ClientLayout from '@/components/ClientLayout';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const viewport: Viewport = {
-  themeColor: '#0f172a',
+  themeColor: '#fdf6f3',
 };
 
 export const metadata: Metadata = {
@@ -22,9 +22,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} bg-slate-900 text-white antialiased`}>
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <html lang="en" className="light">
+      <body className={`${inter.className} text-ink antialiased`}>
+        <div className="min-h-screen">
           <AuthProvider>
             <AIProvider>
               <ClientLayout>

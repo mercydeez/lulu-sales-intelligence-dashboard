@@ -89,14 +89,26 @@ class Employee(Base):
     
     # Role & Assignment
     role = Column(String(50), nullable=False, default="sales_executive")
-    department = Column(String(50), nullable=False, default="sales")
+    # DB columns `department`/`status` are PG enums (migration 004); bind them as
+    # such (sending the lowercase .value) so ORM inserts cast correctly.
+    department = Column(
+        Enum(EmployeeDepartment, name="employee_department", create_type=False,
+             values_callable=lambda e: [m.value for m in e]),
+        nullable=False, default="sales"
+    )
     designation = Column(String(100))
     store_id = Column(Integer, ForeignKey("stores.id"))
     region_id = Column(Integer)
-    reports_to_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
+    # DB column is `reports_to` (migration 004); keep the `reports_to_id`
+    # attribute name the rest of the app uses.
+    reports_to_id = Column("reports_to", Integer, ForeignKey("employees.id"), nullable=True)
     
     # Status
-    status = Column(String(20), nullable=False, default="active")
+    status = Column(
+        Enum(EmployeeStatus, name="employee_status", create_type=False,
+             values_callable=lambda e: [m.value for m in e]),
+        nullable=False, default="active"
+    )
     
     # Additional Info
     photo_url = Column(String(500))

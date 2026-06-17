@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { RotateCcw, Package, Store, Clock, TrendingDown, AlertTriangle, RefreshCw } from 'lucide-react';
+import { useEventStream } from '@/hooks/useEventStream';
+import { authFetch } from '@/contexts/AuthContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -30,16 +32,15 @@ export default function ReturnsLiveFeed() {
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [liveReturns, setLiveReturns] = useState<ReturnItem[]>([]);
-  const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Fetch returns data
+  // Fetch returns data using authFetch
   const fetchReturns = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/analytics/returns-summary`);
+      const response = await authFetch('/api/analytics/returns-summary');
       if (!response.ok) throw new Error('Failed to fetch returns');
       const data = await response.json();
       setStats(data);
@@ -61,65 +62,43 @@ export default function ReturnsLiveFeed() {
     return () => clearInterval(interval);
   }, []);
 
-  // Connect to SSE for real-time return updates
-  useEffect(() => {
-    const connectSSE = () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
+  // Connect to SSE for real-time return updates using useEventStream hook
+  const eventHandlers = useMemo(() => ({
+    sales: (sale: any) => {
+      // Only process returns (negative sales)
+      if (sale.sales < 0) {
+        const newReturn: ReturnItem = {
+          id: sale.id,
+          store_name: sale.store_name || `Store ${sale.store_id}`,
+          item_name: sale.item_name || `Item ${sale.item_id}`,
+          category: sale.category || 'General',
+          quantity: Math.abs(sale.sales),
+          timestamp: sale.created_at || new Date().toISOString(),
+          isNew: true
+        };
+
+        setLiveReturns((prev: ReturnItem[]) => {
+          const updated = [newReturn, ...prev.slice(0, 9)];
+          // Remove highlight after animation
+          setTimeout(() => {
+            setLiveReturns((current: ReturnItem[]) =>
+              current.map((r: ReturnItem) => r.id === newReturn.id ? { ...r, isNew: false } : r)
+            );
+          }, 3000);
+          return updated;
+        });
+
+        // Update stats
+        setStats((prev: ReturnStats | null) => prev ? {
+          ...prev,
+          today_count: prev.today_count + 1,
+          today_value: prev.today_value + Math.abs(sale.sales)
+        } : prev);
       }
+    }
+  }), []);
 
-      const eventSource = new EventSource(`${API_URL}/stream/sales`);
-      eventSourceRef.current = eventSource;
-
-      eventSource.addEventListener('sales', (event) => {
-        try {
-          const sale = JSON.parse(event.data);
-          // Only process returns (negative sales)
-          if (sale.sales < 0) {
-            const newReturn: ReturnItem = {
-              id: sale.id,
-              store_name: sale.store_name || `Store ${sale.store_id}`,
-              item_name: sale.item_name || `Item ${sale.item_id}`,
-              category: sale.category || 'General',
-              quantity: Math.abs(sale.sales),
-              timestamp: sale.created_at || new Date().toISOString(),
-              isNew: true
-            };
-
-            setLiveReturns((prev: ReturnItem[]) => {
-              const updated = [newReturn, ...prev.slice(0, 9)];
-              // Remove highlight after animation
-              setTimeout(() => {
-                setLiveReturns((current: ReturnItem[]) =>
-                  current.map((r: ReturnItem) => r.id === newReturn.id ? { ...r, isNew: false } : r)
-                );
-              }, 3000);
-              return updated;
-            });
-
-            // Update stats
-            setStats((prev: ReturnStats | null) => prev ? {
-              ...prev,
-              today_count: prev.today_count + 1,
-              today_value: prev.today_value + Math.abs(sale.sales)
-            } : prev);
-          }
-        } catch (e) {
-          console.error('Error parsing SSE:', e);
-        }
-      });
-
-      eventSource.onerror = () => {
-        eventSource.close();
-        setTimeout(connectSSE, 5000);
-      };
-    };
-
-    connectSSE();
-    return () => {
-      if (eventSourceRef.current) eventSourceRef.current.close();
-    };
-  }, []);
+  useEventStream('/stream/sales', { eventHandlers });
 
   const formatTime = (timestamp: string) => {
     if (!mounted) return '--:--';
