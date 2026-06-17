@@ -83,13 +83,14 @@ class DataSyncService:
             filters = []
             params = {"limit": limit, "offset": offset}
             
-            # Build store filter
+            # Build store filter. Both the main and count queries alias the
+            # `stores` table as `s` (whose key column is `id`), so filter on s.id.
             if store_id:
-                filters.append("s.store_id = :store_id")
+                filters.append("s.id = :store_id")
                 params["store_id"] = store_id
             elif accessible_stores:
                 store_list = ','.join(map(str, accessible_stores))
-                filters.append(f"s.store_id IN ({store_list})")
+                filters.append(f"s.id IN ({store_list})")
             
             if category:
                 filters.append("i.category = :category")
