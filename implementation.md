@@ -52,7 +52,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 | 3.1 | Design tokens, fonts, light/dark CSS vars, Tailwind config | ✅ Sunset Pop palette (coral/teal/violet/amber) + Inter via `next/font`; legacy dark-slate overrides removed |
 | 3.2 | `ui/` primitives + `/dev/components` gallery | ✅ Button, Card, StatCard, Badge, Toast, Modal, EmptyState, Skeleton, ChartFrame, LiveIndicator, PageHeader, Tabs, Select, Input, Table (757eb6d) |
 | 3.3 | App shell: sidebar nav, slim top bar, role-shaped home | ✅ sidebar replacing top Navbar (775d4c7) |
-| 3.4 | Rebuild screens: Home → Inventory → Alerts → Analytics/Forecast → Promotions → Employees → Admin → **Reports/Monitoring** | 🟡 7/8 done — Live Operations home (6404c0b), Inventory/Procurement (9debab7), Alerts/Tasks (819b9c4), Analytics/Forecast (bee4aae), Promotions/Pricing (583f0f4), Employees/Performance (f5f007c), Admin (HEAD — honest read-only console: dashboard cards + trend, users/stores tables, activity feed; super-admin gated). **Next: Reports/Monitoring** (last screen). |
+| 3.4 | Rebuild screens: Home → Inventory → Alerts → Analytics/Forecast → Promotions → Employees → Admin → Reports/Monitoring | ✅ 8/8 — home (6404c0b), Inventory (9debab7), Alerts (819b9c4), Analytics/Forecast (bee4aae), Promotions (583f0f4), Employees (f5f007c), Admin (73ad59c), Reports + Monitoring (HEAD). All screens on the Sunset design system with real data. |
 | 3.5 | States pass: skeletons, empty states, error panels, SSE-degraded banner | ❌ |
 | 3.6 | Microinteractions: number tickers, delta flashes, live-row animations, reduced-motion | ❌ |
 | 3.7 | Mobile pass (manager-on-the-floor) → accessibility pass (AA contrast, keyboard, aria-live) | ❌ |
@@ -86,8 +86,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ## Criticality ranking (what to do next)
 
-1. 🔴 **3.4 remaining screens** — Reports/Monitoring (last screen), then 3.4 is complete.
-2. 🟠 **3.5–3.7** — states/empty/error pass, microinteractions, mobile + a11y pass once all screens are rebuilt.
+1. ✅ **3.4 screen rebuilds — COMPLETE** (all 8 screens on the Sunset design system).
+2. 🟠 **3.5–3.7** — states/empty/error pass, microinteractions, mobile + a11y pass (now unblocked — all screens rebuilt).
 3. 🟡 **Phase 4** — production hardening (can run in parallel with late Phase 3).
 4. 🟢 **Phase 5** — polish/demo (last, once everything looks and works right).
 
@@ -95,6 +95,18 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ## Decision log
 
+- **3.4 Reports + Monitoring rebuild (completes 3.4):**
+  - *Monitoring* — restyled the real health/stats/metrics console onto the Sunset system via a new
+    `components/monitoring/` folder (`HealthChecksGrid`, `SystemStatsCards`, `MetricsPanel`, `StatusPill`),
+    kept the 10s auto-refresh (now a toggle) and overall-status pill in the header. Already used `authFetch` +
+    real `/api/monitoring/*` data; this was a styling/decomposition pass.
+  - *Reports* — **caught a data-honesty bug**: `/api/reports/sales` aggregates `SUM(sales)` with no
+    `unit_price_aed`, so its figures are **units, not AED** — but the old page and `exportReportsPDF`
+    labelled them "AED". Rebuilt over `components/reports/` labelling everything as **units** (Units Sold,
+    Avg Basket in units, Units by Category/Store/Item). Dropped all mock fallbacks (one rich endpoint feeds
+    everything) and bypassed `exportReportsPDF` in favour of a direct `generatePDF` with honest unit labels
+    and a "no price column" footer. Reused the Analytics `chartTheme`/`format`. (Contrast: the Analytics
+    screen shows AED because that endpoint multiplies by `unit_price_aed`.)
 - **3.4 Admin rebuild:** the admin backend is **GET-only** (`/users`, `/stores`, `/dashboard`,
   `/activity` — all super-admin gated; no create/update/delete despite `UserCreate`/`UserUpdate` models
   existing). The old page shipped non-functional Add-User / Edit / Save-Settings UI plus a big mock-user
@@ -173,7 +185,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 | Date | Commit | What landed |
 |---|---|---|
-| 2026-06-18 | _(HEAD)_ | feat(3.4): rebuild Admin screen — honest read-only console (dashboard + trend, users/stores tables, activity feed), super-admin gated |
+| 2026-06-18 | _(HEAD)_ | feat(3.4): rebuild Reports + Monitoring screens — completes 3.4; Reports relabelled units (not AED), Monitoring restyled health/stats/metrics console |
+| 2026-06-18 | 73ad59c | feat(3.4): rebuild Admin screen — honest read-only console (dashboard + trend, users/stores tables, activity feed), super-admin gated |
 | 2026-06-18 | f5f007c | feat(3.4): rebuild Employees/Performance screen — real `/api/employees/*` via authFetch, Sunset bio cards, restyled charts + modals, removed orphaned dupes |
 | 2026-06-18 | 583f0f4 | feat(3.4): rebuild Promotions/Pricing screen — real summary/active/list/categories data, Sunset gradient cards, primitive-based create modal scoped to accessible stores |
 | 2026-06-18 | bee4aae | feat(3.4): rebuild Analytics/Forecast screen — real `/api/analytics/*` data, Sunset-palette charts, Overview/Forecast tabs, interactive MAPE backtest |
