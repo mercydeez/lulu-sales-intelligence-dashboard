@@ -423,10 +423,10 @@ class DataSyncService:
             if accessible_stores:
                 store_list = ','.join(map(str, accessible_stores))
                 store_filter = f"AND s.store_id IN ({store_list})"
-            
+
             alerts = []
             alert_id = 1
-            
+
             # 1. Low stock alerts
             low_stock_query = f"""
                 WITH recent_sales AS (
@@ -461,7 +461,7 @@ class DataSyncService:
                     FROM recent_sales rs
                     JOIN items i ON rs.item_id = i.id
                     JOIN stores st ON rs.store_id = st.id
-                    WHERE 1=1 {store_filter}
+                    WHERE 1=1 {store_filter.replace('s.store_id', 'rs.store_id')}
                 )
                 SELECT store_id, store_name, item_id, item_name, category, quantity, reorder_level
                 FROM inventory_calc

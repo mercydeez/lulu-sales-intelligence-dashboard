@@ -70,8 +70,19 @@ model (mig 005), date-shift, token hygiene, migration runner.
   `sales_stream_raw` = live events, `sales_historical` = CSV, `sales_fact_view` = the
   union every reader queries. View is shaped as a drop-in for the old `sales` columns;
   streaming ids offset by 1e9 to keep the ORM identity map correct. Legacy `sales`
-  table dropped (migration 007). Pending integration proof: clean-volume boot.
+  table dropped (migration 007). **Verified via clean-volume `docker compose` boot:**
+  migrations 001–007 apply, legacy `sales` gone, view total = historical + stream,
+  inventory/alerts/materialized-views seed from the view, KPIs/analytics/sales serve
+  real data, RBAC scoping holds (store-manager sees only their store), unauth → 401.
+
+## Open findings (surfaced by the clean boot — not yet addressed)
+- **Employee seeding broken on fresh boot:** `column "reports_to_id" of relation
+  "employees" does not exist` (employee_seeder vs migration 004 mismatch). Pre-existing,
+  unrelated to 2.1; employees screen will be empty until fixed.
+- `data_sync.generate_alerts_from_sales` swallows query errors with `except: pass`,
+  which poisons the transaction and masks the real failure (made 2.1 alert debugging
+  hard). Consider savepoints/rollback per sub-query. Pre-existing design issue.
 
 ## Phase changelog
 - Phase 2.2/2.3 backend committed (c69bb47); Phase 3 UI groundwork (b9502fa).
-- Phase 2.1 sales-table unification — this branch.
+- Phase 2.1 sales-table unification (2ca2414) + boot-test fixes — this branch.

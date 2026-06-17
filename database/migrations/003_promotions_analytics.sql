@@ -271,7 +271,7 @@ SELECT
     SUM(sales) as net_sales,
     AVG(sales) as avg_sale,
     COUNT(DISTINCT item_id) as unique_items
-FROM sales
+FROM sales_fact_view
 GROUP BY date, store_id;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_daily_store ON mv_daily_sales_by_store(date, store_id);
@@ -284,7 +284,7 @@ SELECT
     SUM(s.sales) as total_sales,
     COUNT(*) as transaction_count,
     COUNT(DISTINCT s.store_id) as stores_count
-FROM sales s
+FROM sales_fact_view s
 JOIN items i ON s.item_id = i.id
 GROUP BY DATE_TRUNC('week', s.date), i.category;
 
@@ -299,7 +299,7 @@ SELECT
     COUNT(*) as transaction_count,
     SUM(sales) as total_sales,
     AVG(sales) as avg_sales
-FROM sales
+FROM sales_fact_view
 WHERE created_at >= CURRENT_DATE - INTERVAL '90 days'
 GROUP BY EXTRACT(DOW FROM created_at), EXTRACT(HOUR FROM created_at), store_id;
 
