@@ -21,6 +21,7 @@ from app.services.cache_warmer import run_cache_warmer
 from app.routes import sales, history, kpis, stream, analytics, auth
 from app.routes import ai as ai_routes
 from app.routes import inventory, promotions, alerts, admin, reports, monitoring, employees
+from app.routes import data_sources
 from app.middleware import (
     RequestIDMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware,
     BodySizeLimitMiddleware, CSRFMiddleware, SessionInvalidationMiddleware
@@ -233,6 +234,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
 app.include_router(employees.router, prefix="/api/employees", tags=["Employees"])
+app.include_router(data_sources.router, prefix="/api/data-sources", tags=["Data Sources"])
 
 # Also mount /api/latest from stream router
 @app.get("/api/latest", tags=["Stream"])
