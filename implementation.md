@@ -73,14 +73,14 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ---
 
-**Phase 5 — resume/demo polish** ❌
+**Phase 5 — resume/demo polish** ✅ *(all of 5.1–5.4 done)*
 
 | # | Task | Status |
 |---|---|---|
-| 5.1 | Honest README rewrite (what works, what's synthetic) | ❌ |
-| 5.2 | Demo script (walk-through order for portfolio review) | ❌ |
-| 5.3 | Architecture decisions log (ADR format) | ❌ |
-| 5.4 | Pitch one-pager (tech choices + tradeoffs) | ❌ |
+| 5.1 | Honest README rewrite (what works, what's synthetic) | ✅ rewrote `README.md` — added a **Data & Honesty Notes** section (synthetic Kaggle data, units-not-AED, derived revenue only in analytics, ~5–15s "real-time"), corrected stale claims (auto-applying migrations not manual; local-first AI not OpenAI-first; ticket-authed SSE), moved completed Phase 3/4 work out of "planned", and linked the new docs |
+| 5.2 | Demo script (walk-through order for portfolio review) | ✅ `docs/DEMO_SCRIPT.md` — an ~8-min guided walkthrough (live pipeline → analytics/MAPE → RBAC across the 3 logins → operational breadth → "I read my own code" → i18n/a11y) with copy-paste ticket→SSE curl and a screen/route reference |
+| 5.3 | Architecture decisions log (ADR format) | ✅ `docs/ADR.md` — 9 ADRs (3-tier sales view, units/derived-revenue, SSE+ticket, local-first AI chain, custom migration runner, region→store RBAC, thin-composer/API-client frontend, build-only-what-the-backend-supports, Phase 4 hardening) each with context + decision + good/bad consequences |
+| 5.4 | Pitch one-pager (tech choices + tradeoffs) | ✅ `docs/PITCH.md` — one-page problem/solution/decisions+tradeoffs/quality-signals/honestly-out-of-scope for a recruiter or interviewer |
 
 ---
 
@@ -88,7 +88,9 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 1. ✅ **Phase 3 — COMPLETE** (3.1–3.8: design system, all 8 screens, states, microinteractions, a11y/AA contrast, EN/AR + RTL).
 2. ✅ **Phase 4 — COMPLETE** (4.1–4.6: CSP/CORS, structured logging, DB indexes, pagination, `except: pass`→savepoints, dead-code cleanup). All verified against the running Docker stack; 92 backend tests pass.
-3. 🟡 **Phase 5** — polish/demo (honest README, demo script, ADRs, pitch one-pager).
+3. ✅ **Phase 5 — COMPLETE** (5.1–5.4: honest README, demo script, ADR log, pitch one-pager).
+
+**All phases (0–5) are now complete.**
 
 ---
 
@@ -210,7 +212,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 | Date | Commit | What landed |
 |---|---|---|
-| 2026-06-18 | _(HEAD)_ | chore(4.6): drop unused `alembic` dependency + empty `alembic/` dir — completes Phase 4 (audit found all routers mounted, no orphan services) |
+| 2026-06-18 | _(HEAD)_ | docs(5.1-5.4): honest README rewrite (Data & Honesty Notes), `docs/DEMO_SCRIPT.md`, `docs/ADR.md` (9 ADRs), `docs/PITCH.md` — completes Phase 5 (all phases done) |
+| 2026-06-18 | 687b392 | chore(4.6): drop unused `alembic` dependency + empty `alembic/` dir — completes Phase 4 (audit found all routers mounted, no orphan services) |
 | 2026-06-18 | 0061cb4 | feat(4.4): paginate `GET /api/auth/users` (the one unbounded list endpoint; the rest were already paginated or naturally bounded) |
 | 2026-06-18 | 6ab48de | feat(4.3): migration 008 covering index on `sales_historical (date, store_id, item_id) INCLUDE (sales)` — hot aggregation now an index-only scan (heap fetches 0) |
 | 2026-06-18 | 9b20332 | feat(4.1/4.2): enumerate CORS methods/headers (credentials-safe), env-driven CSP connect-src + object-src/upgrade-insecure-requests, and request-id threaded through all logs via contextvar + log filter (opt-in JSON logging) |
