@@ -526,9 +526,14 @@ class DataSyncService:
                 LIMIT 5
             """
             
+            # Wrap each optional sub-query in a SAVEPOINT (begin_nested) so a
+            # failure rolls back only that sub-query — without aborting the
+            # outer asyncpg transaction and poisoning the queries that follow.
             try:
-                result = await session.execute(text(anomaly_query))
-                for row in result.fetchall():
+                async with session.begin_nested():
+                    result = await session.execute(text(anomaly_query))
+                    rows = result.fetchall()
+                for row in rows:
                     is_high = row[4] > row[5]
                     alerts.append({
                         "id": alert_id,
@@ -545,8 +550,8 @@ class DataSyncService:
                         "resolved_at": None
                     })
                     alert_id += 1
-            except Exception:
-                pass  # Skip anomaly alerts if query fails
+            except Exception as e:
+                logger.warning(f"Sales-anomaly alert sub-query skipped: {e}")
             
             # 3. Store performance alerts
             store_query = f"""
@@ -573,8 +578,10 @@ class DataSyncService:
             """
             
             try:
-                result = await session.execute(text(store_query))
-                for row in result.fetchall():
+                async with session.begin_nested():
+                    result = await session.execute(text(store_query))
+                    rows = result.fetchall()
+                for row in rows:
                     is_increase = row[4] > 0
                     alerts.append({
                         "id": alert_id,
@@ -591,8 +598,8 @@ class DataSyncService:
                         "resolved_at": None
                     })
                     alert_id += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Store-performance alert sub-query skipped: {e}")
             
             return alerts
             

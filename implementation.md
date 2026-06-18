@@ -68,7 +68,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 | 4.2 | Structured logging (request-id threaded through) | ❌ |
 | 4.3 | DB indexes on hot query columns | ❌ |
 | 4.4 | Pagination on all unbounded list endpoints | ❌ |
-| 4.5 | Fix `except: pass` in `data_sync` → savepoints | ❌ pre-existing; flagged in open findings |
+| 4.5 | Fix `except: pass` in `data_sync` → savepoints | ✅ both silent `except: pass` blocks in `generate_alerts_from_sales` now wrap their sub-query in `session.begin_nested()` (SAVEPOINT) and log a warning — a failed optional sub-query rolls back to its savepoint instead of aborting the shared asyncpg transaction and poisoning the queries that follow |
 | 4.6 | Dead-code cleanup (`alembic/`, unused routes) | ❌ |
 
 ---
@@ -200,9 +200,9 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ## Open findings
 
-- `data_sync.generate_alerts_from_sales` swallows query errors with `except: pass`,
-  which poisons the asyncpg transaction and masks the real failure. Needs savepoints
-  per sub-query. Pre-existing design issue — tracked as 4.5.
+- ~~`data_sync.generate_alerts_from_sales` swallows query errors with `except: pass`,
+  which poisons the asyncpg transaction and masks the real failure.~~ **Resolved (4.5):**
+  each optional sub-query now runs inside a `begin_nested()` SAVEPOINT and logs on failure.
 
 ---
 
@@ -210,7 +210,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 | Date | Commit | What landed |
 |---|---|---|
-| 2026-06-18 | _(HEAD)_ | fix(seeder): bind `EmployeePerformance.period_type` + `EmployeeTransaction.transaction_type` to their PG enums (`create_type=False`, `values_callable`) — the d643b12 enum-cast fix had missed these two columns, so fresh-boot performance + transaction seeding crashed with `DatatypeMismatchError`. Verified clean re-seed: 30 employees / 180 performance / 4493 transactions |
+| 2026-06-18 | _(HEAD)_ | feat(4.5): `data_sync.generate_alerts_from_sales` optional sub-queries wrapped in `begin_nested()` savepoints + logged — no more silent `except: pass` that poisoned the shared asyncpg transaction |
+| 2026-06-18 | 32ccd89 | fix(seeder): bind `EmployeePerformance.period_type` + `EmployeeTransaction.transaction_type` to their PG enums (`create_type=False`, `values_callable`) — the d643b12 enum-cast fix had missed these two columns, so fresh-boot performance + transaction seeding crashed with `DatatypeMismatchError`. Verified clean re-seed: 30 employees / 180 performance / 4493 transactions |
 | 2026-06-18 | ad29515 | feat(3.7/3.8): AA contrast audit (deepened gradients + ink-muted) and EN/AR with RTL on nav/home/inventory/alerts — completes Phase 3 |
 | 2026-06-18 | 331334b | feat(3.5–3.7): states/microinteractions/a11y — ErrorState, SSE ConnectionBanner, reduced-motion AnimatedNumber + delta flash, focus-visible + aria-live |
 | 2026-06-18 | 452d9ab | feat(3.4): rebuild Reports + Monitoring screens — completes 3.4; Reports relabelled units (not AED), Monitoring restyled health/stats/metrics console |
