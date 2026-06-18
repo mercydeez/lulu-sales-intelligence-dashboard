@@ -15,6 +15,7 @@ from app.services.redis_client import init_redis, close_redis
 from app.services.data_generator import DataGenerator
 from app.services.employee_seeder import initialize_employee_system
 from app.services.migration_runner import run_migrations
+from app.services.cache_warmer import run_cache_warmer
 
 from app.routes import sales, history, kpis, stream, analytics, auth
 from app.routes import ai as ai_routes
@@ -74,18 +75,24 @@ async def lifespan(app: FastAPI):
     generator = DataGenerator()
     task = asyncio.create_task(generator.start())
     logger.info("Data generator started")
-    
+
+    # Start the cache warmer so the heavy dashboard queries are always hot
+    warmer_task = asyncio.create_task(run_cache_warmer())
+    logger.info("Cache warmer started")
+
     logger.info("Sales Dashboard API is ready!")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down Sales Dashboard API...")
     task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    warmer_task.cancel()
+    for t in (task, warmer_task):
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
     await close_db()
     await close_redis()
     logger.info("Shutdown complete")

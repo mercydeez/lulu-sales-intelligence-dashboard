@@ -133,23 +133,17 @@ async def get_sales_trend(
     return response
 
 
-@router.get("/stores")
-async def get_store_distribution(
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Get sales distribution by store for pie chart.
-    """
-    allowed_stores = get_accessible_store_ids(current_user)
-    
-    # Check cache first
+def store_distribution_cache_key(allowed_stores):
+    """Cache key for the store-distribution scope (empty/None => all stores)."""
     stores_suffix = f"_stores_{','.join(map(str, sorted(allowed_stores)))}" if allowed_stores else "_all"
-    cache_key = generate_cache_key(f"analytics_stores{stores_suffix}")
-    cached = await get_cached(cache_key)
-    if cached:
-        return cached
-    
+    return generate_cache_key(f"analytics_stores{stores_suffix}")
+
+
+async def compute_and_cache_store_distribution(db: AsyncSession, allowed_stores) -> dict:
+    """
+    Compute sales distribution by store, cache it under the scope's key, and
+    return it. Shared by the route (on cache miss) and the cache warmer.
+    """
     query = select(
         Sale.store_id,
         Store.name.label('store_name'),
@@ -159,19 +153,19 @@ async def get_store_distribution(
     ).join(
         Item, Sale.item_id == Item.id
     )
-    
+
     if allowed_stores:
         query = query.where(Sale.store_id.in_(allowed_stores))
-        
+
     query = query.group_by(
         Sale.store_id, Store.name
     ).order_by(func.sum(Sale.sales * Item.unit_price_aed).desc())
-    
+
     result = await db.execute(query)
     rows = result.fetchall()
-    
+
     total = float(sum(row.total_sales for row in rows))
-    
+
     store_data = []
     for row in rows:
         store_data.append({
@@ -180,10 +174,27 @@ async def get_store_distribution(
             "total_sales": float(row.total_sales),
             "percentage": round((float(row.total_sales) / total * 100) if total > 0 else 0, 2)
         })
-    
+
     response = {"data": store_data, "total": total}
-    await set_cached(cache_key, response, CACHE_TTL['analytics'])
+    await set_cached(store_distribution_cache_key(allowed_stores), response, CACHE_TTL['analytics'])
     return response
+
+
+@router.get("/stores")
+async def get_store_distribution(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get sales distribution by store for pie chart.
+    """
+    allowed_stores = get_accessible_store_ids(current_user)
+
+    cached = await get_cached(store_distribution_cache_key(allowed_stores))
+    if cached:
+        return cached
+
+    return await compute_and_cache_store_distribution(db, allowed_stores)
 
 
 @router.get("/top-items")
