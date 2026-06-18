@@ -15,6 +15,7 @@ from app.services.redis_client import init_redis, close_redis
 from app.services.data_generator import DataGenerator
 from app.services.employee_seeder import initialize_employee_system
 from app.services.migration_runner import run_migrations
+from app.services.db_seeder import run_seed
 from app.services.cache_warmer import run_cache_warmer
 
 from app.routes import sales, history, kpis, stream, analytics, auth
@@ -51,7 +52,16 @@ async def lifespan(app: FastAPI):
     
     await init_db()
     logger.info("Database connection tested")
-    
+
+    # Seed base schema + historical data (portable; works on managed Postgres
+    # that can't run the docker-entrypoint init.sql). Idempotent.
+    try:
+        await run_seed()
+        logger.info("Database seed ensured")
+    except Exception as e:
+        logger.error(f"Failed to seed database: {e}")
+        raise e
+
     try:
         await run_migrations()
         logger.info("Database migrations applied successfully")

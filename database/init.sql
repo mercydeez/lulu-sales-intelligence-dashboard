@@ -195,48 +195,14 @@ UPDATE items SET unit_price_aed = 6.00 WHERE id = 50;
 
 
 -- =============================================================================
--- Load Historical Data from CSV
+-- Historical data load + date-shift are performed by the APPLICATION seeder
+-- (backend/app/services/db_seeder.py), NOT here. Managed Postgres (e.g. Render)
+-- cannot run this file via the docker-entrypoint, and a server-side
+-- `COPY FROM '/data/train.csv'` requires the file on the DB server, which it
+-- isn't. The seeder bulk-loads data/train.csv into sales_historical (asyncpg
+-- COPY) and shifts the dates so the latest day is yesterday — portably, in
+-- every environment. This script stays pure, idempotent schema + seed DDL.
 -- =============================================================================
-CREATE TEMP TABLE temp_sales (
-    date DATE,
-    store INTEGER,
-    item INTEGER,
-    sales INTEGER
-);
-
--- Load data from CSV
-COPY temp_sales(date, store, item, sales)
-FROM '/data/train.csv'
-DELIMITER ','
-CSV HEADER;
-
--- Insert into sales_historical table (single source of truth for history)
-INSERT INTO sales_historical (date, store_id, item_id, sales)
-SELECT date, store, item, sales
-FROM temp_sales;
-
--- Drop temp table
-DROP TABLE temp_sales;
-
--- =============================================================================
--- DATE-SHIFT: Move historical data so max date = yesterday
--- This ensures dashboards always show recent data regardless of deployment date.
--- =============================================================================
-DO $$
-DECLARE
-    max_hist_date DATE;
-    shift_days INTEGER;
-BEGIN
-    SELECT MAX(date) INTO max_hist_date FROM sales_historical;
-    IF max_hist_date IS NOT NULL THEN
-        shift_days := (CURRENT_DATE - 1) - max_hist_date;
-        IF shift_days <> 0 THEN
-            UPDATE sales_historical SET date = date + shift_days;
-            RAISE NOTICE '📅 Date-shifted historical data by % days (max date now: %)',
-                shift_days, (CURRENT_DATE - 1);
-        END IF;
-    END IF;
-END $$;
 
 -- =============================================================================
 -- UNIFIED VIEW: sales_fact_view (Historical UNION Streaming)

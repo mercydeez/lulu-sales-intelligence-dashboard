@@ -8,8 +8,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-salesdb}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
-      - ./data/train.csv:/data/train.csv
+      # Schema + data are seeded by the backend app (services/db_seeder.py) so the
+      # exact same path works on managed Postgres (Render). No entrypoint init.sql.
     ports:
       - "5432:5432"
     healthcheck:
@@ -59,7 +59,7 @@ services:
     volumes:
       - ./backend/app:/app/app
       - ./data:/app/data
-      - ./database/migrations:/app/database/migrations:ro
+      - ./database:/app/database:ro
     networks:
       - sales_network
 
