@@ -13,8 +13,34 @@ from app.services.database import get_db
 from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE_TTL
 from app.config import logger
 from app.routes.auth import get_current_user, get_accessible_store_ids
+from app.services.source_adapters import active_external_source, source_cache_tag, external_kpis
 
 router = APIRouter()
+
+
+_DATE_FIELDS = ("data_range_start", "data_range_end")
+
+
+def _serialize_kpi_dates(data: dict) -> dict:
+    """Copy with date/datetime values turned into ISO strings (for caching)."""
+    out = data.copy()
+    for f in _DATE_FIELDS:
+        if out.get(f) is not None and not isinstance(out[f], str):
+            out[f] = out[f].isoformat()
+    if out.get("last_stream_timestamp") is not None and not isinstance(out["last_stream_timestamp"], str):
+        out["last_stream_timestamp"] = out["last_stream_timestamp"].isoformat()
+    return out
+
+
+def _parse_kpi_dates(cached: dict) -> dict:
+    """Inverse of _serialize_kpi_dates — ISO strings back to date/datetime."""
+    if cached.get("data_range_start"):
+        cached["data_range_start"] = date.fromisoformat(cached["data_range_start"])
+    if cached.get("data_range_end"):
+        cached["data_range_end"] = date.fromisoformat(cached["data_range_end"])
+    if cached.get("last_stream_timestamp"):
+        cached["last_stream_timestamp"] = datetime.fromisoformat(cached["last_stream_timestamp"])
+    return cached
 
 
 class KPIResponse(BaseModel):
@@ -187,19 +213,23 @@ async def get_kpis(db: AsyncSession = Depends(get_db), current_user: dict = Depe
     Get key performance indicators for the dashboard.
     Served from Redis when warm; otherwise computed and cached.
     """
+    # When an external data source is active, the whole dashboard reads from it.
+    ext = await active_external_source()
+    if ext:
+        key = generate_cache_key(f"kpis_{source_cache_tag(ext)}")
+        cached = await get_cached(key)
+        if cached:
+            return KPIResponse(**_parse_kpi_dates(cached))
+        data = await external_kpis(ext["connection"], ext["mapping"])
+        await set_cached(key, _serialize_kpi_dates(data), CACHE_TTL['kpis'])
+        return KPIResponse(**data)
+
     allowed_stores = get_accessible_store_ids(current_user)
     cache_key = kpis_cache_key(allowed_stores)
 
     cached = await get_cached(cache_key)
     if cached:
-        # Parse cached datetime strings back to proper types
-        if cached.get('data_range_start'):
-            cached['data_range_start'] = date.fromisoformat(cached['data_range_start'])
-        if cached.get('data_range_end'):
-            cached['data_range_end'] = date.fromisoformat(cached['data_range_end'])
-        if cached.get('last_stream_timestamp'):
-            cached['last_stream_timestamp'] = datetime.fromisoformat(cached['last_stream_timestamp'])
-        return KPIResponse(**cached)
+        return KPIResponse(**_parse_kpi_dates(cached))
 
     response_data = await compute_and_cache_kpis(db, allowed_stores)
     return KPIResponse(**response_data)

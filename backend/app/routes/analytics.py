@@ -21,6 +21,7 @@ from app.services.source_adapters import (
     external_store_distribution,
     external_category_breakdown,
     external_top_items,
+    external_sales_trend,
 )
 
 router = APIRouter()
@@ -78,14 +79,24 @@ async def get_sales_trend(
     Returns historical data + 7-day forecast.
     """
     allowed_stores = get_accessible_store_ids(current_user)
-    
+
+    ext = await active_external_source()
+    if ext:
+        key = generate_cache_key(f"analytics_trend_{source_cache_tag(ext)}", days=days, forecast=include_forecast)
+        cached = await get_cached(key)
+        if cached:
+            return cached
+        data = await external_sales_trend(ext["connection"], ext["mapping"], days, include_forecast)
+        await set_cached(key, data, CACHE_TTL['analytics'])
+        return data
+
     # Check cache first
     stores_suffix = f"_stores_{','.join(map(str, sorted(allowed_stores)))}" if allowed_stores else "_all"
     cache_key = generate_cache_key(f"analytics_trend{stores_suffix}", days=days, forecast=include_forecast)
     cached = await get_cached(cache_key)
     if cached:
         return cached
-    
+
     # Get historical daily sales (AED revenue)
     query = select(
         Sale.date,
