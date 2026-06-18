@@ -210,7 +210,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 | Date | Commit | What landed |
 |---|---|---|
-| 2026-06-18 | _(HEAD)_ | feat(3.7/3.8): AA contrast audit (deepened gradients + ink-muted) and EN/AR with RTL on nav/home/inventory/alerts — completes Phase 3 |
+| 2026-06-18 | _(HEAD)_ | fix(seeder): bind `EmployeePerformance.period_type` + `EmployeeTransaction.transaction_type` to their PG enums (`create_type=False`, `values_callable`) — the d643b12 enum-cast fix had missed these two columns, so fresh-boot performance + transaction seeding crashed with `DatatypeMismatchError`. Verified clean re-seed: 30 employees / 180 performance / 4493 transactions |
+| 2026-06-18 | ad29515 | feat(3.7/3.8): AA contrast audit (deepened gradients + ink-muted) and EN/AR with RTL on nav/home/inventory/alerts — completes Phase 3 |
 | 2026-06-18 | 331334b | feat(3.5–3.7): states/microinteractions/a11y — ErrorState, SSE ConnectionBanner, reduced-motion AnimatedNumber + delta flash, focus-visible + aria-live |
 | 2026-06-18 | 452d9ab | feat(3.4): rebuild Reports + Monitoring screens — completes 3.4; Reports relabelled units (not AED), Monitoring restyled health/stats/metrics console |
 | 2026-06-18 | 73ad59c | feat(3.4): rebuild Admin screen — honest read-only console (dashboard + trend, users/stores tables, activity feed), super-admin gated |
