@@ -4,6 +4,7 @@ High-performance caching layer using Redis for API responses
 """
 import json
 import hashlib
+from decimal import Decimal
 from typing import Optional, Any, Callable
 from functools import wraps
 # Import the module (not the name) so we always read the LIVE client. The global
@@ -30,6 +31,17 @@ CACHE_TTL = {
     'analytics': 60,              # 1 minute
     'default': 30                 # 30 seconds default
 }
+
+
+def _json_default(o: Any):
+    """JSON fallback for non-native types. Decimal must become a JSON *number*
+    so a cache HIT matches the uncached path (FastAPI also encodes Decimal as a
+    number); stringifying it caused values like avg_basket_size to come back as
+    "12.5" and break `.toFixed()` on the frontend. Everything else (date,
+    datetime, …) falls back to its ISO/str form as before."""
+    if isinstance(o, Decimal):
+        return float(o)
+    return str(o)
 
 
 def generate_cache_key(prefix: str, **kwargs) -> str:
@@ -60,7 +72,7 @@ async def set_cached(key: str, value: Any, ttl: int = None):
         client = _redis.redis_client
         if client:
             ttl = ttl or CACHE_TTL['default']
-            await client.set(key, json.dumps(value, default=str), ex=ttl)
+            await client.set(key, json.dumps(value, default=_json_default), ex=ttl)
             logger.debug(f"Cache SET: {key} (TTL: {ttl}s)")
     except Exception as e:
         logger.warning(f"Cache set error: {e}")

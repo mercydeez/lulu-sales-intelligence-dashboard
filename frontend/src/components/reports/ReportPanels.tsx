@@ -15,12 +15,14 @@ import { ReportKpis, ReportDailyPoint, ReportCategory, ReportStore, ReportTopIte
 const fmtUnits = (v: number) => `${formatCompact(v)} u`;
 
 export function ReportKpiCards({ kpis, loading }: { kpis: ReportKpis | null; loading: boolean }) {
-  const growth = kpis?.sales_growth ?? 0;
+  // Coerce defensively — cached API responses can deliver numbers as strings.
+  const growth = Number(kpis?.sales_growth ?? 0);
+  const avgBasket = Number(kpis?.avg_basket_size ?? 0);
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       <StatCard variant="gradient" tone="coral" label="Units Sold" value={loading ? '—' : formatCompact(kpis?.total_sales ?? 0)} icon={<ShoppingCart className="w-5 h-5" />} footnote="Selected period" loading={loading} />
       <StatCard tone="teal" label="Transactions" value={loading ? '—' : formatCompact(kpis?.total_transactions ?? 0)} icon={<Receipt className="w-5 h-5" />} loading={loading} />
-      <StatCard tone="violet" label="Avg Basket" value={loading ? '—' : `${(kpis?.avg_basket_size ?? 0).toFixed(1)} u`} icon={<Package className="w-5 h-5" />} footnote="Units per transaction" loading={loading} />
+      <StatCard tone="violet" label="Avg Basket" value={loading ? '—' : `${avgBasket.toFixed(1)} u`} icon={<Package className="w-5 h-5" />} footnote="Units per transaction" loading={loading} />
       <StatCard tone="amber" label="Period Growth" value={loading ? '—' : `${growth >= 0 ? '+' : ''}${growth.toFixed(1)}%`} icon={<TrendingUp className="w-5 h-5" />} trend={growth >= 0 ? 'up' : 'down'} trendLabel="vs prev" loading={loading} />
     </div>
   );
