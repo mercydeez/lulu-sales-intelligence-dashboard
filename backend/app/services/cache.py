@@ -6,7 +6,12 @@ import json
 import hashlib
 from typing import Optional, Any, Callable
 from functools import wraps
-from app.services.redis_client import redis_client
+# Import the module (not the name) so we always read the LIVE client. The global
+# `redis_client` is None at import time and reassigned in init_redis() at startup;
+# `from ... import redis_client` would capture that None forever and silently
+# disable caching (every request would recompute its query). Reading
+# `_redis.redis_client` at call time picks up the connected client.
+from app.services import redis_client as _redis
 from app.config import logger
 
 # Cache TTLs in seconds
@@ -37,8 +42,9 @@ def generate_cache_key(prefix: str, **kwargs) -> str:
 async def get_cached(key: str) -> Optional[Any]:
     """Get value from cache"""
     try:
-        if redis_client:
-            value = await redis_client.get(key)
+        client = _redis.redis_client
+        if client:
+            value = await client.get(key)
             if value:
                 logger.debug(f"Cache HIT: {key}")
                 return json.loads(value)
@@ -51,9 +57,10 @@ async def get_cached(key: str) -> Optional[Any]:
 async def set_cached(key: str, value: Any, ttl: int = None):
     """Set value in cache with TTL"""
     try:
-        if redis_client:
+        client = _redis.redis_client
+        if client:
             ttl = ttl or CACHE_TTL['default']
-            await redis_client.set(key, json.dumps(value, default=str), ex=ttl)
+            await client.set(key, json.dumps(value, default=str), ex=ttl)
             logger.debug(f"Cache SET: {key} (TTL: {ttl}s)")
     except Exception as e:
         logger.warning(f"Cache set error: {e}")
@@ -62,10 +69,11 @@ async def set_cached(key: str, value: Any, ttl: int = None):
 async def delete_cached(pattern: str):
     """Delete cache keys matching pattern"""
     try:
-        if redis_client:
-            keys = await redis_client.keys(f"cache:{pattern}:*")
+        client = _redis.redis_client
+        if client:
+            keys = await client.keys(f"cache:{pattern}:*")
             if keys:
-                await redis_client.delete(*keys)
+                await client.delete(*keys)
                 logger.debug(f"Cache DELETE: {len(keys)} keys matching {pattern}")
     except Exception as e:
         logger.warning(f"Cache delete error: {e}")
