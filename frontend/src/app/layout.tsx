@@ -23,7 +23,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="light">
+    <html lang="en" dir="ltr" className="light" suppressHydrationWarning>
+      <head>
+        {/* Set language + direction before first paint to avoid an EN/AR flash
+            and the "English text with an RTL sidebar" mismatch. Kept in sync at
+            runtime by LanguageContext. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var l=localStorage.getItem('lang');if(l==='ar'){document.documentElement.lang='ar';document.documentElement.dir='rtl';}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className={`${inter.variable} font-sans text-ink antialiased`}>
         <div className="min-h-screen">
           <LanguageProvider>

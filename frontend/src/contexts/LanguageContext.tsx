@@ -76,13 +76,18 @@ interface LanguageContextValue {
 const LanguageContext = createContext<LanguageContextValue | undefined>(undefined);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>('en');
-
-  // Restore saved choice on mount.
-  useEffect(() => {
-    const saved = (typeof window !== 'undefined' && window.localStorage.getItem('lang')) as Lang | null;
-    if (saved === 'en' || saved === 'ar') setLangState(saved);
-  }, []);
+  // Initialise from the persisted choice so the first client render already
+  // matches the <html dir> set by the pre-paint script in layout.tsx — no
+  // EN/AR flash and no "English text with an RTL sidebar" mismatch. The window
+  // guard keeps SSR on the 'en' default; the authenticated UI is client-rendered
+  // (auth-gated), so this lazy initialiser does not cause a hydration mismatch.
+  const [lang, setLangState] = useState<Lang>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = window.localStorage.getItem('lang');
+      if (saved === 'en' || saved === 'ar') return saved;
+    }
+    return 'en';
+  });
 
   // Reflect language + direction on <html> and persist.
   useEffect(() => {
