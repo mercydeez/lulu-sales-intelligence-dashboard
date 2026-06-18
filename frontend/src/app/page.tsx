@@ -7,13 +7,11 @@ import KPICards from '@/components/KPICards';
 import LiveTable from '@/components/LiveTable';
 import {
   SalesTrendChart,
-  StoreDistributionChart,
-  TopItemsChart,
-  CategoryBreakdownChart,
   LiveStreamChart,
   ReturnsByCategoryChart,
   ReturnsLiveFeed
 } from '@/components/charts';
+import { StoreDistributionPanel, CategoryDonut, TopItemsPanel } from '@/components/analytics';
 import { HomeHero, AlertQuickLinks, FinancialOverview, AlertStats } from '@/components/home';
 
 export default function Home() {
@@ -78,8 +76,8 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            {hasRole(['super_admin', 'regional_manager']) && <StoreDistributionChart />}
-            <CategoryBreakdownChart />
+            {hasRole(['super_admin', 'regional_manager']) && <StoreDistributionPanel />}
+            <CategoryDonut />
           </div>
 
           <div className="mb-6">
@@ -94,7 +92,7 @@ export default function Home() {
           </div>
 
           <div className="mt-6">
-            <TopItemsChart />
+            <TopItemsPanel />
           </div>
         </section>
 
