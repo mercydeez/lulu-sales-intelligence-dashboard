@@ -1,0 +1,33 @@
+# Render (and any managed host) backend image.
+#
+# Unlike the local docker-compose setup — which mounts ./database and ./data into
+# the container — a hosted deploy has no volumes, so the image must BAKE the
+# schema (database/) and the seed CSV (data/) that app/services/db_seeder.py reads
+# on first boot. Build context is the repo ROOT (see render.yaml dockerContext: .).
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN (apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*) || echo "skipping optional build deps"
+
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Dependencies first for layer caching
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Application code + the schema and seed data the seeder needs at runtime
+COPY backend/ /app/
+COPY database/ /app/database/
+COPY data/ /app/data/
+
+RUN chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+
+# Render injects $PORT; bind to it (fall back to 8000 for local runs).
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

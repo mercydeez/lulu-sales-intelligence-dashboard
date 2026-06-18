@@ -1,9 +1,11 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from functools import lru_cache
 from typing import Optional, List
 import contextvars
 import json
 import logging
+import re
 import sys
 
 
@@ -76,6 +78,25 @@ class Settings(BaseSettings):
     log_json: bool = False  # emit one JSON object per line (structured logging)
     
     model_config = {"env_file": ".env", "case_sensitive": False}
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalize_database_url(cls, v: str) -> str:
+        """
+        Managed Postgres providers (Render, Heroku, Railway, …) hand out
+        `postgres://…` or `postgresql://…` connection strings, but SQLAlchemy's
+        async engine requires the asyncpg driver (`postgresql+asyncpg://…`).
+        Normalize the scheme, and drop libpq's `sslmode` query param which asyncpg
+        does not accept (internal managed connections don't need it).
+        """
+        if v.startswith("postgres://"):
+            v = "postgresql+asyncpg://" + v[len("postgres://"):]
+        elif v.startswith("postgresql://"):
+            v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+        # Remove an sslmode=... query param (asyncpg uses an ssl context, not sslmode).
+        v = re.sub(r"([?&])sslmode=[^&]*(&|$)", lambda m: m.group(1) if m.group(2) == "&" else "", v)
+        v = re.sub(r"[?&]$", "", v)
+        return v
 
     # =========================================================================
     # SECURITY VALIDATION

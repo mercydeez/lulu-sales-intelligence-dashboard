@@ -7,6 +7,11 @@ COPY package.json ./
 RUN npm install --legacy-peer-deps
 
 COPY . .
+
+# NEXT_PUBLIC_* values are inlined at build time, so the backend URL must be a
+# build arg (Render passes the service env var of the same name as a build arg).
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 
 # ---- Production Stage ----
