@@ -13,7 +13,7 @@ from fastapi import Request, Response, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from app.config import get_settings, logger
+from app.config import get_settings, logger, request_id_ctx
 
 
 settings = get_settings()
@@ -26,30 +26,37 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     """
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Generate unique request ID
-        request_id = str(uuid.uuid4())[:8]
+        # Reuse an inbound request id (from an upstream proxy/service) for
+        # end-to-end tracing, otherwise mint a new one.
+        incoming = request.headers.get("X-Request-ID")
+        request_id = incoming if incoming and len(incoming) <= 64 else str(uuid.uuid4())[:8]
         request.state.request_id = request_id
-        
+        # Publish to the contextvar so the logging filter stamps every log line
+        # produced while handling this request with the same id.
+        token = request_id_ctx.set(request_id)
+
         # Skip verbose logging for performance - only log errors
         start_time = time.time()
-        
+
         try:
             response = await call_next(request)
             process_time = time.time() - start_time
-            
+
             # Add minimal headers
             response.headers["X-Request-ID"] = request_id
             response.headers["X-Process-Time"] = f"{process_time:.3f}"
-            
+
             # Only log slow requests (>500ms) in production
             if process_time > 0.5:
-                logger.warning(f"[{request_id}] SLOW: {request.method} {request.url.path} - {process_time:.3f}s")
-            
+                logger.warning(f"SLOW: {request.method} {request.url.path} - {process_time:.3f}s")
+
             return response
-            
+
         except Exception as e:
-            logger.error(f"[{request_id}] ERROR: {request.method} {request.url.path} - {str(e)}")
+            logger.error(f"ERROR: {request.method} {request.url.path} - {str(e)}")
             raise
+        finally:
+            request_id_ctx.reset(token)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -188,18 +195,25 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
         
-        # Content Security Policy
+        # Content Security Policy. connect-src is environment-driven (see
+        # settings.csp_connect_src) so production isn't pinned to localhost.
+        # 'unsafe-inline' is retained for script/style because the bundled
+        # Swagger UI and Next.js runtime require inline script/style; switching
+        # to per-request nonces would be the next tightening step.
         csp_directives = [
             "default-src 'self'",
             "script-src 'self' 'unsafe-inline'",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob: https:",
             "font-src 'self' data:",
-            "connect-src 'self' http://localhost:8000 ws://localhost:8000 http://localhost:3000",
+            f"connect-src {settings.csp_connect_src}",
+            "object-src 'none'",
             "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'",
         ]
+        if settings.environment == "production":
+            csp_directives.append("upgrade-insecure-requests")
         response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
         
         # HSTS - always set (browsers ignore it on HTTP anyway)

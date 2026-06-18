@@ -1,8 +1,18 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from typing import Optional, List
+import contextvars
+import json
 import logging
 import sys
+
+
+# Request-scoped correlation id, set by RequestIDMiddleware and read by the
+# logging filter below so every log line emitted while handling a request
+# carries its request id — no need to thread it through call signatures.
+request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "request_id", default="-"
+)
 
 
 # Known weak/default secrets that must not be used in production
@@ -33,6 +43,11 @@ class Settings(BaseSettings):
     
     # CORS
     cors_origins: str = "http://localhost:3000,http://frontend:3000"
+
+    # Content Security Policy — connect-src lists the API + websocket origins the
+    # browser is allowed to call. Environment-specific; override via env in prod
+    # (e.g. CSP_CONNECT_SRC="'self' https://api.example.com wss://api.example.com").
+    csp_connect_src: str = "'self' http://localhost:8000 ws://localhost:8000 http://localhost:3000"
     
     # Request Body Size Limit (MB)
     max_body_size_mb: int = 10
@@ -57,7 +72,8 @@ class Settings(BaseSettings):
     
     # Logging
     log_level: str = "INFO"
-    log_format: str = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+    log_format: str = "%(asctime)s | %(levelname)-8s | %(name)s | req=%(request_id)s | %(message)s"
+    log_json: bool = False  # emit one JSON object per line (structured logging)
     
     model_config = {"env_file": ".env", "case_sensitive": False}
 
@@ -115,27 +131,63 @@ def get_settings() -> Settings:
     return Settings()
 
 
+class RequestIDLogFilter(logging.Filter):
+    """Inject the current request id onto every log record.
+
+    Pulled from the contextvar set by RequestIDMiddleware, so logs emitted deep
+    in request handling (services, queries) are correlated without passing the
+    id around. Records outside a request (startup, background tasks) get '-'.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "request_id"):
+            record.request_id = request_id_ctx.get()
+        return True
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Render log records as one JSON object per line for structured logging."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": self.formatTime(record),
+            "level": record.levelname,
+            "logger": record.name,
+            "request_id": getattr(record, "request_id", "-"),
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(payload, default=str)
+
+
 def setup_logging() -> logging.Logger:
     """Configure and return the application logger."""
     settings = get_settings()
-    
+
     # Create logger
     logger = logging.getLogger("sales_dashboard")
     logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
-    
+
     # Remove existing handlers to avoid duplicates
     logger.handlers.clear()
-    
+
     # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.DEBUG)
-    
-    # Formatter
-    formatter = logging.Formatter(settings.log_format)
+
+    # Formatter — JSON (structured) or the human-readable format string
+    if settings.log_json:
+        formatter: logging.Formatter = JsonLogFormatter()
+    else:
+        formatter = logging.Formatter(settings.log_format)
     console_handler.setFormatter(formatter)
-    
+    # Filter threads the request id onto every record (incl. the format string's
+    # %(request_id)s, which would otherwise KeyError on records that lack it).
+    console_handler.addFilter(RequestIDLogFilter())
+
     logger.addHandler(console_handler)
-    
+
     return logger
 
 

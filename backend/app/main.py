@@ -182,14 +182,21 @@ app.add_middleware(RateLimitMiddleware)
 # Request ID tracking and logging
 app.add_middleware(RequestIDMiddleware)
 
-# CORS middleware (innermost - runs first)
+# CORS middleware (innermost - runs first).
+# Origins are enumerated from settings (never "*"). Methods/headers are listed
+# explicitly because the CORS spec forbids "*" wildcards once
+# allow_credentials=True — browsers reject credentialed responses that echo "*".
 cors_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+if not cors_origins:
+    logger.warning("🔒 No CORS origins configured — cross-origin browser requests will be blocked.")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "X-Request-ID"],
+    expose_headers=["X-Request-ID", "X-Process-Time", "X-RateLimit-Remaining"],
+    max_age=600,
 )
 
 # =============================================================================
