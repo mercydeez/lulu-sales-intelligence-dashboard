@@ -66,7 +66,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 |---|---|---|
 | 4.1 | Tighten CSP + enumerate CORS origins | ✅ CORS methods/headers enumerated (were `*`, which the spec forbids with `allow_credentials=True`) + `expose_headers`/`max_age`; CSP `connect-src` now env-driven (`settings.csp_connect_src`, no hardcoded localhost in prod), added `object-src 'none'` + prod `upgrade-insecure-requests` |
 | 4.2 | Structured logging (request-id threaded through) | ✅ `request_id` contextvar set by `RequestIDMiddleware` (reuses inbound `X-Request-ID`), a `RequestIDLogFilter` stamps it onto **every** log record (format now `req=%(request_id)s`), and an opt-in `JsonLogFormatter` (`LOG_JSON=true`) emits one JSON object per line |
-| 4.3 | DB indexes on hot query columns | ❌ |
+| 4.3 | DB indexes on hot query columns | ✅ audited existing indexes (alerts/employee/sales were already well-covered) then added migration `008` — covering index `sales_historical (date, store_id, item_id) INCLUDE (sales)`; EXPLAIN confirms the hot aggregation flipped from a Bitmap Heap Scan to an **Index Only Scan (Heap Fetches: 0)**, branch cost 14652→516. Stream-side date filter left on the existing timestamp index (a `timestamptz::date` expression index is rejected as non-IMMUTABLE; the table stays tiny at demo scale) |
 | 4.4 | Pagination on all unbounded list endpoints | ❌ |
 | 4.5 | Fix `except: pass` in `data_sync` → savepoints | ✅ both silent `except: pass` blocks in `generate_alerts_from_sales` now wrap their sub-query in `session.begin_nested()` (SAVEPOINT) and log a warning — a failed optional sub-query rolls back to its savepoint instead of aborting the shared asyncpg transaction and poisoning the queries that follow |
 | 4.6 | Dead-code cleanup (`alembic/`, unused routes) | ❌ |
@@ -210,7 +210,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 | Date | Commit | What landed |
 |---|---|---|
-| 2026-06-18 | _(HEAD)_ | feat(4.1/4.2): enumerate CORS methods/headers (credentials-safe), env-driven CSP connect-src + object-src/upgrade-insecure-requests, and request-id threaded through all logs via contextvar + log filter (opt-in JSON logging) |
+| 2026-06-18 | _(HEAD)_ | feat(4.3): migration 008 covering index on `sales_historical (date, store_id, item_id) INCLUDE (sales)` — hot aggregation now an index-only scan (heap fetches 0) |
+| 2026-06-18 | 9b20332 | feat(4.1/4.2): enumerate CORS methods/headers (credentials-safe), env-driven CSP connect-src + object-src/upgrade-insecure-requests, and request-id threaded through all logs via contextvar + log filter (opt-in JSON logging) |
 | 2026-06-18 | 260d57a | feat(4.5): `data_sync.generate_alerts_from_sales` optional sub-queries wrapped in `begin_nested()` savepoints + logged — no more silent `except: pass` that poisoned the shared asyncpg transaction |
 | 2026-06-18 | 32ccd89 | fix(seeder): bind `EmployeePerformance.period_type` + `EmployeeTransaction.transaction_type` to their PG enums (`create_type=False`, `values_callable`) — the d643b12 enum-cast fix had missed these two columns, so fresh-boot performance + transaction seeding crashed with `DatatypeMismatchError`. Verified clean re-seed: 30 employees / 180 performance / 4493 transactions |
 | 2026-06-18 | ad29515 | feat(3.7/3.8): AA contrast audit (deepened gradients + ink-muted) and EN/AR with RTL on nav/home/inventory/alerts — completes Phase 3 |
