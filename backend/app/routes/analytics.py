@@ -15,6 +15,13 @@ from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE
 from app.models.sales import Sale, Store, Item
 from app.config import logger
 from app.routes.auth import get_current_user, get_accessible_store_ids
+from app.services.source_adapters import (
+    active_external_source,
+    source_cache_tag,
+    external_store_distribution,
+    external_category_breakdown,
+    external_top_items,
+)
 
 router = APIRouter()
 
@@ -190,6 +197,16 @@ async def get_store_distribution(
     """
     allowed_stores = get_accessible_store_ids(current_user)
 
+    ext = await active_external_source()
+    if ext:
+        key = generate_cache_key(f"analytics_stores_{source_cache_tag(ext)}")
+        cached = await get_cached(key)
+        if cached:
+            return cached
+        data = await external_store_distribution(ext["connection"], ext["mapping"])
+        await set_cached(key, data, CACHE_TTL['analytics'])
+        return data
+
     cached = await get_cached(store_distribution_cache_key(allowed_stores))
     if cached:
         return cached
@@ -207,7 +224,17 @@ async def get_top_items(
     Get top selling items for bar chart.
     """
     allowed_stores = get_accessible_store_ids(current_user)
-    
+
+    ext = await active_external_source()
+    if ext:
+        key = generate_cache_key(f"analytics_top_items_{source_cache_tag(ext)}", limit=limit)
+        cached = await get_cached(key)
+        if cached:
+            return cached
+        data = await external_top_items(ext["connection"], ext["mapping"], limit)
+        await set_cached(key, data, CACHE_TTL['analytics'])
+        return data
+
     # Check cache first
     stores_suffix = f"_stores_{','.join(map(str, sorted(allowed_stores)))}" if allowed_stores else "_all"
     cache_key = generate_cache_key(f"analytics_top_items{stores_suffix}", limit=limit)
@@ -257,7 +284,17 @@ async def get_category_breakdown(
     Get sales breakdown by category for donut chart.
     """
     allowed_stores = get_accessible_store_ids(current_user)
-    
+
+    ext = await active_external_source()
+    if ext:
+        key = generate_cache_key(f"analytics_categories_{source_cache_tag(ext)}")
+        cached = await get_cached(key)
+        if cached:
+            return cached
+        data = await external_category_breakdown(ext["connection"], ext["mapping"])
+        await set_cached(key, data, CACHE_TTL['analytics'])
+        return data
+
     # Check cache first
     stores_suffix = f"_stores_{','.join(map(str, sorted(allowed_stores)))}" if allowed_stores else "_all"
     cache_key = generate_cache_key(f"analytics_categories{stores_suffix}")
