@@ -20,6 +20,7 @@ import {
   ShoppingBag,
   Activity,
   Users,
+  Database,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -41,6 +42,7 @@ export const navItems: NavItem[] = [
   { label: 'Reports', tKey: 'nav.reports', href: '/reports', icon: <FileText className="w-5 h-5" />, permission: 'can_export' },
   { label: 'Alerts', tKey: 'nav.alerts', href: '/alerts', icon: <Bell className="w-5 h-5" /> },
   { label: 'Admin', tKey: 'nav.admin', href: '/admin', icon: <Shield className="w-5 h-5" />, roles: ['super_admin'] },
+  { label: 'Data Sources', tKey: 'nav.dataSources', href: '/data-sources', icon: <Database className="w-5 h-5" />, roles: ['super_admin'] },
   { label: 'Monitoring', tKey: 'nav.monitoring', href: '/monitoring', icon: <Activity className="w-5 h-5" />, permission: 'is_admin' },
 ];
 
