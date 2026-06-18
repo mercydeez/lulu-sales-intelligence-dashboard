@@ -60,7 +60,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 ---
 
-**Phase 4 — production readiness** ❌
+**Phase 4 — production readiness** ✅ *(all of 4.1–4.6 done & verified against the live Docker stack)*
 
 | # | Task | Status |
 |---|---|---|
@@ -69,7 +69,7 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 | 4.3 | DB indexes on hot query columns | ✅ audited existing indexes (alerts/employee/sales were already well-covered) then added migration `008` — covering index `sales_historical (date, store_id, item_id) INCLUDE (sales)`; EXPLAIN confirms the hot aggregation flipped from a Bitmap Heap Scan to an **Index Only Scan (Heap Fetches: 0)**, branch cost 14652→516. Stream-side date filter left on the existing timestamp index (a `timestamptz::date` expression index is rejected as non-IMMUTABLE; the table stays tiny at demo scale) |
 | 4.4 | Pagination on all unbounded list endpoints | ✅ audited every GET list endpoint — admin/alerts/inventory/employees/history/sales/promotions were **already** paginated, and the rest return naturally-bounded sets (stores=10, items=50, categories, roles, static rule list). The one unbounded gap, `GET /api/auth/users` (`get_all_users()` did `SELECT … FROM users` with no LIMIT), now takes `page`/`limit` and returns the standard `{users,total,page,limit,pages}` envelope |
 | 4.5 | Fix `except: pass` in `data_sync` → savepoints | ✅ both silent `except: pass` blocks in `generate_alerts_from_sales` now wrap their sub-query in `session.begin_nested()` (SAVEPOINT) and log a warning — a failed optional sub-query rolls back to its savepoint instead of aborting the shared asyncpg transaction and poisoning the queries that follow |
-| 4.6 | Dead-code cleanup (`alembic/`, unused routes) | ❌ |
+| 4.6 | Dead-code cleanup (`alembic/`, unused routes) | ✅ removed the unused `alembic==1.13.1` dependency (never imported — migrations run via the custom `migration_runner`; rebuilt image confirms it's gone, 92 tests pass) and the empty untracked `backend/alembic/` dir. Audit found nothing else dead: all 14 routers are mounted, every service module is referenced, no tracked orphan files |
 
 ---
 
@@ -87,8 +87,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 ## Criticality ranking (what to do next)
 
 1. ✅ **Phase 3 — COMPLETE** (3.1–3.8: design system, all 8 screens, states, microinteractions, a11y/AA contrast, EN/AR + RTL).
-2. 🟡 **Phase 4** — production hardening (CSP/CORS, structured logging, DB indexes, pagination, `except: pass` fix, dead-code cleanup).
-3. 🟢 **Phase 5** — polish/demo (honest README, demo script, ADRs, pitch one-pager).
+2. ✅ **Phase 4 — COMPLETE** (4.1–4.6: CSP/CORS, structured logging, DB indexes, pagination, `except: pass`→savepoints, dead-code cleanup). All verified against the running Docker stack; 92 backend tests pass.
+3. 🟡 **Phase 5** — polish/demo (honest README, demo script, ADRs, pitch one-pager).
 
 ---
 
@@ -210,7 +210,8 @@ committed on `phase-2-mvp-completion`. Detail in changelog below.
 
 | Date | Commit | What landed |
 |---|---|---|
-| 2026-06-18 | _(HEAD)_ | feat(4.4): paginate `GET /api/auth/users` (the one unbounded list endpoint; the rest were already paginated or naturally bounded) |
+| 2026-06-18 | _(HEAD)_ | chore(4.6): drop unused `alembic` dependency + empty `alembic/` dir — completes Phase 4 (audit found all routers mounted, no orphan services) |
+| 2026-06-18 | 0061cb4 | feat(4.4): paginate `GET /api/auth/users` (the one unbounded list endpoint; the rest were already paginated or naturally bounded) |
 | 2026-06-18 | 6ab48de | feat(4.3): migration 008 covering index on `sales_historical (date, store_id, item_id) INCLUDE (sales)` — hot aggregation now an index-only scan (heap fetches 0) |
 | 2026-06-18 | 9b20332 | feat(4.1/4.2): enumerate CORS methods/headers (credentials-safe), env-driven CSP connect-src + object-src/upgrade-insecure-requests, and request-id threaded through all logs via contextvar + log filter (opt-in JSON logging) |
 | 2026-06-18 | 260d57a | feat(4.5): `data_sync.generate_alerts_from_sales` optional sub-queries wrapped in `begin_nested()` savepoints + logged — no more silent `except: pass` that poisoned the shared asyncpg transaction |
