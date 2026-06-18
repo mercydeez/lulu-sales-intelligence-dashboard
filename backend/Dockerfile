@@ -2,11 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies (best-effort; all Python deps ship binary wheels,
+# so a flaky Debian mirror shouldn't block the build)
+RUN (apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*) || echo "skipping optional build deps"
 
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
