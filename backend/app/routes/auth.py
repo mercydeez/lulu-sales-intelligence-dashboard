@@ -243,13 +243,17 @@ async def change_password(
     return MessageResponse(message=message)
 
 
-@router.get("/users", response_model=List[dict])
-async def list_users(user: dict = Depends(require_role('super_admin'))):
+@router.get("/users")
+async def list_users(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    user: dict = Depends(require_role('super_admin')),
+):
     """
-    List all users (Super Admin only)
+    List users (Super Admin only), paginated.
+    Returns {users, total, page, limit, pages}.
     """
-    users = await AuthService.get_all_users()
-    return users
+    return await AuthService.get_all_users(page=page, limit=limit)
 
 
 @router.get("/validate")

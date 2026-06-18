@@ -580,8 +580,11 @@ class AuthService:
             return True, "Password changed successfully"
     
     @staticmethod
-    async def get_all_users() -> List[Dict]:
-        """Get all users (admin only)"""
+    async def get_all_users(page: int = 1, limit: int = 50) -> Dict:
+        """Get users (admin only), paginated to bound the result set."""
+        page = max(1, page)
+        limit = max(1, min(limit, 200))
+        offset = (page - 1) * limit
         async with async_session() as session:
             from sqlalchemy import text
             result = await session.execute(
@@ -590,6 +593,16 @@ class AuthService:
                            job_title, department, last_login_at, created_at
                     FROM users
                     ORDER BY created_at DESC
-                """)
+                    LIMIT :limit OFFSET :offset
+                """),
+                {"limit": limit, "offset": offset},
             )
-            return [dict(row._mapping) for row in result.fetchall()]
+            users = [dict(row._mapping) for row in result.fetchall()]
+            total = (await session.execute(text("SELECT COUNT(*) FROM users"))).scalar() or 0
+            return {
+                "users": users,
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "pages": max(1, (total + limit - 1) // limit),
+            }
