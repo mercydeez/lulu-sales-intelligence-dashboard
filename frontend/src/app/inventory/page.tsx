@@ -5,7 +5,7 @@ import { Package, Bell, ShoppingCart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useEventStream } from '@/hooks/useEventStream';
-import { PageHeader, Tabs, LiveIndicator, Badge, ConnectionBanner } from '@/components/ui';
+import { PageHeader, Tabs, LiveIndicator, Badge, ConnectionBanner, ErrorState, Card } from '@/components/ui';
 import {
   InventoryFilters,
   InventorySummaryCards,
@@ -18,9 +18,6 @@ import {
   CategoryData,
   ProcurementItem,
   InventoryAlert,
-  generateMockInventory,
-  generateMockSummary,
-  generateMockCategories,
   generateAlerts,
   generateProcurementList,
 } from '@/components/inventory';
@@ -32,6 +29,7 @@ export default function InventoryPage() {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [categories, setCategories] = useState<CategoryData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStore, setSelectedStore] = useState<number | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -86,6 +84,7 @@ export default function InventoryPage() {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(false);
     try {
       const params = new URLSearchParams();
       if (selectedStore) params.append('store_id', selectedStore.toString());
@@ -98,46 +97,48 @@ export default function InventoryPage() {
         authFetch(`/api/inventory/categories?${params}`),
       ]);
 
+      // If the core queries hard-fail, surface an error/retry instead of
+      // fabricating stock figures.
+      if (!itemsRes.ok && !summaryRes.ok) {
+        throw new Error('Inventory API request failed');
+      }
+
       let inventoryItems: InventoryItem[] = [];
 
       if (summaryRes.ok) {
         const summaryData = await summaryRes.json();
-        setSummary(summaryData && summaryData.total_items > 0 ? summaryData : generateMockSummary());
+        setSummary(summaryData && summaryData.total_items > 0 ? summaryData : null);
       } else {
-        setSummary(generateMockSummary());
+        setSummary(null);
       }
 
       if (itemsRes.ok) {
         const data = await itemsRes.json();
-        if (data.items && data.items.length > 0) {
-          inventoryItems = data.items;
-          setItems(data.items);
-        } else {
-          inventoryItems = generateMockInventory();
-          setItems(inventoryItems.slice(0, 100));
-        }
+        inventoryItems = data.items && data.items.length > 0 ? data.items : [];
+        setItems(inventoryItems);
       } else {
-        inventoryItems = generateMockInventory();
-        setItems(inventoryItems.slice(0, 100));
+        setItems([]);
       }
 
       if (categoriesRes.ok) {
         const data = await categoriesRes.json();
-        setCategories(data.categories && data.categories.length > 0 ? data.categories : generateMockCategories());
+        setCategories(data.categories && data.categories.length > 0 ? data.categories : []);
       } else {
-        setCategories(generateMockCategories());
+        setCategories([]);
       }
 
+      // Alerts and procurement are derived from the real items list (empty when
+      // there are no items) — never from fabricated data.
       setAlerts(generateAlerts(inventoryItems));
       setProcurementList(generateProcurementList(inventoryItems));
-    } catch (error) {
-      console.error('Failed to fetch inventory data:', error);
-      const mockItems = generateMockInventory();
-      setSummary(generateMockSummary());
-      setItems(mockItems.slice(0, 100));
-      setCategories(generateMockCategories());
-      setAlerts(generateAlerts(mockItems));
-      setProcurementList(generateProcurementList(mockItems));
+    } catch (err) {
+      console.error('Failed to fetch inventory data:', err);
+      setError(true);
+      setSummary(null);
+      setItems([]);
+      setCategories([]);
+      setAlerts([]);
+      setProcurementList([]);
     } finally {
       setLoading(false);
     }
@@ -211,6 +212,16 @@ export default function InventoryPage() {
 
         <ConnectionBanner connected={isLiveConnected} show={!!liveError} />
 
+        {error && !loading ? (
+          <Card padding="lg">
+            <ErrorState
+              title="Couldn't load inventory"
+              description="The inventory service didn't respond. Check your connection and try again."
+              onRetry={fetchData}
+            />
+          </Card>
+        ) : (
+        <>
         <Tabs
           className="mb-6"
           value={activeTab}
@@ -273,6 +284,8 @@ export default function InventoryPage() {
             onApprove={(id) => handleProcurementAction(id, 'approved')}
             onReject={(id) => handleProcurementAction(id, 'rejected')}
           />
+        )}
+        </>
         )}
 
         <ProcurementModal
