@@ -20,8 +20,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
 // Web Speech API types
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList;
@@ -80,7 +78,7 @@ interface ChatBotProps {
 }
 
 export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
-  const { user, hasPermission, hasRole } = useAuth();
+  const { user, hasPermission, hasRole, authFetch } = useAuth();
   
   // Permission checks - super_admin and regional_manager get full access
   // store_manager gets chat only, analyst gets restricted access
@@ -155,7 +153,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
     }]);
 
     try {
-      const response = await fetch(`${API_URL}/api/ai/chat/stream`, {
+      const response = await authFetch('/api/ai/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -220,7 +218,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, isLoading, autoSpeak]);
+  }, [sessionId, isLoading, autoSpeak, authFetch]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,7 +227,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
 
   const clearChat = async () => {
     try {
-      await fetch(`${API_URL}/api/ai/chat/clear`, {
+      await authFetch('/api/ai/chat/clear', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId })
