@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Search, Users } from 'lucide-react';
-import { Card, Input, Table, TableHead, TableBody, TableRow, Th, Td, Badge, SkeletonText, EmptyState } from '@/components/ui';
+import { Search, Users, UserPlus } from 'lucide-react';
+import { Card, Input, Button, Table, TableHead, TableBody, TableRow, Th, Td, Badge, SkeletonText, EmptyState } from '@/components/ui';
 import { AdminUser } from './types';
 import { roleLabel, roleVariant, formatDate, formatRelative } from './format';
 
@@ -11,9 +11,10 @@ interface UsersTableProps {
   loading: boolean;
   search: string;
   onSearchChange: (v: string) => void;
+  onAddUser?: () => void;
 }
 
-export function UsersTable({ users, loading, search, onSearchChange }: UsersTableProps) {
+export function UsersTable({ users, loading, search, onSearchChange, onAddUser }: UsersTableProps) {
   const filtered = useMemo(
     () =>
       users.filter(
@@ -32,14 +33,22 @@ export function UsersTable({ users, loading, search, onSearchChange }: UsersTabl
           <h3 className="text-lg font-semibold text-ink">Users &amp; Access</h3>
           <p className="text-sm text-ink-muted mt-0.5">Platform accounts and their roles</p>
         </div>
-        <div className="w-full sm:w-64">
-          <Input
-            icon={<Search className="w-4 h-4" />}
-            placeholder="Search users..."
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="!py-2.5"
-          />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="w-full sm:w-64">
+            <Input
+              icon={<Search className="w-4 h-4" />}
+              placeholder="Search users..."
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="!py-2.5"
+            />
+          </div>
+          {onAddUser && (
+            <Button variant="primary" size="md" onClick={onAddUser} className="shrink-0 whitespace-nowrap">
+              <UserPlus className="w-4 h-4" />
+              Add user
+            </Button>
+          )}
         </div>
       </div>
 
@@ -69,15 +78,4 @@ export function UsersTable({ users, loading, search, onSearchChange }: UsersTabl
                 </Td>
                 <Td><Badge variant={roleVariant(u.role)} size="sm">{roleLabel(u.role)}</Badge></Td>
                 <Td className="text-center">
-                  <Badge variant={u.is_active ? 'success' : 'neutral'} size="sm">{u.is_active ? 'active' : 'inactive'}</Badge>
-                </Td>
-                <Td className="text-ink-soft">{formatDate(u.created_at)}</Td>
-                <Td className="text-ink-soft">{formatRelative(u.last_login)}</Td>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-    </Card>
-  );
-}
+                  <Badge 

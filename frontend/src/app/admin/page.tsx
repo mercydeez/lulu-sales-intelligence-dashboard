@@ -15,6 +15,7 @@ import {
   ActivityItem,
   AdminDashboard,
   AdminTab,
+  NewUserModal,
 } from '@/components/admin';
 
 export default function AdminPage() {
@@ -28,6 +29,7 @@ export default function AdminPage() {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [userSearch, setUserSearch] = useState('');
+  const [showNewUser, setShowNewUser] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -108,13 +110,13 @@ export default function AdminPage() {
         )}
 
         {activeTab === 'users' && (
-          <UsersTable users={users} loading={loading} search={userSearch} onSearchChange={setUserSearch} />
+          <UsersTable
+            users={users}
+            loading={loading}
+            search={userSearch}
+            onSearchChange={setUserSearch}
+            onAddUser={() => setShowNewUser(true)}
+          />
         )}
 
-        {activeTab === 'stores' && <StoresTable stores={stores} loading={loading} />}
-
-        {activeTab === 'activity' && <ActivityFeed activities={activities} loading={loading} />}
-      </div>
-    </main>
-  );
-}
+        {activeTab === 'stores' &&
