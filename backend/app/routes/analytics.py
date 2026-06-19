@@ -677,3 +677,75 @@ async def get_returns_summary(
             for r in recent_rows
         ]
     }
+
+
+@router.get("/model-metrics")
+async def get_model_metrics(
+    horizon: int = Query(14, ge=7, le=60),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Forecast Lab metrics. Executive view: forecast accuracy + model leaderboard.
+    Technical view: forecast-vs-history points, LightGBM feature importance, a
+    stockout-risk confusion matrix, and per-store accuracy for the heatmap.
+    Tenant/scope-cached (computation is heavy — first load may take a few secs).
+    """
+    import pandas as pd
+    from app.services.forecasting import diagnostics as diag
+
+    tenant_id = current_user.get("tenant_id") or 1
+    allowed = get_accessible_store_ids(current_user)
+    scope = "-".join(map(str, sorted(allowed))) if allowed else "all"
+    cache_key = generate_cache_key(f"model_metrics_t{tenant_id}_{scope}_{horizon}")
+    cached = await get_cached(cache_key)
+    if cached:
+        return cached
+
+    where = ["s.tenant_id = :tenant_id"]
+    params: dict = {"tenant_id": tenant_id}
+    if allowed:
+        where.append("s.store_id = ANY(:allowed)")
+        params["allowed"] = allowed
+    where_sql = " AND ".join(where)
+
+    result = {
+        "accuracy": None, "selected_model": None, "mape": None, "leaderboard": [],
+        "forecast": [], "feature_importance": [], "classifier": {}, "heatmap": [],
+    }
+    try:
+        agg_sql = (
+            f"SELECT s.date AS date, SUM(s.sales) AS sales FROM sales_fact_view s "
+            f"WHERE {where_sql} GROUP BY s.date ORDER BY s.date"
+        )
+        rows = (await db.execute(text(agg_sql), params)).fetchall()
+        if rows:
+            hist = pd.DataFrame([{"date": r.date, "sales": float(r.sales or 0)} for r in rows])
+            result.update(diag.forecast_summary(hist, horizon))
+            result["feature_importance"] = diag.feature_importance(hist)
+            result["classifier"] = diag.stockout_classifier(hist)
+
+        store_sql = (
+            f"SELECT st.id AS store_id, st.name AS store_name, s.date AS date, "
+            f"SUM(s.sales) AS sales FROM sales_fact_view s JOIN stores st ON st.id = s.store_id "
+            f"WHERE {where_sql} GROUP BY st.id, st.name, s.date ORDER BY st.id, s.date"
+        )
+        srows = (await db.execute(text(store_sql), params)).fetchall()
+        by_store: dict = {}
+        for r in srows:
+            by_store.setdefault((r.store_id, r.store_name), []).append(
+                {"date": r.date, "sales": float(r.sales or 0)}
+            )
+        heatmap = []
+        for (sid, sname), recs in list(by_store.items())[:12]:
+            heatmap.append({
+                "store_id": sid, "store_name": sname,
+                "accuracy": diag.classical_accuracy(pd.DataFrame(recs)),
+            })
+        result["heatmap"] = heatmap
+
+        await set_cached(cache_key, result, 1800)
+        return result
+    except Exception as e:
+        logger.error(f"Model metrics error: {e}")
+        return result
