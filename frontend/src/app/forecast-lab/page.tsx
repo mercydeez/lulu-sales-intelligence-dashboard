@@ -29,8 +29,8 @@ interface Metrics {
 }
 
 const MODEL_LABEL: Record<string, string> = {
-  lightgbm: 'LightGBM (ML)', lstm: 'LSTM (Deep learning)',
-  seasonal_trend: 'Seasonal trend', seasonal_naive: 'Naive baseline',
+  lightgbm: 'LightGBM (ML)', lstm: 'LSTM (Deep learning)', gru: 'GRU / RNN (Deep learning)',
+  cnn: 'CNN (Deep learning)', seasonal_trend: 'Seasonal trend', seasonal_naive: 'Naive baseline',
 };
 
 function accColor(a: number | null): string {
@@ -72,6 +72,7 @@ export default function ForecastLabPage() {
   const h = health(acc);
   const clf = data?.classifier ?? {};
   const hasClf = !!(clf.matrix && clf.matrix.length === 2);
+  const bi = data?.business_impact;
 
   return (
     <main className="min-h-screen p-4 md:p-8">
@@ -108,7 +109,6 @@ export default function ForecastLabPage() {
           </Card>
         ) : (
           <>
-            {/* ---------- Executive view ---------- */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid #0f766e' }}>
                 <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Forecast accuracy</div>
@@ -127,29 +127,22 @@ export default function ForecastLabPage() {
               </div>
             </div>
 
-            {data.business_impact && data.business_impact.projected_revenue_aed != null && (
+            {bi && bi.projected_revenue_aed != null && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                 <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid #0f766e' }}>
-                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">
-                    Projected revenue · next {data.business_impact.horizon_days}d
-                  </div>
-                  <div className="text-3xl font-semibold text-ink tabular-nums">
-                    AED {Number(data.business_impact.projected_revenue_aed).toLocaleString()}
-                  </div>
-                  <div className="text-xs text-ink-muted mt-1">How: {data.business_impact.revenue_formula}</div>
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Projected revenue · next {bi.horizon_days}d</div>
+                  <div className="text-3xl font-semibold text-ink tabular-nums">AED {Number(bi.projected_revenue_aed).toLocaleString()}</div>
+                  <div className="text-xs text-ink-muted mt-1">How: {bi.revenue_formula}</div>
                 </div>
                 <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid #d97706' }}>
                   <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Revenue exposure caught</div>
-                  <div className="text-3xl font-semibold text-ink tabular-nums">
-                    AED {Number(data.business_impact.revenue_protected_aed).toLocaleString()}
-                  </div>
-                  <div className="text-xs text-ink-muted mt-1">How: {data.business_impact.protected_formula}</div>
+                  <div className="text-3xl font-semibold text-ink tabular-nums">AED {Number(bi.revenue_protected_aed).toLocaleString()}</div>
+                  <div className="text-xs text-ink-muted mt-1">How: {bi.protected_formula}</div>
                 </div>
               </div>
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-              {/* Leaderboard */}
               <Card variant="solid" padding="md">
                 <h3 className="text-base font-medium text-ink mb-4">Which model won</h3>
                 {data.leaderboard.length === 0 ? (
@@ -171,7 +164,6 @@ export default function ForecastLabPage() {
                 )}
               </Card>
 
-              {/* Store accuracy heatmap */}
               <Card variant="solid" padding="md">
                 <h3 className="text-base font-medium text-ink mb-4">Accuracy by store</h3>
                 {data.heatmap.length === 0 ? (
@@ -199,7 +191,6 @@ export default function ForecastLabPage() {
               are where forecasts need attention.
             </div>
 
-            {/* ---------- Technical view ---------- */}
             {view === 'tech' && (
               <div className="space-y-4">
                 <Card variant="solid" padding="md">
@@ -255,4 +246,63 @@ export default function ForecastLabPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <Card variant="solid" padding="md">
                     <h3 className="text-base font-medium text-ink mb-1">What drives demand</h3>
-    
+                    <p className="text-xs text-ink-muted mb-3">LightGBM feature importance (% of total).</p>
+                    {data.feature_importance.length === 0 ? (
+                      <p className="text-sm text-ink-muted">Available after the ML model is installed (rebuild backend).</p>
+                    ) : (
+                      <div style={{ width: '100%', height: 240 }}>
+                        <ResponsiveContainer>
+                          <BarChart data={data.feature_importance} layout="vertical" margin={{ left: 24 }}>
+                            <XAxis type="number" tick={{ fontSize: 10, fill: '#5f6660' }} />
+                            <YAxis type="category" dataKey="feature" width={110} tick={{ fontSize: 10, fill: '#5f6660' }} />
+                            <Tooltip />
+                            <Bar dataKey="weight" radius={[0, 4, 4, 0]}>
+                              {data.feature_importance.map((_, i) => <Cell key={i} fill="#0f766e" />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </Card>
+
+                  <Card variant="solid" padding="md">
+                    <h3 className="text-base font-medium text-ink mb-1">Stockout-risk classifier</h3>
+                    <p className="text-xs text-ink-muted mb-3">
+                      Confusion matrix on held-out days {clf.model ? `(${clf.model})` : ''}.
+                    </p>
+                    {!hasClf ? (
+                      <p className="text-sm text-ink-muted">Available after the ML model is installed (rebuild backend).</p>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-3 gap-1 text-xs max-w-xs">
+                          <div></div>
+                          <div className="text-center text-ink-muted">Pred: Normal</div>
+                          <div className="text-center text-ink-muted">Pred: Risk</div>
+                          <div className="flex items-center text-ink-muted">Actual: Normal</div>
+                          <div className="text-center py-3 rounded bg-teal-50 text-teal-700 font-medium tabular-nums">{clf.matrix![0][0]}</div>
+                          <div className="text-center py-3 rounded bg-coral-50 text-coral-700 tabular-nums">{clf.matrix![0][1]}</div>
+                          <div className="flex items-center text-ink-muted">Actual: Risk</div>
+                          <div className="text-center py-3 rounded bg-coral-50 text-coral-700 tabular-nums">{clf.matrix![1][0]}</div>
+                          <div className="text-center py-3 rounded bg-teal-50 text-teal-700 font-medium tabular-nums">{clf.matrix![1][1]}</div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          <Badge variant="neutral" size="sm">Precision {clf.precision}%</Badge>
+                          <Badge variant="neutral" size="sm">Recall {clf.recall}%</Badge>
+                          <Badge variant="neutral" size="sm">Accuracy {clf.accuracy}%</Badge>
+                          <Badge variant="neutral" size="sm">F1 {clf.f1}%</Badge>
+                        </div>
+                        <p className="text-xs text-ink-muted mt-3">
+                          Of the days flagged as low-stock risk, {clf.precision}% really were — caught over {clf.tested_days} held-out days.
+                        </p>
+                      </>
+                    )}
+                  </Card>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
