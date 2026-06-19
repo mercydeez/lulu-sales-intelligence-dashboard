@@ -199,3 +199,85 @@ Follow UI_UX_REDESIGN_PLAN §13 order:
 - **Rebuild the backend image after dependency changes** (lightgbm/torch): `docker compose up -d --build backend`.
 - Migrations auto-apply on boot (numbered SQL in `database/migrations/`, tracked in `schema_migrations`).
 - Demo logins (password `Lulu@2026!`): atharva@lulu.ae (super_admin), krishna@lulu.ae (regional_manager), yash@lulu.ae (store_manager).
+
+---
+---
+
+# Part III — Product Expansion: Action Layer, Procure-to-Pay & Payments (brainstorm, June 2026)
+
+> Strategic reframe: the product today is a **system of intelligence** (it tells you what's
+> happening). The next two rungs are a **system of action** (it does things — place/approve
+> orders) and a **system of transaction** (money moves — pay suppliers). Each rung is a step-change
+> in stickiness and price. This part captures the expansion ideas and the cross-vertical research.
+
+## E. The action layer — Procure-to-Pay (highest-leverage expansion)
+
+Turns "a dashboard that tells me" into "a system that runs my replenishment." It's the natural
+payoff of the forecasting engine: forecast → suggested order → approve → done.
+
+**Flow (procure-to-pay):**
+Forecast → **reorder suggestion** (days-of-cover < lead time) → auto-grouped **draft PO** per
+supplier → **approval workflow** (threshold-based: small POs auto-approve, large route to CEO) →
+send (email / EDI / supplier portal) → supplier ack → **goods receipt** → **3-way match**
+(PO = receipt = invoice) → payment.
+
+**Entities:** Supplier, Product↔Supplier (price, MOQ, lead time), PurchaseOrder, POLine, Receipt,
+Invoice, Payment, ApprovalRule. **Roles:** store/logistics mgr raises; regional mgr / CEO approve by
+threshold; logistics receives; finance pays.
+
+**Build split (important):**
+- **Build now — "system of record":** suppliers, POs, approvals, receipts, invoices, payment
+  *status*. ~90% of the value, almost none of the regulatory weight.
+- **Embed later — money movement:** actually paying suppliers = KYC/AML + money-transmission
+  licensing. Never build; partner (Airwallex / Stripe Treasury / MENA open-banking: Lean, Tarabut).
+
+## F. Payments — two different things (do not conflate)
+
+1. **Billing your customers** (retailers pay *you* the subscription): card/recurring. Light.
+   Stripe Billing, or UAE-local Telr / PayTabs / Network International / Mamo / Ziina. → Phase 3.
+2. **Customers pay their suppliers** (the procure-to-pay loop): B2B accounts-payable, large sums,
+   net terms. Fintech-grade. Start by *recording* payment status (bank transfer outside the system),
+   then embed a payments partner. → Part III.E, after the records layer.
+
+*Note: UAE gateway availability/pricing/licensing change often — verify current options when chosen.*
+
+## G. Cross-vertical "steal this" (research across SaaS/PaaS categories)
+
+| Category (exemplars) | What they nail | Borrow for retail-ops |
+|---|---|---|
+| Finance/Spend (Stripe, Ramp, Brex, Mercury) | Money UI: approval chains, spend controls, ledgers, reconciliation, audit | Threshold PO approvals, "needs your sign-off" inbox, immutable audit timeline, precise money UI |
+| Healthcare (Epic, Veeva) | Compliance, consent, role-scoped sensitive data, escalation | Data governance/residency (PDPL), alert→ack→escalate, reliability framing for enterprise |
+| Restaurant (Toast, Square, MarketMan) | Recipe/BOM depletion, par-level one-tap reorder, vendor catalogs, waste, mobile floor | Par-level auto-reorder, vendor catalog → one-tap PO, waste/expiry, mobile ops |
+| Hotels (Opera, Mews, Cloudbeds) | Multi-property rollups, task assignment, occupancy forecasting, dynamic pricing | Region→store rollups, task assignment + SLA, dynamic/markdown pricing (expiry) |
+| Logistics (Flexport, project44, Blue Yonder) | "Control tower" exception views, transfers, ETA, lead-time modeling | Exception-first screen, store-to-store transfers, lead-time-aware reorder |
+| E-commerce ops (Shopify, Brightpearl, Lightspeed) | PO modules, multi-location inventory, app marketplace | PO lifecycle, marketplace model (= Phase 4 PaaS) |
+| Dev-tools/PaaS (Twilio, Vercel, Stripe) | API keys, metering, webhooks, dev portal, SDKs | Exactly the Phase 4 PaaS playbook |
+
+## H. UI patterns to adopt (cross-cutting)
+
+- **Command palette (Cmd-K)** — jump anywhere + run actions ("create PO", "go to Al Barsha").
+- **Action cards** — every insight gets a button ("Milk out in 3 days → [Create PO]"). The bridge
+  from intelligence to action.
+- **Approval inbox** — one "needs you" queue.
+- **Audit timeline** on every order/entity.
+- **Notifications where people are** — in UAE/MENA that's **WhatsApp** (Business API) + email + Slack/Teams.
+- **Mobile-first / PWA** for floor + logistics; desktop for HQ.
+- **Document generation** (PO/invoice PDFs) + **e-signature** (DocuSign/Dropbox Sign) for supplier contracts.
+
+## I. Technologies to bring in (mapped to need)
+
+- **Workflow/state machine:** status enum first → Temporal/Camunda when approval flows get complex.
+- **Notifications infra:** Novu or Knock (orchestrate email/WhatsApp/Slack) + Twilio + Resend/SendGrid.
+- **Enterprise auth:** WorkOS (SSO/SAML/SCIM) — unlock for large-retailer sales.
+- **Product analytics + errors:** PostHog + Sentry.
+- **Search (as data grows):** Typesense/Meilisearch across SKUs/orders.
+- **Analytics scale:** DuckDB/ClickHouse + dbt when per-tenant data gets heavy (request-time SQL won't scale forever).
+- **Maps/routing:** Mapbox for transfers/deliveries.
+- **Embedded payments (later):** Airwallex / Stripe Treasury / Lean (MENA open banking).
+
+## J. Where this fits in the sequence
+
+Action layer (E) is best started **after** Phase 2 (tenant isolation) and the forecasting hardening
+(B1), since it depends on tenant-scoped data + reliable forecasts. Billing (F.1) stays Phase 3.
+Supplier payments (F.2) come after the procure-to-pay *records* layer is solid. Treat E as
+"Phase 3.5 / 6" — the move that re-prices the product from insight tool to operations system.

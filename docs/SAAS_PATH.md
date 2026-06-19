@@ -159,3 +159,16 @@ A–B you can start immediately and in parallel. C blocks D/E/F. Don't skip B to
 ---
 
 *This doc is the strategic layer. For the line-by-line engineering tasks, follow `IMPLEMENTATION_ROADMAP.md` for Phases 0–5 and treat Sections 3 & 6 above as Phases 6–9. The daily checkpoint task will track movement against both.*
+
+---
+
+## 8. Expansion direction — action layer & payments (added June 2026)
+
+The biggest re-pricing move beyond the SaaS climb above is turning this from a **system of
+intelligence** into a **system of action** (place/approve purchase orders) and then **transaction**
+(pay suppliers). The forecasting engine makes this natural: forecast → suggested order → approve →
+done. Two payment tracks, kept separate: (1) **billing** your retailer customers (Stripe / UAE
+gateways — Phase 3); (2) **supplier payments** for the procure-to-pay loop (record status first,
+embed a partner like Airwallex / Stripe Treasury / Lean later — never build money movement yourself).
+Full detail, the procure-to-pay flow, the cross-vertical research, and the technology shortlist live
+in `IMPLEMENTATION_ROADMAP.md` → Part III.
