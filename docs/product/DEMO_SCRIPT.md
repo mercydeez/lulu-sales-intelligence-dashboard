@@ -85,7 +85,7 @@ Use the **globe toggle** (top bar) to switch to **Arabic** — the shell mirrors
 
 ## 7 · Close (20s)
 
-> "Everything you saw is in `implementation.md` as a phase-by-phase log with commit hashes, the design rationale is in `docs/ADR.md`, and the README's *Data & Honesty Notes* call out exactly what's synthetic. I'd rather under-claim and be trusted than demo smoke."
+> "Everything you saw is in `implementation.md` as a phase-by-phase log with commit hashes, the design rationale is in `docs/architecture/ADR.md`, and the README's *Data & Honesty Notes* call out exactly what's synthetic. I'd rather under-claim and be trusted than demo smoke."
 
 ---
 
@@ -104,3 +104,4 @@ Use the **globe toggle** (top bar) to switch to **Arabic** — the shell mirrors
 | Monitoring | `/monitoring` | health / stats / metrics |
 
 **If something looks empty:** historical data ends in 2017 and is date-shifted on a *fresh* volume — "today/this week" reflects generator output, so give it a minute to accumulate, or `docker compose down -v && docker compose up -d` to reload history.
+

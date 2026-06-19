@@ -1,4 +1,7 @@
-# UI/UX Redesign Plan — "Operations Console", not SaaS Template
+# UI/UX Redesign Plan
+
+> Historical note: this file captures the June 2026 audit or planning state. Some issues listed here were later fixed. Use [../../README.md](../../README.md) and [../README.md](../README.md) for the current project state.
+
 
 > Current state: hand-rolled dark Tailwind (slate-900 + cyan), emoji-as-iconography mixed with Lucide, ten mega page components with inline styling, no design tokens beyond an unused blue palette in `tailwind.config.js`. It works, but it reads "hackathon."
 > Target: the calm, dense, trustworthy feel of professional ops software (think Bloomberg terminal discipline + Linear's restraint), tuned for **retail floor reality**: glanceable numbers, alarm states you can trust, Arabic-ready.
@@ -116,3 +119,5 @@ Priority: **store manager on the floor with a phone.**
 3. App shell: sidebar, top bar, role-shaped routing
 4. Home/Live Operations rebuild → then Inventory/Expiry → Alerts/Tasks → Analytics/Forecast
 5. Mobile pass → accessibility pass → AR/RTL pass
+
+

@@ -37,6 +37,7 @@ yarn-error.log*
 Thumbs.db
 
 # Python
+.pytest_cache/
 *.egg-info/
 .eggs/
 venv/

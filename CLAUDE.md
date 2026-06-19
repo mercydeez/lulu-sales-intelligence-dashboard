@@ -2,11 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Layout quirk
+## Repository layout
 
-The actual project root is the **nested** folder `lulu-sales-intelligence-dashboard-main/` (an unzipped GitHub download inside a same-named folder). All paths below are relative to that nested root. There is currently **no git repository** — initialize git before making changes if it still doesn't exist.
+Paths below are relative to the repository root.
 
-Full project analysis lives in `docs/` (CODEBASE_MAP.md, GAP_ANALYSIS.md, PRODUCT_STRATEGY.md, ARCHITECTURE_PLAN.md, UI_UX_REDESIGN_PLAN.md, IMPLEMENTATION_ROADMAP.md) — read GAP_ANALYSIS.md before assuming any README claim is true.
+Start with `docs/README.md` for the organized documentation index. If you need the original audit and planning context, read `docs/archive/GAP_ANALYSIS.md` before assuming older claims are still current.
 
 ## Commands
 
@@ -64,3 +64,6 @@ FastAPI (async SQLAlchemy 2 + asyncpg) + PostgreSQL 15 + Redis 7 + Next.js 14 Ap
 - CI runs only `tests/test_config.py` + `tests/test_security.py` and ignores tsc failures.
 - Compose volume mounts suggest hot reload, but uvicorn lacks `--reload` and the frontend image serves a pre-built standalone bundle — rebuild containers (or run `npm run dev` on host) to see changes.
 - `database/seed_data.sql` is empty (0 bytes) yet mounted by the production compose; production compose also mounts `train.csv` at a path `init.sql`'s COPY doesn't read.
+
+
+

@@ -1,6 +1,6 @@
 # SaaS Path — From Demo to a Product You Can Sell
 
-> Companion to `PRODUCT_STRATEGY.md` and `IMPLEMENTATION_ROADMAP.md`.
+> Companion to `PRODUCT_STRATEGY.md` and `../archive/IMPLEMENTATION_ROADMAP.md`.
 > Those docs target a **portfolio / interview MVP**. This doc targets the bar you actually chose: **a SaaS a retailer would pay for.** Everything in the existing roadmap still applies — it's the foundation. This adds the layer that turns "an impressive build" into "a business."
 
 ---
@@ -50,7 +50,7 @@ The synthetic generator stops being "the product" and becomes "the demo tenant +
 
 ## 3. The SaaS-grade work, in dependency order
 
-This sits **on top of** `IMPLEMENTATION_ROADMAP.md` Phases 0–2 (which you still must finish — they're the credible-core prerequisites). Think of it as Phases 6–9.
+This sits **on top of** `../archive/IMPLEMENTATION_ROADMAP.md` Phases 0–2 (which you still must finish — they're the credible-core prerequisites). Think of it as Phases 6–9.
 
 ### Phase 6 — Multi-tenancy foundation (the keystone) 🔴
 
@@ -158,7 +158,7 @@ A–B you can start immediately and in parallel. C blocks D/E/F. Don't skip B to
 
 ---
 
-*This doc is the strategic layer. For the line-by-line engineering tasks, follow `IMPLEMENTATION_ROADMAP.md` for Phases 0–5 and treat Sections 3 & 6 above as Phases 6–9. The daily checkpoint task will track movement against both.*
+*This doc is the strategic layer. For the line-by-line engineering tasks, follow `../archive/IMPLEMENTATION_ROADMAP.md` for Phases 0–5 and treat Sections 3 & 6 above as Phases 6–9. The daily checkpoint task will track movement against both.*
 
 ---
 
@@ -171,4 +171,5 @@ done. Two payment tracks, kept separate: (1) **billing** your retailer customers
 gateways — Phase 3); (2) **supplier payments** for the procure-to-pay loop (record status first,
 embed a partner like Airwallex / Stripe Treasury / Lean later — never build money movement yourself).
 Full detail, the procure-to-pay flow, the cross-vertical research, and the technology shortlist live
-in `IMPLEMENTATION_ROADMAP.md` → Part III.
+in `../archive/IMPLEMENTATION_ROADMAP.md` -> Part III.
+

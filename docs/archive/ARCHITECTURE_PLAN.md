@@ -1,4 +1,7 @@
-# Architecture Plan — Production-Minded MVP
+# Architecture Plan - Production-Minded MVP
+
+> Historical note: this file captures the June 2026 audit or planning state. Some issues listed here were later fixed. Use [../../README.md](../../README.md) and [../README.md](../README.md) for the current project state.
+
 
 > Principle: **evolve, don't rewrite.** The FastAPI + Next.js + Postgres + Redis core is sound and interview-defensible. We fix the drift, enforce the boundaries the README already promises, and stay 100% free/local-first.
 
@@ -117,3 +120,5 @@ Everything else is already self-hosted.
 | Pitch-stage | Same VM; add seeded "demo reset" cron | $0 |
 
 **Stays local-only for now:** Ollama (too heavy for free VMs — cloud demo uses rule-based provider), voice features, monitoring extras. No managed cloud services anywhere — that's a *talking point*, not a limitation: "runs anywhere, no vendor bill."
+
+

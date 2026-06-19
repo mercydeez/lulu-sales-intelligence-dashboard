@@ -1,5 +1,8 @@
 # Implementation Roadmap
 
+> Historical note: this file captures the June 2026 audit or planning state. Some issues listed here were later fixed. Use [../../README.md](../../README.md) and [../README.md](../README.md) for the current project state.
+
+
 > Rule of engagement: small, verifiable steps; never break `docker compose up`; each phase ends demo-able.
 > Effort assumes 2–3 students part-time. Phases 0–1 ≈ one weekend. References: GAP_ANALYSIS items (C/H/M/L), ARCHITECTURE_PLAN (§), UI_UX_REDESIGN_PLAN.
 
@@ -281,3 +284,5 @@ Action layer (E) is best started **after** Phase 2 (tenant isolation) and the fo
 (B1), since it depends on tenant-scoped data + reliable forecasts. Billing (F.1) stays Phase 3.
 Supplier payments (F.2) come after the procure-to-pay *records* layer is solid. Treat E as
 "Phase 3.5 / 6" — the move that re-prices the product from insight tool to operations system.
+
+

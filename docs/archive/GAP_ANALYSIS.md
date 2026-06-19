@@ -1,4 +1,7 @@
-# Gap Analysis — Lulu Sales Intelligence Dashboard
+# Gap Analysis - Lulu Sales Intelligence Dashboard
+
+> Historical note: this file captures the June 2026 audit or planning state. Some issues listed here were later fixed. Use [../../README.md](../../README.md) and [../README.md](../README.md) for the current project state.
+
 
 > Every issue found during the June 2026 full-code inspection, grouped by severity.
 > Effort scale: **S** = under ~2 h, **M** = half a day to 2 days, **L** = 3+ days.
@@ -151,3 +154,5 @@
 - Synthetic data generator with market sentiment, seasonality and returns — makes demos feel alive.
 - Non-root Docker images, healthchecks, multi-stage frontend build, production compose with resource limits.
 - Consistent global JSON error envelope with field-level validation details.
+
+

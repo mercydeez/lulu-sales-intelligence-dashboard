@@ -1,4 +1,7 @@
-# Codebase Map — Lulu Sales Intelligence Dashboard
+# Codebase Map - Lulu Sales Intelligence Dashboard
+
+> Historical note: this file captures the June 2026 audit or planning state. Some issues listed here were later fixed. Use [../../README.md](../../README.md) and [../README.md](../README.md) for the current project state.
+
 
 > Deep-dive reference produced from a full repository inspection (June 2026).
 > Status: student project being upgraded to a production-minded MVP. Not an official Lulu Hypermarket product; all data is synthetic.
@@ -223,7 +226,7 @@ Notes:
 
 ---
 
-## 11. Confusing / Risky Areas (read GAP_ANALYSIS.md for full list)
+## 11. Confusing / Risky Areas (read GAP_ANALYSIS.md for the full historical list)
 
 1. **Three sales tables**, only the legacy one actually used at runtime.
 2. **Auth exists but isn't applied** to the majority of data endpoints; RBAC store/region scoping is enforced client-side only for those routes.
@@ -235,3 +238,6 @@ Notes:
 8. Duplicated SSE/auth-fetch logic across many frontend files; in-memory API cache shared across users.
 9. `data/train.csv` (17 MB) committed to the repo; dates end in 2017 while the UI implies "today".
 10. No git history, empty `seed_data.sql`, empty `alembic/` — artifacts of rapid student iteration.
+
+
+

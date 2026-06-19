@@ -186,7 +186,7 @@ This is the core of the app:
 - **Hardened middleware** — CSP (env-driven `connect-src`, `object-src 'none'`, prod `upgrade-insecure-requests`), HSTS, `X-Frame-Options`, `X-Content-Type-Options`; CORS with **enumerated** methods/headers (required once credentials are allowed); Redis sliding-window rate limiting with in-memory fallback; CSRF double-submit for non-Bearer requests; request body-size limit.
 - **Structured logging** — a per-request `request_id` (reusing an inbound `X-Request-ID`) is threaded through **every** log line via a contextvar + log filter; optional JSON log output.
 - **Fail-fast config** — in `production`/`staging`, startup raises on default secrets, short JWT keys, or default DB credentials.
-- **Hardening details** are recorded in [`docs/ADR.md`](docs/ADR.md) and the Phase 4 section of [`implementation.md`](implementation.md).
+- **Hardening details** are recorded in [`docs/architecture/ADR.md`](docs/architecture/ADR.md) and the Phase 4 section of [`implementation.md`](implementation.md).
 
 ---
 
@@ -257,7 +257,7 @@ frontend/
   src/components/<feature>/   feature-folder components + barrels
   src/contexts/               AuthContext, LanguageContext (EN/AR)
   src/lib/                    auth-aware API client, formatters, PDF export
-docs/                         analysis + decision docs (see below)
+docs/                         indexed documentation (architecture, product, archive)
 docker-compose.yml            dev stack
 docker-compose.production.yml prod stack (adds NGINX)
 implementation.md             living execution log (phase-by-phase)
@@ -267,11 +267,13 @@ implementation.md             living execution log (phase-by-phase)
 
 ## Further Reading
 
-- [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) — a guided 8-minute walkthrough for reviewers.
-- [`docs/ADR.md`](docs/ADR.md) — architecture decision records (the *why* behind the design).
-- [`docs/PITCH.md`](docs/PITCH.md) — one-page pitch: problem, approach, and engineering tradeoffs.
+- [docs/README.md](docs/README.md) - documentation index and folder guide.
+
+- [`docs/product/DEMO_SCRIPT.md`](docs/product/DEMO_SCRIPT.md) — a guided 8-minute walkthrough for reviewers.
+- [`docs/architecture/ADR.md`](docs/architecture/ADR.md) — architecture decision records (the *why* behind the design).
+- [`docs/product/PITCH.md`](docs/product/PITCH.md) — one-page pitch: problem, approach, and engineering tradeoffs.
 - [`implementation.md`](implementation.md) — phase-by-phase build log with commit hashes.
-- [`docs/GAP_ANALYSIS.md`](docs/GAP_ANALYSIS.md) — the original honest audit that drove the roadmap.
+- [`docs/archive/GAP_ANALYSIS.md`](docs/archive/GAP_ANALYSIS.md) — the original honest audit that drove the roadmap.
 
 ---
 
@@ -290,3 +292,7 @@ implementation.md             living execution log (phase-by-phase)
 A portfolio demonstration of full-stack engineering, real-time data systems, and pragmatic, honestly-scoped AI integration.
 
 <p align="center"><sub>FastAPI · Next.js · PostgreSQL · Redis · Docker</sub></p>
+
+
+
+
