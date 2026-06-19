@@ -9,79 +9,71 @@ module.exports = {
     extend: {
       fontFamily: {
         sans: ['var(--font-inter)', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       colors: {
-        // Sunset Pop palette — playful, warm, professional
-        coral: {
-          50: '#fff1ef',
-          100: '#ffe1dc',
-          200: '#ffc7bd',
-          300: '#ffa194',
-          400: '#ff7a68',
-          500: '#ff6b5c', // primary
-          600: '#ed4b39',
-          700: '#c8351f',
-          800: '#a52e1d',
-          900: '#882c1f',
-        },
+        // ── Operations console palette ──────────────────────────────────────
+        // Brand = deep teal-green (market-fresh, not tied to any retailer).
+        // Kept the `coral`/`primary`/`teal` token NAMES so existing component
+        // classes resolve, but recoloured the values toward the calm direction.
         teal: {
-          50: '#effdfa',
-          100: '#cbfbf1',
-          200: '#97f5e4',
-          300: '#5ce9d4',
-          400: '#2dd4bf', // tertiary
-          500: '#14b8a6',
-          600: '#0d9488',
+          50: '#e1f5ee',
+          100: '#c2ebdd',
+          200: '#8fd9c4',
+          300: '#5dc7aa',
+          400: '#2da88a',
+          500: '#0f8f73',
+          600: '#0d7d68', // brand mid
+          700: '#0f766e', // brand (active nav, primary)
+          800: '#115e59',
+          900: '#134e4a',
+        },
+        // `primary` now points at the teal-green brand (was coral).
+        primary: {
+          50: '#e1f5ee',
+          100: '#c2ebdd',
+          200: '#8fd9c4',
+          300: '#5dc7aa',
+          400: '#2da88a',
+          500: '#0f8f73',
+          600: '#0d7d68',
           700: '#0f766e',
           800: '#115e59',
           900: '#134e4a',
         },
-        // `violet` and `amber` ship with Tailwind; keep a primary alias
-        primary: {
-          50: '#fff1ef',
-          100: '#ffe1dc',
-          200: '#ffc7bd',
-          300: '#ffa194',
-          400: '#ff7a68',
-          500: '#ff6b5c',
-          600: '#ed4b39',
-          700: '#c8351f',
-          800: '#a52e1d',
-          900: '#882c1f',
+        // `coral` retained as a *warm signal* hue (returns / attention), used
+        // sparingly — no longer the brand.
+        coral: {
+          50: '#fbeee7',
+          100: '#f5d3c4',
+          200: '#eca889',
+          300: '#e08a63',
+          400: '#d85a30',
+          500: '#c8451f',
+          600: '#a3381a',
+          700: '#7e2c15',
+          800: '#5c2010',
+          900: '#3f160b',
         },
-        // Warm light surfaces + deep ink text
-        canvas: '#fdf6f3',
-        surface: '#ffffff',
+        // Warm-neutral surfaces + neutral ink text (no more purple ink).
+        canvas: '#fafaf8',
+        surface: {
+          DEFAULT: '#ffffff',
+          1: '#ffffff',
+          2: '#f4f4f0',
+          3: '#eaeae4',
+        },
         ink: {
-          DEFAULT: '#1e1b2e',
-          soft: '#4b4763',
-          muted: '#6b6680', // darkened for WCAG AA (5.47:1 on white) — 3.7
+          DEFAULT: '#1a1d21',
+          soft: '#4b5258',
+          muted: '#5f6660', // AA on white (>=4.5:1)
         },
+        line: '#e6e6e0', // default hairline border
+        // Semantic signals — color only ever means meaning, never decoration.
+        signal: { up: '#0f8f73', down: '#c8451f' },
+        alert: { critical: '#dc2626', warn: '#d97706', info: '#2563eb' },
+        live: '#16a34a',
       },
       boxShadow: {
-        sunset: '0 18px 40px -12px rgba(255, 107, 92, 0.45)',
-        'sunset-violet': '0 18px 40px -12px rgba(139, 92, 246, 0.4)',
-        soft: '0 10px 30px -12px rgba(30, 27, 46, 0.18)',
-      },
-      backgroundImage: {
-        // Deepened to 700-level stops so white text clears WCAG AA (>=5:1) — 3.7
-        'sunset-gradient': 'linear-gradient(135deg, #c8351f 0%, #6d28d9 100%)',
-        'sunset-warm': 'linear-gradient(135deg, #c8351f 0%, #b45309 100%)',
-        'sunset-cool': 'linear-gradient(135deg, #6d28d9 0%, #0f766e 100%)',
-      },
-      animation: {
-        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'float-slow': 'float 6s ease-in-out infinite',
-        'blob': 'blob 12s ease-in-out infinite',
-      },
-      keyframes: {
-        blob: {
-          '0%, 100%': { transform: 'translate(0px, 0px) scale(1)' },
-          '33%': { transform: 'translate(30px, -40px) scale(1.1)' },
-          '66%': { transform: 'translate(-20px, 20px) scale(0.95)' },
-        },
-      },
-    },
-  },
-  plugins: [],
-}
+        // Calm, neutral elevation — borders do most of the work now.
+        sunset: '0 1px 2px rgba(20

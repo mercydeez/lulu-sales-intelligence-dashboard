@@ -8,31 +8,32 @@
    =============================================== */
 :root,
 html.light {
-  --bg-primary: #fdf6f3;
+  --bg-primary: #fafaf8;
   --bg-secondary: #ffffff;
-  --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-card: #ffffff;
   --bg-card-solid: #ffffff;
-  --bg-hover: rgba(255, 241, 239, 0.9);
-  --text-primary: #1e1b2e;
-  --text-secondary: #4b4763;
-  --text-muted: #8b8699;
-  --accent-coral: #ff6b5c;
-  --accent-violet: #8b5cf6;
-  --accent-teal: #2dd4bf;
-  --accent-amber: #fbbf24;
-  /* legacy aliases still referenced around the app */
-  --accent-cyan: #2dd4bf;
-  --accent-purple: #8b5cf6;
-  --accent-emerald: #14b8a6;
-  --accent-rose: #ff6b5c;
-  --border-color: #f1d9d2;
-  --shadow-color: rgba(255, 107, 92, 0.18);
+  --bg-hover: #f4f4f0;
+  --text-primary: #1a1d21;
+  --text-secondary: #4b5258;
+  --text-muted: #5f6660;
+  --accent-coral: #c8451f;
+  --accent-violet: #0f766e;
+  --accent-teal: #0f766e;
+  --accent-amber: #d97706;
+  /* legacy aliases still referenced around the app — remapped to brand */
+  --accent-cyan: #0f766e;
+  --accent-purple: #0f766e;
+  --accent-emerald: #0f8f73;
+  --accent-rose: #c8451f;
+  --brand: #0f766e;
+  --border-color: #e6e6e0;
+  --shadow-color: rgba(20, 29, 33, 0.10);
 
-  /* Chart colors — light Sunset Pop */
-  --chart-grid: #f0e0db;
-  --chart-text: #8b8699;
+  /* Chart colors — operations console (calm neutral grid, brand series) */
+  --chart-grid: #ececE6;
+  --chart-text: #5f6660;
   --chart-tooltip-bg: #ffffff;
-  --chart-tooltip-border: #ffd7cf;
+  --chart-tooltip-border: #e6e6e0;
 }
 
 /* ===============================================
@@ -61,25 +62,21 @@ html.dark {
    while login + home are redesigned natively)
    =============================================== */
 html.light body {
-  background:
-    radial-gradient(1100px 700px at 12% -8%, rgba(255, 107, 92, 0.12), transparent 60%),
-    radial-gradient(1000px 700px at 100% 0%, rgba(139, 92, 246, 0.12), transparent 55%),
-    radial-gradient(900px 700px at 50% 120%, rgba(45, 212, 191, 0.10), transparent 55%),
-    linear-gradient(135deg, #fdf6f3 0%, #fbf3fb 50%, #f0fdfa 100%);
+  background: #fafaf8;
   color: var(--text-primary);
 }
 
 html.light .glass {
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 215, 207, 0.7);
-  box-shadow: 0 10px 30px -16px rgba(30, 27, 46, 0.25);
+  background: #ffffff;
+  backdrop-filter: none;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 2px rgba(20, 29, 33, 0.05);
 }
 
 html.light .glass-strong {
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(18px);
-  border: 1px solid rgba(255, 215, 207, 0.85);
+  background: #ffffff;
+  backdrop-filter: none;
+  border: 1px solid var(--border-color);
 }
 
 /* Surface + text remaps so legacy dark Tailwind classes stay legible */
@@ -163,7 +160,7 @@ html.light .row-alternate:nth-child(odd) {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #ffc7bd;
+  background: #d6d6cf;
   border-radius: 4px;
 }
 
@@ -173,12 +170,7 @@ html.light .row-alternate:nth-child(odd) {
 
 body {
   color: var(--text-primary);
-  background:
-    radial-gradient(1100px 700px at 12% -8%, rgba(255, 107, 92, 0.14), transparent 60%),
-    radial-gradient(1000px 700px at 100% 0%, rgba(139, 92, 246, 0.13), transparent 55%),
-    radial-gradient(900px 700px at 50% 120%, rgba(45, 212, 191, 0.12), transparent 55%),
-    linear-gradient(135deg, #fdf6f3 0%, #fbf3fb 50%, #f0fdfa 100%);
-  background-attachment: fixed;
+  background: var(--bg-primary);
   min-height: 100vh;
   transition: background 0.3s ease, color 0.3s ease;
 }
@@ -242,74 +234,56 @@ body {
   }
 
   .card-hover:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    border-color: #d8d8d0;
+    box-shadow: 0 2px 8px rgba(20, 29, 33, 0.08);
   }
 
-  /* Glassmorphism — warm light Sunset Pop */
+  /* Flat surface card (was glassmorphism) — borders carry the structure */
   .glass {
-    background: rgba(255, 255, 255, 0.72);
-    backdrop-filter: blur(14px);
-    border: 1px solid rgba(255, 215, 207, 0.7);
-    box-shadow: 0 10px 30px -16px rgba(30, 27, 46, 0.25);
+    background: #ffffff;
+    backdrop-filter: none;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 1px 2px rgba(20, 29, 33, 0.05);
   }
 
   .glass-strong {
-    background: rgba(255, 255, 255, 0.92);
-    backdrop-filter: blur(18px);
-    border: 1px solid rgba(255, 215, 207, 0.85);
-    box-shadow: 0 16px 40px -18px rgba(30, 27, 46, 0.28);
+    background: #ffffff;
+    backdrop-filter: none;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 1px 2px rgba(20, 29, 33, 0.05);
   }
 
-  /* Gradient text — coral → violet */
+  /* Brand text — solid ink (no more gradient text) */
   .gradient-text {
-    background: linear-gradient(135deg, #ff6b5c 0%, #8b5cf6 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    color: var(--text-primary);
   }
 
-  /* Sunset gradient surfaces — deepened to 700-level stops so white text
-     clears WCAG AA (every stop >= 5:1 against #fff) — 3.7 contrast audit */
-  .sunset-gradient { background: linear-gradient(135deg, #c8351f 0%, #6d28d9 100%); }
-  .sunset-warm { background: linear-gradient(135deg, #c8351f 0%, #b45309 100%); }
-  .sunset-cool { background: linear-gradient(135deg, #6d28d9 0%, #0f766e 100%); }
+  /* Hero brand panels — calm single-hue teal (still usable for emphasis cards) */
+  .sunset-gradient { background: linear-gradient(135deg, #0f766e 0%, #0d7d68 100%); }
+  .sunset-warm { background: linear-gradient(135deg, #0f766e 0%, #115e59 100%); }
+  .sunset-cool { background: linear-gradient(135deg, #0d7d68 0%, #0f766e 100%); }
 
-  /* Playful primary button: gradient + lift + shimmer sheen */
+  /* Primary button — flat brand, subtle hover (no lift/shimmer) */
   .btn-sunset {
     position: relative;
-    overflow: hidden;
-    background: linear-gradient(135deg, #c8351f 0%, #6d28d9 100%);
+    background: #0f766e;
     color: #fff;
-    box-shadow: 0 14px 30px -12px rgba(255, 107, 92, 0.55);
-    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    box-shadow: none;
+    transition: background 0.15s ease;
   }
-  .btn-sunset:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 20px 40px -12px rgba(139, 92, 246, 0.55);
-    filter: saturate(1.08);
-  }
-  .btn-sunset:active { transform: translateY(0); }
-  .btn-sunset::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -120%;
-    width: 60%;
-    height: 100%;
-    background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-    transform: skewX(-20deg);
-    transition: left 0.6s ease;
-  }
-  .btn-sunset:hover::after { left: 140%; }
+  .btn-sunset:hover { background: #0d7d68; }
+  .btn-sunset:active { background: #115e59; }
+  .btn-sunset::after { content: none; }
 
-  /* Card pop hover for interactive tiles */
+  /* Interactive tile hover — subtle border/elevation, no bounce */
   .card-pop {
-    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
   .card-pop:hover {
-    transform: translateY(-6px);
-    box-shadow: 0 24px 48px -20px rgba(139, 92, 246, 0.35);
+    border-color: #d8d8d0;
+    box-shadow: 0 2px 8px rgba(20, 29, 33, 0.08);
   }
 
   /* Decorative blurred blobs for hero backgrounds */
@@ -461,9 +435,9 @@ select:focus-visible,
 textarea:focus-visible,
 [role="tab"]:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid #ff6b5c;
+  outline: 2px solid #0f766e;
   outline-offset: 2px;
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 /* Honor prefers-reduced-motion: neutralize animations & transitions */
@@ -477,3 +451,4 @@ textarea:focus-visible,
     scroll-behavior: auto !important;
   }
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
