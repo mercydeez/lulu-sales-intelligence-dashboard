@@ -287,4 +287,23 @@ async def health_check():
         redis = await get_redis()
         await redis.ping()
         redis_status = "healthy"
-    
+    except Exception as e:
+        logger.error(f"Redis health check failed: {e}")
+        redis_status = "unhealthy"
+
+    # Overall status
+    if db_status == "healthy" and redis_status == "healthy":
+        overall_status = "healthy"
+    elif db_status == "unhealthy" and redis_status == "unhealthy":
+        overall_status = "unhealthy"
+    else:
+        overall_status = "degraded"
+
+    return {
+        "status": overall_status,
+        "database": db_status,
+        "redis": redis_status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": "1.0.0",
+        "environment": settings.environment
+    }

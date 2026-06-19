@@ -76,4 +76,15 @@ module.exports = {
       },
       boxShadow: {
         // Calm, neutral elevation — borders do most of the work now.
-        sunset: '0 1px 2px rgba(20
+        sunset: '0 1px 2px rgba(20, 29, 33, 0.06)',
+        soft: '0 4px 12px rgba(20, 29, 33, 0.10)',
+      },
+      backgroundImage: {
+        // Tailwind utility companion to the plain `.sunset-gradient` class in
+        // globals.css — same stops, for components that need `bg-` composition.
+        'sunset-gradient': 'linear-gradient(135deg, #0f766e 0%, #0d7d68 100%)',
+      },
+    },
+  },
+  plugins: [],
+}

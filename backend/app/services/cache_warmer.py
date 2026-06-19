@@ -44,4 +44,6 @@ async def run_cache_warmer() -> None:
             logger.warning("Cache warm cycle failed: %s", e)
         try:
             await asyncio.sleep(WARM_INTERVAL_SECONDS)
-        exce
+        except asyncio.CancelledError:
+            logger.info("Cache warmer stopping")
+            raise

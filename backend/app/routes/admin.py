@@ -431,4 +431,95 @@ async def get_admin_dashboard(
                 SELECT COUNT(*) FROM stores
             """))
             store_count = store_result.scalar() or 0
-      
+
+            # Get today's sales summary
+            sales_result = await session.execute(text("""
+                SELECT
+                    COALESCE(SUM(sales), 0) as today_sales,
+                    COUNT(DISTINCT store_id) as active_stores,
+                    COUNT(DISTINCT item_id) as items_sold
+                FROM sales_fact_view
+                WHERE date = CURRENT_DATE
+            """))
+            sales_row = sales_result.fetchone()
+
+            # Get 7-day trend
+            trend_result = await session.execute(text("""
+                SELECT date, SUM(sales) as total
+                FROM sales_fact_view
+                WHERE date >= CURRENT_DATE - INTERVAL '7 days'
+                GROUP BY date
+                ORDER BY date
+            """))
+            daily_trend = [{"date": r[0].isoformat(), "sales": int(r[1])} for r in trend_result.fetchall()]
+
+            return {
+                "users": {
+                    "total": int(user_row[0]) if user_row[0] else 0,
+                    "active": int(user_row[1]) if user_row[1] else 0,
+                    "admins": int(user_row[2]) if user_row[2] else 0,
+                    "regional_managers": int(user_row[3]) if user_row[3] else 0,
+                    "store_managers": int(user_row[4]) if user_row[4] else 0
+                },
+                "stores": {
+                    "total": store_count,
+                    "active": store_count
+                },
+                "today": {
+                    "total_sales": int(sales_row[0]) if sales_row[0] else 0,
+                    "active_stores": int(sales_row[1]) if sales_row[1] else 0,
+                    "items_sold": int(sales_row[2]) if sales_row[2] else 0
+                },
+                "daily_trend": daily_trend
+            }
+
+        except Exception as e:
+            logger.error(f"Admin dashboard error: {e}")
+            return {
+                "users": {"total": 0, "active": 0, "admins": 0, "regional_managers": 0, "store_managers": 0},
+                "stores": {"total": 0, "active": 0},
+                "today": {"total_sales": 0, "active_stores": 0, "items_sold": 0},
+                "daily_trend": []
+            }
+
+
+@router.get("/activity")
+async def get_recent_activity(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get recent system activity from real sales data"""
+    if current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    async with async_session() as session:
+        try:
+            # Get recent sales activity
+            result = await session.execute(text("""
+                SELECT
+                    s.date,
+                    st.name as store_name,
+                    i.name as item_name,
+                    s.sales,
+                    s.created_at
+                FROM sales_fact_view s
+                JOIN stores st ON s.store_id = st.id
+                JOIN items i ON s.item_id = i.id
+                ORDER BY s.created_at DESC
+                LIMIT :limit
+            """), {"limit": limit})
+
+            activities = []
+            for row in result.fetchall():
+                activities.append({
+                    "type": "sale",
+                    "message": f"Sale of {row[3]} units of {row[2]} at {row[1]}",
+                    "date": row[0].isoformat() if row[0] else None,
+                    "timestamp": row[4].isoformat() if row[4] else None
+                })
+
+            return {"activities": activities, "total": len(activities)}
+
+        except Exception as e:
+            logger.error(f"Get activity error: {e}")
+            return {"activities": [], "total": 0}

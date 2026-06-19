@@ -532,4 +532,4 @@ async def stream_inventory(
     - event: connected - Initial connection confirmation
     - event: inventory_update - Inventory level change
     """
-    return EventSourceResponse(inventory_event_gene
+    return EventSourceResponse(inventory_event_generator(request, current_user))
