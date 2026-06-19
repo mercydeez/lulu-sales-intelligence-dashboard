@@ -520,8 +520,9 @@ class AuthService:
             from sqlalchemy import text
             result = await session.execute(
                 text("""
-                    SELECT id, email, first_name, last_name, role, status, 
-                           job_title, department, last_login_at, created_at
+                    SELECT id, email, first_name, last_name, role, status,
+                           job_title, department, last_login_at, created_at,
+                           tenant_id
                     FROM users WHERE id = :id
                 """),
                 {"id": user_id}
@@ -604,5 +605,4 @@ class AuthService:
                 "total": total,
                 "page": page,
                 "limit": limit,
-                "pages": max(1, (total + limit - 1) // limit),
-            }
+                "pages": max(1, (total +

@@ -26,7 +26,8 @@ WARM_INTERVAL_SECONDS = 10
 async def _warm_once() -> None:
     async with async_session() as session:
         # allowed_stores=None => the full "all stores" scope (the heaviest query).
-        await compute_and_cache_kpis(session, None)
+        # Warm the demo tenant (id=1); other tenants warm lazily on first request.
+        await compute_and_cache_kpis(session, None, tenant_id=1)
         await compute_and_cache_store_distribution(session, None)
 
 
@@ -43,6 +44,4 @@ async def run_cache_warmer() -> None:
             logger.warning("Cache warm cycle failed: %s", e)
         try:
             await asyncio.sleep(WARM_INTERVAL_SECONDS)
-        except asyncio.CancelledError:
-            logger.info("Cache warmer stopping")
-            raise
+        exce

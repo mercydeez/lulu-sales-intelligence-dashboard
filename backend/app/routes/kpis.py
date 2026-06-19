@@ -85,14 +85,17 @@ def _safe_defaults() -> dict:
     }
 
 
-def kpis_cache_key(allowed_stores: Optional[List[int]]) -> str:
-    """User-aware cache key for a KPI scope (empty/None => all stores)."""
+def kpis_cache_key(allowed_stores: Optional[List[int]], tenant_id: int = 1) -> str:
+    """Tenant- and user-aware cache key for a KPI scope (empty/None => all stores)."""
+    scope = f"kpis_t{tenant_id}"
     if allowed_stores:
-        return generate_cache_key(f"kpis_stores_{','.join(map(str, sorted(allowed_stores)))}")
-    return generate_cache_key("kpis_all")
+        scope += f"_stores_{','.join(map(str, sorted(allowed_stores)))}"
+    else:
+        scope += "_all"
+    return generate_cache_key(scope)
 
 
-async def compute_and_cache_kpis(db: AsyncSession, allowed_stores: Optional[List[int]]) -> dict:
+async def compute_and_cache_kpis(db: AsyncSession, allowed_stores: Optional[List[int]], tenant_id: int = 1) -> dict:
     """
     Run the KPI aggregation, store it in Redis under the scope's key, and return
     it as a dict. Shared by the route (on cache miss) and the cache warmer so the
@@ -136,10 +139,13 @@ async def compute_and_cache_kpis(db: AsyncSession, allowed_stores: Optional[List
             "today": today,
             "week_ago": week_ago,
             "month_ago": month_ago,
-            "two_weeks_ago": two_weeks_ago
+            "two_weeks_ago": two_weeks_ago,
+            "tenant_id": tenant_id,
         }
+        # Always scope to the caller's tenant; store scope narrows further.
+        query_sql += " WHERE s.tenant_id = :tenant_id"
         if allowed_stores:
-            query_sql += " WHERE s.store_id = ANY(:allowed_stores)"
+            query_sql += " AND s.store_id = ANY(:allowed_stores)"
             params["allowed_stores"] = allowed_stores
 
         result = await db.execute(text(query_sql), params)
@@ -198,7 +204,7 @@ async def compute_and_cache_kpis(db: AsyncSession, allowed_stores: Optional[List
         if cache_data['last_stream_timestamp']:
             cache_data['last_stream_timestamp'] = cache_data['last_stream_timestamp'].isoformat()
 
-        await set_cached(kpis_cache_key(allowed_stores), cache_data, CACHE_TTL['kpis'])
+        await set_cached(kpis_cache_key(allowed_stores, tenant_id), cache_data, CACHE_TTL['kpis'])
 
         return response_data
 
@@ -224,12 +230,5 @@ async def get_kpis(db: AsyncSession = Depends(get_db), current_user: dict = Depe
         await set_cached(key, _serialize_kpi_dates(data), CACHE_TTL['kpis'])
         return KPIResponse(**data)
 
-    allowed_stores = get_accessible_store_ids(current_user)
-    cache_key = kpis_cache_key(allowed_stores)
-
-    cached = await get_cached(cache_key)
-    if cached:
-        return KPIResponse(**_parse_kpi_dates(cached))
-
-    response_data = await compute_and_cache_kpis(db, allowed_stores)
-    return KPIResponse(**response_data)
+    tenant_id = current_user.get('tenant_id') or 1
+    allowed
