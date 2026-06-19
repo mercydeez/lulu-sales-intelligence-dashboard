@@ -14,6 +14,7 @@ const en: Dict = {
   'nav.inventory': 'Inventory',
   'nav.promotions': 'Promotions',
   'nav.analytics': 'Analytics',
+  'nav.forecastLab': 'Forecast Lab',
   'nav.employees': 'Employees',
   'nav.reports': 'Reports',
   'nav.alerts': 'Alerts',
@@ -42,6 +43,7 @@ const ar: Dict = {
   'nav.inventory': 'المخزون',
   'nav.promotions': 'العروض',
   'nav.analytics': 'التحليلات',
+  'nav.forecastLab': 'مختبر التنبؤ',
   'nav.employees': 'الموظفون',
   'nav.reports': 'التقارير',
   'nav.alerts': 'التنبيهات',
@@ -121,10 +123,4 @@ export function useLanguage(): LanguageContextValue {
     return {
       lang: 'en',
       dir: 'ltr',
-      t: (key: string) => en[key] ?? key,
-      setLang: () => {},
-      toggleLang: () => {},
-    };
-  }
-  return ctx;
-}
+      t: (key: string) => en[key] ?? key,

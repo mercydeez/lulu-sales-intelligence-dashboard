@@ -21,6 +21,7 @@ import {
   Activity,
   Users,
   Database,
+  Brain,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -38,6 +39,7 @@ export const navItems: NavItem[] = [
   { label: 'Inventory', tKey: 'nav.inventory', href: '/inventory', icon: <Package className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Promotions', tKey: 'nav.promotions', href: '/promotions', icon: <Tag className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Analytics', tKey: 'nav.analytics', href: '/analytics', icon: <BarChart3 className="w-5 h-5" /> },
+  { label: 'Forecast Lab', tKey: 'nav.forecastLab', href: '/forecast-lab', icon: <Brain className="w-5 h-5" /> },
   { label: 'Employees', tKey: 'nav.employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Reports', tKey: 'nav.reports', href: '/reports', icon: <FileText className="w-5 h-5" />, permission: 'can_export' },
   { label: 'Alerts', tKey: 'nav.alerts', href: '/alerts', icon: <Bell className="w-5 h-5" /> },
@@ -127,11 +129,4 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
               className="absolute top-4 end-4 p-1.5 rounded-full text-ink-muted hover:text-ink hover:bg-coral-50 transition-colors"
             >
               <X className="w-4 h-4" />
-            </button>
-            <SidebarContent onNavigate={onClose} />
-          </aside>
-        </div>
-      )}
-    </>
-  );
-}
+         
