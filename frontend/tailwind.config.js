@@ -8,8 +8,8 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['var(--font-inter)', 'system-ui', '-apple-system', 'sans-serif'],
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+        sans: ['var(--font-manrope)', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['var(--font-plex-mono)', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       colors: {
         // ── Operations console palette ──────────────────────────────────────
@@ -68,7 +68,7 @@ module.exports = {
           soft: '#4b5258',
           muted: '#5f6660', // AA on white (>=4.5:1)
         },
-        line: '#e6e6e0', // default hairline border
+        line: '#ece9e3', // default hairline border (warm, matches design)
         // Semantic signals — color only ever means meaning, never decoration.
         signal: { up: '#0f8f73', down: '#c8451f' },
         alert: { critical: '#dc2626', warn: '#d97706', info: '#2563eb' },

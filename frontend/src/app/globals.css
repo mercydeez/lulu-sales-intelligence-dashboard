@@ -26,11 +26,11 @@ html.light {
   --accent-emerald: #0f8f73;
   --accent-rose: #c8451f;
   --brand: #0f766e;
-  --border-color: #e6e6e0;
+  --border-color: #ece9e3;
   --shadow-color: rgba(20, 29, 33, 0.10);
 
   /* Chart colors — operations console (calm neutral grid, brand series) */
-  --chart-grid: #ececE6;
+  --chart-grid: #ece9e3;
   --chart-text: #5f6660;
   --chart-tooltip-bg: #ffffff;
   --chart-tooltip-border: #e6e6e0;

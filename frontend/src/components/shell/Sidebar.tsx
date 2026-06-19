@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -55,8 +55,27 @@ export interface SidebarProps {
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { hasRole, hasPermission } = useAuth();
+  const { hasRole, hasPermission, authFetch, isAuthenticated } = useAuth();
   const { t } = useLanguage();
+
+  // Live critical-alert count for the Alerts nav badge (same source the
+  // dashboard uses for its alert tiles — /api/inventory/summary).
+  const [criticalCount, setCriticalCount] = useState(0);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await authFetch('/api/inventory/summary');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (active) setCriticalCount(data.out_of_stock_count ?? 0);
+      } catch {
+        // leave badge hidden on failure
+      }
+    })();
+    return () => { active = false; };
+  }, [isAuthenticated, authFetch]);
 
   const canAccessItem = (item: NavItem): boolean => {
     if (item.roles && !hasRole(item.roles)) return false;
@@ -68,7 +87,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex flex-col h-full">
-      <Link href="/" onClick={onNavigate} className="flex items-center gap-3 px-5 h-16 shrink-0 border-b border-coral-100">
+      <Link href="/" onClick={onNavigate} className="flex items-center gap-3 px-5 h-16 shrink-0 border-b border-line">
         <div className="w-10 h-10 rounded-xl sunset-gradient flex items-center justify-center shadow-sunset shrink-0">
           <ShoppingBag className="w-5 h-5 text-white" />
         </div>
@@ -81,6 +100,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         {filteredNavItems.map((item) => {
           const active = pathname === item.href;
+          const showBadge = item.href === '/alerts' && criticalCount > 0;
           return (
             <Link
               key={item.href}
@@ -88,21 +108,26 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               onClick={onNavigate}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
-                active ? 'bg-coral-100 text-coral-600' : 'text-ink-muted hover:text-ink hover:bg-coral-50'
+                active ? 'bg-teal-50 text-teal-700' : 'text-ink-muted hover:text-ink hover:bg-[#faf3ee]'
               )}
             >
               {item.icon}
-              {t(item.tKey)}
+              <span className="flex-1">{t(item.tKey)}</span>
+              {showBadge && (
+                <span className="ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#e11d48] text-white text-[10px] font-bold">
+                  {criticalCount}
+                </span>
+              )}
             </Link>
           );
         })}
       </nav>
 
-      <div className="px-3 py-4 border-t border-coral-100 space-y-1">
+      <div className="px-3 py-4 border-t border-line space-y-1">
         <Link
           href="/settings"
           onClick={onNavigate}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-coral-50 transition-all"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-[#faf3ee] transition-all"
         >
           <Settings className="w-5 h-5" />
           Preferences
@@ -116,7 +141,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   return (
     <>
-      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:start-0 lg:w-64 bg-white/85 backdrop-blur-xl border-e border-coral-100 z-30">
+      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:start-0 lg:w-64 bg-white border-e border-line z-30">
         <SidebarContent />
       </aside>
 
