@@ -155,3 +155,34 @@ def stockout_classifier(history: pd.DataFrame, holdout: int = 30) -> dict:
         }
     except Exception:
         return {}
+
+
+def business_impact(forecast_points, classifier, avg_price, recent_daily_units) -> dict:
+    """Translate model output into money, with the formula spelled out so a
+    non-technical reader sees exactly HOW each number is derived."""
+    try:
+        horizon = len(forecast_points)
+        proj_units = sum(p.get("forecast", 0) for p in forecast_points)
+        price = float(avg_price or 0)
+        proj_revenue = proj_units * price
+        avg_daily_revenue = float(recent_daily_units or 0) * price
+        tp = risk_total = 0
+        if classifier and classifier.get("matrix"):
+            m = classifier["matrix"]
+            tp = m[1][1]
+            risk_total = m[1][0] + m[1][1]
+        revenue_protected = tp * avg_daily_revenue
+        return {
+            "horizon_days": horizon,
+            "projected_units": int(round(proj_units)),
+            "avg_unit_price_aed": round(price, 2),
+            "projected_revenue_aed": round(proj_revenue, 2),
+            "revenue_formula": f"{int(round(proj_units)):,} forecast units × AED {round(price, 2)} avg price",
+            "risk_days_caught": int(tp),
+            "risk_days_total": int(risk_total),
+            "avg_daily_revenue_aed": round(avg_daily_revenue, 2),
+            "revenue_protected_aed": round(revenue_protected, 2),
+            "protected_formula": f"{int(tp)} risk days the model caught × AED {round(avg_daily_revenue, 2)} avg daily revenue",
+        }
+    except Exception:
+        return {}

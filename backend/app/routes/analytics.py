@@ -712,6 +712,7 @@ async def get_model_metrics(
     result = {
         "accuracy": None, "selected_model": None, "mape": None, "leaderboard": [],
         "forecast": [], "feature_importance": [], "classifier": {}, "heatmap": [],
+        "business_impact": {},
     }
     try:
         agg_sql = (
@@ -724,6 +725,12 @@ async def get_model_metrics(
             result.update(diag.forecast_summary(hist, horizon))
             result["feature_importance"] = diag.feature_importance(hist)
             result["classifier"] = diag.stockout_classifier(hist)
+            avg_price_row = (await db.execute(text("SELECT AVG(unit_price_aed) AS p FROM items"))).fetchone()
+            avg_price = float(avg_price_row.p) if avg_price_row and avg_price_row.p else 0.0
+            recent_daily = float(hist["sales"].tail(30).mean()) if len(hist) else 0.0
+            result["business_impact"] = diag.business_impact(
+                result.get("forecast", []), result.get("classifier", {}), avg_price, recent_daily
+            )
 
         store_sql = (
             f"SELECT st.id AS store_id, st.name AS store_name, s.date AS date, "
