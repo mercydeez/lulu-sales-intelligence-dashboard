@@ -1,122 +1,131 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { authFetch } from '@/contexts/AuthContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const RECONNECT_MS = 5000;
+
+type Handler = (data: any) => void;
 
 interface UseEventStreamOptions {
-  eventHandlers: Record<string, (data: any) => void>;
+  eventHandlers: Record<string, Handler>;
   onConnect?: () => void;
   onDisconnect?: () => void;
 }
 
-export function useEventStream(endpoint: string | null, options: UseEventStreamOptions) {
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const optionsRef = useRef(options);
-  
-  // Keep options updated to avoid re-running effect on handler changes
-  useEffect(() => {
-    optionsRef.current = options;
-  }, [options]);
+/**
+ * Shared SSE connection manager.
+ *
+ * Multiple components asking for the same channel (e.g. several widgets all
+ * watching `/stream/sales`) now share ONE EventSource instead of opening one
+ * each. Browsers cap ~6 concurrent HTTP/1.1 connections per origin, so the old
+ * per-component approach exhausted the pool (made worse by React StrictMode
+ * double-mounting in dev), leaving streams stuck in a connect/timeout/retry
+ * loop. One connection per channel, fanned out to all subscribers, fixes it.
+ */
+interface Conn {
+  endpoint: string;
+  es: EventSource | null;
+  refCount: number;
+  isConnected: boolean;
+  error: string | null;
+  /** eventName -> set of subscriber handlers */
+  handlers: Map<string, Set<Handler>>;
+  /** eventNames that currently have a live addEventListener on `es` */
+  attached: Set<string>;
+  /** components listening for connection-status changes */
+  statusListeners: Set<() => void>;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+  opening: boolean;
+}
 
-  const connect = useCallback(async () => {
-    if (!endpoint) {
-      setIsConnected(false);
+const conns = new Map<string, Conn>();
+
+function getConn(endpoint: string): Conn {
+  let c = conns.get(endpoint);
+  if (!c) {
+    c = {
+      endpoint,
+      es: null,
+      refCount: 0,
+      isConnected: false,
+      error: null,
+      handlers: new Map(),
+      attached: new Set(),
+      statusListeners: new Set(),
+      reconnectTimer: null,
+      opening: false,
+    };
+    conns.set(endpoint, c);
+  }
+  return c;
+}
+
+function notifyStatus(c: Conn) {
+  c.statusListeners.forEach((fn) => fn());
+}
+
+/** Attach a DOM listener for one event name that fans out to all handlers. */
+function attachEvent(c: Conn, eventName: string) {
+  if (!c.es || c.attached.has(eventName)) return;
+  c.attached.add(eventName);
+  c.es.addEventListener(eventName, (event: MessageEvent) => {
+    const set = c.handlers.get(eventName);
+    if (!set || set.size === 0) return;
+    let payload: any = event.data;
+    try {
+      payload = JSON.parse(event.data);
+    } catch {
+      /* pass raw string if not JSON */
+    }
+    set.forEach((h) => {
+      try {
+        h(payload);
+      } catch (err) {
+        console.error(`SSE handler error [${eventName}]`, err);
+      }
+    });
+  });
+}
+
+async function openConnection(c: Conn) {
+  if (c.opening || c.es || c.refCount === 0) return;
+  c.opening = true;
+  try {
+    const ticketRes = await authFetch('/api/auth/stream-ticket', { method: 'POST' });
+    if (!ticketRes.ok) throw new Error(`stream ticket ${ticketRes.status}`);
+    const { ticket } = await ticketRes.json();
+
+    // refCount may have dropped to 0 while awaiting the ticket
+    if (c.refCount === 0) {
+      c.opening = false;
       return;
     }
 
-    // Clear any existing connections or reconnect timers
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
+    const url = `${API_URL}${c.endpoint}${c.endpoint.includes('?') ? '&' : '?'}ticket=${ticket}`;
+    const es = new EventSource(url);
+    c.es = es;
 
-    try {
-      // 1. Get a short-lived ticket
-      const ticketRes = await authFetch('/api/auth/stream-ticket', { method: 'POST' });
-      if (!ticketRes.ok) {
-        throw new Error(`Failed to obtain stream ticket: ${ticketRes.statusText}`);
-      }
-      
-      const { ticket } = await ticketRes.json();
-      
-      // 2. Establish SSE connection with the ticket
-      const url = `${API_URL}${endpoint}${endpoint.includes('?') ? '&' : '?'}ticket=${ticket}`;
-      const eventSource = new EventSource(url);
-      eventSourceRef.current = eventSource;
-
-      // 3. Setup standard listeners
-      eventSource.onopen = () => {
-        setIsConnected(true);
-        setError(null);
-        if (optionsRef.current.onConnect) {
-          optionsRef.current.onConnect();
-        }
-      };
-
-      // 4. Setup custom event handlers
-      Object.entries(optionsRef.current.eventHandlers).forEach(([eventName, handler]) => {
-        eventSource.addEventListener(eventName, (event: MessageEvent) => {
-          try {
-            const parsedData = JSON.parse(event.data);
-            handler(parsedData);
-          } catch (err) {
-            console.error(`Failed to parse SSE event [${eventName}]:`, err);
-            // Fallback: pass raw string data if parsing fails
-            handler(event.data);
-          }
-        });
-      });
-
-      // 5. Handle errors and reconnects
-      eventSource.onerror = () => {
-        setIsConnected(false);
-        setError('Connection lost. Reconnecting...');
-        if (optionsRef.current.onDisconnect) {
-          optionsRef.current.onDisconnect();
-        }
-        eventSource.close();
-        eventSourceRef.current = null;
-
-        // Schedule reconnection with a fresh ticket after 5 seconds
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connect();
-        }, 5000);
-      };
-
-    } catch (err: any) {
-      console.error(`SSE connection to ${endpoint} failed:`, err);
-      setIsConnected(false);
-      setError(err.message || 'Authentication failed. Reconnecting...');
-      
-      // Schedule reconnection with a fresh ticket after 5 seconds
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connect();
-      }, 5000);
-    }
-  }, [endpoint]);
-
-  useEffect(() => {
-    connect();
-
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
+    es.onopen = () => {
+      c.isConnected = true;
+      c.error = null;
+      notifyStatus(c);
     };
-  }, [connect]);
 
-  return { isConnected, error };
-}
+    // (re)attach listeners for every event name currently subscribed
+    c.attached.clear();
+    for (const eventName of c.handlers.keys()) attachEvent(c, eventName);
+
+    es.onerror = () => {
+      c.isConnected = false;
+      c.error = 'Connection lost. Reconnecting…';
+      notifyStatus(c);
+      es.close();
+      c.es = null;
+      c.attached.clear();
+      if (c.reconnectTimer) clearTimeout(c.reconnectTimer);
+      if (c.refCount > 0) {
+        c.reconnectTimer = setTimeout(() => {
+          c.reconnectTimer = null;
+          openCo

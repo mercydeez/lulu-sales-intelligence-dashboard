@@ -13,6 +13,7 @@ import asyncio
 import json
 import random
 
+from app.config import logger
 from app.services.database import get_db
 from app.services.redis_client import get_redis, CHANNEL_SALES_STREAM, CHANNEL_ALERTS_STREAM, CHANNEL_INVENTORY_STREAM, publish_alert, publish_inventory_update
 from app.models.sales import Sale, Store, Item
@@ -531,4 +532,4 @@ async def stream_inventory(
     - event: connected - Initial connection confirmation
     - event: inventory_update - Inventory level change
     """
-    return EventSourceResponse(inventory_event_generator(request, current_user))
+    return EventSourceResponse(inventory_event_gene
