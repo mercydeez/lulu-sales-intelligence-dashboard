@@ -113,3 +113,89 @@ Follow UI_UX_REDESIGN_PLAN §13 order:
 
 - 0.x blocks everything. 1.1→1.2 blocks 2.6 (tickets) and the RBAC tests. 2.1 should land before heavy Phase 3 work touches data fetching. 3.x can start tokens/primitives (3.1–3.2) in parallel with late Phase 2.
 - Anything labeled "stretch" (3.8 RTL, 5.5 public demo) is cuttable without harming the core story.
+
+---
+---
+
+# Part II — Live SaaS + ML/DL Build Log & Forward Plan (updated June 2026)
+
+> This part supersedes Part I's framing: the project has moved from "fix the demo"
+> to "build a multi-tenant, ML/DL-backed retail-ops SaaS." It records what is
+> already built and the sequenced plan for everything still planned.
+
+## A. Done (committed)
+
+**Stabilization & correctness**
+- Clean first-boot (init.sql `RAISE NOTICE` fix; init.sql ↔ migrations view consistency — tenant_id).
+- SSE consolidated to one shared connection per channel (fixed live-feed reconnect storm).
+- CORS dev-origin fix (localhost/127.0.0.1, any port); `logger` import in stream route.
+- `ToastProvider` mounted (fixed data-sources crash).
+- Admin: router double-prefix fix, KPI/user queries corrected to real columns, **create-user** flow.
+
+**UI**
+- "Operations console" retheme at the token level (tokens + StatCard/Button/Card); calm, flat, teal brand, tabular numbers. (Per-page Sunset-class cleanup still pending — see C.)
+
+**Multi-tenancy (Phase 1 — foundation)**
+- `tenants` table + default demo tenant; `tenant_id` on users/stores/items/sales tables (migration 010).
+- `sales_fact_view` carries `tenant_id` (migration 011 + init.sql).
+- `/api/tenants` (list/create, super-admin); tenant-aware auth (`current_user.tenant_id`).
+- KPIs tenant-scoped end-to-end (query + cache key + warmer).
+
+**Forecasting engine (deterministic, backtest-selected)**
+- Feature engineering (lags/calendar/rolling), models behind one interface:
+  classical (seasonal-naive, seasonal-trend), ML (LightGBM), DL (LSTM, GRU/RNN, CNN).
+- Rolling-origin backtest scores every model (MAPE/WAPE) and auto-selects the winner.
+- `/api/analytics/forecast` and `/api/analytics/model-metrics` (tenant-scoped, cached).
+- **Forecast Lab** tab: executive view (accuracy, model-in-use, MAPE, leaderboard, per-store
+  heatmap, plain-language takeaway, business-impact tiles) + technical view (model-comparison
+  table, forecast chart, feature importance, stockout-risk **confusion matrix**).
+- Business impact with explicit formulas (projected revenue = units × price; exposure caught
+  = risk days caught × avg daily revenue).
+
+## B. Forward roadmap (planned, in order)
+
+### B1 — Forecasting hardening & depth  🔴 next
+1. **Scheduled / offline training**: a background trainer retrains models on a cadence and
+   caches forecasts + metrics; endpoints only READ. Fixes request-time slowness; the correct
+   ML-serving pattern. *Acceptance:* Forecast Lab loads instantly; no training on the request path.
+2. **More DL models**: N-BEATS, TCN, Transformer — added to the registry, compete in the backtest.
+3. **Forecast-vs-actual overlay** + confidence/prediction bands (show held-out predicted vs real).
+4. **Accuracy-over-time** (rolling backtest trend) — is the model improving?
+5. **Classifier extras**: ROC + precision-recall curves, threshold tuning, `predict_proba`.
+6. **Heatmap depth**: store × category; per-item drill-down.
+7. **Wire forecasts across the product**: inventory reorder/expiry, promotion uplift baseline,
+   dashboard revenue projection, AI assistant answers.
+
+### B2 — Multi-tenancy completion (Phase 2)  🔴
+- Apply tenant scoping to all read endpoints (sales, analytics, history, inventory, promotions, reports).
+- Postgres **RLS** (dedicated non-owner role / FORCE RLS) as defense-in-depth under app-layer scoping.
+- Tenant-aware caching everywhere; **isolation pytest**; tenant-aware user creation + a second
+  seeded tenant for a visible two-tenant isolation demo.
+
+### B3 — Billing & onboarding (Phase 3)  🟠
+- Plans/tiers; Stripe subscriptions + customer portal (UAE alternatives: Telr / PayTabs / Network Intl);
+  metering + usage limits; self-serve signup → create tenant → invite users → connect data.
+
+### B4 — PaaS layer (Phase 4)  🟠
+- Per-tenant **API keys** + public REST API; outbound **webhooks**; **white-label** theming per
+  tenant; **developer portal** + live API docs.
+
+### B5 — Chatbot / AI APIs (Phase 5)  🟡
+- Tenant-scoped, API-key-authenticated AI assistant endpoints to embed the chatbot externally;
+  free/local **Ollama** provider with rule-based fallback.
+
+## C. Production hardening & known issues
+- **Move the repo out of OneDrive** — it corrupts the git index and truncates files mid-write
+  (root cause of several incidents this build). Highest-leverage stability fix.
+- **torch image size** — CPU wheel; make the DL tier optional to keep images lean.
+- **Request-time ML training → scheduled** (B1.1).
+- **Theme cleanup** — remaining "Sunset" classes (coral borders, rounded-2xl, gradients) across
+  pages and shared primitives (Modal/Input/Select/Table/etc.).
+- **Date-shift historical data** so "today/this week" KPIs reflect a continuous timeline.
+- **Security/ops** — token hygiene, CSP tightening, RLS, UAE data residency, backups, monitoring, SLA.
+
+## D. Run / deploy notes
+- Dev: `docker compose up -d postgres redis backend` + `npm run dev` (frontend on :3000).
+- **Rebuild the backend image after dependency changes** (lightgbm/torch): `docker compose up -d --build backend`.
+- Migrations auto-apply on boot (numbered SQL in `database/migrations/`, tracked in `schema_migrations`).
+- Demo logins (password `Lulu@2026!`): atharva@lulu.ae (super_admin), krishna@lulu.ae (regional_manager), yash@lulu.ae (store_manager).
