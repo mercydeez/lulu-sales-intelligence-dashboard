@@ -4,6 +4,7 @@ import './globals.css';
 import AIProvider from '@/components/AIProvider';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
+import { ToastProvider } from '@/components/ui/Toast';
 import ClientLayout from '@/components/ClientLayout';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
@@ -38,15 +39,10 @@ export default function RootLayout({
         <div className="min-h-screen">
           <LanguageProvider>
             <AuthProvider>
-              <AIProvider>
-                <ClientLayout>
-                  {children}
-                </ClientLayout>
-              </AIProvider>
-            </AuthProvider>
-          </LanguageProvider>
-        </div>
-      </body>
-    </html>
-  );
-}
+              <ToastProvider>
+                <AIProvider>
+                  <ClientLayout>
+                    {children}
+                  </ClientLayout>
+                </AIProvider>
+              </
