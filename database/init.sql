@@ -210,6 +210,13 @@ UPDATE items SET unit_price_aed = 6.00 WHERE id = 50;
 -- Shaped as a drop-in for the retired `sales` table (same columns) so the ORM
 -- Sale model and raw-SQL readers work unchanged. Streaming ids are offset by
 -- 1,000,000,000 to stay unique across the union. Kept in sync with migration 007.
+-- Ensure tenant_id exists on the base tables so the view can carry it. Migration
+-- 010 adds the same column (+ FK) idempotently; keeping it here makes init.sql
+-- self-consistent, so re-running it never tries to drop tenant_id from the view
+-- ("cannot drop columns from view").
+ALTER TABLE sales_historical ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE sales_stream_raw ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
+
 CREATE OR REPLACE VIEW sales_fact_view AS
 SELECT
     id,
@@ -219,7 +226,8 @@ SELECT
     sales,
     FALSE AS is_streaming,
     'historical'::text AS source,
-    created_at
+    created_at,
+    tenant_id
 FROM sales_historical
 UNION ALL
 SELECT
@@ -230,7 +238,8 @@ SELECT
     sales,
     TRUE AS is_streaming,
     'streaming'::text AS source,
-    COALESCE(created_at, timestamp) AS created_at
+    COALESCE(created_at, timestamp) AS created_at,
+    tenant_id
 FROM sales_stream_raw;
 
 -- =============================================================================
@@ -388,14 +397,4 @@ FROM users u, regions r
 WHERE u.email = 'krishna@lulu.ae' AND r.code = 'dubai'
 ON CONFLICT DO NOTHING;
 
--- YASH (Store Manager) - Al Barsha store only (store_id = 1)
-INSERT INTO user_permissions (user_id, store_id, can_view, can_edit, can_delete, can_export, can_manage_users, can_manage_inventory, can_manage_promotions, can_view_financials, can_approve_transfers)
-SELECT u.id, 1, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE, FALSE, FALSE, FALSE
-FROM users u
-WHERE u.email = 'yash@lulu.ae'
-ON CONFLICT DO NOTHING;
-
-DO $$ BEGIN
-    RAISE NOTICE '✅ Authentication system initialized with 3 users';
-END $$;
-
+-- 
