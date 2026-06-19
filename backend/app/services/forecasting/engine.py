@@ -201,8 +201,9 @@ def available_models() -> List[BaseForecaster]:
     imported lazily so torch is only loaded if it's installed."""
     candidates: List[BaseForecaster] = [SeasonalNaive(), SeasonalTrend(), LightGBMForecaster()]
     try:
-        from .deep import LSTMForecaster
-        candidates.append(LSTMForecaster())
+        from .deep import LSTMForecaster, GRUForecaster, CNNForecaster
+        for cls in (LSTMForecaster, GRUForecaster, CNNForecaster):
+            candidates.append(cls())
     except Exception:
         pass
     return [m for m in candidates if getattr(m, "available", True)]
