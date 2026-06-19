@@ -22,6 +22,7 @@ from app.routes import sales, history, kpis, stream, analytics, auth
 from app.routes import ai as ai_routes
 from app.routes import inventory, promotions, alerts, admin, reports, monitoring, employees
 from app.routes import data_sources
+from app.routes import tenants
 from app.middleware import (
     RequestIDMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware,
     BodySizeLimitMiddleware, CSRFMiddleware, SessionInvalidationMiddleware
@@ -244,6 +245,7 @@ app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
 app.include_router(employees.router, prefix="/api/employees", tags=["Employees"])
 app.include_router(data_sources.router, prefix="/api/data-sources", tags=["Data Sources"])
+app.include_router(tenants.router, prefix="/api/tenants", tags=["Tenants"])
 
 # Also mount /api/latest from stream router
 @app.get("/api/latest", tags=["Stream"])
@@ -285,6 +287,4 @@ async def health_check():
         redis = await get_redis()
         await redis.ping()
         redis_status = "healthy"
-    except Exception as e:
-        logger.error(f"Redis health check failed: {e}")
-        redis_status = "unhe
+    

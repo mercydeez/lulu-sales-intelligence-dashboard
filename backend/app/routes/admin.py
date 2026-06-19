@@ -12,7 +12,9 @@ from app.services.database import async_session
 from app.routes.auth import get_current_user
 from app.config import logger
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+# NOTE: main.py mounts this router with prefix="/api/admin", so this router must
+# NOT add its own "/admin" prefix (that produced the broken /api/admin/admin/* paths).
+router = APIRouter(tags=["Admin"])
 
 
 # =============================================================================
@@ -429,8 +431,4 @@ async def get_admin_dashboard(
                 SELECT COUNT(*) FROM stores
             """))
             store_count = store_result.scalar() or 0
-            
-            # Get today's sales summary
-            sales_result = await session.execute(text("""
-                SELECT 
-                    CO
+      
