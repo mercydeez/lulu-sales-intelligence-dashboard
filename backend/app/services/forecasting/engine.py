@@ -10,7 +10,7 @@ Tiers:
   - seasonal_naive   : value from 7 days earlier (the honesty baseline)
   - seasonal_trend   : day-of-week seasonality x OLS trend (classical)
   - lightgbm         : gradient-boosted trees on lag/calendar/rolling features (ML)
-  - (next) lstm/nbeats: deep model, slots into the same interface
+  - lstm             : deep model (see deep.py), slots into the same interface
 
 Nothing here uses randomness; given the same history the output is identical.
 """
@@ -170,7 +170,7 @@ class LightGBMForecaster(BaseForecaster):
             num_leaves=31,
             subsample=0.9,
             colsample_bytree=0.9,
-            random_state=42,          # fixed seed -> deterministic
+            random_state=42,
             n_jobs=-1,
             verbose=-1,
         )
@@ -197,8 +197,14 @@ class LightGBMForecaster(BaseForecaster):
 
 
 def available_models() -> List[BaseForecaster]:
-    """Instantiate every model that can run in this environment."""
-    candidates = [SeasonalNaive(), SeasonalTrend(), LightGBMForecaster()]
+    """Instantiate every model that can run in this environment. The DL tier is
+    imported lazily so torch is only loaded if it's installed."""
+    candidates: List[BaseForecaster] = [SeasonalNaive(), SeasonalTrend(), LightGBMForecaster()]
+    try:
+        from .deep import LSTMForecaster
+        candidates.append(LSTMForecaster())
+    except Exception:
+        pass
     return [m for m in candidates if getattr(m, "available", True)]
 
 
@@ -226,7 +232,7 @@ def _wape(actual: np.ndarray, pred: np.ndarray) -> Optional[float]:
 class ForecastResult:
     model: str
     horizon: int
-    points: List[Dict] = field(default_factory=list)   # [{date, forecast}]
+    points: List[Dict] = field(default_factory=list)
     scores: Dict[str, Dict[str, Optional[float]]] = field(default_factory=dict)
     selected_mape: Optional[float] = None
     selected_wape: Optional[float] = None
@@ -248,7 +254,6 @@ def backtest_and_select(history: pd.DataFrame, horizon: int = 14) -> ForecastRes
     lowest-WAPE model (falling back to MAPE, then the baseline)."""
     series = _to_series(history)
     if len(series) < max(LAGS) + horizon + 7:
-        # Not enough history to backtest -> deterministic baseline only.
         m = SeasonalTrend().fit(series)
         preds = m.predict(horizon)
         return _result(m.name, series, preds, horizon, {})
@@ -266,13 +271,12 @@ def backtest_and_select(history: pd.DataFrame, horizon: int = 14) -> ForecastRes
             scores[model.name] = {"mape": mape, "wape": wape, "tier": model.tier}
             if wape is not None and wape < best_wape:
                 best_wape, best_name = wape, model.name
-        except Exception as e:  # a model failing must not sink the whole forecast
+        except Exception as e:
             scores[model.name] = {"error": str(e)}
 
     if best_name is None:
         best_name = "seasonal_trend"
 
-    # Refit the winner on the FULL history and forecast forward.
     winner = next((m for m in available_models() if m.name == best_name), SeasonalTrend())
     winner.fit(series)
     forecast = winner.predict(horizon)

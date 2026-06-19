@@ -9,12 +9,23 @@ python-dotenv==1.0.0
 email-validator==2.1.0
 pandas==2.1.4
 numpy==1.26.3
-# Forecasting (ML tier) — small CPU wheel; the DL tier (torch) is added later
+# Forecasting (ML tier) — small CPU wheel
 lightgbm==4.3.0
+# Forecasting (DL tier) — CPU-only torch (the cpu index avoids the multi-GB CUDA
+# build). This still adds a few hundred MB to the image; remove these three lines
+# to drop the LSTM tier (the engine falls back to classical + LightGBM safely).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2
 httpx==0.26.0
 sse-starlette==2.0.0
 python-multipart==0.0.9
 # Authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-bcrypt
+bcrypt==4.1.2
+
+# Testing
+pytest==8.0.0
+pytest-asyncio>=0.23.0,<0.25.0
+pytest-cov==4.1.0
+aiohttp==3.9.3
