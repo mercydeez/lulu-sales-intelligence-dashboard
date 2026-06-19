@@ -119,4 +119,9 @@ export function StatCard({
             {trendLabel}
           </span>
         )}
-        {footnote && <span className=
+        {footnote && <span className="text-xs text-ink-muted">{footnote}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}

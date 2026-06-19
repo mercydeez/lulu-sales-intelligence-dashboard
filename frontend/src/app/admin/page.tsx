@@ -119,4 +119,10 @@ export default function AdminPage() {
           />
         )}
 
-        {activeTab === 'stores' &&
+        {activeTab === 'stores' && <StoresTable stores={stores} loading={loading} />}
+
+        {activeTab === 'activity' && <ActivityFeed activities={activities} loading={loading} />}
+      </div>
+    </main>
+  );
+}

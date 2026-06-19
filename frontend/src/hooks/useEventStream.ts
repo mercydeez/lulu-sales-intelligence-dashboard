@@ -128,4 +128,110 @@ async function openConnection(c: Conn) {
       if (c.refCount > 0) {
         c.reconnectTimer = setTimeout(() => {
           c.reconnectTimer = null;
-          openCo
+          openConnection(c);
+        }, RECONNECT_MS);
+      }
+    };
+
+    c.opening = false;
+  } catch (err: any) {
+    c.opening = false;
+    c.isConnected = false;
+    c.error = err?.message || 'Connection failed. Reconnecting…';
+    notifyStatus(c);
+    if (c.reconnectTimer) clearTimeout(c.reconnectTimer);
+    if (c.refCount > 0) {
+      c.reconnectTimer = setTimeout(() => {
+        c.reconnectTimer = null;
+        openConnection(c);
+      }, RECONNECT_MS);
+    }
+  }
+}
+
+export function useEventStream(
+  endpoint: string | null,
+  { eventHandlers, onConnect, onDisconnect }: UseEventStreamOptions,
+) {
+  const [isConnected, setIsConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Keep the latest callbacks without forcing a re-subscribe each render.
+  const handlersRef = useRef(eventHandlers);
+  handlersRef.current = eventHandlers;
+  const onConnectRef = useRef(onConnect);
+  onConnectRef.current = onConnect;
+  const onDisconnectRef = useRef(onDisconnect);
+  onDisconnectRef.current = onDisconnect;
+
+  useEffect(() => {
+    if (!endpoint) {
+      setIsConnected(false);
+      setError(null);
+      return;
+    }
+
+    const c = getConn(endpoint);
+    c.refCount += 1;
+
+    // Register this subscriber's handlers and (re)attach if already live.
+    const mine: Array<[string, Handler]> = [];
+    for (const [eventName, handler] of Object.entries(handlersRef.current)) {
+      let set = c.handlers.get(eventName);
+      if (!set) {
+        set = new Set();
+        c.handlers.set(eventName, set);
+      }
+      set.add(handler);
+      mine.push([eventName, handler]);
+      attachEvent(c, eventName);
+    }
+
+    let wasConnected = false;
+    const onStatus = () => {
+      setIsConnected(c.isConnected);
+      setError(c.error);
+      if (c.isConnected && !wasConnected) {
+        wasConnected = true;
+        onConnectRef.current?.();
+      } else if (!c.isConnected && wasConnected) {
+        wasConnected = false;
+        onDisconnectRef.current?.();
+      }
+    };
+    c.statusListeners.add(onStatus);
+    onStatus();
+
+    void openConnection(c);
+
+    return () => {
+      c.statusListeners.delete(onStatus);
+      for (const [eventName, handler] of mine) {
+        const set = c.handlers.get(eventName);
+        if (set) {
+          set.delete(handler);
+          if (set.size === 0) c.handlers.delete(eventName);
+        }
+      }
+      c.refCount -= 1;
+      if (c.refCount <= 0) {
+        c.refCount = 0;
+        if (c.reconnectTimer) {
+          clearTimeout(c.reconnectTimer);
+          c.reconnectTimer = null;
+        }
+        if (c.es) {
+          c.es.close();
+          c.es = null;
+        }
+        c.isConnected = false;
+        c.error = null;
+        c.attached.clear();
+        c.opening = false;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endpoint]);
+
+  return { isConnected, error };
+}

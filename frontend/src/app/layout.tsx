@@ -45,4 +45,11 @@ export default function RootLayout({
                     {children}
                   </ClientLayout>
                 </AIProvider>
-              </
+              </ToastProvider>
+            </AuthProvider>
+          </LanguageProvider>
+        </div>
+      </body>
+    </html>
+  );
+}

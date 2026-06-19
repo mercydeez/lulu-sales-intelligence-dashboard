@@ -129,4 +129,11 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
               className="absolute top-4 end-4 p-1.5 rounded-full text-ink-muted hover:text-ink hover:bg-coral-50 transition-colors"
             >
               <X className="w-4 h-4" />
-         
+            </button>
+            <SidebarContent onNavigate={onClose} />
+          </aside>
+        </div>
+      )}
+    </>
+  );
+}

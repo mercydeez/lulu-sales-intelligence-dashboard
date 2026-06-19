@@ -605,4 +605,5 @@ class AuthService:
                 "total": total,
                 "page": page,
                 "limit": limit,
-                "pages": max(1, (total +
+                "pages": max(1, (total + limit - 1) // limit),
+            }

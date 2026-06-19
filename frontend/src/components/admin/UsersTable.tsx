@@ -78,4 +78,15 @@ export function UsersTable({ users, loading, search, onSearchChange, onAddUser }
                 </Td>
                 <Td><Badge variant={roleVariant(u.role)} size="sm">{roleLabel(u.role)}</Badge></Td>
                 <Td className="text-center">
-                  <Badge 
+                  <Badge variant={u.is_active ? 'success' : 'neutral'} size="sm">{u.is_active ? 'active' : 'inactive'}</Badge>
+                </Td>
+                <Td className="text-ink-soft">{formatDate(u.created_at)}</Td>
+                <Td className="text-ink-soft">{formatRelative(u.last_login)}</Td>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </Card>
+  );
+}

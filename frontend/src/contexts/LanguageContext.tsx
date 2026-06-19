@@ -123,4 +123,10 @@ export function useLanguage(): LanguageContextValue {
     return {
       lang: 'en',
       dir: 'ltr',
-      t: (key: string) => en[key] ?? key,
+      t: (key: string) => en[key] ?? key,
+      setLang: () => {},
+      toggleLang: () => {},
+    };
+  }
+  return ctx;
+}
