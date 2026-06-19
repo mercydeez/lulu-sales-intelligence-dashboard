@@ -207,8 +207,8 @@ app.add_middleware(RequestIDMiddleware)
 cors_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 if not cors_origins:
     logger.warning("🔒 No CORS origins configured — cross-origin browser requests will be blocked.")
-app.add_middleware(
-    CORSMiddleware,
+
+cors_kwargs = dict(
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -216,6 +216,15 @@ app.add_middleware(
     expose_headers=["X-Request-ID", "X-Process-Time", "X-RateLimit-Remaining"],
     max_age=600,
 )
+# In development, tolerate any localhost/127.0.0.1 origin on any port so authed
+# preflights don't 400 when the dev server is reached via 127.0.0.1 instead of
+# localhost (or on a non-default port). Production stays locked to the explicit
+# allow_origins list above — no wildcard, credentials-safe.
+if settings.environment == "development":
+    cors_kwargs["allow_origin_regex"] = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
+    logger.info("🔓 Dev CORS: localhost/127.0.0.1 origins allowed on any port")
+
+app.add_middleware(CORSMiddleware, **cors_kwargs)
 
 # =============================================================================
 # API Routes
@@ -278,21 +287,4 @@ async def health_check():
         redis_status = "healthy"
     except Exception as e:
         logger.error(f"Redis health check failed: {e}")
-        redis_status = "unhealthy"
-    
-    # Overall status
-    if db_status == "healthy" and redis_status == "healthy":
-        overall_status = "healthy"
-    elif db_status == "unhealthy" and redis_status == "unhealthy":
-        overall_status = "unhealthy"
-    else:
-        overall_status = "degraded"
-    
-    return {
-        "status": overall_status,
-        "database": db_status,
-        "redis": redis_status,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "version": "1.0.0",
-        "environment": settings.environment
-    }
+        redis_status = "unhe
