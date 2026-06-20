@@ -17,6 +17,7 @@ interface Classifier {
   threshold_units?: number; tested_days?: number;
 }
 interface Metrics {
+  status?: string;
   accuracy: number | null; selected_model: string | null; mape: number | null;
   leaderboard: Leader[]; forecast: { date: string; forecast: number }[];
   feature_importance: FeatureImp[]; classifier: Classifier; heatmap: HeatCell[];
@@ -68,6 +69,15 @@ export default function ForecastLabPage() {
 
   useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
 
+  // Models train off the request path; a cold scope returns status "warming".
+  // Poll until the background trainer has cached the result.
+  const warming = data?.status === 'warming';
+  useEffect(() => {
+    if (!warming) return;
+    const t = setTimeout(fetchMetrics, 8000);
+    return () => clearTimeout(t);
+  }, [warming, data, fetchMetrics]);
+
   const acc = data?.accuracy ?? null;
   const h = health(acc);
   const clf = data?.classifier ?? {};
@@ -102,6 +112,13 @@ export default function ForecastLabPage() {
 
         {loading ? (
           <Card variant="solid" padding="lg"><SkeletonText lines={8} /></Card>
+        ) : warming ? (
+          <Card variant="solid" padding="lg">
+            <EmptyState
+              icon={<RefreshCw className="w-6 h-6 animate-spin" />}
+              title="Training models…"
+              description="Forecast models are training in the background. This page refreshes automatically when they're ready (usually under a minute)." />
+          </Card>
         ) : !data ? (
           <Card variant="solid" padding="lg">
             <EmptyState icon={<Brain className="w-6 h-6" />} title="No model metrics yet"

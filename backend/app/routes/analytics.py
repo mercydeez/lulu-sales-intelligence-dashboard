@@ -3,10 +3,12 @@ Analytics API Routes - C-Level Insights and Forecasting
 Provides aggregated data for charts and executive dashboards
 Optimized with Redis caching for performance
 """
+import asyncio
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List
 from pydantic import BaseModel
 
@@ -679,28 +681,45 @@ async def get_returns_summary(
     }
 
 
-@router.get("/model-metrics")
-async def get_model_metrics(
-    horizon: int = Query(14, ge=7, le=60),
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Forecast Lab metrics. Executive view: forecast accuracy + model leaderboard.
-    Technical view: forecast-vs-history points, LightGBM feature importance, a
-    stockout-risk confusion matrix, and per-store accuracy for the heatmap.
-    Tenant/scope-cached (computation is heavy — first load may take a few secs).
+# Forecast Lab payload is served stale-but-warm: the trainer refreshes it well
+# within this TTL (see services/forecast_trainer.py), so it never expires under it.
+MODEL_METRICS_TTL = 6 * 3600
+
+# Keys whose training is currently running, so concurrent cold requests don't
+# each spawn a duplicate (and expensive) background training task. In-process
+# guard — fine for the single-worker app; harmless if it ever runs multi-worker.
+_inflight_metrics: set = set()
+
+
+def _empty_model_metrics(status: str = "ready") -> dict:
+    return {
+        "accuracy": None, "selected_model": None, "mape": None, "leaderboard": [],
+        "forecast": [], "feature_importance": [], "classifier": {}, "heatmap": [],
+        "business_impact": {}, "status": status,
+    }
+
+
+def model_metrics_cache_key(tenant_id: int, allowed: Optional[List[int]], horizon: int) -> str:
+    scope = "-".join(map(str, sorted(allowed))) if allowed else "all"
+    return generate_cache_key(f"model_metrics_t{tenant_id}_{scope}_{horizon}")
+
+
+async def compute_and_cache_model_metrics(
+    db: AsyncSession,
+    tenant_id: int = 1,
+    allowed: Optional[List[int]] = None,
+    horizon: int = 14,
+) -> dict:
+    """Heavy Forecast Lab computation for one tenant/scope/horizon: rolling-origin
+    backtest + DL model selection, LightGBM feature importance, stockout-risk
+    classifier, business impact, and per-store accuracy heatmap.
+
+    This is the ONLY place forecast models are trained. It runs off the request
+    path (background trainer + lazy background warm) and writes to the cache key
+    the /model-metrics endpoint reads, so user requests never train a model.
     """
     import pandas as pd
     from app.services.forecasting import diagnostics as diag
-
-    tenant_id = current_user.get("tenant_id") or 1
-    allowed = get_accessible_store_ids(current_user)
-    scope = "-".join(map(str, sorted(allowed))) if allowed else "all"
-    cache_key = generate_cache_key(f"model_metrics_t{tenant_id}_{scope}_{horizon}")
-    cached = await get_cached(cache_key)
-    if cached:
-        return cached
 
     where = ["s.tenant_id = :tenant_id"]
     params: dict = {"tenant_id": tenant_id}
@@ -709,11 +728,7 @@ async def get_model_metrics(
         params["allowed"] = allowed
     where_sql = " AND ".join(where)
 
-    result = {
-        "accuracy": None, "selected_model": None, "mape": None, "leaderboard": [],
-        "forecast": [], "feature_importance": [], "classifier": {}, "heatmap": [],
-        "business_impact": {},
-    }
+    result = _empty_model_metrics("ready")
     try:
         agg_sql = (
             f"SELECT s.date AS date, SUM(s.sales) AS sales FROM sales_fact_view s "
@@ -750,9 +765,61 @@ async def get_model_metrics(
                 "accuracy": diag.classical_accuracy(pd.DataFrame(recs)),
             })
         result["heatmap"] = heatmap
-
-        await set_cached(cache_key, result, 1800)
-        return result
     except Exception as e:
-        logger.error(f"Model metrics error: {e}")
+        logger.error(f"Model metrics computation error: {e}")
+        # Cache nothing on failure so the next cycle/request retries cleanly.
         return result
+
+    result["status"] = "ready"
+    result["generated_at"] = datetime.now(timezone.utc).isoformat()
+    await set_cached(model_metrics_cache_key(tenant_id, allowed, horizon), result, MODEL_METRICS_TTL)
+    return result
+
+
+async def _warm_model_metrics_in_background(
+    tenant_id: int, allowed: Optional[List[int]], horizon: int
+) -> None:
+    """Compute one scope's metrics off the request path, with its own DB session
+    (the request's session is gone by the time this runs). Guarded so concurrent
+    cold requests for the same scope don't trigger duplicate training."""
+    cache_key = model_metrics_cache_key(tenant_id, allowed, horizon)
+    if cache_key in _inflight_metrics:
+        return
+    _inflight_metrics.add(cache_key)
+    try:
+        from app.services.database import async_session
+        async with async_session() as session:
+            await compute_and_cache_model_metrics(session, tenant_id, allowed, horizon)
+    except Exception as e:
+        logger.warning(f"Background model-metrics warm failed: {e}")
+    finally:
+        _inflight_metrics.discard(cache_key)
+
+
+@router.get("/model-metrics")
+async def get_model_metrics(
+    horizon: int = Query(14, ge=7, le=60),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Forecast Lab metrics (READ-ONLY). Executive view: forecast accuracy + model
+    leaderboard. Technical view: forecast-vs-history points, LightGBM feature
+    importance, a stockout-risk confusion matrix, and per-store accuracy heatmap.
+
+    Model training happens off the request path: a background trainer
+    (services/forecast_trainer.py) keeps the default scope hot, and a cold cache
+    for any other scope schedules a one-off background warm. This endpoint never
+    trains, so it always returns instantly — with `status: "warming"` on a cold
+    scope, which fills in on the next refresh.
+    """
+    tenant_id = current_user.get("tenant_id") or 1
+    allowed = get_accessible_store_ids(current_user)
+    cache_key = model_metrics_cache_key(tenant_id, allowed, horizon)
+
+    cached = await get_cached(cache_key)
+    if cached:
+        return cached
+
+    if cache_key not in _inflight_metrics:
+        asyncio.create_task(_warm_model_metrics_in_background(tenant_id, allowed, horizon))
+    return _empty_model_metrics("warming")

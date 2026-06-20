@@ -17,6 +17,7 @@ from app.services.employee_seeder import initialize_employee_system
 from app.services.migration_runner import run_migrations
 from app.services.db_seeder import run_seed
 from app.services.cache_warmer import run_cache_warmer
+from app.services.forecast_trainer import run_forecast_trainer
 
 from app.routes import sales, history, kpis, stream, analytics, auth
 from app.routes import ai as ai_routes
@@ -92,6 +93,11 @@ async def lifespan(app: FastAPI):
     warmer_task = asyncio.create_task(run_cache_warmer())
     logger.info("Cache warmer started")
 
+    # Start the forecast trainer so Forecast Lab models are trained offline and
+    # served from cache (never trained on the request path)
+    trainer_task = asyncio.create_task(run_forecast_trainer())
+    logger.info("Forecast trainer started")
+
     logger.info("Sales Dashboard API is ready!")
 
     yield
@@ -100,7 +106,8 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Sales Dashboard API...")
     task.cancel()
     warmer_task.cancel()
-    for t in (task, warmer_task):
+    trainer_task.cancel()
+    for t in (task, warmer_task, trainer_task):
         try:
             await t
         except asyncio.CancelledError:
