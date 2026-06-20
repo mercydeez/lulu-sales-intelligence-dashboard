@@ -105,9 +105,10 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
   money movement — never build KYC/AML/licensing).
 - **F. Payments (two distinct):** (1) billing your retailer customers → B3; (2) customers paying
   their suppliers (B2B AP) → record status first, embed a partner later.
-- **H. UI patterns to adopt:** command palette (Cmd-K), action cards ("Milk out in 3 days → [Create
-  PO]"), approval inbox, audit timeline, WhatsApp/email/Slack notifications, mobile-first/PWA, PO/
-  invoice PDF generation + e-signature.
+- **H. UI patterns to adopt:** **PO document/PDF generation** ✅ — printable, send-to-supplier PO view
+  at `/procurement/po/{id}` (browser print → Save as PDF; dependency-free), linked from the PO list.
+  ⏭️ Still roadmap: command palette (Cmd-K), action cards, approval inbox, audit timeline,
+  WhatsApp/email/Slack notifications, mobile-first/PWA, e-signature.
 - **I. Tech to bring in:** workflow/state machine (status enum → Temporal/Camunda), notifications
   (Novu/Knock + Twilio + Resend), enterprise auth (WorkOS SSO/SAML/SCIM), PostHog + Sentry, search
   (Typesense/Meilisearch), analytics scale (DuckDB/ClickHouse + dbt), Mapbox, embedded payments

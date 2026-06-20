@@ -6,6 +6,7 @@
  * POs per supplier, then each PO flows through approval → sent → received.
  */
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Truck, Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Button, Badge } from '@/components/ui';
@@ -155,7 +156,9 @@ export default function ProcurementPage() {
                     const next = NEXT_ACTION[po.status];
                     return (
                       <tr key={po.id} className="border-b border-line/60">
-                        <td className="py-2.5 pe-4 font-mono text-ink">{po.po_number}</td>
+                        <td className="py-2.5 pe-4 font-mono">
+                          <Link href={`/procurement/po/${po.id}`} className="text-coral-600 hover:underline">{po.po_number}</Link>
+                        </td>
                         <td className="py-2.5 pe-4 text-ink">{po.supplier_name}</td>
                         <td className="py-2.5 pe-4">
                           <Badge variant={STATUS_BADGE[po.status] ?? 'neutral'}>
