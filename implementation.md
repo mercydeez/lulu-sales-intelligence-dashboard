@@ -80,11 +80,15 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
 > The next rungs are a **system of action** (places/approves orders) and a **system of transaction**
 > (money moves). Best started **after** B2 (tenant isolation) + B1 (forecasting) — treat as "Phase 3.5 / 6".
 
-- **E. Procure-to-pay (highest leverage):** Forecast → reorder suggestion (days-of-cover < lead time)
-  → auto-grouped draft PO per supplier → threshold-based approval → send → goods receipt → 3-way
-  match → payment. Entities: Supplier, Product↔Supplier (price/MOQ/lead time), PurchaseOrder, POLine,
-  Receipt, Invoice, Payment, ApprovalRule. *Build the "system of record" now; partner for money
-  movement later (never build KYC/AML/licensing).*
+- **E. Procure-to-pay (highest leverage):** 🟡 **system of record shipped.** Forecast → reorder
+  suggestion → **auto-grouped draft PO per supplier (MOQ-respected)** → **threshold-based approval** →
+  send → received, with full lifecycle validation. Entities live (migration 016, RLS + tenant-scoped):
+  Supplier, Product↔Supplier (cost/MOQ/lead time), PurchaseOrder, POLine. API: `/api/procurement/*`
+  (suppliers CRUD, `purchase-orders/generate` = the forecast→PO engine, list/detail, `/status`
+  transitions). Demo tenant seeded with 3 suppliers + a 50-item catalog so the flow runs out of the box
+  (`services/procurement_service.py`, tested + verified live). ⏭️ Remaining: goods receipt, 3-way match,
+  Invoice/Payment (partner for money movement — never build KYC/AML/licensing), ApprovalRule config,
+  and a procurement UI.
 - **F. Payments (two distinct):** (1) billing your retailer customers → B3; (2) customers paying
   their suppliers (B2B AP) → record status first, embed a partner later.
 - **H. UI patterns to adopt:** command palette (Cmd-K), action cards ("Milk out in 3 days → [Create
