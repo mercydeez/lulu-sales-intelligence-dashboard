@@ -24,6 +24,7 @@ from app.routes import ai as ai_routes
 from app.routes import inventory, promotions, alerts, admin, reports, monitoring, employees
 from app.routes import data_sources
 from app.routes import tenants
+from app.routes import public_api, api_keys, webhooks
 from app.middleware import (
     RequestIDMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware,
     BodySizeLimitMiddleware, CSRFMiddleware, SessionInvalidationMiddleware
@@ -253,6 +254,9 @@ app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitorin
 app.include_router(employees.router, prefix="/api/employees", tags=["Employees"])
 app.include_router(data_sources.router, prefix="/api/data-sources", tags=["Data Sources"])
 app.include_router(tenants.router, prefix="/api/tenants", tags=["Tenants"])
+app.include_router(api_keys.router, prefix="/api/api-keys", tags=["API Keys"])
+app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
+app.include_router(public_api.router, prefix="/api/public", tags=["Public API"])
 
 # Also mount /api/latest from stream router
 @app.get("/api/latest", tags=["Stream"])

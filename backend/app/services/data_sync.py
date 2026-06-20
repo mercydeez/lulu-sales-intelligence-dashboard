@@ -75,13 +75,14 @@ class DataSyncService:
         search: Optional[str] = None,
         accessible_stores: List[int] = None,
         page: int = 1,
-        limit: int = 50
+        limit: int = 50,
+        tenant_id: int = 1
     ) -> Dict:
         """Generate inventory data based on actual sales patterns"""
         try:
             offset = (page - 1) * limit
             filters = []
-            params = {"limit": limit, "offset": offset}
+            params = {"limit": limit, "offset": offset, "tenant_id": tenant_id}
             
             # Build store filter. Both the main and count queries alias the
             # `stores` table as `s` (whose key column is `id`), so filter on s.id.
@@ -114,6 +115,7 @@ class DataSyncService:
                         MAX(date) as last_sale_date
                     FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+                      AND tenant_id = :tenant_id
                     GROUP BY store_id, item_id
                 ),
                 inventory_calc AS (
@@ -218,9 +220,10 @@ class DataSyncService:
                     SELECT store_id, item_id
                     FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+                      AND tenant_id = :tenant_id
                     GROUP BY store_id, item_id
                 )
-                SELECT COUNT(*) 
+                SELECT COUNT(*)
                 FROM recent_sales rs
                 JOIN stores s ON rs.store_id = s.id
                 JOIN items i ON rs.item_id = i.id
@@ -246,12 +249,13 @@ class DataSyncService:
     async def get_inventory_summary(
         session: AsyncSession,
         store_id: Optional[int] = None,
-        accessible_stores: List[int] = None
+        accessible_stores: List[int] = None,
+        tenant_id: int = 1
     ) -> Dict:
         """Generate inventory summary from sales data"""
         try:
             filters = []
-            params = {}
+            params = {"tenant_id": tenant_id}
             
             if store_id:
                 filters.append("rs.store_id = :store_id")
@@ -271,10 +275,11 @@ class DataSyncService:
                         AVG(sales) as avg_daily_sales
                     FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+                      AND tenant_id = :tenant_id
                     GROUP BY store_id, item_id
                 ),
                 inventory_calc AS (
-                    SELECT 
+                    SELECT
                         rs.store_id,
                         rs.item_id,
                         i.category,
@@ -340,7 +345,8 @@ class DataSyncService:
     @staticmethod
     async def get_categories_inventory(
         session: AsyncSession,
-        accessible_stores: List[int] = None
+        accessible_stores: List[int] = None,
+        tenant_id: int = 1
     ) -> List[Dict]:
         """Get inventory breakdown by category"""
         try:
@@ -348,16 +354,18 @@ class DataSyncService:
             if accessible_stores:
                 store_list = ','.join(map(str, accessible_stores))
                 store_filter = f"AND rs.store_id IN ({store_list})"
-            
+            tenant_filter = f"AND tenant_id = {int(tenant_id)}"
+
             query = f"""
                 WITH recent_sales AS (
-                    SELECT 
+                    SELECT
                         store_id,
                         item_id,
                         SUM(sales) as total_sold,
                         AVG(sales) as avg_daily_sales
                     FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+                      {tenant_filter}
                     GROUP BY store_id, item_id
                 ),
                 inventory_calc AS (
@@ -416,7 +424,8 @@ class DataSyncService:
     @staticmethod
     async def generate_alerts_from_sales(
         session: AsyncSession,
-        accessible_stores: List[int] = None
+        accessible_stores: List[int] = None,
+        tenant_id: int = 1
     ) -> List[Dict]:
         """Generate alerts based on sales patterns and inventory levels"""
         try:
@@ -424,6 +433,9 @@ class DataSyncService:
             if accessible_stores:
                 store_list = ','.join(map(str, accessible_stores))
                 store_filter = f"AND s.store_id IN ({store_list})"
+            tid = int(tenant_id)
+            tenant_filter = f"AND s.tenant_id = {tid}"        # aliased queries
+            tenant_filter_bare = f"AND tenant_id = {tid}"     # un-aliased CTE
 
             alerts = []
             alert_id = 1
@@ -438,6 +450,7 @@ class DataSyncService:
                         AVG(sales) as avg_daily_sales
                     FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+                      {tenant_filter_bare}
                     GROUP BY store_id, item_id
                 ),
                 inventory_calc AS (
@@ -504,6 +517,7 @@ class DataSyncService:
                     JOIN items i ON s.item_id = i.id
                     JOIN stores st ON s.store_id = st.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '7 days'
+                    {tenant_filter}
                     {store_filter.replace('s.store_id', 's.store_id')}
                 ),
                 sales_stats AS (
@@ -565,6 +579,7 @@ class DataSyncService:
                     FROM sales_fact_view s
                     JOIN stores st ON s.store_id = st.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '14 days'
+                    {tenant_filter}
                     {store_filter.replace('s.store_id', 's.store_id')}
                     GROUP BY s.store_id, st.name
                 )
@@ -610,7 +625,8 @@ class DataSyncService:
     @staticmethod
     async def get_promotions_from_sales(
         session: AsyncSession,
-        accessible_stores: List[int] = None
+        accessible_stores: List[int] = None,
+        tenant_id: int = 1
     ) -> Dict:
         """Generate promotion suggestions based on sales patterns"""
         try:
@@ -618,7 +634,8 @@ class DataSyncService:
             if accessible_stores:
                 store_list = ','.join(map(str, accessible_stores))
                 store_filter = f"AND s.store_id IN ({store_list})"
-            
+            tenant_filter = f"AND s.tenant_id = {int(tenant_id)}"
+
             # Find slow-moving items that might benefit from promotions
             query = f"""
                 WITH item_sales AS (
@@ -632,6 +649,7 @@ class DataSyncService:
                     FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '30 days'
+                    {tenant_filter}
                     {store_filter}
                     GROUP BY s.item_id, i.name, i.category
                 ),
@@ -752,7 +770,8 @@ class DataSyncService:
     @staticmethod
     async def get_category_performance(
         session: AsyncSession,
-        accessible_stores: List[int] = None
+        accessible_stores: List[int] = None,
+        tenant_id: int = 1
     ) -> List[Dict]:
         """Get sales performance by category"""
         try:
@@ -760,7 +779,8 @@ class DataSyncService:
             if accessible_stores:
                 store_list = ','.join(map(str, accessible_stores))
                 store_filter = f"AND s.store_id IN ({store_list})"
-            
+            tenant_filter = f"AND s.tenant_id = {int(tenant_id)}"
+
             query = f"""
                 WITH current_period AS (
                     SELECT 
@@ -769,6 +789,7 @@ class DataSyncService:
                     FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '7 days'
+                    {tenant_filter}
                     {store_filter}
                     GROUP BY i.category
                 ),
@@ -780,6 +801,7 @@ class DataSyncService:
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '14 days'
                     AND s.date < CURRENT_DATE - INTERVAL '7 days'
+                    {tenant_filter}
                     {store_filter}
                     GROUP BY i.category
                 )

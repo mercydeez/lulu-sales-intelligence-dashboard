@@ -263,13 +263,14 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     
     EXEMPT_PATHS = {
         "/health", "/docs", "/openapi.json", "/redoc",
-        "/api/auth/login", "/api/auth/refresh",
+        "/api/auth/login", "/api/auth/refresh", "/api/auth/signup",
         "/api/ai/chat/stream",  # Streaming endpoint
     }
     
     EXEMPT_PREFIXES = (
-        "/stream/",   # SSE endpoints
-        "/api/ai/",   # AI streaming
+        "/stream/",        # SSE endpoints
+        "/api/ai/",        # AI streaming
+        "/api/public/",    # Public API — authenticated by per-tenant API key, not cookies
     )
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

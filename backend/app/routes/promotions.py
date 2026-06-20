@@ -19,6 +19,32 @@ from app.config import logger
 router = APIRouter(tags=["Promotions & Pricing"])
 
 
+@router.get("/uplift-baseline")
+async def get_uplift_baseline(
+    category: Optional[str] = None,
+    horizon: int = Query(14, ge=7, le=60),
+    actual_units: Optional[float] = Query(None, description="Observed promoted demand, to compute uplift"),
+    current_user: dict = Depends(get_current_user),
+):
+    """Forecast the baseline (un-promoted) demand for a category/scope (B1.7).
+    Promotion uplift = actual demand − this forecast baseline, so the engine,
+    not a flat historical average, anchors promo ROI. Pass `actual_units` to get
+    the uplift directly."""
+    from app.routes.auth import get_accessible_store_ids
+    from app.services.forecast_service import demand_baseline, expected_uplift
+
+    tenant_id = current_user.get("tenant_id") or 1
+    allowed = get_accessible_store_ids(current_user)
+    async with async_session() as session:
+        baseline = await demand_baseline(
+            session, tenant_id=tenant_id, allowed=allowed,
+            category=category, horizon=horizon,
+        )
+        if actual_units is not None and baseline.get("status") == "ready":
+            baseline["uplift"] = expected_uplift(actual_units, baseline["baseline_units"])
+        return baseline
+
+
 # =============================================================================
 # PYDANTIC MODELS
 # =============================================================================
@@ -67,7 +93,8 @@ async def get_promotions_summary(
         try:
             result = await DataSyncService.get_promotions_from_sales(
                 session,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=current_user.get("tenant_id") or 1
             )
             
             summary = result.get("summary", {
@@ -113,7 +140,8 @@ async def get_active_promotions(
             
             result = await DataSyncService.get_promotions_from_sales(
                 session,
-                accessible_stores=[store_id] if store_id else accessible_stores
+                accessible_stores=[store_id] if store_id else accessible_stores,
+                tenant_id=current_user.get("tenant_id") or 1
             )
             
             promotions = result.get("promotions", [])
@@ -195,7 +223,8 @@ async def get_all_promotions(
             # 1. Get generated promotions from sales patterns
             result = await DataSyncService.get_promotions_from_sales(
                 session,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=current_user.get("tenant_id") or 1
             )
             generated_promotions = result.get("promotions", [])
             
@@ -394,7 +423,8 @@ async def get_promotion_categories(
             
             categories = await DataSyncService.get_category_performance(
                 session,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=current_user.get("tenant_id") or 1
             )
             
             return {"categories": categories}
@@ -613,7 +643,8 @@ async def get_promotion_details(
             
             result = await DataSyncService.get_promotions_from_sales(
                 session,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=current_user.get("tenant_id") or 1
             )
             
             promotions = result.get("promotions", [])

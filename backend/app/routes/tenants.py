@@ -25,6 +25,51 @@ class TenantCreate(BaseModel):
     accent_color: Optional[str] = None
 
 
+class BrandingUpdate(BaseModel):
+    brand_name: Optional[str] = None
+    logo_url: Optional[str] = None
+    accent_color: Optional[str] = None
+
+
+@router.patch("/branding")
+async def update_branding(
+    payload: BrandingUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """White-label branding (B4): a tenant admin updates their OWN tenant's
+    brand name / logo / accent colour. Tenant-scoped — you can only edit the
+    tenant your account belongs to."""
+    if current_user.get("role") not in ("super_admin", "admin"):
+        raise HTTPException(status_code=403, detail="Admin role required")
+    tenant_id = current_user.get("tenant_id") or 1
+
+    fields, params = [], {"tid": tenant_id}
+    for col in ("brand_name", "logo_url", "accent_color"):
+        val = getattr(payload, col)
+        if val is not None:
+            fields.append(f"{col} = :{col}")
+            params[col] = val
+    if not fields:
+        raise HTTPException(status_code=400, detail="No branding fields provided")
+
+    async with async_session() as session:
+        row = (await session.execute(text(f"""
+            UPDATE tenants SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP
+            WHERE id = :tid
+            RETURNING id, name, brand_name, logo_url, accent_color
+        """), params)).fetchone()
+        await session.commit()
+        if not row:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        return {
+            "tenant_id": row.id,
+            "name": row.name,
+            "brand_name": row.brand_name,
+            "logo_url": row.logo_url,
+            "accent_color": row.accent_color,
+        }
+
+
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug[:63] or "tenant"

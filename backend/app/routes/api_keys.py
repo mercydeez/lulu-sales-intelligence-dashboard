@@ -1,0 +1,65 @@
+"""
+API-key management (B4). Authenticated, tenant-scoped CRUD for the per-tenant
+keys that authorize the public API. A tenant admin manages only their own
+tenant's keys; the plaintext key is returned exactly once, at creation.
+"""
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.database import get_db
+from app.services import api_key_service as keys
+from app.routes.auth import get_current_user
+
+router = APIRouter()
+
+
+class CreateKeyRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    scopes: Optional[List[str]] = None
+
+
+def _require_admin(user: dict) -> None:
+    if user.get("role") not in ("super_admin", "admin"):
+        raise HTTPException(status_code=403, detail="Admin role required to manage API keys")
+
+
+@router.post("")
+async def create_api_key(
+    body: CreateKeyRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_admin(user)
+    tenant_id = user.get("tenant_id") or 1
+    allowed_scopes = {"read", "write", "*"}
+    scopes = body.scopes or ["read"]
+    bad = [s for s in scopes if s not in allowed_scopes]
+    if bad:
+        raise HTTPException(status_code=400, detail=f"Unknown scopes: {bad}")
+    return await keys.create_key(db, tenant_id, body.name, scopes, created_by=user.get("id"))
+
+
+@router.get("")
+async def list_api_keys(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_admin(user)
+    tenant_id = user.get("tenant_id") or 1
+    return {"keys": await keys.list_keys(db, tenant_id)}
+
+
+@router.delete("/{key_id}")
+async def revoke_api_key(
+    key_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_admin(user)
+    tenant_id = user.get("tenant_id") or 1
+    ok = await keys.revoke_key(db, tenant_id, key_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Key not found or already revoked")
+    return {"success": True, "key_id": key_id, "revoked": True}

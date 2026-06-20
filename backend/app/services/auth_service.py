@@ -298,7 +298,7 @@ class AuthService:
             )
             
             # Get user permissions
-            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'])
+            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'], user.get('tenant_id'))
             
             # Log successful login
             await AuthService._log_audit(
@@ -325,13 +325,22 @@ class AuthService:
             return user_data, None
     
     @staticmethod
-    async def _get_user_permissions(session: AsyncSession, user_id: int, role: str) -> Dict:
-        """Get user permissions including accessible stores and regions"""
+    async def _get_user_permissions(session: AsyncSession, user_id: int, role: str,
+                                    tenant_id: Optional[int] = None) -> Dict:
+        """Get user permissions including accessible stores and regions.
+
+        A super_admin sees everything WITHIN THEIR TENANT — when tenant_id is
+        provided, the accessible-stores list is scoped to that tenant so one
+        tenant's owner never sees another tenant's store IDs (B2)."""
         from sqlalchemy import text
-        
-        # Super admin has access to everything
+
+        # Super admin has access to everything (within their tenant when known)
         if role == 'super_admin':
-            stores_result = await session.execute(text("SELECT id FROM stores"))
+            if tenant_id is not None:
+                stores_result = await session.execute(
+                    text("SELECT id FROM stores WHERE tenant_id = :tid"), {"tid": tenant_id})
+            else:
+                stores_result = await session.execute(text("SELECT id FROM stores"))
             regions_result = await session.execute(text("SELECT code FROM regions"))
             return {
                 "accessible_stores": [r[0] for r in stores_result.fetchall()],
@@ -486,7 +495,7 @@ class AuthService:
                 return None
 
             user = dict(user_row._mapping)
-            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'])
+            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'], user.get('tenant_id'))
 
             user_data = {**user, "permissions": permissions}
 
@@ -533,7 +542,7 @@ class AuthService:
                 return None
             
             user = dict(user_row._mapping)
-            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'])
+            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'], user.get('tenant_id'))
             
             return {**user, "permissions": permissions}
     

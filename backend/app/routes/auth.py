@@ -3,7 +3,7 @@ Authentication Routes - Login, Logout, Token Management
 """
 from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime, timezone
 
@@ -44,7 +44,14 @@ async def get_current_user(
     
     if user['status'] != 'active':
         raise HTTPException(status_code=401, detail="Account is not active")
-    
+
+    # Bind the active tenant for this request (drives the RLS GUC, B2).
+    try:
+        from app.services.database import tenant_context
+        tenant_context.set(user.get('tenant_id') or 1)
+    except Exception:
+        pass
+
     return user
 
 
@@ -108,6 +115,22 @@ class LoginResponse(BaseModel):
 class RefreshRequest(BaseModel):
     model_config = ConfigDict(strict=True)
     refresh_token: str
+
+
+class SignupRequest(BaseModel):
+    company_name: str = Field(..., min_length=1, max_length=200)
+    email: EmailStr
+    password: str
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
+    seed_sample_data: bool = True
+
+
+class InviteRequest(BaseModel):
+    email: EmailStr
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
+    role: str = "analyst"
 
 
 class MessageResponse(BaseModel):
@@ -176,6 +199,85 @@ async def refresh_token(refresh_data: RefreshRequest):
         expires_in=tokens.expires_in,
         user=tokens.user
     )
+
+
+@router.post("/signup", response_model=LoginResponse, status_code=201)
+async def signup(request: Request, body: SignupRequest):
+    """Self-serve signup (go-to-market onboarding): create an isolated tenant
+    workspace + its owner account, optionally pre-loaded with sample data so the
+    dashboard shows value immediately, and return tokens (auto-login). No billing
+    — new tenants start on a free trial."""
+    from app.services.tenant_provisioning import create_tenant_with_owner
+
+    user_id, error = await create_tenant_with_owner(
+        company=body.company_name, email=body.email, password=body.password,
+        first_name=body.first_name, last_name=body.last_name,
+        seed_demo=body.seed_sample_data,
+    )
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+
+    user_data = await AuthService.get_user_by_id(user_id)
+    tokens = await AuthService.create_tokens(user_data)
+    logger.info(f"New tenant signup: {body.email} (tenant {user_data.get('tenant_id')})")
+    return LoginResponse(
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        token_type=tokens.token_type,
+        expires_in=tokens.expires_in,
+        user=tokens.user,
+    )
+
+
+@router.post("/invite", status_code=201)
+async def invite(body: InviteRequest, current_user: dict = Depends(get_current_user)):
+    """Invite a teammate into the caller's tenant (admin only). Returns a
+    one-time temporary password the invitee must change on first login."""
+    if current_user.get("role") not in ("super_admin", "admin"):
+        raise HTTPException(status_code=403, detail="Admin role required to invite users")
+    from app.services.tenant_provisioning import invite_user
+
+    result, error = await invite_user(
+        tenant_id=current_user.get("tenant_id") or 1,
+        email=body.email, first_name=body.first_name,
+        last_name=body.last_name, role=body.role,
+    )
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    return result
+
+
+@router.get("/onboarding")
+async def onboarding_status(current_user: dict = Depends(get_current_user)):
+    """Onboarding checklist for the caller's tenant — drives a 'getting started'
+    UI so a new customer knows the next step to value."""
+    from sqlalchemy import text
+    from app.services.database import async_session
+
+    tenant_id = current_user.get("tenant_id") or 1
+    async with async_session() as session:
+        stores = (await session.execute(
+            text("SELECT COUNT(*) FROM stores WHERE tenant_id = :t"), {"t": tenant_id})).scalar() or 0
+        users = (await session.execute(
+            text("SELECT COUNT(*) FROM users WHERE tenant_id = :t"), {"t": tenant_id})).scalar() or 0
+        sales = (await session.execute(
+            text("SELECT COUNT(*) FROM sales_fact_view WHERE tenant_id = :t"), {"t": tenant_id})).scalar() or 0
+
+    has_data = sales > 0
+    has_team = users > 1
+    steps = [
+        {"key": "create_account", "label": "Create your workspace", "done": True},
+        {"key": "load_data", "label": "Load sales data", "done": has_data},
+        {"key": "invite_team", "label": "Invite a teammate", "done": has_team},
+    ]
+    done = sum(1 for s in steps if s["done"])
+    return {
+        "tenant_id": tenant_id,
+        "stores": stores, "users": users, "sales_records": sales,
+        "steps": steps,
+        "progress_pct": round(done / len(steps) * 100),
+        "complete": done == len(steps),
+    }
 
 
 @router.post("/logout", response_model=MessageResponse)

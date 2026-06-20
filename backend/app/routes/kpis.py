@@ -231,4 +231,31 @@ async def get_kpis(db: AsyncSession = Depends(get_db), current_user: dict = Depe
         return KPIResponse(**data)
 
     tenant_id = current_user.get('tenant_id') or 1
-    allowed
+
+    allowed = get_accessible_store_ids(current_user)
+
+    # Served from Redis when warm; otherwise computed and cached under the
+    # same tenant/store-scoped key the cache warmer refreshes.
+    cached = await get_cached(kpis_cache_key(allowed, tenant_id))
+    if cached:
+        return KPIResponse(**_parse_kpi_dates(cached))
+
+    data = await compute_and_cache_kpis(db, allowed, tenant_id)
+    return KPIResponse(**data)
+
+
+@router.get("/projection")
+async def get_revenue_projection(
+    horizon: int = 14,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Forward revenue projection (B1.7) — the forecasting engine valued at the
+    average unit price, scoped to the caller's tenant and stores. Drives the
+    dashboard's 'projected revenue' card."""
+    from app.services.forecast_service import revenue_projection
+
+    horizon = max(7, min(horizon, 60))
+    tenant_id = current_user.get('tenant_id') or 1
+    allowed = get_accessible_store_ids(current_user)
+    return await revenue_projection(db, tenant_id, allowed, horizon)

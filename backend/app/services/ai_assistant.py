@@ -413,6 +413,17 @@ async def get_returns_data(store_name: Optional[str] = None) -> Dict:
         }
 
 
+async def _get_forecast_narrative(horizon: int = 14) -> str:
+    """Engine-driven forecast answer for the assistant (B1.7). The AI router is
+    unauthenticated, so this answers for the demo tenant across all stores."""
+    try:
+        from app.services.forecast_service import forecast_narrative
+        async with async_session() as session:
+            return await forecast_narrative(session, tenant_id=1, allowed=None, horizon=horizon)
+    except Exception as e:
+        return f"📈 I couldn't compute a forecast right now ({e})."
+
+
 async def get_dashboard_summary() -> str:
     """Generate a comprehensive dashboard summary with real data"""
     kpis = await get_real_time_kpis()
@@ -624,6 +635,10 @@ STORE DATA FOR {store_data['store_name'].upper()}:
             status = "RETURN" if t['is_return'] else "SALE"
             context_parts.append(f"- [{status}] {t['item']} at {t['store']}: {t['sales']} units")
     
+    if "prediction" in intents:
+        forecast_text = await _get_forecast_narrative()
+        context_parts.append(f"\nFORECAST (engine-driven):\n{forecast_text}")
+
     if "returns_query" in intents:
         returns_data = await get_returns_data()
         context_parts.append(f"""
@@ -707,6 +722,10 @@ async def get_intelligent_fallback(message: str, intent_info: Dict) -> str:
             
             return response
         
+        # Forecast / prediction query — engine-driven (B1.7)
+        if "prediction" in intents:
+            return await _get_forecast_narrative()
+
         # Greeting response
         if "greeting" in intents:
             return f"""👋 Hello! I'm **Lulu AI**, your sales analytics assistant.

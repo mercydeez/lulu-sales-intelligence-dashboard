@@ -165,7 +165,8 @@ async def get_alert_stats(
             
             alerts = await DataSyncService.generate_alerts_from_sales(
                 session,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=current_user.get("tenant_id") or 1
             )
             
             # Generate daily stats
@@ -437,7 +438,8 @@ async def get_inventory_alerts(
             
             alerts = await DataSyncService.generate_alerts_from_sales(
                 session,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=current_user.get("tenant_id") or 1
             )
             
             # Filter only inventory alerts
@@ -461,7 +463,8 @@ async def get_sales_alerts(
             
             alerts = await DataSyncService.generate_alerts_from_sales(
                 session,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=current_user.get("tenant_id") or 1
             )
             
             # Filter only sales alerts

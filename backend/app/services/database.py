@@ -2,10 +2,30 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
 from sqlalchemy import text
 from typing import AsyncGenerator
+from contextvars import ContextVar
 import asyncio
 import logging
 from app.config import get_settings
 from app.models.sales import Base
+
+# Per-request active tenant (B2). Set by get_current_user when a JWT is decoded;
+# applied to the request's DB connection as the `app.tenant_id` GUC so the
+# Postgres RLS policies (migration 012) bind to the right tenant. This is the
+# defense-in-depth backstop UNDER the primary app-layer tenant scoping.
+tenant_context: ContextVar[int] = ContextVar("tenant_id", default=1)
+
+
+async def apply_tenant_guc(session: AsyncSession) -> None:
+    """Bind the active tenant to this connection for RLS. Best-effort: never
+    fail a request if the GUC can't be set (e.g. the function isn't installed
+    yet on an un-migrated DB)."""
+    try:
+        await session.execute(
+            text("SELECT set_config('app.tenant_id', :tid, false)"),
+            {"tid": str(tenant_context.get())},
+        )
+    except Exception:
+        pass
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -68,6 +88,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency for getting database session"""
     async with async_session() as session:
         try:
+            await apply_tenant_guc(session)
             yield session
             await session.commit()
         except Exception:
