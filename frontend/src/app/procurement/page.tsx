@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { Truck, Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Button, Badge } from '@/components/ui';
+import AuditTimeline from '@/components/AuditTimeline';
 import type { BadgeVariant } from '@/components/ui';
 
 interface Supplier { id: number; name: string; catalog_items: number; lead_time_days: number; status: string; }
@@ -187,6 +188,10 @@ export default function ProcurementPage() {
             </div>
           )}
         </Card>
+
+        <div className="mt-6">
+          <AuditTimeline limit={20} />
+        </div>
       </div>
     </main>
   );

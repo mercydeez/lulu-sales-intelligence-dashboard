@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Printer, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import AuditTimeline from '@/components/AuditTimeline';
 
 interface POLine { id: number; item_name: string; quantity: number; unit_cost: number; line_total: number; received_qty: number; }
 interface PODetail {
@@ -120,6 +121,11 @@ export default function PrintablePOPage() {
           {po.source === 'forecast_reorder' && <p>📈 Auto-generated from demand forecast.</p>}
           <p className="mt-1">This document is a system-of-record purchase order. Synthetic demo data.</p>
         </div>
+      </div>
+
+      {/* Per-PO audit trail — on-screen only, hidden when printing */}
+      <div className="max-w-3xl mx-auto mt-6 print:hidden">
+        <AuditTimeline entityId={po.id} limit={20} />
       </div>
     </main>
   );

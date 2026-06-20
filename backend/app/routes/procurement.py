@@ -122,6 +122,18 @@ async def approvals_inbox(user: dict = Depends(get_current_user), db: AsyncSessi
     return await proc.pending_approvals(db, _tenant(user))
 
 
+@router.get("/events")
+async def audit_timeline(
+    limit: int = Query(50, ge=1, le=200),
+    entity_type: Optional[str] = Query(None),
+    entity_id: Optional[int] = Query(None),
+    user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
+    """Procurement audit timeline — most recent events first, optionally filtered
+    to one entity (e.g. a single PO)."""
+    return {"events": await proc.list_events(db, _tenant(user), limit, entity_type, entity_id)}
+
+
 @router.get("/purchase-orders/{po_id}")
 async def get_po(po_id: int, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     po = await proc.get_purchase_order(db, _tenant(user), po_id)

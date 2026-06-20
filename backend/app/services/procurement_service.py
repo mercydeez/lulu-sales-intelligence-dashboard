@@ -10,6 +10,7 @@ deliberately out of scope.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence
 
@@ -27,6 +28,59 @@ def _emit(tenant_id: int, event: str, data: Dict) -> None:
         dispatch_event_background(tenant_id, event, data)
     except Exception as e:  # pragma: no cover - webhooks are best-effort
         logger.debug(f"webhook emit skipped ({event}): {e}")
+
+
+async def _log_event(db: AsyncSession, tenant_id: int, event_type: str,
+                     entity_type: str, entity_id: Optional[int],
+                     entity_ref: Optional[str], summary: str,
+                     actor: Optional[int] = None,
+                     metadata: Optional[Dict] = None) -> None:
+    """Append an audit event WITHIN the caller's transaction (atomic with the
+    action). Best-effort: a logging failure never breaks the operation."""
+    try:
+        await db.execute(text("""
+            INSERT INTO procurement_events
+                (tenant_id, event_type, entity_type, entity_id, entity_ref,
+                 actor_user_id, summary, metadata)
+            VALUES (:t, :et, :ent, :eid, :ref, :actor, :summary, CAST(:meta AS jsonb))
+        """), {
+            "t": tenant_id, "et": event_type, "ent": entity_type, "eid": entity_id,
+            "ref": entity_ref, "actor": actor, "summary": summary,
+            "meta": json.dumps(metadata or {}),
+        })
+    except Exception as e:  # pragma: no cover - audit is best-effort
+        logger.warning(f"procurement audit log failed ({event_type}): {e}")
+
+
+async def list_events(db: AsyncSession, tenant_id: int, limit: int = 50,
+                      entity_type: Optional[str] = None,
+                      entity_id: Optional[int] = None) -> List[Dict]:
+    """The audit timeline — most recent procurement events first."""
+    where = ["e.tenant_id = :t"]
+    params: Dict = {"t": tenant_id, "limit": max(1, min(limit, 200))}
+    if entity_type:
+        where.append("e.entity_type = :ent")
+        params["ent"] = entity_type
+    if entity_id is not None:
+        where.append("e.entity_id = :eid")
+        params["eid"] = entity_id
+    rows = (await db.execute(text(f"""
+        SELECT e.id, e.event_type, e.entity_type, e.entity_id, e.entity_ref,
+               e.summary, e.metadata, e.created_at,
+               u.first_name, u.last_name
+        FROM procurement_events e
+        LEFT JOIN users u ON u.id = e.actor_user_id
+        WHERE {' AND '.join(where)}
+        ORDER BY e.created_at DESC, e.id DESC
+        LIMIT :limit
+    """), params)).fetchall()
+    return [{
+        "id": r.id, "event_type": r.event_type, "entity_type": r.entity_type,
+        "entity_id": r.entity_id, "entity_ref": r.entity_ref, "summary": r.summary,
+        "metadata": r.metadata,
+        "actor": (f"{r.first_name} {r.last_name}".strip() if r.first_name else "System"),
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]
 
 
 PRICE_TOLERANCE_PCT = 0.01  # 1% unit-cost tolerance in the 3-way match
@@ -94,6 +148,8 @@ async def create_supplier(db: AsyncSession, tenant_id: int, name: str,
         RETURNING id, created_at
     """), {"t": tenant_id, "name": name, "email": contact_email,
            "phone": contact_phone, "lt": lead_time_days})).fetchone()
+    await _log_event(db, tenant_id, "supplier.created", "supplier", row.id, name,
+                     f"Supplier '{name}' added")
     await db.commit()
     return {"id": row.id, "name": name, "lead_time_days": lead_time_days, "status": "active"}
 
@@ -172,6 +228,11 @@ async def generate_draft_pos_from_reorder(
     for supplier_id, lines in grouped.items():
         po = await _create_po(db, tenant_id, supplier_id, lines,
                               source="forecast_reorder", created_by=created_by)
+        await _log_event(db, tenant_id, "po.created", "purchase_order", po["po_id"],
+                         po["po_number"],
+                         f"PO {po['po_number']} created from forecast for "
+                         f"{po['line_count']} item(s) — AED {po['total_amount']:,.0f}",
+                         actor=created_by, metadata={"total": po["total_amount"]})
         # Auto-approve low-value POs per the tenant's policy.
         if auto_under > 0 and po["total_amount"] < auto_under:
             await db.execute(text("""
@@ -181,6 +242,10 @@ async def generate_draft_pos_from_reorder(
             """), {"by": created_by, "now": datetime.now(timezone.utc), "id": po["po_id"]})
             po["status"] = "approved"
             auto_approved += 1
+            await _log_event(db, tenant_id, "po.approved", "purchase_order", po["po_id"],
+                             po["po_number"],
+                             f"PO {po['po_number']} auto-approved (under AED {auto_under:,.0f})",
+                             actor=created_by)
         created.append(po)
 
     await db.commit()
@@ -390,6 +455,10 @@ async def receive_po(db: AsyncSession, tenant_id: int, po_id: int,
         SET status = :s, received_at = CASE WHEN :fully THEN :now ELSE received_at END
         WHERE id = :id
     """), {"s": po_status, "fully": fully, "now": datetime.now(timezone.utc), "id": po_id})
+    await _log_event(db, tenant_id, "goods.received", "goods_receipt", receipt_id,
+                     receipt_number,
+                     f"Goods receipt {receipt_number} recorded — PO #{po_id} now "
+                     f"{po_status.replace('_', ' ')}", actor=user_id)
     await db.commit()
     _emit(tenant_id, "goods.received", {
         "po_id": po_id, "receipt_number": receipt_number, "po_status": po_status,
@@ -435,6 +504,8 @@ async def transition_status(db: AsyncSession, tenant_id: int, po_id: int,
     await db.execute(text(
         f"UPDATE purchase_orders SET {', '.join(sets)} WHERE id = :id AND tenant_id = :t"
     ), params)
+    await _log_event(db, tenant_id, f"po.{new_status}", "purchase_order", po_id, None,
+                     f"PO #{po_id} → {new_status.replace('_', ' ')}", actor=user_id)
     await db.commit()
     if new_status in ("approved", "sent", "received"):
         _emit(tenant_id, f"purchase_order.{new_status}", {"po_id": po_id, "status": new_status})
@@ -472,6 +543,9 @@ async def record_invoice(db: AsyncSession, tenant_id: int, po_id: int,
     if notes:
         await db.execute(text("UPDATE supplier_invoices SET notes = :n WHERE id = :id"),
                          {"n": notes, "id": inv_id})
+    await _log_event(db, tenant_id, "invoice.recorded", "supplier_invoice", inv_id,
+                     invoice_number,
+                     f"Invoice {invoice_number} recorded against PO #{po_id} — AED {amount:,.0f}")
     await db.commit()
     return {"invoice_id": inv_id, "po_id": po_id, "invoice_number": invoice_number,
             "invoice_amount": round(amount, 2), "status": "received"}
@@ -532,6 +606,12 @@ async def three_way_match(db: AsyncSession, tenant_id: int, invoice_id: int) -> 
     await db.execute(text(
         "UPDATE supplier_invoices SET match_status = :m, status = :s WHERE id = :id"
     ), {"m": match_status, "s": new_status, "id": invoice_id})
+    await _log_event(db, tenant_id,
+                     "invoice.match_exception" if match_status == "exception" else "invoice.matched",
+                     "supplier_invoice", invoice_id, None,
+                     f"Invoice #{invoice_id} 3-way match: {match_status}"
+                     + (f" ({len([l for l in result_lines if not l['ok']])} variance(s))"
+                        if match_status == "exception" else ""))
     await db.commit()
     if match_status == "exception":
         _emit(tenant_id, "invoice.match_exception",

@@ -109,8 +109,11 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
   **Approval inbox** ✅ (`/approvals` — pending POs with inline approve/reject + bulk approve, nav badge
   count, `GET /api/procurement/approvals`). **Action cards** ✅ (dashboard Action Center: forecast reorder
   needs, pending approvals, expiry risk → one-click to the right page). **Command palette** ✅ (Cmd/Ctrl-K
-  global navigation + quick actions). ⏭️ Still roadmap (need external services / larger lift): audit
-  timeline, WhatsApp/email/Slack notifications, mobile-first/PWA, e-signature.
+  global navigation + quick actions). **Audit timeline** ✅ — append-only `procurement_events` log
+  (migration 022, RLS+FORCE) written atomically with each PO/receipt/invoice action and attributed to the
+  actor; `GET /api/procurement/events`, shown as a global Activity feed on `/procurement` and a per-PO
+  trail on the PO page. ⏭️ Still roadmap (need external services / larger lift): WhatsApp/email/Slack
+  notifications, mobile-first/PWA, e-signature.
 - **I. Tech to bring in:** workflow/state machine (status enum → Temporal/Camunda), notifications
   (Novu/Knock + Twilio + Resend), enterprise auth (WorkOS SSO/SAML/SCIM), PostHog + Sentry, search
   (Typesense/Meilisearch), analytics scale (DuckDB/ClickHouse + dbt), Mapbox, embedded payments
