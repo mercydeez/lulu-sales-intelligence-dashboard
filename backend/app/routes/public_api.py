@@ -84,7 +84,7 @@ async def public_kpis(
     """Tenant-scoped KPIs for the authenticated key's tenant."""
     _require_scope(ctx, "read")
     from app.routes.kpis import compute_and_cache_kpis, _serialize_kpi_dates
-    data = await compute_and_cache_kpis(db, allowed=None, tenant_id=ctx["tenant_id"])
+    data = await compute_and_cache_kpis(db, None, tenant_id=ctx["tenant_id"])
     return _serialize_kpi_dates(data)
 
 

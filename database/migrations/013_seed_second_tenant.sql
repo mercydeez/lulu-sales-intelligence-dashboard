@@ -13,6 +13,14 @@ VALUES (2, 'northwind', 'Northwind Foods', 'pro', 'active', 'Northwind', '#7c3ae
 ON CONFLICT (id) DO NOTHING;
 SELECT setval(pg_get_serial_sequence('tenants', 'id'), GREATEST((SELECT MAX(id) FROM tenants), 2));
 
+-- The base data (stores/items/users/sales) is seeded with EXPLICIT ids, which
+-- leaves their SERIAL sequences at 1. Advance each sequence past its max so the
+-- SERIAL inserts below (and later app-side signups) don't collide on id=1.
+SELECT setval(pg_get_serial_sequence('stores', 'id'), GREATEST((SELECT MAX(id) FROM stores), 1));
+SELECT setval(pg_get_serial_sequence('items', 'id'), GREATEST((SELECT MAX(id) FROM items), 1));
+SELECT setval(pg_get_serial_sequence('users', 'id'), GREATEST((SELECT MAX(id) FROM users), 1));
+SELECT setval(pg_get_serial_sequence('sales_historical', 'id'), GREATEST((SELECT MAX(id) FROM sales_historical), 1));
+
 -- 2. Stores (only if tenant 2 has none) -------------------------------------
 INSERT INTO stores (name, location, tenant_id)
 SELECT v.name, v.location, 2
