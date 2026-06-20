@@ -102,6 +102,8 @@ Demo users (password for all three: **`Lulu@2026!`**):
 
 Logging in as the regional/store users is the quickest way to see RBAC scoping in action — the same screens show only the data each role is allowed to see.
 
+**Self-serve onboarding (SaaS):** new customers don't need a seeded account — visit **`/signup`** to provision an isolated tenant workspace (optionally pre-loaded with sample data so the dashboard works immediately), then invite teammates from the app. Every tenant's data is isolated (app-layer scoping + Postgres RLS); a second seeded tenant (`owner@northwind.ae`) demonstrates two-tenant isolation. See [`docs/PUBLIC_API.md`](docs/PUBLIC_API.md) for the per-tenant public API + embeddable AI.
+
 ---
 
 ## Architecture

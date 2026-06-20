@@ -27,27 +27,50 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
 ## Remaining work
 
 ### B1 — Forecasting hardening & depth (finish)
-- **B1.7 — Wire forecasts across the product** ❌ — feed the forecasts into inventory reorder/expiry,
-  promotion uplift baseline, the dashboard revenue projection, and AI-assistant answers (so the
-  forecasting engine drives the rest of the app, not just the Lab).
+- **B1.7 — Wire forecasts across the product** ✅ — shared `services/forecast_service.py` feeds the
+  forecasting engine into: inventory reorder (`GET /api/inventory/reorder-suggestions`, days-of-cover
+  < lead time → recommended order qty), promotion uplift baseline (`GET /api/promotions/uplift-baseline`),
+  the dashboard revenue projection (`GET /api/kpis/projection`), and AI-assistant answers (forecast
+  intent → engine-driven narrative + top reorder risks). Tested (`tests/test_forecast_service.py`).
 
-### B2 — Multi-tenancy completion ❌
-- Apply tenant scoping to **all** read endpoints (sales, analytics, history, inventory, promotions, reports).
-- Postgres **RLS** (dedicated non-owner role / FORCE RLS) as defense-in-depth under app-layer scoping.
-- Tenant-aware caching everywhere; **isolation pytest**; a second seeded tenant for a visible
-  two-tenant isolation demo.
+### B2 — Multi-tenancy completion ✅
+- App-layer tenant scoping across **all** DataSyncService read methods (inventory summary/items/
+  categories, alerts, promotions, category-performance) — they filter `tenant_id`; routes pass it from
+  the JWT and partition caches by tenant. Closes the super_admin all-stores leak; KPIs/analytics already
+  scoped. Per-request tenant GUC (`tenant_context` + `apply_tenant_guc`).
+- Postgres **RLS** (migration 012): `tenant_isolation` policies keyed off `app.tenant_id` GUC with a
+  `current_tenant_id()` helper + demo fallback; ENABLEd (non-breaking under owner) with documented
+  FORCE/non-owner hardening.
+- **Isolation pytest** (`tests/test_tenant_isolation.py`: SQL-capture proof + tenant-partitioned cache
+  keys + migration presence + DB-gated live disjointness). Second seeded tenant — **Northwind Foods**
+  (migration 013): own stores/items/~120d sales + `owner@northwind.ae`.
+- ⏭️ Remaining: the unauthenticated `ai_assistant` global aggregates (demo-tenant only by design) and
+  running the app as a non-owner role with FORCE RLS in prod. Per-item `predictor` is implicitly scoped
+  (store_ids are tenant-unique).
 
-### B3 — Billing & onboarding ❌
-- Plans/tiers; Stripe subscriptions + customer portal (UAE: Telr / PayTabs / Network Intl); metering +
-  usage limits; self-serve signup → create tenant → invite users → connect data.
+### B4 — PaaS layer 🟡
+- Per-tenant **API keys** ✅ (migration 014 `tenant_api_keys`, `services/api_key_service.py`, mgmt at
+  `/api/api-keys`) + public REST API ✅ (`/api/public/v1/*`: kpis, projection, reorder, ai/ask). The key
+  IS the tenant scope. **White-label** ✅ (per-tenant brand/logo/accent: public `/api/public/v1/branding`
+  for embedded widgets + admin `PATCH /api/tenants/branding`). Outbound **webhooks** ✅ (migration 015
+  `tenant_webhooks`, `services/webhook_service.py` with HMAC-SHA256-signed delivery + event-subscription
+  matching, mgmt + test-ping at `/api/webhooks`; `dispatch_event[_background]` ready for producers).
+  Developer guide: `docs/PUBLIC_API.md`. ⏭️ Remaining: an interactive **developer portal** (live "try
+  it" docs) and wiring `dispatch_event` into specific domain events (alerts/reorder).
 
-### B4 — PaaS layer ❌
-- Per-tenant **API keys** + public REST API; outbound **webhooks**; **white-label** theming per tenant;
-  **developer portal** + live API docs.
+### B5 — Chatbot / AI APIs ✅
+- Free/local **Ollama** provider with rule-based fallback already wired (`services/llm/`); tenant-scoped,
+  API-key-authenticated embeddable AI endpoint shipped at `POST /api/public/v1/ai/ask`.
 
-### B5 — Chatbot / AI APIs ❌
-- Tenant-scoped, API-key-authenticated AI assistant endpoints to embed the chatbot externally;
-  free/local **Ollama** provider with rule-based fallback.
+### B3 — Onboarding ✅ / Billing ⏭️ (deferred until go-to-market)
+- **Self-serve onboarding** ✅ (go-to-market viability, no billing): `POST /api/auth/signup` provisions an
+  isolated tenant + owner (super_admin) and optionally pre-loads a sample dataset so the dashboard shows
+  value on day one (`services/tenant_provisioning.py`); auto-login on success. Team **invites**
+  (`POST /api/auth/invite`, admin → temp password + must-change) and an **onboarding checklist**
+  (`GET /api/auth/onboarding`). Frontend **signup page** (`/signup`) + `signup()` in AuthContext, linked
+  from login. Also fixed: super_admin `accessible_stores` is now tenant-scoped (was all-tenant).
+- ⏭️ **Billing deferred** — Stripe/Telr subscriptions, metering, usage limits come last, when we go to
+  market. Tenants run on a free `trial` plan until then.
 
 ---
 

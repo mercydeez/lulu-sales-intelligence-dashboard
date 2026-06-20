@@ -15,6 +15,9 @@ The documentation is organized by how you should use it, not by when it was writ
 ### `architecture/`
 - [`architecture/ADR.md`](architecture/ADR.md) - concise architecture decision records for the current implementation.
 
+### `PUBLIC_API.md`
+- [`PUBLIC_API.md`](PUBLIC_API.md) - per-tenant public REST API + embeddable AI assistant (B4/B5): auth, endpoints, isolation.
+
 ### `product/`
 - [`product/DEMO_SCRIPT.md`](product/DEMO_SCRIPT.md) - guided demo flow with talking points.
 - [`product/PITCH.md`](product/PITCH.md) - short pitch covering the problem, solution, and quality signals.

@@ -42,3 +42,6 @@ Thumbs.db
 .eggs/
 venv/
 .venv/
+
+# Claude local settings
+.claude/settings.local.json
