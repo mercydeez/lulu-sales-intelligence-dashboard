@@ -119,6 +119,27 @@ def classical_accuracy(history: pd.DataFrame, holdout: int = 14) -> Optional[flo
         return None
 
 
+def accuracy_by_group(
+    records: List[dict], group_fields: List[str], holdout: int = 14
+) -> List[dict]:
+    """Per-group forecast accuracy. Groups raw `[{...group_fields, date, sales}]`
+    rows by the tuple of `group_fields`, scores each group's daily series with
+    `classical_accuracy`, and returns `[{**group_fields, "accuracy": ...}]`.
+    Used for the store×category heatmap and per-item drill-down."""
+    groups: Dict[tuple, List[dict]] = {}
+    for r in records:
+        key = tuple(r[f] for f in group_fields)
+        groups.setdefault(key, []).append(
+            {"date": r["date"], "sales": float(r.get("sales") or 0)}
+        )
+    out: List[dict] = []
+    for key, recs in groups.items():
+        entry = {f: v for f, v in zip(group_fields, key)}
+        entry["accuracy"] = classical_accuracy(pd.DataFrame(recs), holdout)
+        out.append(entry)
+    return out
+
+
 def stockout_classifier(history: pd.DataFrame, holdout: int = 60) -> dict:
     """A real classification model: predict 'low-stock-risk day' (daily units in
     the bottom 20%) from calendar/lag features. Backtested on a holdout to

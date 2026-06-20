@@ -27,6 +27,8 @@ interface Metrics {
   backtest: { date: string; actual: number; predicted: number }[];
   interval_pct?: number | null;
   accuracy_trend: { date: string; accuracy: number }[];
+  category_heatmap: { store_id: number; store_name: string; category: string; accuracy: number | null }[];
+  item_accuracy: { item_id: number; item_name: string; category: string; accuracy: number | null }[];
   feature_importance: FeatureImp[]; classifier: Classifier; heatmap: HeatCell[];
   business_impact?: {
     horizon_days?: number;
@@ -62,6 +64,7 @@ export default function ForecastLabPage() {
   const [data, setData] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'exec' | 'tech'>('exec');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const fetchMetrics = useCallback(async () => {
     setLoading(true);
@@ -440,6 +443,90 @@ export default function ForecastLabPage() {
                     )}
                   </div>
                 ) : null}
+
+                {data.category_heatmap.length > 0 && (() => {
+                  const cats = Array.from(new Set(data.category_heatmap.map((c) => c.category))).sort();
+                  const stores = Array.from(
+                    new Map(data.category_heatmap.map((c) => [c.store_id, c.store_name])).entries()
+                  ).sort((a, b) => a[0] - b[0]);
+                  const cell = new Map(
+                    data.category_heatmap.map((c) => [`${c.store_id}|${c.category}`, c.accuracy])
+                  );
+                  const drillItems = selectedCategory
+                    ? data.item_accuracy
+                        .filter((it) => it.category === selectedCategory)
+                        .sort((a, b) => (b.accuracy ?? -1) - (a.accuracy ?? -1))
+                    : [];
+                  return (
+                    <Card variant="solid" padding="md">
+                      <h3 className="text-base font-medium text-ink mb-1">Accuracy by store × category</h3>
+                      <p className="text-xs text-ink-muted mb-3">
+                        Forecast accuracy for each category in each store. Click a category to see the items behind it.
+                      </p>
+                      <div className="overflow-x-auto">
+                        <table className="text-xs border-separate" style={{ borderSpacing: 2 }}>
+                          <thead>
+                            <tr>
+                              <th className="text-left font-medium text-ink-muted px-2 sticky left-0 bg-surface">Category</th>
+                              {stores.map(([sid, sname]) => (
+                                <th key={sid} className="font-medium text-ink-muted px-1 whitespace-nowrap" title={sname}>
+                                  {sname.replace(/^Lulu\s+/i, '').slice(0, 10)}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {cats.map((cat) => (
+                              <tr key={cat}>
+                                <td className="px-2 sticky left-0 bg-surface">
+                                  <button
+                                    onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
+                                    className={`text-left hover:underline ${selectedCategory === cat ? 'text-primary-700 font-medium' : 'text-ink-soft'}`}
+                                  >
+                                    {cat}
+                                  </button>
+                                </td>
+                                {stores.map(([sid]) => {
+                                  const a = cell.get(`${sid}|${cat}`) ?? null;
+                                  return (
+                                    <td key={sid} className="text-center rounded tabular-nums"
+                                        style={{ background: accColor(a) + '33', color: a !== null ? '#3a3a34' : '#b6b6ae', minWidth: 36, padding: '6px 2px' }}
+                                        title={`${cat} · ${a !== null ? a + '%' : 'no data'}`}>
+                                      {a !== null ? a : '—'}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {selectedCategory && (
+                        <div className="mt-4 border-t border-line pt-3">
+                          <h4 className="text-sm font-medium text-ink mb-2">Items in {selectedCategory}</h4>
+                          {drillItems.length === 0 ? (
+                            <p className="text-xs text-ink-muted">No per-item accuracy available.</p>
+                          ) : (
+                            <div className="space-y-2 max-w-md">
+                              {drillItems.map((it) => (
+                                <div key={it.item_id}>
+                                  <div className="flex justify-between text-xs mb-0.5">
+                                    <span className="text-ink-soft">{it.item_name}</span>
+                                    <span className="text-ink tabular-nums">{it.accuracy ?? '—'}%</span>
+                                  </div>
+                                  <div className="h-1.5 bg-surface-2 rounded-full">
+                                    <div className="h-1.5 rounded-full" style={{ width: `${it.accuracy ?? 0}%`, background: accColor(it.accuracy) }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })()}
               </div>
             )}
           </>

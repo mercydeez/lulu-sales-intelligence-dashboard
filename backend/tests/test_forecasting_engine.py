@@ -123,6 +123,26 @@ def test_stockout_classifier_returns_curves_and_threshold():
     assert 0 <= clf["average_precision"] <= 1
 
 
+def test_accuracy_by_group_scores_each_group():
+    from app.services.forecasting import diagnostics as diag
+
+    # 2 stores × 2 categories over enough days for classical_accuracy.
+    base = _stationary_history(120)
+    records = []
+    for sid in (1, 2):
+        for cat in ("Dairy", "Bakery"):
+            for _, row in base.iterrows():
+                records.append({
+                    "store_id": sid, "store_name": f"Store {sid}", "category": cat,
+                    "date": row["date"], "sales": row["sales"],
+                })
+    out = diag.accuracy_by_group(records, ["store_id", "store_name", "category"])
+    assert len(out) == 4  # one entry per (store, category)
+    for entry in out:
+        assert set(entry) == {"store_id", "store_name", "category", "accuracy"}
+        assert entry["accuracy"] is None or 0 <= entry["accuracy"] <= 100
+
+
 def test_rolling_accuracy_returns_ascending_trend():
     history = _synthetic_history()
     winner = backtest_and_select(history, horizon=14).model

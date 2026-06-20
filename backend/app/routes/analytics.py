@@ -696,6 +696,7 @@ def _empty_model_metrics(status: str = "ready") -> dict:
         "accuracy": None, "selected_model": None, "mape": None, "leaderboard": [],
         "forecast": [], "backtest": [], "interval_pct": None, "accuracy_trend": [],
         "feature_importance": [], "classifier": {}, "heatmap": [],
+        "category_heatmap": [], "item_accuracy": [],
         "business_impact": {}, "status": status,
     }
 
@@ -769,6 +770,42 @@ async def compute_and_cache_model_metrics(
                 "accuracy": diag.classical_accuracy(pd.DataFrame(recs)),
             })
         result["heatmap"] = heatmap
+
+        # Store × category accuracy grid (the heatmap-depth view).
+        cat_sql = (
+            f"SELECT st.id AS store_id, st.name AS store_name, i.category AS category, "
+            f"s.date AS date, SUM(s.sales) AS sales FROM sales_fact_view s "
+            f"JOIN stores st ON st.id = s.store_id JOIN items i ON i.id = s.item_id "
+            f"WHERE {where_sql} GROUP BY st.id, st.name, i.category, s.date "
+            f"ORDER BY st.id, i.category, s.date"
+        )
+        cat_rows = (await db.execute(text(cat_sql), params)).fetchall()
+        cat_records = [
+            {"store_id": r.store_id, "store_name": r.store_name,
+             "category": r.category, "date": r.date, "sales": r.sales}
+            for r in cat_rows
+        ]
+        result["category_heatmap"] = diag.accuracy_by_group(
+            cat_records, ["store_id", "store_name", "category"]
+        )
+
+        # Per-item accuracy (category → items drill-down, across the scoped stores).
+        item_sql = (
+            f"SELECT i.id AS item_id, i.name AS item_name, i.category AS category, "
+            f"s.date AS date, SUM(s.sales) AS sales FROM sales_fact_view s "
+            f"JOIN items i ON i.id = s.item_id "
+            f"WHERE {where_sql} GROUP BY i.id, i.name, i.category, s.date "
+            f"ORDER BY i.id, s.date"
+        )
+        item_rows = (await db.execute(text(item_sql), params)).fetchall()
+        item_records = [
+            {"item_id": r.item_id, "item_name": r.item_name,
+             "category": r.category, "date": r.date, "sales": r.sales}
+            for r in item_rows
+        ]
+        result["item_accuracy"] = diag.accuracy_by_group(
+            item_records, ["item_id", "item_name", "category"]
+        )
     except Exception as e:
         logger.error(f"Model metrics computation error: {e}")
         # Cache nothing on failure so the next cycle/request retries cleanly.
