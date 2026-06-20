@@ -42,6 +42,21 @@ def _synthetic_history(days: int = 400) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _stationary_history(days: int = 400) -> pd.DataFrame:
+    """A deterministic *stationary* series with strong weekly seasonality (no
+    trend), so low-demand 'risk' days recur in every window — including the
+    held-out tail. The classifier's bottom-20% label therefore has both classes
+    in the holdout, which is what ROC/PR curves require."""
+    dow_factors = [0.55, 0.6, 0.7, 0.9, 1.1, 1.75, 1.7]  # Mon/Tue low, weekend high
+    start = pd.Timestamp("2024-01-01")
+    rows = []
+    for t in range(days):
+        d = start + pd.Timedelta(days=t)
+        val = 100.0 * dow_factors[d.dayofweek] * (1 + 0.05 * math.sin(t * 1.3))
+        rows.append({"date": d, "sales": val})
+    return pd.DataFrame(rows)
+
+
 def test_registry_includes_new_dl_models():
     names = {m.name for m in available_models()}
     assert {"tcn", "transformer", "nbeats"}.issubset(names)
@@ -86,6 +101,26 @@ def test_forward_points_carry_prediction_band():
         assert "lower" in pt and "upper" in pt
         assert pt["lower"] <= pt["forecast"] <= pt["upper"]
         assert pt["lower"] >= 0
+
+
+def test_stockout_classifier_returns_curves_and_threshold():
+    pytest.importorskip("sklearn")
+    pytest.importorskip("lightgbm")
+    from app.services.forecasting import diagnostics as diag
+
+    # Stationary series so the held-out tail contains both classes (risk + normal).
+    clf = diag.stockout_classifier(_stationary_history())
+    assert clf, "classifier should return a payload for 400 days of history"
+    assert clf["model"] in {"lightgbm_classifier", "rule_baseline"}
+    assert "threshold" in clf
+    # curves require both classes in the holdout (guaranteed by the stationary series)
+    assert clf["roc"] and clf["pr"]
+    for p in clf["roc"]:
+        assert 0 <= p["fpr"] <= 1 and 0 <= p["tpr"] <= 1
+    for p in clf["pr"]:
+        assert 0 <= p["recall"] <= 1 and 0 <= p["precision"] <= 1
+    assert 0 <= clf["roc_auc"] <= 1
+    assert 0 <= clf["average_precision"] <= 1
 
 
 def test_rolling_accuracy_returns_ascending_trend():

@@ -11,6 +11,9 @@ pandas==2.1.4
 numpy==1.26.3
 # Forecasting (ML tier) — small CPU wheel
 lightgbm==4.3.0
+# Backs lightgbm's sklearn API (LGBMClassifier/LGBMRegressor) and supplies the
+# ROC / precision-recall / AUC metrics for the stockout classifier. Pulls scipy.
+scikit-learn==1.5.2
 # Forecasting (DL tier) — CPU-only torch (the cpu index avoids the multi-GB CUDA
 # build). This still adds a few hundred MB to the image; remove these three lines
 # to drop the LSTM tier (the engine falls back to classical + LightGBM safely).

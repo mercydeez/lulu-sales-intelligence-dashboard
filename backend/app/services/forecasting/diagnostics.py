@@ -119,10 +119,12 @@ def classical_accuracy(history: pd.DataFrame, holdout: int = 14) -> Optional[flo
         return None
 
 
-def stockout_classifier(history: pd.DataFrame, holdout: int = 30) -> dict:
+def stockout_classifier(history: pd.DataFrame, holdout: int = 60) -> dict:
     """A real classification model: predict 'low-stock-risk day' (daily units in
     the bottom 20%) from calendar/lag features. Backtested on a holdout to
-    produce an honest confusion matrix + precision/recall/F1."""
+    produce probabilities (predict_proba), ROC + precision-recall curves with
+    AUC/AP, and a confusion matrix at the F1-tuned operating threshold (not a
+    fixed 0.5)."""
     try:
         series = _to_series(history)
         if len(series) < 90:
@@ -137,19 +139,47 @@ def stockout_classifier(history: pd.DataFrame, holdout: int = 30) -> dict:
         Xtr, ytr = X[:-holdout], y[:-holdout]
         Xte, yte = X[-holdout:], y[-holdout:]
 
+        # Risk probabilities on the held-out window.
         try:
             import lightgbm as lgb
             clf = lgb.LGBMClassifier(
                 n_estimators=200, learning_rate=0.05, random_state=42, n_jobs=-1, verbose=-1
             )
             clf.fit(Xtr, ytr)
-            pred = clf.predict(Xte).astype(int)
+            proba = clf.predict_proba(Xte)[:, 1].astype(float)
             model_name = "lightgbm_classifier"
         except Exception:
+            # Continuous risk score so the curves still render: the further daily
+            # demand falls below the risk threshold, the higher the score.
             roll = feats["rollmean_7"].values[-holdout:]
-            pred = (roll <= thr).astype(int)
+            raw = thr - roll
+            span = float(raw.max() - raw.min())
+            proba = (raw - raw.min()) / span if span > 0 else np.zeros_like(raw, dtype=float)
             model_name = "rule_baseline"
 
+        # Curves + F1-tuned threshold (need both classes present in the holdout).
+        roc_points: List[dict] = []
+        pr_points: List[dict] = []
+        roc_auc = avg_precision = None
+        tuned = 0.5
+        if len(np.unique(yte)) >= 2:
+            from sklearn.metrics import (
+                roc_curve, auc, precision_recall_curve, average_precision_score,
+            )
+            fpr, tpr, _ = roc_curve(yte, proba)
+            roc_auc = round(float(auc(fpr, tpr)), 3)
+            roc_points = [{"fpr": round(float(a), 4), "tpr": round(float(b), 4)}
+                          for a, b in zip(fpr, tpr)]
+
+            prec_arr, rec_arr, pr_thr = precision_recall_curve(yte, proba)
+            avg_precision = round(float(average_precision_score(yte, proba)), 3)
+            pr_points = [{"recall": round(float(r), 4), "precision": round(float(p), 4)}
+                         for r, p in zip(rec_arr, prec_arr)]
+            if len(pr_thr):
+                f1s = 2 * prec_arr[:-1] * rec_arr[:-1] / (prec_arr[:-1] + rec_arr[:-1] + 1e-12)
+                tuned = float(pr_thr[int(np.argmax(f1s))])
+
+        pred = (proba >= tuned).astype(int)
         tp = int(((pred == 1) & (yte == 1)).sum())
         tn = int(((pred == 0) & (yte == 0)).sum())
         fp = int(((pred == 1) & (yte == 0)).sum())
@@ -166,8 +196,13 @@ def stockout_classifier(history: pd.DataFrame, holdout: int = 30) -> dict:
             "recall": round(rec * 100, 1),
             "accuracy": round(acc * 100, 1),
             "f1": round(f1 * 100, 1),
+            "threshold": round(tuned, 3),
             "threshold_units": round(thr, 1),
             "tested_days": int(holdout),
+            "roc": roc_points,
+            "roc_auc": roc_auc,
+            "pr": pr_points,
+            "average_precision": avg_precision,
         }
     except Exception:
         return {}

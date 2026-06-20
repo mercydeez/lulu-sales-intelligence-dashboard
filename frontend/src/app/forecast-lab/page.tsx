@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Brain, RefreshCw, TrendingUp } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
-  ComposedChart, Area, Legend,
+  ComposedChart, Area, Legend, ReferenceLine,
 } from 'recharts';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Button, Badge, EmptyState, SkeletonText } from '@/components/ui';
@@ -15,7 +15,9 @@ interface HeatCell { store_id: number; store_name: string; accuracy: number | nu
 interface Classifier {
   model?: string; labels?: string[]; matrix?: number[][];
   precision?: number; recall?: number; accuracy?: number; f1?: number;
-  threshold_units?: number; tested_days?: number;
+  threshold?: number; threshold_units?: number; tested_days?: number;
+  roc?: { fpr: number; tpr: number }[]; roc_auc?: number | null;
+  pr?: { recall: number; precision: number }[]; average_precision?: number | null;
 }
 interface Metrics {
   status?: string;
@@ -352,7 +354,8 @@ export default function ForecastLabPage() {
                   <Card variant="solid" padding="md">
                     <h3 className="text-base font-medium text-ink mb-1">Stockout-risk classifier</h3>
                     <p className="text-xs text-ink-muted mb-3">
-                      Confusion matrix on held-out days {clf.model ? `(${clf.model})` : ''}.
+                      Confusion matrix on held-out days {clf.model ? `(${clf.model})` : ''}
+                      {clf.threshold != null ? `, at the F1-tuned threshold ${clf.threshold}` : ''}.
                     </p>
                     {!hasClf ? (
                       <p className="text-sm text-ink-muted">Available after the ML model is installed (rebuild backend).</p>
@@ -382,6 +385,61 @@ export default function ForecastLabPage() {
                     )}
                   </Card>
                 </div>
+
+                {(clf.roc?.length || clf.pr?.length) ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {clf.roc && clf.roc.length > 0 && (
+                      <Card variant="solid" padding="md">
+                        <h3 className="text-base font-medium text-ink mb-1 flex items-center gap-2">
+                          ROC curve
+                          {clf.roc_auc != null && (
+                            <Badge variant="neutral" size="sm">AUC {clf.roc_auc}</Badge>
+                          )}
+                        </h3>
+                        <p className="text-xs text-ink-muted mb-3">
+                          True-positive vs false-positive rate across thresholds. Closer to the top-left is better; the dashed line is random.
+                        </p>
+                        <div style={{ width: '100%', height: 220 }}>
+                          <ResponsiveContainer>
+                            <LineChart data={clf.roc}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#ececE6" />
+                              <XAxis type="number" dataKey="fpr" domain={[0, 1]} tick={{ fontSize: 10, fill: '#5f6660' }} label={{ value: 'FPR', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#5f6660' }} />
+                              <YAxis type="number" dataKey="tpr" domain={[0, 1]} tick={{ fontSize: 10, fill: '#5f6660' }} />
+                              <Tooltip />
+                              <ReferenceLine segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]} stroke="#c4c4bc" strokeDasharray="4 4" />
+                              <Line type="monotone" dataKey="tpr" stroke="#0f766e" strokeWidth={2} dot={false} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </Card>
+                    )}
+
+                    {clf.pr && clf.pr.length > 0 && (
+                      <Card variant="solid" padding="md">
+                        <h3 className="text-base font-medium text-ink mb-1 flex items-center gap-2">
+                          Precision-recall curve
+                          {clf.average_precision != null && (
+                            <Badge variant="neutral" size="sm">AP {clf.average_precision}</Badge>
+                          )}
+                        </h3>
+                        <p className="text-xs text-ink-muted mb-3">
+                          Precision vs recall across thresholds — the honest view when risk days are rare.
+                        </p>
+                        <div style={{ width: '100%', height: 220 }}>
+                          <ResponsiveContainer>
+                            <LineChart data={clf.pr}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#ececE6" />
+                              <XAxis type="number" dataKey="recall" domain={[0, 1]} tick={{ fontSize: 10, fill: '#5f6660' }} label={{ value: 'Recall', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#5f6660' }} />
+                              <YAxis type="number" dataKey="precision" domain={[0, 1]} tick={{ fontSize: 10, fill: '#5f6660' }} />
+                              <Tooltip />
+                              <Line type="monotone" dataKey="precision" stroke="#d97706" strokeWidth={2} dot={false} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </Card>
+                    )}
+                  </div>
+                ) : null}
               </div>
             )}
           </>
