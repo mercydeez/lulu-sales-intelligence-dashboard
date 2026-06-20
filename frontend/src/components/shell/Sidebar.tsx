@@ -22,6 +22,7 @@ import {
   Users,
   Database,
   Brain,
+  Truck,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -38,6 +39,7 @@ export const navItems: NavItem[] = [
   { label: 'Dashboard', tKey: 'nav.dashboard', href: '/', icon: <LayoutDashboard className="w-5 h-5" /> },
   { label: 'Inventory', tKey: 'nav.inventory', href: '/inventory', icon: <Package className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Promotions', tKey: 'nav.promotions', href: '/promotions', icon: <Tag className="w-5 h-5" />, permission: 'can_manage_promotions' },
+  { label: 'Procurement', tKey: 'nav.procurement', href: '/procurement', icon: <Truck className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Analytics', tKey: 'nav.analytics', href: '/analytics', icon: <BarChart3 className="w-5 h-5" /> },
   { label: 'Forecast Lab', tKey: 'nav.forecastLab', href: '/forecast-lab', icon: <Brain className="w-5 h-5" /> },
   { label: 'Employees', tKey: 'nav.employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
