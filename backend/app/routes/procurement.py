@@ -53,6 +53,18 @@ class ReceiveRequest(BaseModel):
     lines: Optional[List[ReceiveLine]] = None
 
 
+class InvoiceLine(BaseModel):
+    item_id: int
+    quantity: int = Field(..., ge=1)
+    unit_cost: float = Field(..., ge=0)
+
+
+class InvoiceCreate(BaseModel):
+    invoice_number: str = Field(..., min_length=1, max_length=60)
+    lines: List[InvoiceLine] = Field(..., min_length=1)
+    notes: Optional[str] = None
+
+
 # --- Suppliers -------------------------------------------------------------
 @router.get("/suppliers")
 async def list_suppliers(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -104,6 +116,36 @@ async def receive_po(po_id: int, body: ReceiveRequest, user: dict = Depends(get_
     lines = [l.model_dump() for l in body.lines] if body.lines else None
     try:
         return await proc.receive_po(db, _tenant(user), po_id, lines, user_id=user.get("id"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/purchase-orders/{po_id}/invoices", status_code=201)
+async def record_invoice(po_id: int, body: InvoiceCreate, user: dict = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    """Record a supplier invoice against a PO (system of record)."""
+    _require_manage(user)
+    try:
+        return await proc.record_invoice(
+            db, _tenant(user), po_id, body.invoice_number,
+            [l.model_dump() for l in body.lines], body.notes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/invoices")
+async def list_invoices(po_id: Optional[int] = Query(None), user: dict = Depends(get_current_user),
+                        db: AsyncSession = Depends(get_db)):
+    return {"invoices": await proc.list_invoices(db, _tenant(user), po_id)}
+
+
+@router.post("/invoices/{invoice_id}/match")
+async def match_invoice(invoice_id: int, user: dict = Depends(get_current_user),
+                        db: AsyncSession = Depends(get_db)):
+    """Run the 3-way match (ordered vs received vs invoiced) and flag variances."""
+    _require_manage(user)
+    try:
+        return await proc.three_way_match(db, _tenant(user), invoice_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

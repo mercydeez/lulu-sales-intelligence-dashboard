@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import logger
 from app.services.forecast_service import reorder_suggestions
 
+PRICE_TOLERANCE_PCT = 0.01  # 1% unit-cost tolerance in the 3-way match
 OPEN_STATUSES = ("draft", "pending_approval", "approved", "sent", "partially_received")
 STATUS_TRANSITIONS = {
     "draft": {"pending_approval", "approved", "cancelled"},
@@ -353,3 +354,121 @@ async def transition_status(db: AsyncSession, tenant_id: int, po_id: int,
     ), params)
     await db.commit()
     return {"po_id": po_id, "status": new_status}
+
+
+# ---------------------------------------------------------------------------
+# Supplier invoices + 3-way match
+# ---------------------------------------------------------------------------
+async def record_invoice(db: AsyncSession, tenant_id: int, po_id: int,
+                         invoice_number: str, lines: List[Dict],
+                         notes: Optional[str] = None) -> Dict:
+    """Record a supplier invoice against a PO. `lines` is
+    [{item_id, quantity, unit_cost}]. The amount is derived from the lines."""
+    po = (await db.execute(text(
+        "SELECT supplier_id FROM purchase_orders WHERE id = :id AND tenant_id = :t"
+    ), {"id": po_id, "t": tenant_id})).fetchone()
+    if not po:
+        raise ValueError("Purchase order not found")
+    if not lines:
+        raise ValueError("An invoice needs at least one line")
+
+    amount = sum(float(l["unit_cost"]) * int(l["quantity"]) for l in lines)
+    inv_id = (await db.execute(text("""
+        INSERT INTO supplier_invoices (tenant_id, po_id, supplier_id, invoice_number, invoice_amount)
+        VALUES (:t, :po, :s, :num, :amt) RETURNING id
+    """), {"t": tenant_id, "po": po_id, "s": po.supplier_id,
+           "num": invoice_number, "amt": amount})).scalar()
+    for l in lines:
+        qty, cost = int(l["quantity"]), float(l["unit_cost"])
+        await db.execute(text("""
+            INSERT INTO supplier_invoice_lines (invoice_id, item_id, quantity, unit_cost, line_total)
+            VALUES (:inv, :i, :q, :c, :lt)
+        """), {"inv": inv_id, "i": l["item_id"], "q": qty, "c": cost, "lt": qty * cost})
+    if notes:
+        await db.execute(text("UPDATE supplier_invoices SET notes = :n WHERE id = :id"),
+                         {"n": notes, "id": inv_id})
+    await db.commit()
+    return {"invoice_id": inv_id, "po_id": po_id, "invoice_number": invoice_number,
+            "invoice_amount": round(amount, 2), "status": "received"}
+
+
+async def three_way_match(db: AsyncSession, tenant_id: int, invoice_id: int) -> Dict:
+    """Compare ORDERED (PO) vs RECEIVED (goods receipts) vs INVOICED for each item
+    and flag quantity/price variances. Persists the match result on the invoice."""
+    inv = (await db.execute(text(
+        "SELECT id, po_id FROM supplier_invoices WHERE id = :id AND tenant_id = :t"
+    ), {"id": invoice_id, "t": tenant_id})).fetchone()
+    if not inv:
+        raise ValueError("Invoice not found")
+
+    ordered_rows = (await db.execute(text("""
+        SELECT l.item_id, i.name AS item_name, SUM(l.quantity) AS ordered_qty,
+               SUM(l.received_qty) AS received_qty, MAX(l.unit_cost) AS po_unit_cost
+        FROM purchase_order_lines l JOIN items i ON i.id = l.item_id
+        WHERE l.po_id = :po GROUP BY l.item_id, i.name
+    """), {"po": inv.po_id})).fetchall()
+    ordered = {r.item_id: r for r in ordered_rows}
+
+    inv_rows = (await db.execute(text("""
+        SELECT item_id, SUM(quantity) AS inv_qty, MAX(unit_cost) AS inv_unit_cost
+        FROM supplier_invoice_lines WHERE invoice_id = :id GROUP BY item_id
+    """), {"id": invoice_id})).fetchall()
+    invoiced = {r.item_id: r for r in inv_rows}
+
+    result_lines = []
+    overall_ok = True
+    for item_id in set(ordered) | set(invoiced):
+        o = ordered.get(item_id)
+        v = invoiced.get(item_id)
+        ordered_qty = int(o.ordered_qty) if o else 0
+        received_qty = int(o.received_qty) if o else 0
+        inv_qty = int(v.inv_qty) if v else 0
+        po_cost = float(o.po_unit_cost) if o else None
+        inv_cost = float(v.inv_unit_cost) if v else None
+
+        # Pay for what was received; price must match the PO within tolerance.
+        qty_match = inv_qty == received_qty and received_qty > 0
+        price_match = (po_cost is not None and inv_cost is not None
+                       and abs(po_cost - inv_cost) <= max(0.01, po_cost * PRICE_TOLERANCE_PCT))
+        on_po = o is not None
+        line_ok = qty_match and price_match and on_po
+        if not line_ok:
+            overall_ok = False
+        result_lines.append({
+            "item_id": item_id,
+            "item_name": o.item_name if o else (f"item {item_id} (not on PO)"),
+            "ordered_qty": ordered_qty, "received_qty": received_qty, "invoiced_qty": inv_qty,
+            "po_unit_cost": po_cost, "invoice_unit_cost": inv_cost,
+            "qty_match": qty_match, "price_match": price_match, "ok": line_ok,
+        })
+
+    match_status = "matched" if overall_ok else "exception"
+    new_status = "matched" if overall_ok else "exception"
+    await db.execute(text(
+        "UPDATE supplier_invoices SET match_status = :m, status = :s WHERE id = :id"
+    ), {"m": match_status, "s": new_status, "id": invoice_id})
+    await db.commit()
+    return {
+        "invoice_id": invoice_id, "po_id": inv.po_id, "match_status": match_status,
+        "exceptions": [l for l in result_lines if not l["ok"]],
+        "lines": sorted(result_lines, key=lambda x: x["item_id"]),
+    }
+
+
+async def list_invoices(db: AsyncSession, tenant_id: int, po_id: Optional[int] = None) -> List[Dict]:
+    where = "tenant_id = :t"
+    params: Dict = {"t": tenant_id}
+    if po_id:
+        where += " AND po_id = :po"
+        params["po"] = po_id
+    rows = (await db.execute(text(f"""
+        SELECT id, po_id, invoice_number, invoice_amount, currency, status,
+               match_status, created_at
+        FROM supplier_invoices WHERE {where} ORDER BY created_at DESC
+    """), params)).fetchall()
+    return [{
+        "id": r.id, "po_id": r.po_id, "invoice_number": r.invoice_number,
+        "invoice_amount": float(r.invoice_amount), "currency": r.currency,
+        "status": r.status, "match_status": r.match_status,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]
