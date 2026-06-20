@@ -6,6 +6,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import KPICards from '@/components/KPICards';
 import RevenueProjectionCard from '@/components/RevenueProjectionCard';
 import OnboardingChecklist from '@/components/OnboardingChecklist';
+import ActionCenter from '@/components/ActionCenter';
 import LiveTable from '@/components/LiveTable';
 import {
   SalesTrendChart,
@@ -56,6 +57,10 @@ export default function Home() {
 
         <section>
           <OnboardingChecklist />
+        </section>
+
+        <section>
+          <ActionCenter />
         </section>
 
         <section>

@@ -24,6 +24,7 @@ import {
   Brain,
   Truck,
   Code2,
+  Inbox,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -41,6 +42,7 @@ export const navItems: NavItem[] = [
   { label: 'Inventory', tKey: 'nav.inventory', href: '/inventory', icon: <Package className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Promotions', tKey: 'nav.promotions', href: '/promotions', icon: <Tag className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Procurement', tKey: 'nav.procurement', href: '/procurement', icon: <Truck className="w-5 h-5" />, permission: 'can_manage_inventory' },
+  { label: 'Approvals', tKey: 'nav.approvals', href: '/approvals', icon: <Inbox className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Analytics', tKey: 'nav.analytics', href: '/analytics', icon: <BarChart3 className="w-5 h-5" /> },
   { label: 'Forecast Lab', tKey: 'nav.forecastLab', href: '/forecast-lab', icon: <Brain className="w-5 h-5" /> },
   { label: 'Employees', tKey: 'nav.employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
@@ -81,6 +83,24 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     return () => { active = false; };
   }, [isAuthenticated, authFetch]);
 
+  // Live count of POs awaiting approval for the Approvals nav badge.
+  const [approvalCount, setApprovalCount] = useState(0);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await authFetch('/api/procurement/approvals');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (active) setApprovalCount(data.count ?? 0);
+      } catch {
+        // leave badge hidden on failure
+      }
+    })();
+    return () => { active = false; };
+  }, [isAuthenticated, authFetch, pathname]);
+
   const canAccessItem = (item: NavItem): boolean => {
     if (item.roles && !hasRole(item.roles)) return false;
     if (item.permission && !hasPermission(item.permission)) return false;
@@ -105,6 +125,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         {filteredNavItems.map((item) => {
           const active = pathname === item.href;
           const showBadge = item.href === '/alerts' && criticalCount > 0;
+          const showApprovals = item.href === '/approvals' && approvalCount > 0;
           return (
             <Link
               key={item.href}
@@ -120,6 +141,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               {showBadge && (
                 <span className="ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#e11d48] text-white text-[10px] font-bold">
                   {criticalCount}
+                </span>
+              )}
+              {showApprovals && (
+                <span className="ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-teal-500 text-white text-[10px] font-bold">
+                  {approvalCount}
                 </span>
               )}
             </Link>

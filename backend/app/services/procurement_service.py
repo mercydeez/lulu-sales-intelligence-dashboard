@@ -258,6 +258,34 @@ async def list_purchase_orders(db: AsyncSession, tenant_id: int,
     } for r in rows]
 
 
+async def pending_approvals(db: AsyncSession, tenant_id: int) -> Dict:
+    """POs awaiting a human decision (draft / pending_approval) — the approval
+    inbox. Returns the list plus a summary (count + total value at stake)."""
+    rows = (await db.execute(text("""
+        SELECT po.id, po.po_number, po.status, po.total_amount, po.currency,
+               po.source, po.created_at, s.name AS supplier_name,
+               COUNT(l.id) AS line_count
+        FROM purchase_orders po
+        JOIN suppliers s ON s.id = po.supplier_id
+        LEFT JOIN purchase_order_lines l ON l.po_id = po.id
+        WHERE po.tenant_id = :t AND po.status IN ('draft', 'pending_approval')
+        GROUP BY po.id, s.name ORDER BY po.total_amount DESC
+    """), {"t": tenant_id})).fetchall()
+    items = [{
+        "id": r.id, "po_number": r.po_number, "status": r.status,
+        "total_amount": float(r.total_amount), "currency": r.currency,
+        "source": r.source, "supplier_name": r.supplier_name,
+        "line_count": int(r.line_count or 0),
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]
+    return {
+        "count": len(items),
+        "total_value": round(sum(i["total_amount"] for i in items), 2),
+        "currency": items[0]["currency"] if items else "AED",
+        "purchase_orders": items,
+    }
+
+
 async def get_purchase_order(db: AsyncSession, tenant_id: int, po_id: int) -> Optional[Dict]:
     po = (await db.execute(text("""
         SELECT po.*, s.name AS supplier_name FROM purchase_orders po

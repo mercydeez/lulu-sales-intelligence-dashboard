@@ -116,6 +116,7 @@ def test_procurement_routes_registered():
     assert "/api/procurement/purchase-orders/{po_id}/invoices" in paths
     assert "/api/procurement/invoices/{invoice_id}/match" in paths
     assert "/api/procurement/approval-rule" in paths
+    assert "/api/procurement/approvals" in paths
 
 
 @pytest.mark.asyncio

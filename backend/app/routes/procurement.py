@@ -116,6 +116,12 @@ async def list_pos(status: Optional[str] = Query(None), user: dict = Depends(get
     return {"purchase_orders": await proc.list_purchase_orders(db, _tenant(user), status)}
 
 
+@router.get("/approvals")
+async def approvals_inbox(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Approval inbox — POs awaiting a decision (draft / pending_approval)."""
+    return await proc.pending_approvals(db, _tenant(user))
+
+
 @router.get("/purchase-orders/{po_id}")
 async def get_po(po_id: int, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     po = await proc.get_purchase_order(db, _tenant(user), po_id)

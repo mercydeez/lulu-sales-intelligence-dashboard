@@ -4,6 +4,7 @@ import { ReactNode, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import CommandPalette from '@/components/CommandPalette';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -13,6 +14,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
+      <CommandPalette />
       <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       <div className="lg:ps-64">
         <Topbar onMenuClick={() => setMobileNavOpen(true)} />
