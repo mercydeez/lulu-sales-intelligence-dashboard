@@ -243,6 +243,11 @@ def _wape(actual: np.ndarray, pred: np.ndarray) -> Optional[float]:
 # ---------------------------------------------------------------------------
 # Backtest + selection
 # ---------------------------------------------------------------------------
+# Width of the forward prediction band, derived from backtest residuals.
+# 1.2816 ≈ the two-sided 80% interval of a normal distribution.
+Z80 = 1.2816
+
+
 @dataclass
 class ForecastResult:
     model: str
@@ -251,6 +256,10 @@ class ForecastResult:
     scores: Dict[str, Dict[str, Optional[float]]] = field(default_factory=dict)
     selected_mape: Optional[float] = None
     selected_wape: Optional[float] = None
+    # Winner's predictions on the held-out test window vs the real values:
+    # [{date, actual, predicted}] — the visual proof the model tracks reality.
+    backtest: List[Dict] = field(default_factory=list)
+    interval_pct: Optional[int] = None
 
     def to_dict(self) -> Dict:
         return {
@@ -260,6 +269,8 @@ class ForecastResult:
             "scores": self.scores,
             "selected_mape": self.selected_mape,
             "selected_wape": self.selected_wape,
+            "backtest": self.backtest,
+            "interval_pct": self.interval_pct,
         }
 
 
@@ -276,12 +287,14 @@ def backtest_and_select(history: pd.DataFrame, horizon: int = 14) -> ForecastRes
     train, test = series.iloc[:-horizon], series.iloc[-horizon:]
     actual = test.values
     scores: Dict[str, Dict[str, Optional[float]]] = {}
+    preds_by_model: Dict[str, np.ndarray] = {}
     best_name, best_wape = None, np.inf
 
     for model in available_models():
         try:
             model.fit(train)
             pred = model.predict(horizon)
+            preds_by_model[model.name] = pred
             mape, wape = _mape(actual, pred), _wape(actual, pred)
             scores[model.name] = {"mape": mape, "wape": wape, "tier": model.tier}
             if wape is not None and wape < best_wape:
@@ -292,19 +305,39 @@ def backtest_and_select(history: pd.DataFrame, horizon: int = 14) -> ForecastRes
     if best_name is None:
         best_name = "seasonal_trend"
 
+    # The winner's held-out predictions vs the real values + the residual spread
+    # that sizes the forward band (both reuse values already computed above).
+    win_pred = preds_by_model.get(best_name)
+    backtest_points: List[Dict] = []
+    resid_std: Optional[float] = None
+    if win_pred is not None:
+        backtest_points = [
+            {"date": d.strftime("%Y-%m-%d"),
+             "actual": round(float(a), 2),
+             "predicted": round(float(p), 2)}
+            for d, a, p in zip(test.index, actual, win_pred)
+        ]
+        resid_std = float(np.std(np.asarray(actual, dtype=float) - win_pred))
+
     winner = next((m for m in available_models() if m.name == best_name), SeasonalTrend())
     winner.fit(series)
     forecast = winner.predict(horizon)
-    return _result(best_name, series, forecast, horizon, scores)
+    return _result(best_name, series, forecast, horizon, scores,
+                   backtest=backtest_points, resid_std=resid_std)
 
 
-def _result(name, series, preds, horizon, scores) -> ForecastResult:
+def _result(name, series, preds, horizon, scores,
+            backtest=None, resid_std=None) -> ForecastResult:
     last = series.index[-1]
-    points = [
-        {"date": (last + timedelta(days=i + 1)).strftime("%Y-%m-%d"),
-         "forecast": round(float(v), 2)}
-        for i, v in enumerate(preds)
-    ]
+    points = []
+    for i, v in enumerate(preds):
+        pt = {"date": (last + timedelta(days=i + 1)).strftime("%Y-%m-%d"),
+              "forecast": round(float(v), 2)}
+        if resid_std is not None:
+            margin = Z80 * resid_std
+            pt["lower"] = round(max(0.0, float(v) - margin), 2)
+            pt["upper"] = round(float(v) + margin, 2)
+        points.append(pt)
     sel = scores.get(name, {}) if scores else {}
     return ForecastResult(
         model=name,
@@ -313,6 +346,8 @@ def _result(name, series, preds, horizon, scores) -> ForecastResult:
         scores=scores,
         selected_mape=sel.get("mape"),
         selected_wape=sel.get("wape"),
+        backtest=backtest or [],
+        interval_pct=80 if resid_std is not None else None,
     )
 
 

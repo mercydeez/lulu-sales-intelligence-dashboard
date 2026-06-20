@@ -694,7 +694,8 @@ _inflight_metrics: set = set()
 def _empty_model_metrics(status: str = "ready") -> dict:
     return {
         "accuracy": None, "selected_model": None, "mape": None, "leaderboard": [],
-        "forecast": [], "feature_importance": [], "classifier": {}, "heatmap": [],
+        "forecast": [], "backtest": [], "interval_pct": None,
+        "feature_importance": [], "classifier": {}, "heatmap": [],
         "business_impact": {}, "status": status,
     }
 

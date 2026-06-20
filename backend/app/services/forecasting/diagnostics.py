@@ -68,6 +68,8 @@ def forecast_summary(history: pd.DataFrame, horizon: int = 14) -> dict:
         "mape": round(res["selected_mape"], 1) if res.get("selected_mape") is not None else None,
         "leaderboard": leaderboard,
         "forecast": res.get("points", []),
+        "backtest": res.get("backtest", []),
+        "interval_pct": res.get("interval_pct"),
     }
 
 

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Brain, RefreshCw, TrendingUp } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
+  ComposedChart, Area, Legend,
 } from 'recharts';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Button, Badge, EmptyState, SkeletonText } from '@/components/ui';
@@ -19,7 +20,10 @@ interface Classifier {
 interface Metrics {
   status?: string;
   accuracy: number | null; selected_model: string | null; mape: number | null;
-  leaderboard: Leader[]; forecast: { date: string; forecast: number }[];
+  leaderboard: Leader[];
+  forecast: { date: string; forecast: number; lower?: number; upper?: number }[];
+  backtest: { date: string; actual: number; predicted: number }[];
+  interval_pct?: number | null;
   feature_importance: FeatureImp[]; classifier: Classifier; heatmap: HeatCell[];
   business_impact?: {
     horizon_days?: number;
@@ -243,20 +247,47 @@ export default function ForecastLabPage() {
                   </div>
                 </Card>
 
+                {data.backtest.length > 0 && (
+                  <Card variant="solid" padding="md">
+                    <h3 className="text-base font-medium text-ink mb-1">Forecast vs actual</h3>
+                    <p className="text-xs text-ink-muted mb-3">
+                      The winning model&apos;s predictions on the last {data.backtest.length} days it never saw,
+                      against what really happened. The closer the lines, the more we can trust the forward forecast.
+                    </p>
+                    <div style={{ width: '100%', height: 240 }}>
+                      <ResponsiveContainer>
+                        <LineChart data={data.backtest}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#ececE6" />
+                          <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#5f6660' }} />
+                          <YAxis tick={{ fontSize: 10, fill: '#5f6660' }} />
+                          <Tooltip />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Line type="monotone" dataKey="actual" name="Actual" stroke="#0f766e" strokeWidth={2} dot={false} />
+                          <Line type="monotone" dataKey="predicted" name="Predicted" stroke="#d97706" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </Card>
+                )}
+
                 <Card variant="solid" padding="md">
                   <h3 className="text-base font-medium text-ink mb-1 flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-primary-700" /> Demand forecast (next {data.forecast.length} days)
                   </h3>
-                  <p className="text-xs text-ink-muted mb-3">Forward forecast from the winning model.</p>
+                  <p className="text-xs text-ink-muted mb-3">
+                    Forward forecast from the winning model
+                    {data.interval_pct ? `, shaded with the ${data.interval_pct}% prediction interval (from backtest error).` : '.'}
+                  </p>
                   <div style={{ width: '100%', height: 240 }}>
                     <ResponsiveContainer>
-                      <LineChart data={data.forecast}>
+                      <ComposedChart data={data.forecast.map((p) => ({ ...p, band: [p.lower ?? p.forecast, p.upper ?? p.forecast] }))}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#ececE6" />
                         <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#5f6660' }} />
                         <YAxis tick={{ fontSize: 10, fill: '#5f6660' }} />
                         <Tooltip />
-                        <Line type="monotone" dataKey="forecast" stroke="#0f766e" strokeWidth={2} dot={false} />
-                      </LineChart>
+                        <Area type="monotone" dataKey="band" name="Interval" stroke="none" fill="#0f766e" fillOpacity={0.12} />
+                        <Line type="monotone" dataKey="forecast" name="Forecast" stroke="#0f766e" strokeWidth={2} dot={false} />
+                      </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </Card>

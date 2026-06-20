@@ -67,3 +67,21 @@ def test_backtest_selects_a_registered_model():
     assert len(result.points) == 14
     # the new DL models should have competed (have a score entry)
     assert {"tcn", "transformer", "nbeats"}.issubset(set(result.scores))
+
+
+def test_backtest_returns_held_out_actual_vs_predicted():
+    horizon = 14
+    result = backtest_and_select(_synthetic_history(), horizon=horizon)
+    assert len(result.backtest) == horizon
+    for pt in result.backtest:
+        assert set(pt) == {"date", "actual", "predicted"}
+        assert pt["actual"] >= 0 and pt["predicted"] >= 0
+
+
+def test_forward_points_carry_prediction_band():
+    result = backtest_and_select(_synthetic_history(), horizon=14)
+    assert result.interval_pct == 80
+    for pt in result.points:
+        assert "lower" in pt and "upper" in pt
+        assert pt["lower"] <= pt["forecast"] <= pt["upper"]
+        assert pt["lower"] >= 0
