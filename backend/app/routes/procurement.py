@@ -26,6 +26,10 @@ def _require_manage(user: dict) -> None:
         raise HTTPException(status_code=403, detail="Inventory-management role required")
 
 
+class ApprovalRuleUpdate(BaseModel):
+    auto_approve_under: float = Field(..., ge=0)
+
+
 class SupplierCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     contact_email: Optional[str] = None
@@ -63,6 +67,19 @@ class InvoiceCreate(BaseModel):
     invoice_number: str = Field(..., min_length=1, max_length=60)
     lines: List[InvoiceLine] = Field(..., min_length=1)
     notes: Optional[str] = None
+
+
+# --- Approval policy -------------------------------------------------------
+@router.get("/approval-rule")
+async def get_approval_rule(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await proc.get_approval_rule(db, _tenant(user))
+
+
+@router.put("/approval-rule")
+async def set_approval_rule(body: ApprovalRuleUpdate, user: dict = Depends(get_current_user),
+                            db: AsyncSession = Depends(get_db)):
+    _require_manage(user)
+    return await proc.set_approval_rule(db, _tenant(user), body.auto_approve_under)
 
 
 # --- Suppliers -------------------------------------------------------------

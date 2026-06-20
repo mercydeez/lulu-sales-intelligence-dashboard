@@ -115,6 +115,16 @@ def test_procurement_routes_registered():
     assert "/api/procurement/purchase-orders/{po_id}/receive" in paths
     assert "/api/procurement/purchase-orders/{po_id}/invoices" in paths
     assert "/api/procurement/invoices/{invoice_id}/match" in paths
+    assert "/api/procurement/approval-rule" in paths
+
+
+@pytest.mark.asyncio
+async def test_approval_rule_defaults_to_zero():
+    session = MagicMock()
+    result = MagicMock(); result.fetchone.return_value = None  # no rule configured
+    session.execute = AsyncMock(return_value=result)
+    rule = await proc.get_approval_rule(session, tenant_id=1)
+    assert rule["auto_approve_under"] == 0.0
 
 
 def test_procurement_requires_auth():

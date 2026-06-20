@@ -34,6 +34,28 @@ RECEIVABLE_STATUSES = ("approved", "sent", "partially_received")
 
 
 # ---------------------------------------------------------------------------
+# Approval policy
+# ---------------------------------------------------------------------------
+async def get_approval_rule(db: AsyncSession, tenant_id: int) -> Dict:
+    """The tenant's auto-approve threshold (0 = never auto-approve)."""
+    row = (await db.execute(text(
+        "SELECT auto_approve_under FROM approval_rules WHERE tenant_id = :t"
+    ), {"t": tenant_id})).fetchone()
+    return {"auto_approve_under": float(row.auto_approve_under) if row else 0.0}
+
+
+async def set_approval_rule(db: AsyncSession, tenant_id: int, auto_approve_under: float) -> Dict:
+    await db.execute(text("""
+        INSERT INTO approval_rules (tenant_id, auto_approve_under, updated_at)
+        VALUES (:t, :a, CURRENT_TIMESTAMP)
+        ON CONFLICT (tenant_id) DO UPDATE
+            SET auto_approve_under = EXCLUDED.auto_approve_under, updated_at = CURRENT_TIMESTAMP
+    """), {"t": tenant_id, "a": max(0.0, auto_approve_under)})
+    await db.commit()
+    return {"auto_approve_under": max(0.0, auto_approve_under)}
+
+
+# ---------------------------------------------------------------------------
 # Suppliers + catalog
 # ---------------------------------------------------------------------------
 async def list_suppliers(db: AsyncSession, tenant_id: int) -> List[Dict]:
@@ -134,18 +156,34 @@ async def generate_draft_pos_from_reorder(
             **info, "quantity": qty, "unit_cost": float(sup.unit_cost or 0),
         })
 
+    auto_under = (await get_approval_rule(db, tenant_id))["auto_approve_under"]
     created = []
+    auto_approved = 0
     for supplier_id, lines in grouped.items():
         po = await _create_po(db, tenant_id, supplier_id, lines,
                               source="forecast_reorder", created_by=created_by)
+        # Auto-approve low-value POs per the tenant's policy.
+        if auto_under > 0 and po["total_amount"] < auto_under:
+            await db.execute(text("""
+                UPDATE purchase_orders
+                SET status = 'approved', approved_by = :by, approved_at = :now
+                WHERE id = :id
+            """), {"by": created_by, "now": datetime.now(timezone.utc), "id": po["po_id"]})
+            po["status"] = "approved"
+            auto_approved += 1
         created.append(po)
 
     await db.commit()
+    msg = f"Created {len(created)} draft PO(s) from forecast."
+    if auto_approved:
+        msg = (f"Created {len(created)} PO(s) from forecast — {auto_approved} auto-approved "
+               f"(under AED {auto_under:,.0f}).")
     return {
         "created": created,
+        "auto_approved": auto_approved,
         "skipped_no_supplier": skipped_no_supplier,
         "skipped_already_open": skipped_already_open,
-        "message": f"Created {len(created)} draft PO(s) from forecast.",
+        "message": msg,
     }
 
 
