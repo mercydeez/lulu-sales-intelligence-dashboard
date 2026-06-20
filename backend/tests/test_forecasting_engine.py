@@ -16,6 +16,7 @@ pytest.importorskip("torch")
 from app.services.forecasting.engine import (  # noqa: E402
     available_models,
     backtest_and_select,
+    rolling_accuracy,
     _to_series,
 )
 from app.services.forecasting.deep import (  # noqa: E402
@@ -85,3 +86,16 @@ def test_forward_points_carry_prediction_band():
         assert "lower" in pt and "upper" in pt
         assert pt["lower"] <= pt["forecast"] <= pt["upper"]
         assert pt["lower"] >= 0
+
+
+def test_rolling_accuracy_returns_ascending_trend():
+    history = _synthetic_history()
+    winner = backtest_and_select(history, horizon=14).model
+    trend = rolling_accuracy(history, horizon=14, model_name=winner, points=6)
+    assert len(trend) >= 2
+    for pt in trend:
+        assert set(pt) == {"date", "accuracy"}
+        assert 0 <= pt["accuracy"] <= 100
+    dates = [pt["date"] for pt in trend]
+    assert dates == sorted(dates)
+    assert len(dates) == len(set(dates))

@@ -16,6 +16,7 @@ import pandas as pd
 
 from .engine import (
     forecast_series,
+    rolling_accuracy,
     _to_series,
     _build_features,
     _feature_columns,
@@ -71,6 +72,19 @@ def forecast_summary(history: pd.DataFrame, horizon: int = 14) -> dict:
         "backtest": res.get("backtest", []),
         "interval_pct": res.get("interval_pct"),
     }
+
+
+def accuracy_over_time(
+    history: pd.DataFrame, horizon: int, model_name: Optional[str], points: int = 6
+) -> List[dict]:
+    """Rolling-origin accuracy trend for the selected model. Empty on failure or
+    when no model is selected (degrades gracefully like the other diagnostics)."""
+    if not model_name:
+        return []
+    try:
+        return rolling_accuracy(history, horizon, model_name, points)
+    except Exception:
+        return []
 
 
 def feature_importance(history: pd.DataFrame) -> List[dict]:

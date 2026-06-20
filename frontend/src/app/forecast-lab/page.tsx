@@ -24,6 +24,7 @@ interface Metrics {
   forecast: { date: string; forecast: number; lower?: number; upper?: number }[];
   backtest: { date: string; actual: number; predicted: number }[];
   interval_pct?: number | null;
+  accuracy_trend: { date: string; accuracy: number }[];
   feature_importance: FeatureImp[]; classifier: Classifier; heatmap: HeatCell[];
   business_impact?: {
     horizon_days?: number;
@@ -291,6 +292,40 @@ export default function ForecastLabPage() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
+
+                {data.accuracy_trend.length >= 2 && (() => {
+                  const trend = data.accuracy_trend;
+                  const delta = trend[trend.length - 1].accuracy - trend[0].accuracy;
+                  const dir = delta > 2 ? 'improving' : delta < -2 ? 'declining' : 'stable';
+                  const dirCls = dir === 'improving'
+                    ? 'bg-teal-50 text-teal-700'
+                    : dir === 'declining' ? 'bg-coral-50 text-coral-700' : 'bg-surface-2 text-ink-muted';
+                  return (
+                    <Card variant="solid" padding="md">
+                      <h3 className="text-base font-medium text-ink mb-1 flex items-center gap-2">
+                        Accuracy over time
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${dirCls}`}>
+                          {dir} {delta > 0 ? '+' : ''}{delta.toFixed(1)}pts
+                        </span>
+                      </h3>
+                      <p className="text-xs text-ink-muted mb-3">
+                        The current model ({MODEL_LABEL[data.selected_model || ''] || data.selected_model})
+                        scored on successive held-out windows — is accuracy holding up?
+                      </p>
+                      <div style={{ width: '100%', height: 220 }}>
+                        <ResponsiveContainer>
+                          <LineChart data={trend}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#ececE6" />
+                            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#5f6660' }} />
+                            <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#5f6660' }} />
+                            <Tooltip />
+                            <Line type="monotone" dataKey="accuracy" name="Accuracy %" stroke="#0f766e" strokeWidth={2} dot={{ r: 3 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </Card>
+                  );
+                })()}
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <Card variant="solid" padding="md">

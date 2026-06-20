@@ -354,3 +354,49 @@ def _result(name, series, preds, horizon, scores,
 def forecast_series(history: pd.DataFrame, horizon: int = 14) -> ForecastResult:
     """Public entry point: history is a DataFrame with columns [date, sales]."""
     return backtest_and_select(history, horizon)
+
+
+def _model_by_name(name: str) -> BaseForecaster:
+    """A fresh, unfitted instance of the named model (fitting mutates state, so
+    each rolling window needs its own)."""
+    return next((m for m in available_models() if m.name == name), SeasonalTrend())
+
+
+def rolling_accuracy(
+    history: pd.DataFrame,
+    horizon: int = 14,
+    model_name: Optional[str] = None,
+    points: int = 6,
+) -> List[Dict]:
+    """Rolling-origin trend for ONE model: score `model_name` on the last
+    `points` non-overlapping held-out windows (step = horizon) and return
+    [{date, accuracy}] oldest→newest. Answers "is our model holding up?" without
+    re-selecting per window. Each window refits a fresh instance on the data
+    before it and scores WAPE→accuracy on the held-out days."""
+    series = _to_series(history)
+    name = model_name or "seasonal_trend"
+    step = horizon
+    min_train = max(LAGS) + horizon + 7
+
+    out: List[Dict] = []
+    for k in range(points):
+        end = len(series) - k * step
+        train = series.iloc[: end - horizon]
+        test = series.iloc[end - horizon : end]
+        if len(test) != horizon or len(train) < min_train:
+            continue
+        try:
+            model = _model_by_name(name).fit(train)
+            pred = model.predict(horizon)
+            wape = _wape(test.values, pred)
+            if wape is None:
+                continue
+            out.append({
+                "date": test.index[-1].strftime("%Y-%m-%d"),
+                "accuracy": round(max(0.0, 100.0 - wape), 1),
+            })
+        except Exception:
+            continue
+
+    out.reverse()  # oldest → newest
+    return out

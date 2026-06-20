@@ -694,7 +694,7 @@ _inflight_metrics: set = set()
 def _empty_model_metrics(status: str = "ready") -> dict:
     return {
         "accuracy": None, "selected_model": None, "mape": None, "leaderboard": [],
-        "forecast": [], "backtest": [], "interval_pct": None,
+        "forecast": [], "backtest": [], "interval_pct": None, "accuracy_trend": [],
         "feature_importance": [], "classifier": {}, "heatmap": [],
         "business_impact": {}, "status": status,
     }
@@ -739,6 +739,9 @@ async def compute_and_cache_model_metrics(
         if rows:
             hist = pd.DataFrame([{"date": r.date, "sales": float(r.sales or 0)} for r in rows])
             result.update(diag.forecast_summary(hist, horizon))
+            result["accuracy_trend"] = diag.accuracy_over_time(
+                hist, horizon, result.get("selected_model")
+            )
             result["feature_importance"] = diag.feature_importance(hist)
             result["classifier"] = diag.stockout_classifier(hist)
             avg_price_row = (await db.execute(text("SELECT AVG(unit_price_aed) AS p FROM items"))).fetchone()
