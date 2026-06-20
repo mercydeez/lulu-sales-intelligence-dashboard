@@ -5,6 +5,7 @@ The documentation is organized by how you should use it, not by when it was writ
 ## Start here
 
 - [`../README.md`](../README.md) - setup, architecture, working features, and the current source of truth.
+- [`../implementation.md`](../implementation.md) - the single living implementation plan & tracker (what's shipped + what's next).
 - [`architecture/ADR.md`](architecture/ADR.md) - the important engineering decisions and tradeoffs.
 - [`product/DEMO_SCRIPT.md`](product/DEMO_SCRIPT.md) - the fastest way to walk someone through the project.
 - [`product/PITCH.md`](product/PITCH.md) - the one-page narrative for recruiters, interviewers, or stakeholders.
@@ -26,7 +27,6 @@ The documentation is organized by how you should use it, not by when it was writ
 These files are worth keeping because they show the original audit, redesign thinking, and execution plan. They are historical context, not the current source of truth.
 
 - [`archive/GAP_ANALYSIS.md`](archive/GAP_ANALYSIS.md) - the original audit of problems and credibility gaps.
-- [`archive/IMPLEMENTATION_ROADMAP.md`](archive/IMPLEMENTATION_ROADMAP.md) - the step-by-step execution plan that drove the build-out.
 - [`archive/UI_UX_REDESIGN_PLAN.md`](archive/UI_UX_REDESIGN_PLAN.md) - the redesign brief for the frontend overhaul.
 - [`archive/ARCHITECTURE_PLAN.md`](archive/ARCHITECTURE_PLAN.md) - the earlier architectural target shape.
 - [`archive/CODEBASE_MAP.md`](archive/CODEBASE_MAP.md) - the June 2026 inspection snapshot of the repo before later fixes landed.

@@ -112,7 +112,7 @@ Priority: **store manager on the floor with a phone.**
 - Zero emoji in UI chrome (move transaction-type emoji to subtle icons/labels)
 - A visible "SYNTHETIC DEMO DATA" badge in the footer — honesty styled as a feature
 
-## 13. Execution order (feeds IMPLEMENTATION_ROADMAP Phase 3)
+## 13. Execution order (feeds implementation.md Part I Phase 3)
 
 1. Tokens + Tailwind config + fonts + light/dark variables
 2. Primitives (`ui/`) with Storybook-style demo page at `/dev/components` (dev-only)

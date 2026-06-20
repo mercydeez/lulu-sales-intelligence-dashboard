@@ -1,26 +1,28 @@
-# Implementation Tracker
+# Implementation Plan & Tracker
 
-Living execution log for turning the Lulu Sales Intelligence Dashboard into a resume-grade MVP.
-We work **one phase at a time**, stop at each phase boundary for your review, then commit.
+The **single source of truth** for this project's execution — both what's already shipped and what's
+next. We work one item at a time, stop at boundaries for review, then commit.
 
-> Detailed rationale lives in `docs/` (GAP_ANALYSIS, IMPLEMENTATION_ROADMAP, etc.).
-> This file is the *current* state of execution — the source of truth for "what's next".
+> This file merges the former `docs/archive/IMPLEMENTATION_ROADMAP.md` (the forward plan, now
+> **Part II / Part III** below) with the phase-by-phase build log (**Part I**). Strategic/product
+> rationale lives in `docs/` (GAP_ANALYSIS, PRODUCT_STRATEGY, SAAS_PATH, ADR).
 
 ---
 
 ## What this project is (purpose)
 
 A real-time retail sales-intelligence dashboard for a UAE supermarket chain ("Lulu"), built to
-demonstrate full-stack + data engineering for a resume/portfolio.
+demonstrate full-stack + data engineering for a resume/portfolio, now extending toward a
+multi-tenant, ML/DL-backed retail-ops SaaS.
 
 - **Data pipeline:** a `DataGenerator` writes synthetic sales to Postgres every ~5–15s and publishes
   to Redis (`sales:stream`, `alerts:stream`, `inventory:stream`); SSE endpoints relay pub/sub to the
   browser via `EventSource`.
 - **Security:** JWT auth + RBAC scoped by region→store, rate limiting, CSRF, security-header middleware.
-- **Features:** live KPIs, sales analytics, seasonal forecasting, inventory/expiry, alerts→tasks,
-  promotions, employees, and a free/local-first AI assistant (Ollama default, OpenAI optional,
-  rule-based fallback).
-- **Constraints:** free/local-first — no paid AI APIs without approval. Synthetic data. Student → MVP.
+- **Features:** live KPIs, sales analytics, seasonal + ML/DL forecasting (Forecast Lab),
+  inventory/expiry, alerts→tasks, promotions, employees, and a free/local-first AI assistant
+  (Ollama default, OpenAI optional, rule-based fallback).
+- **Constraints:** free/local-first — no paid AI APIs without approval. Synthetic data. Student → MVP → SaaS.
 
 Data caveat baked into the codebase: the Kaggle `sales` values are **units**, not currency; revenue is
 derived via `unit_price_aed` (migration 005). Historical data is 2013–2017, date-shifted on load.
@@ -34,216 +36,273 @@ derived via `unit_price_aed` (migration 005). Historical data is 2013–2017, da
 
 ## Where we are now (snapshot)
 
+- **Part I — Recovery → MVP → polish (Phases 0–5):** ✅ **complete** (build log below).
+- **Part II — Live SaaS + ML/DL:** 🟡 in progress.
+  - **B1 — Forecasting hardening & depth:** B1.1–B1.4 ✅, **B1.5 🟡 (uncommitted)**, B1.6–B1.7 ❌ next.
+  - **B2–B5** (multi-tenancy completion, billing, PaaS, chatbot APIs): ❌ not started.
+- **Part III — Action layer / procure-to-pay:** ❌ future (brainstorm captured below).
+
+**Next up:** finish & commit **B1.5** (classifier extras), then **B1.6** (heatmap depth:
+store × category, per-item drill-down).
+
+---
+---
+
+# Part I — Recovery → MVP → polish (Phases 0–5) ✅ COMPLETE
+
 **Phase 0 — recovery** ✅  git init, `init.sql` crash fixed, SSE import fixed, dev override, CI honesty.
 
 **Phase 1 — critical fixes** ✅  auth on all data routers, server-side store/region scoping, revenue
 model (mig 005), date-shift, token hygiene, migration runner.
 
 **Phase 2 — MVP completion** ✅ all 9 items (sales unification, inventory/expiry, alerts→tasks,
-seasonal forecast, AI provider chain, `useEventStream`, API client foundation, CI, seed pack)
-committed on `phase-2-mvp-completion`. Detail in changelog below.
+seasonal forecast, AI provider chain, `useEventStream`, API client foundation, CI, seed pack).
 
----
-
-**Phase 3 — UI/UX redesign** ✅ *(complete — all of 3.1–3.8 done, following `docs/archive/IMPLEMENTATION_ROADMAP.md` §3 order)*
+### Phase 3 — UI/UX redesign ✅ *(3.1–3.8, following the redesign plan order)*
 
 | # | Task | Status |
 |---|---|---|
 | 3.1 | Design tokens, fonts, light/dark CSS vars, Tailwind config | ✅ Sunset Pop palette (coral/teal/violet/amber) + Inter via `next/font`; legacy dark-slate overrides removed |
 | 3.2 | `ui/` primitives + `/dev/components` gallery | ✅ Button, Card, StatCard, Badge, Toast, Modal, EmptyState, Skeleton, ChartFrame, LiveIndicator, PageHeader, Tabs, Select, Input, Table (757eb6d) |
 | 3.3 | App shell: sidebar nav, slim top bar, role-shaped home | ✅ sidebar replacing top Navbar (775d4c7) |
-| 3.4 | Rebuild screens: Home → Inventory → Alerts → Analytics/Forecast → Promotions → Employees → Admin → Reports/Monitoring | ✅ 8/8 — home (6404c0b), Inventory (9debab7), Alerts (819b9c4), Analytics/Forecast (bee4aae), Promotions (583f0f4), Employees (f5f007c), Admin (73ad59c), Reports + Monitoring (HEAD). All screens on the Sunset design system with real data. |
-| 3.5 | States pass: skeletons, empty states, error panels, SSE-degraded banner | ✅ skeletons + empty states already shipped with the rebuilds; added `ui/ErrorState` (wired into KPICards + Reports) and `ui/ConnectionBanner` SSE-degraded banner (wired into Inventory, driven by stream error) |
-| 3.6 | Microinteractions: number tickers, delta flashes, live-row animations, reduced-motion | ✅ shared reduced-motion-aware `ui/AnimatedNumber` (count-up) replacing the KPICards-local dup; `flashOnChange` delta flash (`.flash-up/.flash-down`) on live values (home Live, Admin sales/items); `useReducedMotion` hook + global `prefers-reduced-motion` CSS guard. Live-row animation uses the existing fade/slide keyframes |
-| 3.7 | Mobile pass (manager-on-the-floor) → accessibility pass (AA contrast, keyboard, aria-live) | ✅ mobile nav drawer in shell; `:focus-visible` ring + `aria-live`/`role=status` on live regions. **AA contrast audit done** (measured ratios via script): darkened `ink-muted` #8b8699→#6b6680 (3.52→5.47), deepened the three sunset gradients + primary button to 700-level stops so white text clears AA (≥5:1 every stop, was 1.67–2.8), fixed coral Tabs/Badge text to coral-700 |
-| 3.8 | EN/AR with RTL on nav/home/inventory/alerts | ✅ `LanguageProvider` (EN/AR dicts, persisted, sets `<html dir/lang>`); topbar language toggle; translated nav + home/inventory/alerts headings & tabs; shell converted to logical utilities (`ps`/`start`/`border-e`) so the sidebar flips to the right in RTL. Arabic uses system font fallback (Inter is latin-only) |
+| 3.4 | Rebuild screens: Home → Inventory → Alerts → Analytics/Forecast → Promotions → Employees → Admin → Reports/Monitoring | ✅ 8/8 — home (6404c0b), Inventory (9debab7), Alerts (819b9c4), Analytics/Forecast (bee4aae), Promotions (583f0f4), Employees (f5f007c), Admin (73ad59c), Reports + Monitoring. All on the Sunset design system with real data. |
+| 3.5 | States pass: skeletons, empty states, error panels, SSE-degraded banner | ✅ `ui/ErrorState` + `ui/ConnectionBanner` SSE-degraded banner |
+| 3.6 | Microinteractions: number tickers, delta flashes, live-row animations, reduced-motion | ✅ shared reduced-motion-aware `ui/AnimatedNumber` + `flashOnChange` delta flash; `useReducedMotion` + global guard |
+| 3.7 | Mobile pass → accessibility pass (AA contrast, keyboard, aria-live) | ✅ mobile nav drawer; `:focus-visible` ring + `aria-live`; AA contrast audit (darkened `ink-muted`, deepened gradients to 700-level) |
+| 3.8 | EN/AR with RTL on nav/home/inventory/alerts | ✅ `LanguageProvider` (EN/AR, persisted, sets `<html dir/lang>`); logical utilities so the shell flips in RTL |
 
----
-
-**Phase 4 — production readiness** ✅ *(all of 4.1–4.6 done & verified against the live Docker stack)*
+### Phase 4 — production readiness ✅ *(4.1–4.6, verified against the live Docker stack)*
 
 | # | Task | Status |
 |---|---|---|
-| 4.1 | Tighten CSP + enumerate CORS origins | ✅ CORS methods/headers enumerated (were `*`, which the spec forbids with `allow_credentials=True`) + `expose_headers`/`max_age`; CSP `connect-src` now env-driven (`settings.csp_connect_src`, no hardcoded localhost in prod), added `object-src 'none'` + prod `upgrade-insecure-requests` |
-| 4.2 | Structured logging (request-id threaded through) | ✅ `request_id` contextvar set by `RequestIDMiddleware` (reuses inbound `X-Request-ID`), a `RequestIDLogFilter` stamps it onto **every** log record (format now `req=%(request_id)s`), and an opt-in `JsonLogFormatter` (`LOG_JSON=true`) emits one JSON object per line |
-| 4.3 | DB indexes on hot query columns | ✅ audited existing indexes (alerts/employee/sales were already well-covered) then added migration `008` — covering index `sales_historical (date, store_id, item_id) INCLUDE (sales)`; EXPLAIN confirms the hot aggregation flipped from a Bitmap Heap Scan to an **Index Only Scan (Heap Fetches: 0)**, branch cost 14652→516. Stream-side date filter left on the existing timestamp index (a `timestamptz::date` expression index is rejected as non-IMMUTABLE; the table stays tiny at demo scale) |
-| 4.4 | Pagination on all unbounded list endpoints | ✅ audited every GET list endpoint — admin/alerts/inventory/employees/history/sales/promotions were **already** paginated, and the rest return naturally-bounded sets (stores=10, items=50, categories, roles, static rule list). The one unbounded gap, `GET /api/auth/users` (`get_all_users()` did `SELECT … FROM users` with no LIMIT), now takes `page`/`limit` and returns the standard `{users,total,page,limit,pages}` envelope |
-| 4.5 | Fix `except: pass` in `data_sync` → savepoints | ✅ both silent `except: pass` blocks in `generate_alerts_from_sales` now wrap their sub-query in `session.begin_nested()` (SAVEPOINT) and log a warning — a failed optional sub-query rolls back to its savepoint instead of aborting the shared asyncpg transaction and poisoning the queries that follow |
-| 4.6 | Dead-code cleanup (`alembic/`, unused routes) | ✅ removed the unused `alembic==1.13.1` dependency (never imported — migrations run via the custom `migration_runner`; rebuilt image confirms it's gone, 92 tests pass) and the empty untracked `backend/alembic/` dir. Audit found nothing else dead: all 14 routers are mounted, every service module is referenced, no tracked orphan files |
+| 4.1 | Tighten CSP + enumerate CORS origins | ✅ CORS methods/headers enumerated + `expose_headers`/`max_age`; CSP `connect-src` env-driven, `object-src 'none'` + prod `upgrade-insecure-requests` |
+| 4.2 | Structured logging (request-id threaded through) | ✅ `request_id` contextvar + `RequestIDLogFilter` on every record; opt-in `JsonLogFormatter` (`LOG_JSON=true`) |
+| 4.3 | DB indexes on hot query columns | ✅ migration `008` covering index `sales_historical (date, store_id, item_id) INCLUDE (sales)`; hot aggregation → Index Only Scan (Heap Fetches 0) |
+| 4.4 | Pagination on all unbounded list endpoints | ✅ audited every GET list; `GET /api/auth/users` now paginated (`{users,total,page,limit,pages}`) |
+| 4.5 | Fix `except: pass` in `data_sync` → savepoints | ✅ optional sub-queries wrapped in `begin_nested()` SAVEPOINTs + logged |
+| 4.6 | Dead-code cleanup (`alembic/`, unused routes) | ✅ removed unused `alembic` dep + empty dir; audit found no other dead code |
 
----
-
-**Phase 5 — resume/demo polish** ✅ *(all of 5.1–5.4 done)*
+### Phase 5 — resume/demo polish ✅ *(5.1–5.4)*
 
 | # | Task | Status |
 |---|---|---|
-| 5.1 | Honest README rewrite (what works, what's synthetic) | ✅ rewrote `README.md` — added a **Data & Honesty Notes** section (synthetic Kaggle data, units-not-AED, derived revenue only in analytics, ~5–15s "real-time"), corrected stale claims (auto-applying migrations not manual; local-first AI not OpenAI-first; ticket-authed SSE), moved completed Phase 3/4 work out of "planned", and linked the new docs |
-| 5.2 | Demo script (walk-through order for portfolio review) | ✅ `docs/product/DEMO_SCRIPT.md` — an ~8-min guided walkthrough (live pipeline → analytics/MAPE → RBAC across the 3 logins → operational breadth → "I read my own code" → i18n/a11y) with copy-paste ticket→SSE curl and a screen/route reference |
-| 5.3 | Architecture decisions log (ADR format) | ✅ `docs/architecture/ADR.md` — 9 ADRs (3-tier sales view, units/derived-revenue, SSE+ticket, local-first AI chain, custom migration runner, region→store RBAC, thin-composer/API-client frontend, build-only-what-the-backend-supports, Phase 4 hardening) each with context + decision + good/bad consequences |
-| 5.4 | Pitch one-pager (tech choices + tradeoffs) | ✅ `docs/product/PITCH.md` — one-page problem/solution/decisions+tradeoffs/quality-signals/honestly-out-of-scope for a recruiter or interviewer |
+| 5.1 | Honest README rewrite (what works, what's synthetic) | ✅ added **Data & Honesty Notes**, corrected stale claims, linked the docs |
+| 5.2 | Demo script (walk-through order) | ✅ `docs/product/DEMO_SCRIPT.md` — ~8-min guided walkthrough |
+| 5.3 | Architecture decisions log (ADR format) | ✅ `docs/architecture/ADR.md` — 9 ADRs |
+| 5.4 | Pitch one-pager | ✅ `docs/product/PITCH.md` |
 
 ---
-
-## Criticality ranking (what to do next)
-
-1. ✅ **Phase 3 — COMPLETE** (3.1–3.8: design system, all 8 screens, states, microinteractions, a11y/AA contrast, EN/AR + RTL).
-2. ✅ **Phase 4 — COMPLETE** (4.1–4.6: CSP/CORS, structured logging, DB indexes, pagination, `except: pass`→savepoints, dead-code cleanup). All verified against the running Docker stack; 92 backend tests pass.
-3. ✅ **Phase 5 — COMPLETE** (5.1–5.4: honest README, demo script, ADR log, pitch one-pager).
-
-**All phases (0–5) are now complete.**
-
 ---
 
-## Decision log
+# Part II — Live SaaS + ML/DL Build Log & Forward Plan
 
-- **3.7 AA contrast audit + 3.8 EN/AR RTL (completes Phase 3):**
-  - *Contrast (3.7):* measured WCAG ratios for the palette with a script. Fixes: `ink-muted`
-    #8b8699→#6b6680 (3.52→**5.47** on white — the pervasive secondary-text colour now passes AA
-    normal); the three `sunset-*` gradients + `btn-sunset` deepened from 500-level to **700-level stops**
-    (coral-700/amber-700/violet-700/teal-700) so white text clears AA at every point (worst was
-    white-on-amber **1.67**, now ≥**5.0**); coral Tabs-active and the coral Badge moved to coral-700 on a
-    lighter tint. Gradient `StatCard` labels bumped to opaque `text-white` semibold. Trade-off: gradients
-    read a touch deeper/richer than the original bright "pop", accepted for genuine AA.
-  - *EN/AR + RTL (3.8):* added `contexts/LanguageContext` (EN/AR dictionaries scoped to nav +
-    home/inventory/alerts, persisted to localStorage, drives `<html dir/lang>`), a topbar globe toggle,
-    and converted the shell's directional classes to **logical utilities** (`lg:start-0`, `lg:ps-64`,
-    `border-e`, `ms-`/`end-`) so the sidebar + content mirror correctly in `dir=rtl`. Flexbox rows mirror
-    automatically under RTL. Scoped to the four areas the roadmap named; data/values and deeper screens
-    stay English. Arabic falls back to a system font (Inter is latin-only) — a bundled Arabic face is a
-    future nicety, not required for the demo.
-- **3.5–3.7 states / microinteractions / a11y pass:** built cross-cutting primitives rather than
-  touching every screen ad-hoc. New: `ui/ErrorState` (retry panel), `ui/ConnectionBanner`
-  (SSE-degraded, `aria-live`), `ui/AnimatedNumber` (count-up, **respects `prefers-reduced-motion`**,
-  optional `flashOnChange` delta flash), `hooks/useReducedMotion`. globals.css gained a global
-  `prefers-reduced-motion` guard (neutralizes all animation/transition), `.flash-up/.flash-down`
-  keyframes, and a `:focus-visible` keyboard ring. Wired: KPICards now uses the shared AnimatedNumber
-  (deleting its local dup) with a delta flash on the live streaming count + ErrorState retry; Admin
-  dashboard cards animate/flash; Inventory shows the ConnectionBanner when its alert stream errors;
-  LiveIndicator + ConnectionBanner expose `role=status`/`aria-live`. **Deliberately deferred:** a formal
-  AA-contrast audit (3.7) — the palette is light-on-ink by design but I haven't measured ratios, so I
-  left it open rather than claim AA. Skeletons/empty states were already delivered during the 3.4 rebuilds.
-- **3.4 Reports + Monitoring rebuild (completes 3.4):**
-  - *Monitoring* — restyled the real health/stats/metrics console onto the Sunset system via a new
-    `components/monitoring/` folder (`HealthChecksGrid`, `SystemStatsCards`, `MetricsPanel`, `StatusPill`),
-    kept the 10s auto-refresh (now a toggle) and overall-status pill in the header. Already used `authFetch` +
-    real `/api/monitoring/*` data; this was a styling/decomposition pass.
-  - *Reports* — **caught a data-honesty bug**: `/api/reports/sales` aggregates `SUM(sales)` with no
-    `unit_price_aed`, so its figures are **units, not AED** — but the old page and `exportReportsPDF`
-    labelled them "AED". Rebuilt over `components/reports/` labelling everything as **units** (Units Sold,
-    Avg Basket in units, Units by Category/Store/Item). Dropped all mock fallbacks (one rich endpoint feeds
-    everything) and bypassed `exportReportsPDF` in favour of a direct `generatePDF` with honest unit labels
-    and a "no price column" footer. Reused the Analytics `chartTheme`/`format`. (Contrast: the Analytics
-    screen shows AED because that endpoint multiplies by `unit_price_aed`.)
-- **3.4 Admin rebuild:** the admin backend is **GET-only** (`/users`, `/stores`, `/dashboard`,
-  `/activity` — all super-admin gated; no create/update/delete despite `UserCreate`/`UserUpdate` models
-  existing). The old page shipped non-functional Add-User / Edit / Save-Settings UI plus a big mock-user
-  fallback and an employees tab duplicating the Employees screen. Rebuilt as an **honest read-only
-  console** over `components/admin/`: super-admin access gate (EmptyState for others),
-  `AdminDashboardCards` + `AdminTrendChart` (real `/dashboard`), `UsersTable` (search), `StoresTable`,
-  `ActivityFeed` (real `/activity`). Four tabs (Overview/Users/Stores/Activity). **Dropped** the fake
-  mutation UI and Settings tab — user/store management needs real POST/PUT endpoints first (tracked as a
-  backend gap, same rationale as the Alerts assignee-picker decision). Verified: tsc clean + build passes.
-- **3.4 Employees/Performance rebuild:** the old page already used real `/api/employees/*` data
-  but via raw unauthenticated `fetch(API_URL)` with inline-defined sub-components and dark gray/blue
-  styling. Rebuilt as a thin composer over a new `components/employees/` folder: `EmployeeSummaryCards`,
-  Sunset `EmployeeBioCard` (compact + full), `RolePerformanceTable`, `RoleDistribution`,
-  `EmployeeFilters` (grid/list toggle), `EmployeeListView`, a restyled `EmployeePerformanceChart`
-  (line/bar/radar on the new palette + `ChartFrame`), and `Modal`-primitive `EmployeeFormModal` /
-  `EmployeeDetailModal`. All fetches moved onto **`authFetch`** (per decision 2.7) since the routes now
-  depend on `get_current_user`. Three overview/employees/analytics tabs preserved; clicking a role row
-  jumps to the filtered employee list. Add-Employee gated behind `can_manage_employees`/`can_manage_users`.
-  Form posts the same payload contract as before. **Removed the three now-orphaned top-level components**
-  (`EmployeeBioCard`/`EmployeePerformanceChart`/`NewEmployeeModal`) — superseded and unreferenced; they
-  shared names with the new ones. Verified: tsc clean + build passes.
-- **3.4 Promotions/Pricing rebuild:** replaced the mock-heavy page (large `generateMock*`
-  arrays + an inline dark-gray form) with a thin composer over a new `components/promotions/`
-  folder fed by the real endpoints (`/summary`, `/active`, `/list`, `/categories`). Sunset gradient
-  carousel for active promos, a `Tabs`+search promotions list, and a category-performance panel that
-  now uses the endpoint's **real** shape (revenue + growth_rate + avg_discount) rather than the old
-  page's wrong `active_promos/total_redemptions` assumption. Create flow moved off the inline form and
-  the unused dark `NewPromotionModal` onto a `Modal`-primitive form with `Input`/`Select`/`Button`,
-  with the store picker **scoped to the user's `accessible_stores`** (backend enforces too). Dropped
-  the fabricated mock fallbacks in favour of honest empty states (the backend already merges
-  DB + sales-derived promotions, so it rarely returns empty). Did **not** add `useToast` — the
-  `ToastProvider` isn't mounted globally, so create feedback stays inline (error banner + refresh on
-  success). New-Promotion button only renders with `can_manage_promotions`. Verified: tsc clean + build passes.
-- **3.4 Analytics/Forecast rebuild:** replaced the mock-data page (random `generateMockData`,
-  fake transactions/conversion/hourly) with a thin composer over a new `components/analytics/`
-  folder fed by the real `/api/analytics/*` endpoints (trend, stores, categories, top-items) plus
-  `/api/kpis`. Two tabs: **Overview** (KPI StatCards, sales trend + 7-day forecast, category mix,
-  store revenue, top items, store-performance table) and **Forecast** (interactive store/item/holdout
-  backtest with MAPE vs seasonal-naive baseline). Charts use a new Sunset Pop `chartTheme` instead of
-  the legacy cyan/slate hex palette. Added typed client helpers (`fetchStoreDistribution`,
-  `fetchCategoryBreakdown`, `fetchTopItems`) routed through `lib/apiClient` per decision 2.7.
-  **Dropped the old `exportAnalyticsPDF`** path (it hardcoded fabricated transactions/conversion);
-  PDF export now uses the generic `generatePDF` over real revenue/category data only — honest figures.
-  The date-range selector intentionally drives only the trend window (the other endpoints are all-time
-  aggregates with no range param). Store-comparison panel is hidden for store managers. Existing shared
-  charts left untouched (the home screen still depends on them). Verified: `tsc --noEmit` clean + `npm run build` passes.
-- **3.4 Alerts/Tasks rebuild:** switched the page off client-mocked alerts onto the real persisted
-  `alerts` table workflow the backend already exposed but the old page never called — acknowledge,
-  resolve-with-notes, and a "My Tasks" tab (`/api/alerts/my-tasks`). Deliberately dropped the
-  assign-to-user picker: the only assignee-listing endpoint (`/api/admin/users`) is super-admin-only,
-  so a proper picker needs a new backend endpoint — out of scope for a UI decomposition pass.
-- **2.5 AI providers:** Ollama is the zero-cost default; OpenAI is opt-in via env var. Both providers raise `LLMError` on any upstream failure and the caller falls through to the rule-based responder, which always answers with live DB data. No paid key required for the demo.
-- **2.7 API client scope:** built the foundation now (`lib/apiClient.ts` — auth,
-  401→refresh single-flight→retry, user-aware cache fixing M2, error-envelope
-  parsing fixing M3) and routed `lib/api.ts` + `AuthContext` through it. The 22
-  scattered raw `fetch()` call sites migrate opportunistically during Phase 3 when
-  those screens are rewritten, to avoid touching them twice.
-- **2.1 sales storage:** adopted the 3-tier design (over collapsing to one table).
-  `sales_stream_raw` = live events, `sales_historical` = CSV, `sales_fact_view` = the
-  union every reader queries. View is shaped as a drop-in for the old `sales` columns;
-  streaming ids offset by 1e9 to keep the ORM identity map correct. Legacy `sales`
-  table dropped (migration 007). Verified via clean-volume boot: migrations 001–007
-  apply, RBAC scoping holds, KPIs/analytics/sales serve real data.
+> The project has moved from "fix the demo" to "build a multi-tenant, ML/DL-backed retail-ops SaaS."
+
+## A. Done (committed)
+
+**Stabilization & correctness**
+- Clean first-boot (init.sql `RAISE NOTICE` fix; init.sql ↔ migrations view consistency — tenant_id).
+- SSE consolidated to one shared connection per channel; CORS dev-origin fix; `ToastProvider` mounted.
+- Admin: router double-prefix fix, KPI/user queries corrected, create-user flow.
+- Sales source-of-truth unified: migration 007 drops/recreates `sales_fact_view` cleanly (7d9cc60).
+
+**Multi-tenancy (Phase 1 — foundation)**
+- `tenants` table + default demo tenant; `tenant_id` on users/stores/items/sales (migration 010).
+- `sales_fact_view` carries `tenant_id` (migration 011 + init.sql); `/api/tenants`; tenant-aware auth.
+- KPIs tenant-scoped end-to-end (query + cache key + warmer).
+
+**Forecasting engine (deterministic, backtest-selected)**
+- Feature engineering (lags/calendar/rolling); models behind one interface: classical
+  (seasonal-naive, seasonal-trend), ML (LightGBM), DL (LSTM, GRU/RNN, CNN).
+- Rolling-origin backtest scores every model (MAPE/WAPE) and auto-selects the winner.
+- `/api/analytics/forecast` + `/api/analytics/model-metrics` (tenant-scoped, cached).
+- **Forecast Lab** tab: executive + technical views (accuracy, leaderboard, per-store heatmap,
+  business-impact tiles, model-comparison, feature importance, stockout-risk confusion matrix).
+
+## B. Forward roadmap (in order)
+
+### B1 — Forecasting hardening & depth 🟡
+
+1. **Scheduled / offline training** ✅ (c7c4112) — background trainer retrains on a cadence + on boot
+   and caches the Forecast Lab payload; `/model-metrics` is read-only (returns `warming` on a cold
+   scope, never trains on the request path). `services/forecast_trainer.py`.
+2. **More DL models** ✅ (1ae5e04) — N-BEATS, TCN, Transformer added to the registry; all six DL
+   models compete in the backtest. `services/forecasting/deep.py`.
+3. **Forecast-vs-actual overlay + confidence/prediction bands** ✅ (d8dc95c) — held-out predicted vs
+   real overlay; 80% interval (from backtest residuals) shaded around the forward forecast.
+4. **Accuracy-over-time (rolling backtest trend)** ✅ (c86832a) — the selected winner scored across
+   the last 6 non-overlapping windows + improving/declining/stable badge.
+5. **Classifier extras** 🟡 *(implemented, uncommitted)* — ROC + precision-recall curves, AUC/AP,
+   F1-tuned threshold, real `predict_proba`. Added **scikit-learn** to requirements, which also
+   revives the LightGBM regressor (leaderboard) + feature-importance chart (both silently broken
+   before, same root cause). *Finish: run tests, verify live, commit + push.*
+6. **Heatmap depth** ❌ — store × category; per-item drill-down. *(next)*
+7. **Wire forecasts across the product** ❌ — inventory reorder/expiry, promotion uplift baseline,
+   dashboard revenue projection, AI assistant answers.
+
+> Remaining B1 stretch: more DL (already done beyond plan), classifier ROC/PR (B1.5), heatmap depth
+> (B1.6), product wiring (B1.7).
+
+### B2 — Multi-tenancy completion ❌
+- Apply tenant scoping to all read endpoints (sales, analytics, history, inventory, promotions, reports).
+- Postgres **RLS** (dedicated non-owner role / FORCE RLS) as defense-in-depth under app-layer scoping.
+- Tenant-aware caching everywhere; **isolation pytest**; a second seeded tenant for a visible
+  two-tenant isolation demo.
+
+### B3 — Billing & onboarding ❌
+- Plans/tiers; Stripe subscriptions + customer portal (UAE: Telr / PayTabs / Network Intl); metering +
+  usage limits; self-serve signup → create tenant → invite users → connect data.
+
+### B4 — PaaS layer ❌
+- Per-tenant **API keys** + public REST API; outbound **webhooks**; **white-label** theming per tenant;
+  **developer portal** + live API docs.
+
+### B5 — Chatbot / AI APIs ❌
+- Tenant-scoped, API-key-authenticated AI assistant endpoints to embed the chatbot externally;
+  free/local **Ollama** provider with rule-based fallback.
+
+## C. Production hardening & known issues
+- **Move the repo out of OneDrive** — it corrupts the git index and truncates files mid-write.
+- **torch image size** — CPU wheel; keep the DL tier optional to keep images lean.
+- **Theme cleanup** — remaining "Sunset" classes (coral borders, rounded-2xl, gradients) across
+  shared primitives (Modal/Input/Select/Table).
+- **Date-shift historical data** so "today/this week" KPIs reflect a continuous timeline.
+- **Security/ops** — token hygiene, CSP tightening, RLS, UAE data residency, backups, monitoring, SLA.
+
+## D. Run / deploy notes
+- Dev: `docker compose up -d postgres redis backend` + `npm run dev` (frontend on :3000).
+- **Rebuild the backend image after dependency changes** (lightgbm/torch/scikit-learn):
+  `docker compose up -d --build backend`.
+- Migrations auto-apply on boot (numbered SQL in `database/migrations/`, tracked in `schema_migrations`).
+- Demo logins (password `Lulu@2026!`): atharva@lulu.ae (super_admin), krishna@lulu.ae
+  (regional_manager), yash@lulu.ae (store_manager).
 
 ---
+---
+
+# Part III — Product Expansion: Action Layer, Procure-to-Pay & Payments (brainstorm)
+
+> Strategic reframe: today the product is a **system of intelligence** (tells you what's happening).
+> The next rungs are a **system of action** (places/approves orders) and a **system of transaction**
+> (money moves). Each is a step-change in stickiness and price.
+
+## E. The action layer — Procure-to-Pay (highest-leverage expansion)
+The payoff of the forecasting engine: forecast → suggested order → approve → done.
+
+**Flow:** Forecast → **reorder suggestion** (days-of-cover < lead time) → auto-grouped **draft PO** per
+supplier → **approval workflow** (threshold-based) → send (email / EDI / portal) → supplier ack →
+**goods receipt** → **3-way match** (PO = receipt = invoice) → payment.
+
+**Entities:** Supplier, Product↔Supplier (price, MOQ, lead time), PurchaseOrder, POLine, Receipt,
+Invoice, Payment, ApprovalRule.
+
+**Build split:** *Build now* the "system of record" (suppliers, POs, approvals, receipts, invoices,
+payment **status**). *Embed later* money movement (KYC/AML/licensing — partner, never build).
+
+## F. Payments — two distinct things
+1. **Billing your customers** (retailers pay you the subscription): card/recurring → Phase B3.
+2. **Customers pay their suppliers** (procure-to-pay loop): B2B AP, large sums, net terms — start by
+   *recording* status, then embed a payments partner. → after Part III.E records layer.
+
+## G. Cross-vertical "steal this"
+Finance/spend (approval chains, ledgers, audit) · healthcare (compliance, escalation) · restaurant
+(par-level one-tap reorder, vendor catalogs, waste) · hotels (multi-property rollups, task SLAs) ·
+logistics ("control tower" exception views, transfers, lead-time modeling) · e-commerce ops (PO
+lifecycle, multi-location) · dev-tools/PaaS (API keys, metering, webhooks, dev portal).
+
+## H. UI patterns to adopt
+Command palette (Cmd-K) · action cards ("Milk out in 3 days → [Create PO]") · approval inbox · audit
+timeline on every entity · notifications where people are (WhatsApp Business API + email + Slack) ·
+mobile-first/PWA for floor/logistics · document generation (PO/invoice PDFs) + e-signature.
+
+## I. Technologies to bring in (mapped to need)
+Workflow/state machine (status enum → Temporal/Camunda) · notifications (Novu/Knock + Twilio +
+Resend) · enterprise auth (WorkOS SSO/SAML/SCIM) · product analytics + errors (PostHog + Sentry) ·
+search (Typesense/Meilisearch) · analytics scale (DuckDB/ClickHouse + dbt) · maps (Mapbox) · embedded
+payments later (Airwallex / Stripe Treasury / Lean).
+
+## J. Where this fits
+Start the action layer (E) **after** B2 (tenant isolation) and B1 (forecasting hardening) — it depends
+on tenant-scoped data + reliable forecasts. Billing (F.1) is B3. Supplier payments (F.2) come after the
+procure-to-pay *records* layer. Treat E as "Phase 3.5 / 6" — the move that re-prices the product from
+insight tool to operations system.
+
+---
+---
+
+## Decision log (Part I highlights)
+
+- **3.7 AA contrast + 3.8 EN/AR RTL:** measured WCAG ratios; `ink-muted` #8b8699→#6b6680 (3.52→5.47),
+  sunset gradients + `btn-sunset` deepened to 700-level stops (white text clears AA); `LanguageProvider`
+  with logical utilities so the shell mirrors under `dir=rtl` (scoped to nav + home/inventory/alerts).
+- **3.5–3.7 states/microinteractions/a11y:** built cross-cutting primitives (`ErrorState`,
+  `ConnectionBanner`, `AnimatedNumber` with reduced-motion + delta flash, `useReducedMotion`).
+- **3.4 honesty fixes:** Reports relabelled **units** (not AED) — `/api/reports/sales` has no price
+  column; Admin/Promotions/Employees rebuilt as honest read-only or scoped flows over real endpoints,
+  dropping mock fallbacks; analytics PDF export dropped fabricated transactions.
+- **2.7 API client:** `lib/apiClient.ts` (auth, 401→refresh single-flight→retry, user-aware cache,
+  error-envelope parsing); scattered raw `fetch()` migrated opportunistically during Phase 3.
+- **2.1 sales storage:** 3-tier design — `sales_stream_raw` (live) + `sales_historical` (CSV) +
+  `sales_fact_view` (union readers query); streaming ids offset by 1e9; legacy `sales` dropped (mig 007).
+- **2.5 AI providers:** Ollama is the zero-cost default; OpenAI opt-in; both fall through to a
+  rule-based responder that always answers with live DB data. No paid key for the demo.
+
+## Decision log (Part II highlights)
+
+- **B1.1 offline training:** the correct ML-serving split — train in a background task, serve from
+  cache. The endpoint never trains; a cold scope returns `status: "warming"` and schedules a guarded
+  background warm. `MODEL_METRICS_TTL` served stale-but-warm.
+- **B1.4 accuracy-over-time:** tracks the *current winner* across rolling windows (~1 fit/window,
+  cheap) rather than re-selecting per window — reads as "is our production model holding up?".
+- **B1.5 scikit-learn:** adding it was the single root-cause fix for the whole degraded ML tier
+  (classifier `predict_proba`, LightGBM regressor in the leaderboard, feature-importance chart).
 
 ## Open findings
-
-- ~~`data_sync.generate_alerts_from_sales` swallows query errors with `except: pass`,
-  which poisons the asyncpg transaction and masks the real failure.~~ **Resolved (4.5):**
-  each optional sub-query now runs inside a `begin_nested()` SAVEPOINT and logs on failure.
+- ~~`data_sync.generate_alerts_from_sales` swallows query errors with `except: pass`~~ **Resolved (4.5)**
+  — each optional sub-query now runs inside a `begin_nested()` SAVEPOINT and logs on failure.
+- ~~LightGBM missing from the leaderboard / feature importance empty~~ **Being resolved (B1.5)** —
+  scikit-learn was not installed; added in B1.5.
 
 ---
 
 ## Phase changelog
 
+### Part II — Live SaaS + ML/DL
+
 | Date | Commit | What landed |
 |---|---|---|
-| 2026-06-18 | _(HEAD)_ | docs(5.1-5.4): honest README rewrite (Data & Honesty Notes), `docs/product/DEMO_SCRIPT.md`, `docs/architecture/ADR.md` (9 ADRs), `docs/product/PITCH.md` — completes Phase 5 (all phases done) |
-| 2026-06-18 | 687b392 | chore(4.6): drop unused `alembic` dependency + empty `alembic/` dir — completes Phase 4 (audit found all routers mounted, no orphan services) |
-| 2026-06-18 | 0061cb4 | feat(4.4): paginate `GET /api/auth/users` (the one unbounded list endpoint; the rest were already paginated or naturally bounded) |
-| 2026-06-18 | 6ab48de | feat(4.3): migration 008 covering index on `sales_historical (date, store_id, item_id) INCLUDE (sales)` — hot aggregation now an index-only scan (heap fetches 0) |
-| 2026-06-18 | 9b20332 | feat(4.1/4.2): enumerate CORS methods/headers (credentials-safe), env-driven CSP connect-src + object-src/upgrade-insecure-requests, and request-id threaded through all logs via contextvar + log filter (opt-in JSON logging) |
-| 2026-06-18 | 260d57a | feat(4.5): `data_sync.generate_alerts_from_sales` optional sub-queries wrapped in `begin_nested()` savepoints + logged — no more silent `except: pass` that poisoned the shared asyncpg transaction |
-| 2026-06-18 | 32ccd89 | fix(seeder): bind `EmployeePerformance.period_type` + `EmployeeTransaction.transaction_type` to their PG enums (`create_type=False`, `values_callable`) — the d643b12 enum-cast fix had missed these two columns, so fresh-boot performance + transaction seeding crashed with `DatatypeMismatchError`. Verified clean re-seed: 30 employees / 180 performance / 4493 transactions |
-| 2026-06-18 | ad29515 | feat(3.7/3.8): AA contrast audit (deepened gradients + ink-muted) and EN/AR with RTL on nav/home/inventory/alerts — completes Phase 3 |
-| 2026-06-18 | 331334b | feat(3.5–3.7): states/microinteractions/a11y — ErrorState, SSE ConnectionBanner, reduced-motion AnimatedNumber + delta flash, focus-visible + aria-live |
-| 2026-06-18 | 452d9ab | feat(3.4): rebuild Reports + Monitoring screens — completes 3.4; Reports relabelled units (not AED), Monitoring restyled health/stats/metrics console |
-| 2026-06-18 | 73ad59c | feat(3.4): rebuild Admin screen — honest read-only console (dashboard + trend, users/stores tables, activity feed), super-admin gated |
-| 2026-06-18 | f5f007c | feat(3.4): rebuild Employees/Performance screen — real `/api/employees/*` via authFetch, Sunset bio cards, restyled charts + modals, removed orphaned dupes |
-| 2026-06-18 | 583f0f4 | feat(3.4): rebuild Promotions/Pricing screen — real summary/active/list/categories data, Sunset gradient cards, primitive-based create modal scoped to accessible stores |
-| 2026-06-18 | bee4aae | feat(3.4): rebuild Analytics/Forecast screen — real `/api/analytics/*` data, Sunset-palette charts, Overview/Forecast tabs, interactive MAPE backtest |
-| 2026-06-18 | 819b9c4 | feat(3.4): rebuild Alerts/Tasks screen — real ack/resolve+notes/my-tasks workflow |
-| 2026-06-18 | 9debab7 | feat(3.4): rebuild Inventory/Procurement screen |
-| 2026-06-17 | 6404c0b | feat(3.4): rebuild Live Operations home screen |
-| 2026-06-17 | 775d4c7 | feat(3.3): sidebar app shell replacing top Navbar |
-| 2026-06-17 | 757eb6d | feat(3.2): ui/ primitives gallery + finish Navbar restyle |
-| 2026-06-17 | 4991f87 | docs: expand implementation tracker — Phase 3 task table, fix stale 2.x statuses |
-| 2026-06-17 | c4c4c91 | docs: tracker updated, Phase 2 marked complete |
-| 2026-06-17 | cefbef1 | feat(2.5): LLM provider chain wired into `ai_assistant.py` |
-| 2026-06-17 | eed2632 | feat(2.7): single frontend API client foundation |
-| 2026-06-17 | c17fc9b | docs: 2.8 CI + 2.9 populate screens verified complete |
-| 2026-06-17 | f975d17 | fix: inventory/items empty for scoped requests |
-| 2026-06-17 | d643b12 | fix: employee seeder ORM/schema mismatch on fresh boot |
-| 2026-06-17 | f23be18 | fix: Phase 2.1 boot-test follow-up fixes |
-| 2026-06-17 | 2ca2414 | feat(2.1): 3-tier sales unification + migration 007 |
-| 2026-06-17 | e3af0e8 | chore: stop tracking tsconfig.tsbuildinfo |
-| 2026-06-17 | 92f71e9 | docs: initial implementation tracker |
-| earlier | b9502fa | chore: Phase 3 design-system groundwork (WIP) |
-| earlier | c69bb47 | feat(2.2/2.3): alerts-tasks workflow + inventory batches |
-| earlier | b14ad81 | feat(2.4): seasonal forecast + MAPE backtest |
-| earlier | f429529 | feat(1.5): token hygiene — refresh rotation, remember_me, jti |
+| 2026-06-20 | _(uncommitted)_ | B1.5: classifier extras — ROC/PR curves, AUC/AP, F1-tuned threshold, `predict_proba`; added scikit-learn (revives LightGBM regressor + feature importance) |
+| 2026-06-20 | c86832a | B1.4: accuracy-over-time rolling backtest trend + improving/declining badge |
+| 2026-06-20 | d8dc95c | B1.3: forecast-vs-actual overlay + 80% prediction bands |
+| 2026-06-20 | 1ae5e04 | B1.2: N-BEATS, TCN, Transformer added to the DL tier |
+| 2026-06-20 | c7c4112 | B1.1: offline forecast trainer; `/model-metrics` read-only (warming on cold cache) |
+| 2026-06-20 | 7d9cc60 | fix(db): migration 007 drops+recreates `sales_fact_view` without premature `tenant_id` |
 
+### Part I — Recovery → MVP → polish
+
+| Date | Commit | What landed |
+|---|---|---|
+| 2026-06-18 | _(Phase 5)_ | docs(5.1–5.4): honest README, DEMO_SCRIPT, ADR (9), PITCH — completes Phase 5 |
+| 2026-06-18 | 687b392 | chore(4.6): drop unused `alembic` dependency + empty dir — completes Phase 4 |
+| 2026-06-18 | 0061cb4 | feat(4.4): paginate `GET /api/auth/users` |
+| 2026-06-18 | 6ab48de | feat(4.3): migration 008 covering index → index-only scan |
+| 2026-06-18 | 9b20332 | feat(4.1/4.2): CORS enumeration + env-driven CSP + request-id logging |
+| 2026-06-18 | 260d57a | feat(4.5): `data_sync` savepoints (no more silent `except: pass`) |
+| 2026-06-18 | ad29515 | feat(3.7/3.8): AA contrast audit + EN/AR RTL — completes Phase 3 |
+| 2026-06-18 | 331334b | feat(3.5–3.7): states/microinteractions/a11y |
+| 2026-06-18 | 452d9ab | feat(3.4): rebuild Reports + Monitoring — completes 3.4 |
+| 2026-06-18 | 73ad59c | feat(3.4): rebuild Admin (honest read-only console) |
+| 2026-06-18 | f5f007c | feat(3.4): rebuild Employees/Performance |
+| 2026-06-18 | 583f0f4 | feat(3.4): rebuild Promotions/Pricing |
+| 2026-06-18 | bee4aae | feat(3.4): rebuild Analytics/Forecast (MAPE backtest) |
+| 2026-06-18 | 819b9c4 | feat(3.4): rebuild Alerts/Tasks (ack/resolve/my-tasks) |
+| 2026-06-17 | 9debab7 | feat(3.4): rebuild Inventory/Procurement |
+| 2026-06-17 | 6404c0b | feat(3.4): rebuild Live Operations home |
+| 2026-06-17 | 775d4c7 | feat(3.3): sidebar app shell |
+| 2026-06-17 | 757eb6d | feat(3.2): ui/ primitives gallery |
+| 2026-06-17 | cefbef1 | feat(2.5): LLM provider chain |
+| 2026-06-17 | eed2632 | feat(2.7): frontend API client foundation |
+| 2026-06-17 | 2ca2414 | feat(2.1): 3-tier sales unification + migration 007 |
+| earlier | b14ad81 | feat(2.4): seasonal forecast + MAPE backtest |
+| earlier | c69bb47 | feat(2.2/2.3): alerts-tasks workflow + inventory batches |
+| earlier | f429529 | feat(1.5): token hygiene — refresh rotation, remember_me, jti |
