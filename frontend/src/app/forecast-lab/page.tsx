@@ -31,7 +31,8 @@ interface Metrics {
 
 const MODEL_LABEL: Record<string, string> = {
   lightgbm: 'LightGBM (ML)', lstm: 'LSTM (Deep learning)', gru: 'GRU / RNN (Deep learning)',
-  cnn: 'CNN (Deep learning)', seasonal_trend: 'Seasonal trend', seasonal_naive: 'Naive baseline',
+  cnn: 'CNN (Deep learning)', tcn: 'TCN (Deep learning)', transformer: 'Transformer (Deep learning)',
+  nbeats: 'N-BEATS (Deep learning)', seasonal_trend: 'Seasonal trend', seasonal_naive: 'Naive baseline',
 };
 
 function accColor(a: number | null): string {
