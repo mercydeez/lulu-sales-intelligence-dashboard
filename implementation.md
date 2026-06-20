@@ -47,8 +47,16 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
 - The in-app **AI assistant is now tenant-scoped** too: `tenant_id` added to the Sale/Store/Item models
   and threaded through every `ai_assistant` data function + the authenticated `/api/ai/chat` routes, so a
   tenant's chatbot only ever sees its own data (verified: Lulu 913k records vs Northwind 1.9k).
-- ⏭️ Remaining: running the app as a non-owner role with FORCE RLS in prod (ops). Per-item `predictor` is
-  implicitly scoped (store_ids are tenant-unique).
+- **FORCE RLS + non-owner role** ✅ (migration 020): a dedicated, non-superuser `app_rw` role with
+  `FORCE ROW LEVEL SECURITY` on all 16 tenant tables (+ parent-scoped policies on the line tables) and
+  `security_invoker` on `sales_fact_view` (migration 021) so the view honours the caller's RLS. **Proven
+  at the DB level**: `app_rw` with `app.tenant_id=1` sees only tenant 1, `=2` only tenant 2, while the
+  superuser app account bypasses (by design). Opt-in app wiring (`USE_RLS_ROLE`, `services/database.py`
+  app_rw engine) routes the authenticated request path through `app_rw`; off by default since app-layer
+  scoping is the primary control. ⏭️ To turn RLS mode fully on for the request path: set the
+  `app.tenant_id` GUC *after* auth (the JWT carries no tenant, so the per-request set must follow
+  `get_current_user`) and special-case the public-API key lookup (the key determines the tenant, so it
+  must read across tenants). Per-item `predictor` is implicitly scoped (store_ids are tenant-unique).
 
 ### B4 — PaaS layer ✅
 - Per-tenant **API keys** ✅ (migration 014 `tenant_api_keys`, `services/api_key_service.py`, mgmt at
@@ -112,7 +120,9 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
 - **torch image size** — CPU wheel; keep the DL tier optional to keep images lean.
 - **Theme cleanup** — remaining "Sunset" classes (coral borders, rounded-2xl, gradients) across shared
   primitives (Modal/Input/Select/Table).
-- **Security/ops** — token hygiene, CSP tightening, RLS, UAE data residency, backups, monitoring, SLA.
+- **Security/ops** — token hygiene, CSP tightening, UAE data residency, backups, monitoring, SLA.
+  (RLS: FORCE RLS + `app_rw` non-owner role shipped in migration 020; flip `USE_RLS_ROLE=true` to enforce
+  on the request path once the two follow-ups above are wired.)
 
 ## Run / deploy notes
 - Dev: `docker compose up -d postgres redis backend` + `npm run dev` (frontend on :3000).

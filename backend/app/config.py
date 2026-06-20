@@ -31,7 +31,14 @@ _INSECURE_SECRETS = {
 class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://salesuser:salespass@localhost:5432/salesdb"
-    
+
+    # RLS hardening (B2): when enabled, the request path connects as the
+    # non-owner `app_rw` role so Postgres FORCE RLS enforces tenant isolation
+    # (migration 020). Off by default — startup/migrations/background keep using
+    # the (superuser) database_url, which bypasses RLS by design.
+    use_rls_role: bool = False
+    rls_database_url: Optional[str] = None  # defaults to database_url with app_rw creds
+
     # Redis
     redis_url: str = "redis://localhost:6379"
     

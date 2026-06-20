@@ -58,6 +58,36 @@ async_session = async_sessionmaker(
 )
 
 
+def _derive_rls_url() -> str:
+    """The app_rw (non-owner) connection string. Use the explicit setting if
+    given, else swap the superuser creds in database_url for app_rw's."""
+    if settings.rls_database_url:
+        return settings.rls_database_url
+    url = settings.database_url
+    # postgresql+asyncpg://<user>:<pass>@host... -> app_rw creds
+    if "://" in url and "@" in url:
+        scheme, rest = url.split("://", 1)
+        _creds, host = rest.split("@", 1)
+        return f"{scheme}://app_rw:app_rw_dev_pass@{host}"
+    return url
+
+
+# Optional non-owner engine used by the REQUEST path when RLS enforcement is on.
+# Owner-path code (startup, migrations, generator, background warmers) keeps
+# using `async_session` so it can do cross-tenant work (the superuser bypasses
+# RLS by design). When the flag is off, request_session IS async_session.
+if settings.use_rls_role:
+    rls_engine = create_async_engine(_derive_rls_url(), **_engine_kwargs)
+    rls_session = async_sessionmaker(
+        rls_engine, class_=AsyncSession, expire_on_commit=False,
+        autocommit=False, autoflush=False,
+    )
+    logger.info("🔒 RLS enforcement ON — request path connects as non-owner role app_rw")
+else:
+    rls_engine = None
+    rls_session = async_session
+
+
 async def init_db(max_retries: int = 30, retry_delay: float = 3.0):
     """Initialize database connection with retry logic"""
     for attempt in range(max_retries):
@@ -85,8 +115,10 @@ async def close_db():
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency for getting database session"""
-    async with async_session() as session:
+    """Request-scoped DB session. Uses the non-owner app_rw engine when RLS
+    enforcement is enabled (settings.use_rls_role), so Postgres FORCE RLS scopes
+    every query to the caller's tenant; otherwise the (superuser) owner engine."""
+    async with rls_session() as session:
         try:
             await apply_tenant_guc(session)
             yield session
