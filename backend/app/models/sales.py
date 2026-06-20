@@ -14,8 +14,9 @@ class Store(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     location = Column(String(100))
+    tenant_id = Column(Integer, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     sales = relationship("Sale", back_populates="store", viewonly=True)
     historical_sales = relationship("SalesHistorical", back_populates="store")
     streaming_sales = relationship("SalesStreamRaw", back_populates="store")
@@ -28,8 +29,9 @@ class Item(Base):
     name = Column(String(100), nullable=False)
     category = Column(String(50))
     unit_price_aed = Column(Float, default=10.00)
+    tenant_id = Column(Integer, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     sales = relationship("Sale", back_populates="item", viewonly=True)
     historical_sales = relationship("SalesHistorical", back_populates="item")
     streaming_sales = relationship("SalesStreamRaw", back_populates="item")
@@ -55,6 +57,7 @@ class Sale(Base):
     item_id = Column(Integer, ForeignKey("items.id"), nullable=False)
     sales = Column(Integer, nullable=False)
     is_streaming = Column(Boolean, default=False)
+    tenant_id = Column(Integer, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     store = relationship("Store", back_populates="sales", viewonly=True)

@@ -75,7 +75,7 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
     if request.stream:
         # Return streaming response
         async def generate():
-            async for chunk in stream_chat_response(session_id, request.message):
+            async for chunk in stream_chat_response(session_id, request.message, current_user.get('tenant_id') or 1):
                 yield {
                     "event": "message",
                     "data": json.dumps({"content": chunk, "session_id": session_id})
@@ -88,7 +88,7 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
         return EventSourceResponse(generate())
     else:
         # Non-streaming response
-        response = await get_chat_response(session_id, request.message)
+        response = await get_chat_response(session_id, request.message, current_user.get('tenant_id') or 1)
         return ChatResponse(
             response=response,
             session_id=session_id,
@@ -114,7 +114,7 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
             "data": json.dumps({"session_id": session_id})
         }
         
-        async for chunk in stream_chat_response(session_id, request.message):
+        async for chunk in stream_chat_response(session_id, request.message, current_user.get('tenant_id') or 1):
             yield {
                 "event": "chunk",
                 "data": json.dumps({"content": chunk})

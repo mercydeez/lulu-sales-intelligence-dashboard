@@ -44,9 +44,11 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
 - **Isolation pytest** (`tests/test_tenant_isolation.py`: SQL-capture proof + tenant-partitioned cache
   keys + migration presence + DB-gated live disjointness). Second seeded tenant — **Northwind Foods**
   (migration 013): own stores/items/~120d sales + `owner@northwind.ae`.
-- ⏭️ Remaining: the unauthenticated `ai_assistant` global aggregates (demo-tenant only by design) and
-  running the app as a non-owner role with FORCE RLS in prod. Per-item `predictor` is implicitly scoped
-  (store_ids are tenant-unique).
+- The in-app **AI assistant is now tenant-scoped** too: `tenant_id` added to the Sale/Store/Item models
+  and threaded through every `ai_assistant` data function + the authenticated `/api/ai/chat` routes, so a
+  tenant's chatbot only ever sees its own data (verified: Lulu 913k records vs Northwind 1.9k).
+- ⏭️ Remaining: running the app as a non-owner role with FORCE RLS in prod (ops). Per-item `predictor` is
+  implicitly scoped (store_ids are tenant-unique).
 
 ### B4 — PaaS layer 🟡
 - Per-tenant **API keys** ✅ (migration 014 `tenant_api_keys`, `services/api_key_service.py`, mgmt at

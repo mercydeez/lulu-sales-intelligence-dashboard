@@ -68,59 +68,60 @@ def get_or_create_context(session_id: str) -> ConversationContext:
 # REAL-TIME DATA FETCHING FUNCTIONS
 # =============================================================================
 
-async def get_real_time_kpis() -> Dict:
-    """Fetch real-time KPIs from database"""
+async def get_real_time_kpis(tenant_id: int = 1) -> Dict:
+    """Fetch real-time KPIs from database (tenant-scoped)"""
     today = date.today()
     week_ago = today - timedelta(days=7)
     month_ago = today - timedelta(days=30)
-    
+    T = Sale.tenant_id == tenant_id
+
     async with async_session() as session:
         # Today's sales
         today_result = await session.execute(
             select(func.coalesce(func.sum(Sale.sales), 0))
-            .where(Sale.date == today)
+            .where(and_(T, Sale.date == today))
         )
         total_sales_today = today_result.scalar() or 0
-        
+
         # Count positive and negative (returns) for today
         returns_result = await session.execute(
             select(func.coalesce(func.sum(Sale.sales), 0))
-            .where(and_(Sale.date == today, Sale.sales < 0))
+            .where(and_(T, Sale.date == today, Sale.sales < 0))
         )
         total_returns_today = abs(returns_result.scalar() or 0)
-        
+
         # Week's sales
         week_result = await session.execute(
             select(func.coalesce(func.sum(Sale.sales), 0))
-            .where(Sale.date >= week_ago)
+            .where(and_(T, Sale.date >= week_ago))
         )
         total_sales_week = week_result.scalar() or 0
-        
+
         # Month's sales
         month_result = await session.execute(
             select(func.coalesce(func.sum(Sale.sales), 0))
-            .where(Sale.date >= month_ago)
+            .where(and_(T, Sale.date >= month_ago))
         )
         total_sales_month = month_result.scalar() or 0
-        
+
         # Transaction count today
         trans_result = await session.execute(
             select(func.count(Sale.id))
-            .where(Sale.date == today)
+            .where(and_(T, Sale.date == today))
         )
         transactions_today = trans_result.scalar() or 0
-        
+
         # Streaming count (live transactions)
         stream_result = await session.execute(
             select(func.count(Sale.id))
-            .where(Sale.is_streaming == True)
+            .where(and_(T, Sale.is_streaming == True))
         )
         streaming_count = stream_result.scalar() or 0
-        
+
         # Historical count
         hist_result = await session.execute(
             select(func.count(Sale.id))
-            .where(Sale.is_streaming == False)
+            .where(and_(T, Sale.is_streaming == False))
         )
         historical_count = hist_result.scalar() or 0
         
@@ -137,38 +138,40 @@ async def get_real_time_kpis() -> Dict:
         }
 
 
-async def get_store_sales(store_name: Optional[str] = None) -> Dict:
-    """Fetch store-specific sales data"""
+async def get_store_sales(store_name: Optional[str] = None, tenant_id: int = 1) -> Dict:
+    """Fetch store-specific sales data (tenant-scoped)"""
+    T = Sale.tenant_id == tenant_id
     async with async_session() as session:
         if store_name:
-            # Search for specific store
+            # Search for specific store (within the tenant)
             store_result = await session.execute(
-                select(Store).where(Store.name.ilike(f'%{store_name}%'))
+                select(Store).where(and_(Store.name.ilike(f'%{store_name}%'),
+                                         Store.tenant_id == tenant_id))
             )
             store = store_result.scalar_one_or_none()
-            
+
             if store:
                 # Get total sales for this store
                 sales_result = await session.execute(
                     select(func.coalesce(func.sum(Sale.sales), 0))
-                    .where(Sale.store_id == store.id)
+                    .where(and_(T, Sale.store_id == store.id))
                 )
                 total_sales = sales_result.scalar() or 0
-                
+
                 # Get today's sales
                 today_result = await session.execute(
                     select(func.coalesce(func.sum(Sale.sales), 0))
-                    .where(and_(Sale.store_id == store.id, Sale.date == date.today()))
+                    .where(and_(T, Sale.store_id == store.id, Sale.date == date.today()))
                 )
                 today_sales = today_result.scalar() or 0
-                
+
                 # Get returns
                 returns_result = await session.execute(
                     select(func.coalesce(func.sum(Sale.sales), 0))
-                    .where(and_(Sale.store_id == store.id, Sale.sales < 0))
+                    .where(and_(T, Sale.store_id == store.id, Sale.sales < 0))
                 )
                 total_returns = abs(returns_result.scalar() or 0)
-                
+
                 return {
                     'found': True,
                     'store_name': store.name,
@@ -179,14 +182,16 @@ async def get_store_sales(store_name: Optional[str] = None) -> Dict:
                     'net_sales': total_sales
                 }
             return {'found': False, 'store_name': store_name}
-        
-        # Get all stores performance
+
+        # Get all stores performance (this tenant's stores only)
         query = select(
             Store.id,
             Store.name,
             Store.location,
             func.coalesce(func.sum(Sale.sales), 0).label('total_sales')
-        ).outerjoin(Sale, Sale.store_id == Store.id).group_by(
+        ).outerjoin(Sale, and_(Sale.store_id == Store.id, T)).where(
+            Store.tenant_id == tenant_id
+        ).group_by(
             Store.id, Store.name, Store.location
         ).order_by(desc('total_sales'))
         
@@ -209,14 +214,16 @@ async def get_store_sales(store_name: Optional[str] = None) -> Dict:
         }
 
 
-async def get_category_sales() -> Dict:
-    """Fetch sales by category"""
+async def get_category_sales(tenant_id: int = 1) -> Dict:
+    """Fetch sales by category (tenant-scoped)"""
     async with async_session() as session:
         query = select(
             Item.category,
             func.coalesce(func.sum(Sale.sales), 0).label('total_sales'),
             func.count(Sale.id).label('transaction_count')
-        ).join(Item, Sale.item_id == Item.id).group_by(
+        ).join(Item, Sale.item_id == Item.id).where(
+            Sale.tenant_id == tenant_id
+        ).group_by(
             Item.category
         ).order_by(desc('total_sales'))
         
@@ -239,14 +246,16 @@ async def get_category_sales() -> Dict:
         }
 
 
-async def get_top_items(limit: int = 10) -> Dict:
-    """Fetch top selling items"""
+async def get_top_items(limit: int = 10, tenant_id: int = 1) -> Dict:
+    """Fetch top selling items (tenant-scoped)"""
     async with async_session() as session:
         query = select(
             Item.name,
             Item.category,
             func.coalesce(func.sum(Sale.sales), 0).label('total_sales')
-        ).join(Item, Sale.item_id == Item.id).group_by(
+        ).join(Item, Sale.item_id == Item.id).where(
+            Sale.tenant_id == tenant_id
+        ).group_by(
             Item.id, Item.name, Item.category
         ).order_by(desc('total_sales')).limit(limit)
         
@@ -265,14 +274,14 @@ async def get_top_items(limit: int = 10) -> Dict:
         }
 
 
-async def get_recent_transactions(limit: int = 10) -> Dict:
-    """Fetch recent streaming transactions"""
+async def get_recent_transactions(limit: int = 10, tenant_id: int = 1) -> Dict:
+    """Fetch recent streaming transactions (tenant-scoped)"""
     async with async_session() as session:
         query = select(
             Sale, Store.name.label('store_name'), Item.name.label('item_name'), Item.category
         ).join(Store, Sale.store_id == Store.id).join(
             Item, Sale.item_id == Item.id
-        ).where(Sale.is_streaming == True).order_by(
+        ).where(and_(Sale.is_streaming == True, Sale.tenant_id == tenant_id)).order_by(
             desc(Sale.created_at)
         ).limit(limit)
         
@@ -295,13 +304,13 @@ async def get_recent_transactions(limit: int = 10) -> Dict:
         }
 
 
-async def get_returns_data(store_name: Optional[str] = None) -> Dict:
-    """Fetch detailed returns data - items with negative sales values"""
+async def get_returns_data(store_name: Optional[str] = None, tenant_id: int = 1) -> Dict:
+    """Fetch detailed returns data - items with negative sales values (tenant-scoped)"""
     today = date.today()
-    
+
     async with async_session() as session:
-        # Base query for returns (negative sales)
-        base_filter = Sale.sales < 0
+        # Base query for returns (negative sales), scoped to the tenant
+        base_filter = and_(Sale.sales < 0, Sale.tenant_id == tenant_id)
         
         # Today's returns
         today_returns_query = select(
@@ -328,7 +337,7 @@ async def get_returns_data(store_name: Optional[str] = None) -> Dict:
             select(
                 func.count(Sale.id).label('count'),
                 func.coalesce(func.sum(Sale.sales), 0).label('total')
-            ).where(and_(Sale.sales < 0, Sale.date == today))
+            ).where(and_(base_filter, Sale.date == today))
         )
         today_stat = today_stats.fetchone()
         
@@ -347,7 +356,7 @@ async def get_returns_data(store_name: Optional[str] = None) -> Dict:
             func.count(Sale.id).label('return_count'),
             func.coalesce(func.sum(Sale.sales), 0).label('return_value')
         ).join(Store, Sale.store_id == Store.id).where(
-            and_(Sale.sales < 0, Sale.is_streaming == True)
+            and_(base_filter, Sale.is_streaming == True)
         ).group_by(Store.name).order_by(desc('return_count'))
         
         by_store_result = await session.execute(by_store_query)
@@ -359,7 +368,7 @@ async def get_returns_data(store_name: Optional[str] = None) -> Dict:
             func.count(Sale.id).label('return_count'),
             func.coalesce(func.sum(Sale.sales), 0).label('return_value')
         ).join(Item, Sale.item_id == Item.id).where(
-            and_(Sale.sales < 0, Sale.is_streaming == True)
+            and_(base_filter, Sale.is_streaming == True)
         ).group_by(Item.category).order_by(desc('return_count'))
         
         by_category_result = await session.execute(by_category_query)
@@ -413,24 +422,24 @@ async def get_returns_data(store_name: Optional[str] = None) -> Dict:
         }
 
 
-async def _get_forecast_narrative(horizon: int = 14) -> str:
-    """Engine-driven forecast answer for the assistant (B1.7). The AI router is
-    unauthenticated, so this answers for the demo tenant across all stores."""
+async def _get_forecast_narrative(horizon: int = 14, tenant_id: int = 1) -> str:
+    """Engine-driven forecast answer for the assistant (B1.7), scoped to the
+    caller's tenant across all their stores."""
     try:
         from app.services.forecast_service import forecast_narrative
         async with async_session() as session:
-            return await forecast_narrative(session, tenant_id=1, allowed=None, horizon=horizon)
+            return await forecast_narrative(session, tenant_id=tenant_id, allowed=None, horizon=horizon)
     except Exception as e:
         return f"📈 I couldn't compute a forecast right now ({e})."
 
 
-async def get_dashboard_summary() -> str:
-    """Generate a comprehensive dashboard summary with real data"""
-    kpis = await get_real_time_kpis()
-    stores = await get_store_sales()
-    categories = await get_category_sales()
-    top_items = await get_top_items(5)
-    recent = await get_recent_transactions(5)
+async def get_dashboard_summary(tenant_id: int = 1) -> str:
+    """Generate a comprehensive dashboard summary with real data (tenant-scoped)"""
+    kpis = await get_real_time_kpis(tenant_id)
+    stores = await get_store_sales(tenant_id=tenant_id)
+    categories = await get_category_sales(tenant_id)
+    top_items = await get_top_items(5, tenant_id)
+    recent = await get_recent_transactions(5, tenant_id)
     
     # Find top performing store
     top_store = stores['stores'][0] if stores.get('stores') else None
@@ -576,15 +585,15 @@ def detect_intent(message: str) -> Dict:
     }
 
 
-async def build_data_context(intent_info: Dict, message: str) -> str:
-    """Build real-time data context based on detected intent"""
+async def build_data_context(intent_info: Dict, message: str, tenant_id: int = 1) -> str:
+    """Build real-time data context based on detected intent (tenant-scoped)"""
     intents = intent_info.get("intents", [])
     mentioned_store = intent_info.get("mentioned_store")
-    
+
     context_parts = []
-    
+
     # Always include KPIs for context
-    kpis = await get_real_time_kpis()
+    kpis = await get_real_time_kpis(tenant_id)
     context_parts.append(f"""
 CURRENT KPIs:
 - Today's Sales: {kpis['total_sales_today']:,} units
@@ -597,12 +606,12 @@ CURRENT KPIs:
     
     # Add specific data based on intent
     if "dashboard_summary" in intents:
-        summary = await get_dashboard_summary()
+        summary = await get_dashboard_summary(tenant_id)
         context_parts.append(f"\nDASHBOARD SUMMARY:\n{summary}")
     
     if "store_query" in intents or mentioned_store:
         if mentioned_store:
-            store_data = await get_store_sales(mentioned_store)
+            store_data = await get_store_sales(mentioned_store, tenant_id)
             if store_data.get('found'):
                 context_parts.append(f"""
 STORE DATA FOR {store_data['store_name'].upper()}:
@@ -612,35 +621,35 @@ STORE DATA FOR {store_data['store_name'].upper()}:
 - Total Returns: {store_data['total_returns']:,} units
 """)
         else:
-            stores = await get_store_sales()
+            stores = await get_store_sales(tenant_id=tenant_id)
             context_parts.append("\nALL STORES PERFORMANCE:")
             for s in stores['stores']:
                 context_parts.append(f"- {s['name']}: {s['total_sales']:,} units ({s['percentage']}%)")
     
     if "category_query" in intents or "top_items" in intents:
-        categories = await get_category_sales()
+        categories = await get_category_sales(tenant_id)
         context_parts.append("\nCATEGORY BREAKDOWN:")
         for c in categories['categories']:
             context_parts.append(f"- {c['name']}: {c['total_sales']:,} units ({c['percentage']}%)")
         
-        items = await get_top_items(10)
+        items = await get_top_items(10, tenant_id)
         context_parts.append("\nTOP 10 PRODUCTS:")
         for i, item in enumerate(items['items'], 1):
             context_parts.append(f"{i}. {item['name']} ({item['category']}): {item['total_sales']:,} units")
     
     if "recent_activity" in intents:
-        recent = await get_recent_transactions(10)
+        recent = await get_recent_transactions(10, tenant_id)
         context_parts.append("\nRECENT LIVE TRANSACTIONS:")
         for t in recent['transactions']:
             status = "RETURN" if t['is_return'] else "SALE"
             context_parts.append(f"- [{status}] {t['item']} at {t['store']}: {t['sales']} units")
     
     if "prediction" in intents:
-        forecast_text = await _get_forecast_narrative()
+        forecast_text = await _get_forecast_narrative(tenant_id=tenant_id)
         context_parts.append(f"\nFORECAST (engine-driven):\n{forecast_text}")
 
     if "returns_query" in intents:
-        returns_data = await get_returns_data()
+        returns_data = await get_returns_data(tenant_id=tenant_id)
         context_parts.append(f"""
 RETURNS DATA (DETAILED):
 TODAY'S RETURNS:
@@ -666,7 +675,7 @@ RETURNS BY STORE:""")
     return "\n".join(context_parts)
 
 
-async def get_intelligent_fallback(message: str, intent_info: Dict) -> str:
+async def get_intelligent_fallback(message: str, intent_info: Dict, tenant_id: int = 1) -> str:
     """Generate intelligent fallback response with REAL DATA when API unavailable"""
     intents = intent_info.get("intents", [])
     mentioned_store = intent_info.get("mentioned_store")
@@ -674,11 +683,11 @@ async def get_intelligent_fallback(message: str, intent_info: Dict) -> str:
     
     try:
         # Fetch real data for the response
-        kpis = await get_real_time_kpis()
+        kpis = await get_real_time_kpis(tenant_id)
         
         # CRITICAL: Check returns query FIRST - highest priority!
         if "returns_query" in intents or is_returns:
-            returns_data = await get_returns_data()
+            returns_data = await get_returns_data(tenant_id=tenant_id)
             
             response = f"""🔄 **Returns Analysis - All Stores**
 
@@ -724,7 +733,7 @@ async def get_intelligent_fallback(message: str, intent_info: Dict) -> str:
         
         # Forecast / prediction query — engine-driven (B1.7)
         if "prediction" in intents:
-            return await _get_forecast_narrative()
+            return await _get_forecast_narrative(tenant_id=tenant_id)
 
         # Greeting response
         if "greeting" in intents:
@@ -740,12 +749,12 @@ How can I help you analyze your sales data today?"""
         
         # Dashboard summary
         if "dashboard_summary" in intents:
-            return await get_dashboard_summary()
+            return await get_dashboard_summary(tenant_id)
         
         # Store-specific query
         if "store_query" in intents or mentioned_store:
             if mentioned_store:
-                store_data = await get_store_sales(mentioned_store)
+                store_data = await get_store_sales(mentioned_store, tenant_id)
                 if store_data.get('found'):
                     return f"""🏪 **{store_data['store_name']}**
 
@@ -760,7 +769,7 @@ This store is performing well in the network!"""
                 else:
                     return f"I couldn't find a store matching '{mentioned_store}'. Try: Karama, Barsha, Deira, Ajman, Sharjah, Fujairah, Al Ain, or Ras Al Khaimah."
             else:
-                stores = await get_store_sales()
+                stores = await get_store_sales(tenant_id=tenant_id)
                 response = "🏪 **Store Performance Overview:**\n\n"
                 for i, s in enumerate(stores['stores'][:5], 1):
                     response += f"{i}. **{s['name']}**: {s['total_sales']:,} units ({s['percentage']}%)\n"
@@ -769,7 +778,7 @@ This store is performing well in the network!"""
         
         # Category query
         if "category_query" in intents:
-            categories = await get_category_sales()
+            categories = await get_category_sales(tenant_id)
             response = "🛒 **Sales by Category:**\n\n"
             for c in categories['categories'][:8]:
                 response += f"• **{c['name']}**: {c['total_sales']:,} units ({c['percentage']}%)\n"
@@ -777,7 +786,7 @@ This store is performing well in the network!"""
         
         # Top items
         if "top_items" in intents:
-            items = await get_top_items(10)
+            items = await get_top_items(10, tenant_id)
             response = "🏆 **Top 10 Best-Selling Products:**\n\n"
             for i, item in enumerate(items['items'], 1):
                 response += f"{i}. **{item['name']}** ({item['category']}): {item['total_sales']:,} units\n"
@@ -803,7 +812,7 @@ This store is performing well in the network!"""
         
         # Recent activity
         if "recent_activity" in intents:
-            recent = await get_recent_transactions(10)
+            recent = await get_recent_transactions(10, tenant_id)
             response = "📡 **Recent Live Transactions:**\n\n"
             for t in recent['transactions']:
                 emoji = "🔄" if t['is_return'] else "💰"
@@ -851,7 +860,8 @@ How can I help you?"""
 
 async def stream_chat_response(
     session_id: str,
-    user_message: str
+    user_message: str,
+    tenant_id: int = 1
 ) -> AsyncGenerator[str, None]:
     """Stream chat response with real-time data integration"""
     
@@ -862,7 +872,7 @@ async def stream_chat_response(
     context.detected_intents.extend(intent_info["intents"])
     
     # Build real-time data context
-    data_context = await build_data_context(intent_info, user_message)
+    data_context = await build_data_context(intent_info, user_message, tenant_id)
     
     # Add user message with data context to conversation
     enhanced_message = f"""User Question: {user_message}
@@ -888,7 +898,7 @@ INSTRUCTIONS: Answer the user's question using the ACTUAL DATA above. Be specifi
             continue  # next provider
 
     # Rule-based fallback — always works, data-driven
-    fallback = await get_intelligent_fallback(user_message, intent_info)
+    fallback = await get_intelligent_fallback(user_message, intent_info, tenant_id)
     context.add_message("assistant", fallback)
     words = fallback.split(' ')
     for i, word in enumerate(words):
@@ -898,7 +908,8 @@ INSTRUCTIONS: Answer the user's question using the ACTUAL DATA above. Be specifi
 
 async def get_chat_response(
     session_id: str,
-    user_message: str
+    user_message: str,
+    tenant_id: int = 1
 ) -> str:
     """Get non-streaming chat response with real data"""
     
@@ -906,7 +917,7 @@ async def get_chat_response(
     intent_info = detect_intent(user_message)
     
     # Build data context
-    data_context = await build_data_context(intent_info, user_message)
+    data_context = await build_data_context(intent_info, user_message, tenant_id)
     
     enhanced_message = f"""User Question: {user_message}
 
@@ -928,7 +939,7 @@ Answer using the actual data above. Be specific with numbers."""
             continue  # next provider
 
     # Rule-based fallback — always works, data-driven
-    fallback = await get_intelligent_fallback(user_message, intent_info)
+    fallback = await get_intelligent_fallback(user_message, intent_info, tenant_id)
     context.add_message("assistant", fallback)
     return fallback
 
