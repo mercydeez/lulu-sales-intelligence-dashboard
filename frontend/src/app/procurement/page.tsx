@@ -19,14 +19,17 @@ interface PO {
 
 const STATUS_BADGE: Record<string, BadgeVariant> = {
   draft: 'neutral', pending_approval: 'amber', approved: 'teal',
-  sent: 'violet', received: 'success', cancelled: 'danger',
+  sent: 'violet', partially_received: 'amber', received: 'success', cancelled: 'danger',
 };
 
-// The next action available from each status (forward transitions only).
-const NEXT_ACTION: Record<string, { label: string; status: string } | undefined> = {
-  draft: { label: 'Approve', status: 'approved' },
-  approved: { label: 'Mark sent', status: 'sent' },
-  sent: { label: 'Mark received', status: 'received' },
+// The next action from each status. 'receive' records a goods receipt for all
+// outstanding lines; 'status' is a plain lifecycle transition.
+type NextAction = { label: string; kind: 'status' | 'receive'; status?: string };
+const NEXT_ACTION: Record<string, NextAction | undefined> = {
+  draft: { label: 'Approve', kind: 'status', status: 'approved' },
+  approved: { label: 'Mark sent', kind: 'status', status: 'sent' },
+  sent: { label: 'Receive', kind: 'receive' },
+  partially_received: { label: 'Receive rest', kind: 'receive' },
 };
 
 export default function ProcurementPage() {
@@ -65,11 +68,15 @@ export default function ProcurementPage() {
     } catch { setMessage('Generation failed'); } finally { setGenerating(false); }
   };
 
-  const advance = async (po: PO, status: string) => {
-    const res = await authFetch(`/api/procurement/purchase-orders/${po.id}/status`, {
+  const advance = async (po: PO, action: NextAction) => {
+    const url = action.kind === 'receive'
+      ? `/api/procurement/purchase-orders/${po.id}/receive`
+      : `/api/procurement/purchase-orders/${po.id}/status`;
+    const body = action.kind === 'receive' ? {} : { status: action.status };
+    const res = await authFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
@@ -162,7 +169,7 @@ export default function ProcurementPage() {
                         <td className="py-2.5 pe-4 text-end font-medium text-ink">{fmt(po.total_amount)}</td>
                         <td className="py-2.5 text-end">
                           {next ? (
-                            <Button variant="secondary" size="sm" onClick={() => advance(po, next.status)}>
+                            <Button variant="secondary" size="sm" onClick={() => advance(po, next)}>
                               {next.label}
                             </Button>
                           ) : (
