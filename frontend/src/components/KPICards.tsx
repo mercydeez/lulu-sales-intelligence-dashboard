@@ -191,9 +191,11 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
 
+      // No custom request headers here: a non-safelisted header like
+      // Cache-Control forces a CORS preflight that must be allow-listed server
+      // side, and getting that wrong surfaces as a confusing "Failed to fetch".
       const response = await authFetch('/api/kpis', {
         signal: controller.signal,
-        headers: { 'Cache-Control': 'max-age=15' }
       });
 
       clearTimeout(timeoutId);

@@ -221,7 +221,7 @@ cors_kwargs = dict(
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "X-Request-ID"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "X-Request-ID", "Cache-Control"],
     expose_headers=["X-Request-ID", "X-Process-Time", "X-RateLimit-Remaining"],
     max_age=600,
 )
