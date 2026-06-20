@@ -19,6 +19,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import logger
 from app.services.forecast_service import reorder_suggestions
 
+def _emit(tenant_id: int, event: str, data: Dict) -> None:
+    """Fire a signed webhook for a procurement domain event (best-effort,
+    fire-and-forget — never blocks or fails the operation)."""
+    try:
+        from app.services.webhook_service import dispatch_event_background
+        dispatch_event_background(tenant_id, event, data)
+    except Exception as e:  # pragma: no cover - webhooks are best-effort
+        logger.debug(f"webhook emit skipped ({event}): {e}")
+
+
 PRICE_TOLERANCE_PCT = 0.01  # 1% unit-cost tolerance in the 3-way match
 OPEN_STATUSES = ("draft", "pending_approval", "approved", "sent", "partially_received")
 STATUS_TRANSITIONS = {
@@ -174,6 +184,10 @@ async def generate_draft_pos_from_reorder(
         created.append(po)
 
     await db.commit()
+    for po in created:
+        _emit(tenant_id, "purchase_order.created", po)
+        if po["status"] == "approved":
+            _emit(tenant_id, "purchase_order.approved", po)
     msg = f"Created {len(created)} draft PO(s) from forecast."
     if auto_approved:
         msg = (f"Created {len(created)} PO(s) from forecast — {auto_approved} auto-approved "
@@ -349,6 +363,9 @@ async def receive_po(db: AsyncSession, tenant_id: int, po_id: int,
         WHERE id = :id
     """), {"s": po_status, "fully": fully, "now": datetime.now(timezone.utc), "id": po_id})
     await db.commit()
+    _emit(tenant_id, "goods.received", {
+        "po_id": po_id, "receipt_number": receipt_number, "po_status": po_status,
+    })
     return {
         "receipt_id": receipt_id, "receipt_number": receipt_number,
         "po_id": po_id, "po_status": po_status,
@@ -391,6 +408,8 @@ async def transition_status(db: AsyncSession, tenant_id: int, po_id: int,
         f"UPDATE purchase_orders SET {', '.join(sets)} WHERE id = :id AND tenant_id = :t"
     ), params)
     await db.commit()
+    if new_status in ("approved", "sent", "received"):
+        _emit(tenant_id, f"purchase_order.{new_status}", {"po_id": po_id, "status": new_status})
     return {"po_id": po_id, "status": new_status}
 
 
@@ -486,6 +505,9 @@ async def three_way_match(db: AsyncSession, tenant_id: int, invoice_id: int) -> 
         "UPDATE supplier_invoices SET match_status = :m, status = :s WHERE id = :id"
     ), {"m": match_status, "s": new_status, "id": invoice_id})
     await db.commit()
+    if match_status == "exception":
+        _emit(tenant_id, "invoice.match_exception",
+              {"invoice_id": invoice_id, "po_id": inv.po_id})
     return {
         "invoice_id": invoice_id, "po_id": inv.po_id, "match_status": match_status,
         "exceptions": [l for l in result_lines if not l["ok"]],

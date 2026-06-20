@@ -93,6 +93,18 @@ assert hmac.compare_digest(expected, signature.split("=", 1)[1])
 Payload shape: `{ "event", "tenant_id", "data", "sent_at" }`. Delivery is
 best-effort and fire-and-forget, so a slow receiver never blocks the platform.
 
+**Event types** (subscribe to specific ones or `*`):
+
+| Event | Fires when |
+|-------|-----------|
+| `webhook.test` | You hit `POST /api/webhooks/test` |
+| `purchase_order.created` | A draft PO is generated from the forecast |
+| `purchase_order.approved` | A PO is approved (manually or auto-approved by rule) |
+| `purchase_order.sent` | A PO is marked sent to the supplier |
+| `purchase_order.received` | A PO is fully received |
+| `goods.received` | A goods receipt is recorded (partial or full) |
+| `invoice.match_exception` | A supplier invoice fails the 3-way match |
+
 ## Still to build (B4 remainder)
 
 An interactive **developer portal** (live "try it" docs) and wiring

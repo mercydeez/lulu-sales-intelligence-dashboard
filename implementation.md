@@ -55,8 +55,9 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
   for embedded widgets + admin `PATCH /api/tenants/branding`). Outbound **webhooks** ✅ (migration 015
   `tenant_webhooks`, `services/webhook_service.py` with HMAC-SHA256-signed delivery + event-subscription
   matching, mgmt + test-ping at `/api/webhooks`; `dispatch_event[_background]` ready for producers).
-  Developer guide: `docs/PUBLIC_API.md`. ⏭️ Remaining: an interactive **developer portal** (live "try
-  it" docs) and wiring `dispatch_event` into specific domain events (alerts/reorder).
+  Developer guide: `docs/PUBLIC_API.md`. Webhooks now **fire on real domain events** (procurement PO
+  lifecycle, goods receipt, 3-way-match exceptions). ⏭️ Remaining: an interactive **developer portal**
+  (live "try it" docs).
 
 ### B5 — Chatbot / AI APIs ✅
 - Free/local **Ollama** provider with rule-based fallback already wired (`services/llm/`); tenant-scoped,
@@ -80,15 +81,18 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
 > The next rungs are a **system of action** (places/approves orders) and a **system of transaction**
 > (money moves). Best started **after** B2 (tenant isolation) + B1 (forecasting) — treat as "Phase 3.5 / 6".
 
-- **E. Procure-to-pay (highest leverage):** 🟡 **system of record shipped.** Forecast → reorder
-  suggestion → **auto-grouped draft PO per supplier (MOQ-respected)** → **threshold-based approval** →
-  send → received, with full lifecycle validation. Entities live (migration 016, RLS + tenant-scoped):
-  Supplier, Product↔Supplier (cost/MOQ/lead time), PurchaseOrder, POLine. API: `/api/procurement/*`
-  (suppliers CRUD, `purchase-orders/generate` = the forecast→PO engine, list/detail, `/status`
-  transitions). Demo tenant seeded with 3 suppliers + a 50-item catalog so the flow runs out of the box
-  (`services/procurement_service.py`, tested + verified live). ⏭️ Remaining: goods receipt, 3-way match,
-  Invoice/Payment (partner for money movement — never build KYC/AML/licensing), ApprovalRule config,
-  and a procurement UI.
+- **E. Procure-to-pay (highest leverage):** ✅ **full system of record shipped.** Forecast → reorder →
+  **auto-grouped draft PO per supplier (MOQ-respected)** → **configurable auto-/manual approval** → send
+  → **goods receipt (partial/full)** → **supplier invoice + 3-way match** (ordered vs received vs
+  invoiced, qty + price variance flags). Entities live (migrations 016–019, all RLS + tenant-scoped):
+  Supplier, Product↔Supplier, PurchaseOrder, POLine, GoodsReceipt(+lines), SupplierInvoice(+lines),
+  ApprovalRule. Full PO lifecycle with transition validation + approval-threshold guard. API:
+  `/api/procurement/*` (suppliers, `purchase-orders/generate`, list/detail, `/status`, `/receive`,
+  `/invoices`, `/invoices/{id}/match`, `/approval-rule`). **Frontend** `/procurement` page (generate →
+  approve → send → receive). Demo tenant seeded with 3 suppliers + 50-item catalog. Domain events emit
+  **signed webhooks** (purchase_order.created/approved/sent/received, goods.received,
+  invoice.match_exception). All tested + verified live in Docker. ⏭️ Remaining: Payment leg (partner for
+  money movement — never build KYC/AML/licensing).
 - **F. Payments (two distinct):** (1) billing your retailer customers → B3; (2) customers paying
   their suppliers (B2B AP) → record status first, embed a partner later.
 - **H. UI patterns to adopt:** command palette (Cmd-K), action cards ("Milk out in 3 days → [Create
