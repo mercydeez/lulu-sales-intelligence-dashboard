@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import KPICards from '@/components/KPICards';
+import RevenueProjectionCard from '@/components/RevenueProjectionCard';
+import OnboardingChecklist from '@/components/OnboardingChecklist';
 import LiveTable from '@/components/LiveTable';
 import {
   SalesTrendChart,
@@ -53,7 +55,15 @@ export default function Home() {
         <AlertQuickLinks stats={alertStats} />
 
         <section>
+          <OnboardingChecklist />
+        </section>
+
+        <section>
           <KPICards refreshInterval={30000} />
+        </section>
+
+        <section>
+          <RevenueProjectionCard />
         </section>
 
         <section>

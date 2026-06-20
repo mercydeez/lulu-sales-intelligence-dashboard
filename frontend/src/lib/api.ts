@@ -1,6 +1,6 @@
 import {
   Sale, SalesAggregation, DashboardMetrics, Prediction, Store, Item, BacktestResult, TrendPoint,
-  StoreDistributionPoint, CategoryBreakdownPoint, TopItemPoint,
+  StoreDistributionPoint, CategoryBreakdownPoint, TopItemPoint, RevenueProjection,
 } from '@/types';
 import { apiRequest, clearApiCache } from './apiClient';
 
@@ -75,6 +75,12 @@ export async function fetchItems(): Promise<Item[]> {
 
 export async function fetchKPIs(): Promise<DashboardMetrics> {
   return cachedFetch<DashboardMetrics>('/api/kpis', 'kpis');
+}
+
+/** Forward revenue projection (B1.7) — the forecasting engine valued at the
+ *  average unit price, scoped to the caller's tenant + stores. */
+export async function fetchRevenueProjection(horizon: number = 14): Promise<RevenueProjection> {
+  return cachedFetch<RevenueProjection>('/api/kpis/projection', 'predictions', { horizon });
 }
 
 export async function fetchTrend(days: number = 30, includeForecast: boolean = true): Promise<{ data: TrendPoint[] }> {

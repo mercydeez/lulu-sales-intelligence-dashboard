@@ -7,8 +7,18 @@ import { authFetch as clientAuthFetch, clearApiCache } from '@/lib/apiClient';
 declare const process: { env: { NEXT_PUBLIC_API_URL?: string } };
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+export interface SignupData {
+  company_name: string;
+  email: string;
+  password: string;
+  first_name: string;
+  last_name: string;
+  seed_sample_data?: boolean;
+}
+
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<boolean>;
+  signup: (data: SignupData) => Promise<boolean>;
   logout: () => Promise<void>;
   refreshToken: () => Promise<boolean>;
   hasPermission: (permission: string) => boolean;
@@ -87,6 +97,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading: false,
       error: null
     });
+  };
+
+  const signup = async (data: SignupData): Promise<boolean> => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    try {
+      const response = await fetch(`${API_URL}/api/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seed_sample_data: true, ...data }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        setState(prev => ({ ...prev, isLoading: false, error: body.detail || 'Sign up failed' }));
+        return false;
+      }
+      const signupResponse: LoginResponse = body;
+      clearApiCache();
+      localStorage.setItem(ACCESS_TOKEN_KEY, signupResponse.access_token);
+      localStorage.setItem(REFRESH_TOKEN_KEY, signupResponse.refresh_token);
+      localStorage.setItem(USER_KEY, JSON.stringify(signupResponse.user));
+      setState({ user: signupResponse.user, isAuthenticated: true, isLoading: false, error: null });
+      return true;
+    } catch (error) {
+      console.error('Signup error:', error);
+      setState(prev => ({ ...prev, isLoading: false, error: 'Network error. Please try again.' }));
+      return false;
+    }
   };
 
   const login = async (credentials: LoginCredentials): Promise<boolean> => {
@@ -235,6 +272,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         ...state,
         login,
+        signup,
         logout,
         refreshToken,
         hasPermission,

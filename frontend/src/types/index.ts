@@ -52,6 +52,26 @@ export interface DashboardMetrics {
   streaming_records_count: number;
 }
 
+export interface RevenueProjectionPoint {
+  date: string;
+  units: number;
+  revenue: number;
+  revenue_lower: number;
+  revenue_upper: number;
+}
+
+export interface RevenueProjection {
+  horizon_days: number;
+  currency: string;
+  model_version: string;
+  projected_units: number;
+  projected_revenue: number;
+  avg_daily_units: number;
+  avg_daily_revenue: number;
+  daily: RevenueProjectionPoint[];
+  status: 'ready' | 'insufficient_history';
+}
+
 export interface StoreDistributionPoint {
   store_id: number;
   store_name: string;

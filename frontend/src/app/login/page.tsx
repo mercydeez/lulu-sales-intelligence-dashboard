@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   Eye, EyeOff, Lock, Mail, AlertCircle, Loader2, ShoppingBag,
@@ -237,6 +238,11 @@ export default function LoginPage() {
               Password for all demos: <span className="font-mono font-medium text-ink-soft">Lulu@2026!</span>
             </p>
           </div>
+
+          <p className="mt-8 text-center text-sm text-ink-soft">
+            New here?{' '}
+            <Link href="/signup" className="font-medium gradient-text">Create your workspace</Link>
+          </p>
         </div>
       </div>
     </div>
