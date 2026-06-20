@@ -9,6 +9,52 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
 
 ---
 
+## Status snapshot — what's done, what's left, suggestions
+
+### ✅ Done (shipped, tested, verified live in Docker)
+- **B1.7** — forecasts wired across the product (dashboard revenue projection, inventory reorder, promo
+  uplift baseline, AI answers).
+- **B2** — multi-tenancy **complete**: app-layer `tenant_id` scoping on every read, tenant-aware caches,
+  tenant-scoped AI assistant, Postgres **FORCE RLS + non-owner `app_rw` role** (proven at the DB level),
+  `security_invoker` view, second seeded tenant (Northwind), isolation tests.
+- **B3** — self-serve onboarding (signup → isolated tenant + sample data + auto-login, invites,
+  checklist). Billing intentionally deferred.
+- **B4** — PaaS **complete**: per-tenant API keys, public REST API, embeddable AI, white-label branding,
+  HMAC-signed webhooks firing on real domain events, in-app developer portal.
+- **B5** — embeddable, tenant-scoped AI (Ollama → rule-based fallback, zero paid keys).
+- **Part III-E** — procure-to-pay **system of record complete**: forecast → grouped MOQ draft PO →
+  manual/auto approval → send → goods receipt (partial/full) → supplier invoice → 3-way match; suppliers
+  + catalog; RLS on all entities.
+- **Part III-H** — PO PDF, approval inbox (+nav badge), dashboard action cards, Cmd-K command palette,
+  audit timeline (procurement event log), **PWA installable offline shell**.
+- **Live fixes** found & repaired: truncated `kpis.py`, migration-013 sequence collision, public-API
+  kwarg 500, KPIs CORS preflight, view RLS leak, audit-log jsonb bind.
+- Backend **150 tests pass** · frontend `tsc` clean · 22 migrations apply on boot.
+
+### ⏭️ Remaining — deferred by you, or needs external services / a decision
+- **Billing (B3 / Part III-F)** — Stripe/Telr subscriptions + metering. Deferred to go-to-market.
+- **Payments / B2B AP (Part III-F)** — partner for money movement; never build KYC/AML/licensing.
+- **Notifications (Part III-H)** — WhatsApp/Slack/email; needs Twilio/Resend/Slack credentials.
+- **E-signature (Part III-H)** — needs a provider (DocuSign / Dropbox Sign).
+- **Part III-I infra** — Temporal/Camunda, WorkOS SSO/SAML/SCIM, PostHog+Sentry, Typesense/Meili,
+  DuckDB/ClickHouse+dbt, Mapbox, embedded payments. Future platform adoptions.
+- **FORCE-RLS request-path enablement** — role + DB enforcement shipped & proven; flip `USE_RLS_ROLE=true`
+  after two follow-ups (set the GUC after auth; cross-tenant public-API key lookup).
+
+### 💡 Suggestions (highest leverage next)
+1. **Notifications on existing events** — a free Slack incoming webhook (no SDK) on 3-way-match
+   exceptions / low stock / PO approved is ~half a day and immediately useful; reuse `dispatch_event`.
+2. **Finish FORCE-RLS enforcement** — set the GUC after auth (tiny middleware/dependency) + special-case
+   the public-API key lookup, then run with `USE_RLS_ROLE=true` for true DB-enforced isolation.
+3. **Sentry + PostHog** — cheapest observability/analytics credibility win before real users.
+4. **Harden CI** — run the full backend suite (not just config/security), fail on `tsc` errors, and add a
+   compose smoke test (`/health` + `/api/kpis`).
+5. **Billing when ready** — Stripe Checkout maps cleanly onto the existing `tenants.plan` + API-key
+   `request_count` metering hooks; small lift on top of the tenant model.
+6. **UAE data residency + backups** — managed Postgres in a UAE region + nightly dumps before production.
+
+---
+
 ## Done so far (summary)
 
 - **Part I — Recovery → MVP → polish (Phases 0–5):** ✅ complete (auth/RBAC, revenue model, 3-tier
@@ -112,8 +158,10 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
   global navigation + quick actions). **Audit timeline** ✅ — append-only `procurement_events` log
   (migration 022, RLS+FORCE) written atomically with each PO/receipt/invoice action and attributed to the
   actor; `GET /api/procurement/events`, shown as a global Activity feed on `/procurement` and a per-PO
-  trail on the PO page. ⏭️ Still roadmap (need external services / larger lift): WhatsApp/email/Slack
-  notifications, mobile-first/PWA, e-signature.
+  trail on the PO page. **PWA / installable offline shell** ✅ — web manifest + service worker
+  (`public/sw.js`: network-first navigations → `/offline.html` fallback, cache-first static, API/SSE left
+  untouched), generated icons, registered in production via `ServiceWorkerRegister`. ⏭️ Still roadmap
+  (need external services): WhatsApp/email/Slack notifications, e-signature.
 - **I. Tech to bring in:** workflow/state machine (status enum → Temporal/Camunda), notifications
   (Novu/Knock + Twilio + Resend), enterprise auth (WorkOS SSO/SAML/SCIM), PostHog + Sentry, search
   (Typesense/Meilisearch), analytics scale (DuckDB/ClickHouse + dbt), Mapbox, embedded payments

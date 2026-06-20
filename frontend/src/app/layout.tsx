@@ -6,6 +6,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { ToastProvider } from '@/components/ui/Toast';
 import ClientLayout from '@/components/ClientLayout';
+import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 
 const manrope = Manrope({
   subsets: ['latin'],
@@ -25,6 +26,16 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'Lulu Hypermarket Sales Dashboard | Real-time Analytics',
   description: 'Real-time sales streaming and analytics dashboard for Lulu Hypermarket UAE',
+  manifest: '/manifest.webmanifest',
+  applicationName: 'Lulu Intel',
+  appleWebApp: { capable: true, title: 'Lulu Intel', statusBarStyle: 'default' },
+  icons: {
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: '/icons/apple-touch-icon.png',
+  },
 };
 
 export default function RootLayout({
@@ -45,6 +56,7 @@ export default function RootLayout({
         />
       </head>
       <body className={`${manrope.variable} ${plexMono.variable} font-sans text-ink antialiased`}>
+        <ServiceWorkerRegister />
         <div className="min-h-screen">
           <LanguageProvider>
             <AuthProvider>

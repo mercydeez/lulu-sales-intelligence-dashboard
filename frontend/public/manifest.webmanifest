@@ -1,0 +1,23 @@
+{
+  "name": "Lulu Intelligence — Sales & Procurement",
+  "short_name": "Lulu Intel",
+  "description": "Real-time retail intelligence: live KPIs, demand forecasting, inventory, and forecast-driven procurement.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#fdf6f3",
+  "theme_color": "#fdf6f3",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Dashboard", "url": "/" },
+    { "name": "Procurement", "url": "/procurement" },
+    { "name": "Approvals", "url": "/approvals" }
+  ]
+}
