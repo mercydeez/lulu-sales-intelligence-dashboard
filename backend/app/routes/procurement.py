@@ -43,6 +43,16 @@ class StatusRequest(BaseModel):
     approval_threshold: Optional[float] = None
 
 
+class ReceiveLine(BaseModel):
+    po_line_id: int
+    received_qty: int = Field(..., ge=0)
+
+
+class ReceiveRequest(BaseModel):
+    # Omit `lines` to receive everything still outstanding on the PO.
+    lines: Optional[List[ReceiveLine]] = None
+
+
 # --- Suppliers -------------------------------------------------------------
 @router.get("/suppliers")
 async def list_suppliers(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -83,6 +93,19 @@ async def get_po(po_id: int, user: dict = Depends(get_current_user), db: AsyncSe
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
     return po
+
+
+@router.post("/purchase-orders/{po_id}/receive", status_code=201)
+async def receive_po(po_id: int, body: ReceiveRequest, user: dict = Depends(get_current_user),
+                     db: AsyncSession = Depends(get_db)):
+    """Record a goods receipt against a PO (partial or full). Omit `lines` to
+    receive everything still outstanding."""
+    _require_manage(user)
+    lines = [l.model_dump() for l in body.lines] if body.lines else None
+    try:
+        return await proc.receive_po(db, _tenant(user), po_id, lines, user_id=user.get("id"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/purchase-orders/{po_id}/status")

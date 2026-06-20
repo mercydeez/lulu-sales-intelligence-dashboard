@@ -63,6 +63,28 @@ async def test_transition_missing_po_raises():
         await proc.transition_status(session, tenant_id=1, po_id=999, new_status="approved")
 
 
+def test_receiving_states_in_machine():
+    assert "partially_received" in proc.STATUS_TRANSITIONS["sent"]
+    assert "received" in proc.STATUS_TRANSITIONS["partially_received"]
+    assert proc.RECEIVABLE_STATUSES == ("approved", "sent", "partially_received")
+
+
+@pytest.mark.asyncio
+async def test_receive_rejects_non_receivable_status():
+    session = _session_with_po("draft", 100.0)  # draft can't be received
+    with pytest.raises(ValueError, match="Cannot receive"):
+        await proc.receive_po(session, tenant_id=1, po_id=1)
+
+
+@pytest.mark.asyncio
+async def test_receive_missing_po_raises():
+    session = MagicMock()
+    result = MagicMock(); result.fetchone.return_value = None
+    session.execute = AsyncMock(return_value=result)
+    with pytest.raises(ValueError, match="not found"):
+        await proc.receive_po(session, tenant_id=1, po_id=999)
+
+
 def test_procurement_routes_registered():
     from app.main import app
     paths = {r.path for r in app.routes}
@@ -70,6 +92,7 @@ def test_procurement_routes_registered():
     assert "/api/procurement/purchase-orders/generate" in paths
     assert "/api/procurement/purchase-orders" in paths
     assert "/api/procurement/purchase-orders/{po_id}/status" in paths
+    assert "/api/procurement/purchase-orders/{po_id}/receive" in paths
 
 
 def test_procurement_requires_auth():

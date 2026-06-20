@@ -19,15 +19,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import logger
 from app.services.forecast_service import reorder_suggestions
 
-OPEN_STATUSES = ("draft", "pending_approval", "approved", "sent")
+OPEN_STATUSES = ("draft", "pending_approval", "approved", "sent", "partially_received")
 STATUS_TRANSITIONS = {
     "draft": {"pending_approval", "approved", "cancelled"},
     "pending_approval": {"approved", "cancelled"},
     "approved": {"sent", "cancelled"},
-    "sent": {"received", "cancelled"},
+    "sent": {"partially_received", "received", "cancelled"},
+    "partially_received": {"received", "cancelled"},
     "received": set(),
     "cancelled": set(),
 }
+RECEIVABLE_STATUSES = ("approved", "sent", "partially_received")
 
 
 # ---------------------------------------------------------------------------
@@ -213,10 +215,14 @@ async def get_purchase_order(db: AsyncSession, tenant_id: int, po_id: int) -> Op
         return None
     lines = (await db.execute(text("""
         SELECT l.id, l.item_id, i.name AS item_name, l.quantity, l.unit_cost,
-               l.line_total, l.days_of_cover
+               l.line_total, l.days_of_cover, l.received_qty
         FROM purchase_order_lines l JOIN items i ON i.id = l.item_id
         WHERE l.po_id = :id ORDER BY l.id
     """), {"id": po_id})).fetchall()
+    receipts = (await db.execute(text("""
+        SELECT id, receipt_number, status, received_at
+        FROM goods_receipts WHERE po_id = :id AND tenant_id = :t ORDER BY id
+    """), {"id": po_id, "t": tenant_id})).fetchall()
     return {
         "id": po.id, "po_number": po.po_number, "status": po.status,
         "supplier_id": po.supplier_id, "supplier_name": po.supplier_name,
@@ -228,8 +234,86 @@ async def get_purchase_order(db: AsyncSession, tenant_id: int, po_id: int) -> Op
             "id": l.id, "item_id": l.item_id, "item_name": l.item_name,
             "quantity": l.quantity, "unit_cost": float(l.unit_cost),
             "line_total": float(l.line_total),
+            "received_qty": l.received_qty,
             "days_of_cover": float(l.days_of_cover) if l.days_of_cover is not None else None,
         } for l in lines],
+        "receipts": [{
+            "id": r.id, "receipt_number": r.receipt_number, "status": r.status,
+            "received_at": r.received_at.isoformat() if r.received_at else None,
+        } for r in receipts],
+    }
+
+
+async def receive_po(db: AsyncSession, tenant_id: int, po_id: int,
+                     lines: Optional[List[Dict]] = None,
+                     user_id: Optional[int] = None) -> Dict:
+    """Record a goods receipt against a PO. `lines` is [{po_line_id, received_qty}];
+    omit it to receive everything still outstanding. Increments per-line received
+    quantity and moves the PO to 'partially_received' or 'received'."""
+    po = (await db.execute(text(
+        "SELECT status FROM purchase_orders WHERE id = :id AND tenant_id = :t"
+    ), {"id": po_id, "t": tenant_id})).fetchone()
+    if not po:
+        raise ValueError("Purchase order not found")
+    if po.status not in RECEIVABLE_STATUSES:
+        raise ValueError(f"Cannot receive a PO in status '{po.status}'")
+
+    po_lines = (await db.execute(text(
+        "SELECT id, item_id, quantity, received_qty FROM purchase_order_lines WHERE po_id = :id"
+    ), {"id": po_id})).fetchall()
+    line_map = {l.id: l for l in po_lines}
+
+    if lines:
+        receive = {int(x["po_line_id"]): int(x["received_qty"]) for x in lines}
+    else:  # receive all outstanding
+        receive = {l.id: (l.quantity - l.received_qty) for l in po_lines
+                   if l.quantity > l.received_qty}
+    receive = {k: v for k, v in receive.items() if v > 0}
+    if not receive:
+        raise ValueError("Nothing left to receive")
+
+    for plid, qty in receive.items():
+        if plid not in line_map:
+            raise ValueError(f"PO line {plid} is not on this purchase order")
+        remaining = line_map[plid].quantity - line_map[plid].received_qty
+        if qty > remaining:
+            raise ValueError(
+                f"Over-receipt on line {plid}: {qty} exceeds {remaining} outstanding")
+
+    receipt_id = (await db.execute(text("""
+        INSERT INTO goods_receipts (tenant_id, po_id, receipt_number, received_by)
+        VALUES (:t, :po, :num, :by) RETURNING id
+    """), {"t": tenant_id, "po": po_id, "num": f"GRN-TMP-{tenant_id}", "by": user_id})).scalar()
+    receipt_number = f"GRN-{tenant_id:02d}-{receipt_id:05d}"
+    await db.execute(text("UPDATE goods_receipts SET receipt_number = :n WHERE id = :id"),
+                     {"n": receipt_number, "id": receipt_id})
+
+    for plid, qty in receive.items():
+        await db.execute(text("""
+            INSERT INTO goods_receipt_lines (receipt_id, po_line_id, item_id, received_qty)
+            VALUES (:r, :pl, :i, :q)
+        """), {"r": receipt_id, "pl": plid, "i": line_map[plid].item_id, "q": qty})
+        await db.execute(text(
+            "UPDATE purchase_order_lines SET received_qty = received_qty + :q WHERE id = :id"
+        ), {"q": qty, "id": plid})
+
+    refreshed = (await db.execute(text(
+        "SELECT quantity, received_qty FROM purchase_order_lines WHERE po_id = :id"
+    ), {"id": po_id})).fetchall()
+    fully = all(l.received_qty >= l.quantity for l in refreshed)
+    po_status = "received" if fully else "partially_received"
+    await db.execute(text("UPDATE goods_receipts SET status = :s WHERE id = :id"),
+                     {"s": "complete" if fully else "partial", "id": receipt_id})
+    await db.execute(text("""
+        UPDATE purchase_orders
+        SET status = :s, received_at = CASE WHEN :fully THEN :now ELSE received_at END
+        WHERE id = :id
+    """), {"s": po_status, "fully": fully, "now": datetime.now(timezone.utc), "id": po_id})
+    await db.commit()
+    return {
+        "receipt_id": receipt_id, "receipt_number": receipt_number,
+        "po_id": po_id, "po_status": po_status,
+        "lines_received": [{"po_line_id": k, "qty": v} for k, v in receive.items()],
     }
 
 
