@@ -23,6 +23,7 @@ import {
   Database,
   Brain,
   Truck,
+  Code2,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -47,6 +48,7 @@ export const navItems: NavItem[] = [
   { label: 'Alerts', tKey: 'nav.alerts', href: '/alerts', icon: <Bell className="w-5 h-5" /> },
   { label: 'Admin', tKey: 'nav.admin', href: '/admin', icon: <Shield className="w-5 h-5" />, roles: ['super_admin'] },
   { label: 'Data Sources', tKey: 'nav.dataSources', href: '/data-sources', icon: <Database className="w-5 h-5" />, roles: ['super_admin'] },
+  { label: 'Developers', tKey: 'nav.developers', href: '/developers', icon: <Code2 className="w-5 h-5" />, roles: ['super_admin'] },
   { label: 'Monitoring', tKey: 'nav.monitoring', href: '/monitoring', icon: <Activity className="w-5 h-5" />, permission: 'is_admin' },
 ];
 

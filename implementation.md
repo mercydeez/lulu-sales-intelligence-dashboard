@@ -50,16 +50,16 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
 - ⏭️ Remaining: running the app as a non-owner role with FORCE RLS in prod (ops). Per-item `predictor` is
   implicitly scoped (store_ids are tenant-unique).
 
-### B4 — PaaS layer 🟡
+### B4 — PaaS layer ✅
 - Per-tenant **API keys** ✅ (migration 014 `tenant_api_keys`, `services/api_key_service.py`, mgmt at
   `/api/api-keys`) + public REST API ✅ (`/api/public/v1/*`: kpis, projection, reorder, ai/ask). The key
   IS the tenant scope. **White-label** ✅ (per-tenant brand/logo/accent: public `/api/public/v1/branding`
   for embedded widgets + admin `PATCH /api/tenants/branding`). Outbound **webhooks** ✅ (migration 015
   `tenant_webhooks`, `services/webhook_service.py` with HMAC-SHA256-signed delivery + event-subscription
   matching, mgmt + test-ping at `/api/webhooks`; `dispatch_event[_background]` ready for producers).
-  Developer guide: `docs/PUBLIC_API.md`. Webhooks now **fire on real domain events** (procurement PO
-  lifecycle, goods receipt, 3-way-match exceptions). ⏭️ Remaining: an interactive **developer portal**
-  (live "try it" docs).
+  Developer guide: `docs/PUBLIC_API.md`. Webhooks **fire on real domain events** (procurement PO
+  lifecycle, goods receipt, 3-way-match exceptions). **Developer portal** ✅ — in-app `/developers` page
+  to create/revoke API keys, manage + test webhooks, browse the public API, and open Swagger.
 
 ### B5 — Chatbot / AI APIs ✅
 - Free/local **Ollama** provider with rule-based fallback already wired (`services/llm/`); tenant-scoped,
