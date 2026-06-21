@@ -16,6 +16,7 @@ routes/analytics.py) and then kept hot by their own cache TTL.
 import asyncio
 import logging
 
+from app.config import get_settings
 from app.services.database import async_session
 from app.routes.analytics import compute_and_cache_model_metrics
 
@@ -38,7 +39,22 @@ async def _train_once() -> None:
 
 
 async def run_forecast_trainer() -> None:
-    """Periodically retrain forecast models and cache the Lab payload until cancelled."""
+    """Periodically retrain forecast models and cache the Lab payload until cancelled.
+
+    Gated by ``forecast_trainer_enabled`` and delayed at startup so the API is
+    responsive before any CPU-heavy training begins; the training itself runs in
+    a worker thread (see compute_and_cache_model_metrics) so it never blocks the loop.
+    """
+    settings = get_settings()
+    if not settings.forecast_trainer_enabled:
+        logger.info("Forecast trainer disabled (forecast_trainer_enabled=false)")
+        return
+
+    delay = max(0, settings.forecast_trainer_startup_delay_seconds)
+    if delay:
+        logger.info("Forecast trainer warming up in %ss", delay)
+        await asyncio.sleep(delay)
+
     logger.info("Forecast trainer started (interval=%ss)", TRAIN_INTERVAL_SECONDS)
     while True:
         try:

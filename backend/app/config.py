@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     
     # Predictions
     forecast_days: int = 30
+
+    # Background forecast trainer (Forecast Lab). CPU-heavy; runs off the event
+    # loop in a worker thread. Disable on constrained hosts to keep the API lean.
+    forecast_trainer_enabled: bool = True
+    forecast_trainer_startup_delay_seconds: int = 60  # let the API settle before first train
     
     # Rate Limiting
     rate_limit_requests: int = 100  # requests per minute

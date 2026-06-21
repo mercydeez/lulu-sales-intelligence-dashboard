@@ -706,6 +706,61 @@ def model_metrics_cache_key(tenant_id: int, allowed: Optional[List[int]], horizo
     return generate_cache_key(f"model_metrics_t{tenant_id}_{scope}_{horizon}")
 
 
+def _compute_model_metrics_sync(
+    hist_records: List[dict],
+    store_records: List[dict],
+    cat_records: List[dict],
+    item_records: List[dict],
+    avg_price: float,
+    horizon: int,
+) -> dict:
+    """CPU-bound Forecast Lab computation (rolling-origin backtest + DL model
+    selection, LightGBM feature importance, stockout classifier, business impact,
+    accuracy heatmaps).
+
+    Pure/synchronous and takes already-fetched plain-Python records so it can run
+    in a worker thread via ``asyncio.to_thread`` — the numpy/pandas/sklearn/torch
+    work releases the GIL, so the event loop stays free to serve requests instead
+    of being starved by training (the old behaviour pinned all cores and made the
+    API unresponsive).
+    """
+    import pandas as pd
+    from app.services.forecasting import diagnostics as diag
+
+    result = _empty_model_metrics("ready")
+    if hist_records:
+        hist = pd.DataFrame(hist_records)
+        result.update(diag.forecast_summary(hist, horizon))
+        result["accuracy_trend"] = diag.accuracy_over_time(
+            hist, horizon, result.get("selected_model")
+        )
+        result["feature_importance"] = diag.feature_importance(hist)
+        result["classifier"] = diag.stockout_classifier(hist)
+        recent_daily = float(hist["sales"].tail(30).mean()) if len(hist) else 0.0
+        result["business_impact"] = diag.business_impact(
+            result.get("forecast", []), result.get("classifier", {}), avg_price, recent_daily
+        )
+
+    by_store: dict = {}
+    for r in store_records:
+        by_store.setdefault((r["store_id"], r["store_name"]), []).append(
+            {"date": r["date"], "sales": r["sales"]}
+        )
+    result["heatmap"] = [
+        {"store_id": sid, "store_name": sname,
+         "accuracy": diag.classical_accuracy(pd.DataFrame(recs))}
+        for (sid, sname), recs in list(by_store.items())[:12]
+    ]
+
+    result["category_heatmap"] = diag.accuracy_by_group(
+        cat_records, ["store_id", "store_name", "category"]
+    )
+    result["item_accuracy"] = diag.accuracy_by_group(
+        item_records, ["item_id", "item_name", "category"]
+    )
+    return result
+
+
 async def compute_and_cache_model_metrics(
     db: AsyncSession,
     tenant_id: int = 1,
@@ -719,10 +774,11 @@ async def compute_and_cache_model_metrics(
     This is the ONLY place forecast models are trained. It runs off the request
     path (background trainer + lazy background warm) and writes to the cache key
     the /model-metrics endpoint reads, so user requests never train a model.
-    """
-    import pandas as pd
-    from app.services.forecasting import diagnostics as diag
 
+    DB I/O happens on the event loop; the CPU-bound model work is offloaded to a
+    worker thread (``_compute_model_metrics_sync``) so training never blocks the
+    server.
+    """
     where = ["s.tenant_id = :tenant_id"]
     params: dict = {"tenant_id": tenant_id}
     if allowed:
@@ -730,27 +786,20 @@ async def compute_and_cache_model_metrics(
         params["allowed"] = allowed
     where_sql = " AND ".join(where)
 
-    result = _empty_model_metrics("ready")
     try:
+        # --- All DB reads on the event loop; materialise to plain Python so the
+        #     compute step can run in a thread without touching the session. ---
         agg_sql = (
             f"SELECT s.date AS date, SUM(s.sales) AS sales FROM sales_fact_view s "
             f"WHERE {where_sql} GROUP BY s.date ORDER BY s.date"
         )
         rows = (await db.execute(text(agg_sql), params)).fetchall()
+        hist_records = [{"date": r.date, "sales": float(r.sales or 0)} for r in rows]
+
+        avg_price = 0.0
         if rows:
-            hist = pd.DataFrame([{"date": r.date, "sales": float(r.sales or 0)} for r in rows])
-            result.update(diag.forecast_summary(hist, horizon))
-            result["accuracy_trend"] = diag.accuracy_over_time(
-                hist, horizon, result.get("selected_model")
-            )
-            result["feature_importance"] = diag.feature_importance(hist)
-            result["classifier"] = diag.stockout_classifier(hist)
             avg_price_row = (await db.execute(text("SELECT AVG(unit_price_aed) AS p FROM items"))).fetchone()
             avg_price = float(avg_price_row.p) if avg_price_row and avg_price_row.p else 0.0
-            recent_daily = float(hist["sales"].tail(30).mean()) if len(hist) else 0.0
-            result["business_impact"] = diag.business_impact(
-                result.get("forecast", []), result.get("classifier", {}), avg_price, recent_daily
-            )
 
         store_sql = (
             f"SELECT st.id AS store_id, st.name AS store_name, s.date AS date, "
@@ -758,18 +807,11 @@ async def compute_and_cache_model_metrics(
             f"WHERE {where_sql} GROUP BY st.id, st.name, s.date ORDER BY st.id, s.date"
         )
         srows = (await db.execute(text(store_sql), params)).fetchall()
-        by_store: dict = {}
-        for r in srows:
-            by_store.setdefault((r.store_id, r.store_name), []).append(
-                {"date": r.date, "sales": float(r.sales or 0)}
-            )
-        heatmap = []
-        for (sid, sname), recs in list(by_store.items())[:12]:
-            heatmap.append({
-                "store_id": sid, "store_name": sname,
-                "accuracy": diag.classical_accuracy(pd.DataFrame(recs)),
-            })
-        result["heatmap"] = heatmap
+        store_records = [
+            {"store_id": r.store_id, "store_name": r.store_name,
+             "date": r.date, "sales": float(r.sales or 0)}
+            for r in srows
+        ]
 
         # Store × category accuracy grid (the heatmap-depth view).
         cat_sql = (
@@ -785,9 +827,6 @@ async def compute_and_cache_model_metrics(
              "category": r.category, "date": r.date, "sales": r.sales}
             for r in cat_rows
         ]
-        result["category_heatmap"] = diag.accuracy_by_group(
-            cat_records, ["store_id", "store_name", "category"]
-        )
 
         # Per-item accuracy (category → items drill-down, across the scoped stores).
         item_sql = (
@@ -803,13 +842,16 @@ async def compute_and_cache_model_metrics(
              "category": r.category, "date": r.date, "sales": r.sales}
             for r in item_rows
         ]
-        result["item_accuracy"] = diag.accuracy_by_group(
-            item_records, ["item_id", "item_name", "category"]
+
+        # --- CPU-bound model training/diagnostics off the event loop. ---
+        result = await asyncio.to_thread(
+            _compute_model_metrics_sync,
+            hist_records, store_records, cat_records, item_records, avg_price, horizon,
         )
     except Exception as e:
         logger.error(f"Model metrics computation error: {e}")
         # Cache nothing on failure so the next cycle/request retries cleanly.
-        return result
+        return _empty_model_metrics("ready")
 
     result["status"] = "ready"
     result["generated_at"] = datetime.now(timezone.utc).isoformat()
