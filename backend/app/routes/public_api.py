@@ -122,12 +122,15 @@ async def public_ai_ask(
     ctx: dict = Depends(get_api_context),
     db: AsyncSession = Depends(get_db),
 ):
-    """Embeddable, tenant-scoped AI answer. Uses the configured LLM provider
-    (Ollama → OpenAI) when available and always falls back to a data-grounded
-    rule-based answer, so it works with zero paid keys."""
+    """Embeddable, tenant-scoped AI answer powered by Sage (NL→SQL). The question
+    is turned into a tenant-scoped read-only SQL query when it's answerable from
+    the data; otherwise it falls through to deterministic forecast/rule-based
+    answers. Works with zero paid keys (Ollama → rule-based)."""
     _require_scope(ctx, "read")
-    from app.services.ai_assistant import detect_intent
-    from app.services.forecast_service import forecast_narrative, revenue_projection
+    import uuid as _uuid
+    from app.services.ai_assistant import (
+        detect_intent, get_chat_response, get_last_sage, clear_conversation,
+    )
 
     tenant_id = ctx["tenant_id"]
     question = (body.question or "").strip()
@@ -135,26 +138,18 @@ async def public_ai_ask(
         raise HTTPException(status_code=400, detail="question is required")
 
     intents = detect_intent(question).get("intents", [])
-    horizon = max(7, min(body.horizon, 60))
 
-    # Tenant-scoped, deterministic answers (no cross-tenant leakage).
-    if "prediction" in intents:
-        answer = await forecast_narrative(db, tenant_id=tenant_id, allowed=None, horizon=horizon)
-    else:
-        proj = await revenue_projection(db, tenant_id=tenant_id, allowed=None, horizon=horizon)
-        if proj.get("status") == "ready":
-            answer = (
-                f"Over the next {horizon} days this tenant is projected to sell "
-                f"~{proj['projected_units']:,} units (~AED {proj['projected_revenue']:,.0f}), "
-                f"averaging {proj['avg_daily_units']:,.0f} units/day."
-            )
-        else:
-            answer = ("Not enough history yet to answer quantitatively for this tenant. "
-                      "Connect more sales data to unlock forecasts.")
+    # Stateless per-call session — routed through the same Sage pipeline as the
+    # in-app assistant (NL→SQL → LLM narration → rule-based fallback).
+    session_id = f"public-{tenant_id}-{_uuid.uuid4().hex[:8]}"
+    answer = await get_chat_response(session_id, question, tenant_id)
+    sage = get_last_sage(session_id)
+    clear_conversation(session_id)  # don't retain embeddable-call history
 
     return {
         "question": question,
         "answer": answer,
         "tenant_id": tenant_id,
         "intents": intents,
+        "sage": sage,
     }

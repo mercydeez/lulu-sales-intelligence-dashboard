@@ -4,7 +4,7 @@
 -- end (the only shape Postgres allows for a view replace), so existing readers
 -- are unaffected.
 
-CREATE OR REPLACE VIEW sales_fact_view AS
+CREATE OR REPLACE VIEW sales_fact_view WITH (security_invoker = true) AS
 SELECT
     id,
     date,

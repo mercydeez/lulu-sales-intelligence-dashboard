@@ -115,6 +115,8 @@ async def lifespan(app: FastAPI):
             pass
     from app.services.queue import close_queues
     await close_queues()
+    from app.services.sage.executor import dispose_engine
+    await dispose_engine()
     await close_db()
     await close_redis()
     logger.info("Shutdown complete")

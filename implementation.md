@@ -38,13 +38,23 @@ summary below. Strategy/product rationale lives in `docs/` (PRODUCT_STRATEGY, SA
 - **Forecast training stays in Python** (in-process trainer): the heavy ML (lightgbm/torch) is
   Python-bound, so the queue owns I/O-bound work (webhooks now, risk scans next) — the correct split.
 
-### Phase 2 — Sage: true NL→SQL agent (Ollama) ❌
-- Dedicated read-only Postgres role (`foresia_ro`) + curated tenant-safe schema catalog.
-- Pipeline: question → Ollama generates a single `SELECT` → validator (SELECT-only, single
-  statement, server-injected `tenant_id` predicate, hard LIMIT, statement timeout) → execute via
-  the RO role → NL summary + optional chart spec.
-- `ai_assistant` routes through NL→SQL, falling back to the existing intent functions, then a
-  general LLM answer for non-data questions. Wired into `/api/ai/chat` + `/api/public/v1/ai/ask`.
+### Phase 2 — Sage: true NL→SQL agent (Ollama) ✅
+- `services/sage/`: curated tenant-safe **schema_catalog**, a hard **validator** (SELECT-only,
+  single statement, allow-listed relations + CTE names, no system catalogs / write funcs / GUC
+  tampering, LIMIT enforced), and an **executor** that runs the SELECT as the non-owner `app_rw`
+  role in a READ ONLY transaction with the `app.tenant_id` GUC — so Postgres RLS scopes rows and
+  rejects writes. Defense-in-depth, no fragile predicate injection.
+- `nl2sql` orchestrates generate → validate → execute and infers a chart spec. `ai_assistant`
+  uses it as the **primary data path**, falling back to the keyword-intent responder, then a
+  general LLM answer. Wired into `/api/ai/chat` (+ structured `sage` in the done-event) and
+  `/api/public/v1/ai/ask`. Frontend `ChatBot` renders the answer + collapsible SQL + result table;
+  assistant rebranded to **Sage**.
+- **Security fix found & fixed:** `init.sql` recreates `sales_fact_view` on every boot and was
+  clearing `security_invoker` (set once by migration 021), so app_rw/RLS reads leaked across
+  tenants through the view. Baked `WITH (security_invoker = true)` into the view definition
+  (init.sql + migration 011). Verified: tenant 1 → 914,012 rows, tenant 2 → 1,920.
+- Tested: 33 validator/helper unit tests + full suite **185 passing**; live NL→SQL verified with a
+  local Ollama model (`qwen2.5:1.5b`) end-to-end (question → SQL → rows → narrated answer).
 
 ### Phase 3 — Proactive intelligence / Risk Radar ❌
 - BullMQ repeatable `risk-scan` jobs per tenant: demand anomaly, stockout risk, margin erosion,

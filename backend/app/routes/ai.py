@@ -17,7 +17,8 @@ from app.services.ai_assistant import (
     clear_conversation,
     get_conversation_summary,
     detect_intent,
-    get_or_create_context
+    get_or_create_context,
+    get_last_sage,
 )
 from app.services.voice_service import (
     transcribe_audio,
@@ -40,6 +41,9 @@ class ChatResponse(BaseModel):
     response: str
     session_id: str
     intent: Optional[dict] = None
+    # Structured Sage NL→SQL result (generated SQL, columns, rows, chart) when
+    # the question was answered from a live query; None for non-data answers.
+    sage: Optional[dict] = None
 
 
 class VoiceTranscribeRequest(BaseModel):
@@ -82,9 +86,9 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
                 }
             yield {
                 "event": "done",
-                "data": json.dumps({"session_id": session_id, "intent": intent})
+                "data": json.dumps({"session_id": session_id, "intent": intent, "sage": get_last_sage(session_id)})
             }
-        
+
         return EventSourceResponse(generate())
     else:
         # Non-streaming response
@@ -92,7 +96,8 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
         return ChatResponse(
             response=response,
             session_id=session_id,
-            intent=intent
+            intent=intent,
+            sage=get_last_sage(session_id),
         )
 
 
@@ -122,9 +127,9 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
         
         yield {
             "event": "done",
-            "data": json.dumps({"session_id": session_id, "intent": intent})
+            "data": json.dumps({"session_id": session_id, "intent": intent, "sage": get_last_sage(session_id)})
         }
-    
+
     return EventSourceResponse(generate())
 
 

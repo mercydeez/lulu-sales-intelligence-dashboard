@@ -53,6 +53,10 @@ services:
       - MAX_BODY_SIZE_MB=10
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+      # Sage (NL→SQL) LLM. Defaults to a host-run Ollama; if Ollama isn't
+      # running the call fast-fails and Sage falls back to the rule-based path.
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
     ports:
       - "8000:8000"
     depends_on:
@@ -60,6 +64,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    extra_hosts:
+      # Lets the container reach an Ollama running on the host (Linux parity;
+      # automatic on Docker Desktop for Mac/Windows).
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend/app:/app/app
       - ./data:/app/data

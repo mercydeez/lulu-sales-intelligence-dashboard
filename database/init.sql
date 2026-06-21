@@ -217,7 +217,11 @@ UPDATE items SET unit_price_aed = 6.00 WHERE id = 50;
 ALTER TABLE sales_historical ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE sales_stream_raw ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
 
-CREATE OR REPLACE VIEW sales_fact_view AS
+-- security_invoker: the view evaluates underlying-table RLS as the CALLER, so
+-- the non-owner app_rw role (Sage executor / RLS request path) is tenant-scoped
+-- through the view too. Baked in here because init.sql runs on every boot and
+-- would otherwise clear the setting that migration 021 applied once.
+CREATE OR REPLACE VIEW sales_fact_view WITH (security_invoker = true) AS
 SELECT
     id,
     date,

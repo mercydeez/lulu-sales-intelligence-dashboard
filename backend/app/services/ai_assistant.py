@@ -10,6 +10,7 @@ from sqlalchemy import select, func, and_, desc
 from app.services.database import async_session
 from app.models.sales import Sale, Store, Item
 from app.services.llm import get_provider_chain, LLMError
+from app.services.sage import answer_question, SageResult
 
 
 class Message(BaseModel):
@@ -27,6 +28,7 @@ class ConversationContext:
         self.user_preferences: Dict = {}
         self.detected_intents: List[str] = []
         self.cached_data: Dict = {}  # Cache for real-time data
+        self.last_sage: Optional[Dict] = None  # last Sage NL->SQL result (for the UI)
     
     def add_message(self, role: str, content: str):
         self.messages.append({"role": role, "content": content})
@@ -527,7 +529,7 @@ DATA FEATURES:
 - Real-time streaming sales every 5-15 seconds
 - Product returns (negative sales values)
 - Market volatility and demand fluctuations
-- Historical data from 2013-2017 (913,000+ records)
+- Historical data spanning several years (900,000+ records), date-shifted so the latest day is recent
 
 Response Guidelines:
 - Be concise but thorough
@@ -864,21 +866,66 @@ How can I help you?"""
         return f"I encountered an error fetching data: {str(e)}. Please try again."
 
 
+# =============================================================================
+# SAGE — natural-language → SQL data path (primary)
+# =============================================================================
+
+def _format_rows_for_context(columns: List[str], rows: List[Dict], max_rows: int = 30) -> str:
+    """Render query results as a compact pipe table for the LLM data context."""
+    if not columns or not rows:
+        return "(no rows)"
+    lines = [" | ".join(columns)]
+    for row in rows[:max_rows]:
+        lines.append(" | ".join(
+            "" if row.get(c) is None else str(row.get(c)) for c in columns
+        ))
+    if len(rows) > max_rows:
+        lines.append(f"... ({len(rows) - max_rows} more rows)")
+    return "\n".join(lines)
+
+
+async def _try_sage(user_message: str, tenant_id: int, context: ConversationContext) -> Optional[str]:
+    """Primary data path: turn the question into a tenant-scoped SQL query and
+    return a data-context string built from the real rows. Stashes the structured
+    result on the context for the route's done-event. Returns None when there is
+    no query to run (caller falls back to the keyword-intent data context)."""
+    result: SageResult = await answer_question(user_message, tenant_id)
+    if result.mode != "sql":
+        context.last_sage = None
+        return None
+    context.last_sage = result.to_public_dict()
+    table = _format_rows_for_context(result.columns, result.rows)
+    return (
+        "A PostgreSQL query was run against the tenant's live database to answer "
+        f"the question.\n\nQUERY:\n{result.sql}\n\nRESULT ({result.row_count} rows):\n{table}"
+    )
+
+
+def get_last_sage(session_id: str) -> Optional[Dict]:
+    """The structured result of the most recent Sage NL→SQL turn for a session
+    (generated SQL + columns + rows + chart spec), or None."""
+    ctx = conversation_store.get(session_id)
+    return ctx.last_sage if ctx else None
+
+
 async def stream_chat_response(
     session_id: str,
     user_message: str,
     tenant_id: int = 1
 ) -> AsyncGenerator[str, None]:
     """Stream chat response with real-time data integration"""
-    
+
     context = get_or_create_context(session_id)
-    
+
     # Detect intent
     intent_info = detect_intent(user_message)
     context.detected_intents.extend(intent_info["intents"])
-    
-    # Build real-time data context
-    data_context = await build_data_context(intent_info, user_message, tenant_id)
+
+    # Primary: Sage turns the question into a tenant-scoped SQL query. Fall back
+    # to the keyword-intent data context when there is no query to run.
+    sage_context = await _try_sage(user_message, tenant_id, context)
+    data_context = sage_context if sage_context is not None else \
+        await build_data_context(intent_info, user_message, tenant_id)
     
     # Add user message with data context to conversation
     enhanced_message = f"""User Question: {user_message}
@@ -921,10 +968,12 @@ async def get_chat_response(
     
     context = get_or_create_context(session_id)
     intent_info = detect_intent(user_message)
-    
-    # Build data context
-    data_context = await build_data_context(intent_info, user_message, tenant_id)
-    
+
+    # Primary: Sage NL→SQL; fall back to keyword-intent data context.
+    sage_context = await _try_sage(user_message, tenant_id, context)
+    data_context = sage_context if sage_context is not None else \
+        await build_data_context(intent_info, user_message, tenant_id)
+
     enhanced_message = f"""User Question: {user_message}
 
 REAL-TIME DATA CONTEXT:

@@ -65,12 +65,55 @@ declare global {
   }
 }
 
+interface SageData {
+  mode: string;
+  sql?: string | null;
+  columns?: string[];
+  rows?: Record<string, unknown>[];
+  row_count?: number;
+  chart?: { type: string; x: string; y: string } | null;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
   isStreaming?: boolean;
+  sage?: SageData | null;
+}
+
+/** Renders Sage's generated SQL (collapsible) + a compact result table — so the
+ *  user can see exactly which query produced the answer. */
+function SagePanel({ sage }: { sage: SageData }) {
+  const cols = sage.columns ?? [];
+  const rows = sage.rows ?? [];
+  return (
+    <div className="mt-2 rounded-lg border border-slate-700 bg-slate-900/60 text-xs">
+      <details>
+        <summary className="cursor-pointer select-none px-3 py-1.5 text-cyan-300 hover:bg-slate-800/60 rounded-t-lg">
+          🔎 View the SQL Sage ran{typeof sage.row_count === 'number' ? ` · ${sage.row_count} rows` : ''}
+        </summary>
+        <pre className="overflow-x-auto px-3 py-2 text-[11px] leading-snug text-slate-300 whitespace-pre-wrap">{sage.sql}</pre>
+      </details>
+      {cols.length > 0 && rows.length > 0 && (
+        <div className="max-h-48 overflow-auto border-t border-slate-700">
+          <table className="w-full text-[11px]">
+            <thead className="sticky top-0 bg-slate-800 text-slate-400">
+              <tr>{cols.map((c) => <th key={c} className="px-2 py-1 text-left font-medium">{c}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, 12).map((r, i) => (
+                <tr key={i} className="border-t border-slate-800">
+                  {cols.map((c) => <td key={c} className="px-2 py-1 text-slate-300">{String(r[c] ?? '')}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface ChatBotProps {
@@ -92,7 +135,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
     {
       id: '0',
       role: 'assistant',
-      content: `👋 Hello! I'm **${PRODUCT_NAME} AI**, your intelligent sales analytics assistant. I can help you:\n\n• Analyze sales trends and patterns\n• Explain dashboard metrics\n• Provide insights on store performance\n• Answer questions about products and categories\n\n🎤 **Voice Input**: Click the mic button and speak. Your words will appear in real-time!\n\nHow can I assist you today?`,
+      content: `👋 Hi, I'm **Sage**, ${PRODUCT_NAME}'s AI analyst. Ask me anything about your business in plain English — I'll query your live data and show you the answer (and the SQL I ran).\n\nTry:\n• "Top 5 stores by revenue this month"\n• "Which categories sold the most units?"\n• "How did sales trend over the last 14 days?"\n\n🎤 **Voice Input**: tap the mic and speak.\n\nWhat would you like to know?`,
       timestamp: new Date()
     }
   ]);
@@ -169,6 +212,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let fullResponse = '';
+      let sageData: SageData | null = null;
 
       if (reader) {
         while (true) {
@@ -184,11 +228,15 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                 const data = JSON.parse(line.slice(6));
                 if (data.content) {
                   fullResponse += data.content;
-                  setMessages(prev => prev.map(m => 
-                    m.id === assistantId 
+                  setMessages(prev => prev.map(m =>
+                    m.id === assistantId
                       ? { ...m, content: fullResponse }
                       : m
                   ));
+                }
+                // The `done` event carries Sage's structured NL→SQL result.
+                if ('sage' in data) {
+                  sageData = data.sage;
                 }
               } catch (e) {
                 // Skip invalid JSON
@@ -198,10 +246,10 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
         }
       }
 
-      // Mark as done streaming
-      setMessages(prev => prev.map(m => 
-        m.id === assistantId 
-          ? { ...m, isStreaming: false }
+      // Mark as done streaming + attach the Sage result (SQL + rows + chart)
+      setMessages(prev => prev.map(m =>
+        m.id === assistantId
+          ? { ...m, isStreaming: false, sage: sageData }
           : m
       ));
 
@@ -476,7 +524,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
               <Lock className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-white font-semibold">{PRODUCT_NAME} AI</h2>
+              <h2 className="text-white font-semibold">Sage</h2>
               <p className="text-white/70 text-xs">Restricted Access</p>
             </div>
           </div>
@@ -523,7 +571,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
               <Sparkles className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-white font-semibold">{PRODUCT_NAME} AI</h2>
+              <h2 className="text-white font-semibold">Sage</h2>
               <p className="text-white/70 text-xs">Sales Assistant</p>
             </div>
           </div>
@@ -611,8 +659,11 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                     {message.isStreaming && (
                       <span className="inline-block w-2 h-4 bg-violet-400 animate-pulse ml-1" />
                     )}
+                    {message.role === 'assistant' && message.sage?.mode === 'sql' && message.sage.sql && (
+                      <SagePanel sage={message.sage} />
+                    )}
                   </div>
-                  
+
                   {message.role !== 'system' && (
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-xs text-slate-600">

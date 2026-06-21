@@ -17,7 +17,18 @@ from unittest.mock import AsyncMock, MagicMock
 
 from app.services.data_sync import DataSyncService
 
-MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "database", "migrations")
+# Resolve the migrations dir for both the host repo layout (backend/tests/../../database)
+# and the container layout (database mounted at /app/database, i.e. ../database).
+def _find_migrations_dir() -> str:
+    here = os.path.dirname(__file__)
+    for rel in (("..", "..", "database", "migrations"), ("..", "database", "migrations")):
+        candidate = os.path.join(here, *rel)
+        if os.path.isdir(candidate):
+            return candidate
+    return os.path.join(here, "..", "..", "database", "migrations")
+
+
+MIGRATIONS_DIR = _find_migrations_dir()
 
 
 def _fake_session(fetchone=None, fetchall=None, scalar=None):
