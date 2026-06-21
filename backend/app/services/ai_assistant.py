@@ -500,18 +500,24 @@ CRITICAL INSTRUCTIONS:
 4. Be specific and data-driven in responses
 5. Highlight key insights and comparisons
 6. Use emojis for visual appeal: 📊 📈 📉 💰 🏪 🛒
+7. METRIC CONVENTION: sales VOLUME is measured in units; monetary VALUE is in AED.
+   Every sales/returns figure in the DATA context is a unit count — always label it
+   "units", never "AED" or a currency. Only state an AED figure if the context
+   explicitly provides one. Never mix units and AED in the same total.
+8. The DATA context is the source of truth for store names; if it lists stores,
+   prefer those exact names over the reference list below.
 
 STORES (10 Meridian Hypermarket locations):
 1. Meridian Hypermarket Al Barsha (Dubai)
-2. Meridian Hypermarket Deira City Centre (Dubai)  
+2. Meridian Hypermarket Deira City Centre (Dubai)
 3. Meridian Hypermarket Karama (Dubai)
-4. Meridian Hypermarket Silicon Oasis (Dubai)
-5. Meridian Hypermarket Mall of the Emirates (Dubai)
-6. Meridian Hypermarket Sharjah
-7. Meridian Hypermarket Ajman
-8. Meridian Hypermarket Fujairah
-9. Meridian Hypermarket Al Ain (Abu Dhabi)
-10. Meridian Hypermarket Ras Al Khaimah
+4. Meridian Hypermarket Mushrif Mall (Abu Dhabi)
+5. Meridian Hypermarket Al Wahda (Abu Dhabi)
+6. Meridian Hypermarket Khalidiyah (Abu Dhabi)
+7. Meridian Hypermarket Sharjah City Centre (Sharjah)
+8. Meridian Hypermarket Al Nahda (Sharjah)
+9. Meridian Hypermarket Ajman (Ajman)
+10. Meridian Hypermarket Ras Al Khaimah (Ras Al Khaimah)
 
 PRODUCT CATEGORIES:
 Dairy, Beverages, Bakery, Personal Care, Household, Snacks, Rice & Grains, 

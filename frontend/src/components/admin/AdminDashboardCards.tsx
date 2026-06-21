@@ -3,7 +3,7 @@
 import { Users, UserCheck, Store, ShoppingCart } from 'lucide-react';
 import { StatCard, AnimatedNumber } from '@/components/ui';
 import { AdminDashboard } from './types';
-import { formatCurrency, formatNumber } from './format';
+import { formatNumber } from './format';
 
 interface AdminDashboardCardsProps {
   dashboard: AdminDashboard | null;
@@ -32,18 +32,18 @@ export function AdminDashboardCards({ dashboard, loading }: AdminDashboardCardsP
       />
       <StatCard
         tone="teal"
-        label="Sales Today"
-        value={loading ? '—' : <AnimatedNumber value={dashboard?.today.total_sales ?? 0} formatter={formatCurrency} flashOnChange />}
+        label="Units Sold Today"
+        value={loading ? '—' : <AnimatedNumber value={dashboard?.today.total_sales ?? 0} formatter={formatNumber} flashOnChange />}
         icon={<ShoppingCart className="w-5 h-5" />}
         footnote={dashboard ? `${dashboard.today.active_stores} stores trading` : undefined}
         loading={loading}
       />
       <StatCard
         tone="amber"
-        label="Items Sold Today"
+        label="Distinct Items Today"
         value={loading ? '—' : <AnimatedNumber value={dashboard?.today.items_sold ?? 0} formatter={formatNumber} flashOnChange />}
         icon={<UserCheck className="w-5 h-5" />}
-        footnote="Live generator + history"
+        footnote="Unique SKUs sold"
         loading={loading}
       />
     </div>
