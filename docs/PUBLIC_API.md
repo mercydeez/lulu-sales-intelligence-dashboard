@@ -80,7 +80,7 @@ DELETE /api/webhooks/{id}
 POST   /api/webhooks/test   -> sends a signed `webhook.test` event to your endpoints
 ```
 
-Each delivery carries `X-Lulu-Signature: sha256=<hex>`, an HMAC-SHA256 of the
+Each delivery carries `X-Webhook-Signature: sha256=<hex>`, an HMAC-SHA256 of the
 exact request body using the endpoint's secret (returned once at creation).
 Verify it on your side:
 

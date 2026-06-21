@@ -32,7 +32,7 @@ export default function HomeHero() {
         <div className="relative z-10 flex items-center justify-between flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2 flex-wrap">
-              <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Lulu Hypermarket UAE</h1>
+              <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Meridian Hypermarket UAE</h1>
               <span className="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 backdrop-blur-sm ring-1 ring-white/30">
                 {ROLE_DISPLAY_NAMES[user?.role as UserRole] || user?.role}
               </span>
@@ -97,7 +97,7 @@ export default function HomeHero() {
       {user?.role === 'store_manager' && (
         <div className="mt-4 p-4 glass rounded-2xl">
           <p className="text-xs text-ink-muted mb-2">Your Store</p>
-          <p className="text-lg font-semibold text-teal-600">Lulu Hypermarket Al Barsha, Dubai</p>
+          <p className="text-lg font-semibold text-teal-600">Meridian Hypermarket Al Barsha, Dubai</p>
         </div>
       )}
     </header>

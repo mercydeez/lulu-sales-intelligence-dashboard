@@ -32,9 +32,9 @@ interface AuthContextType extends AuthState {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 // Token storage keys
-const ACCESS_TOKEN_KEY = 'lulu_access_token';
-const REFRESH_TOKEN_KEY = 'lulu_refresh_token';
-const USER_KEY = 'lulu_user';
+const ACCESS_TOKEN_KEY = 'app_access_token';
+const REFRESH_TOKEN_KEY = 'app_refresh_token';
+const USER_KEY = 'app_user';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({

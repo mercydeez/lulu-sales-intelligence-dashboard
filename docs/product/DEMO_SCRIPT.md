@@ -1,4 +1,4 @@
-# Demo Script — Lulu Sales Intelligence Dashboard
+# Demo Script — Retail IQ
 
 A guided **~8-minute** walkthrough for a portfolio reviewer or interviewer. It is ordered to build a narrative: *live data → analytics → security → honest engineering*. Timings are approximate.
 
@@ -7,7 +7,7 @@ A guided **~8-minute** walkthrough for a portfolio reviewer or interviewer. It i
 > docker compose up -d            # wait ~20s for the backend lifespan to finish
 > curl -s localhost:8000/health   # expect {"status":"healthy",...}
 > ```
-> Open http://localhost:3000. Password for every demo login is **`Lulu@2026!`**.
+> Open http://localhost:3000. Password for every demo login is **`Demo@2026!`**.
 
 ---
 
@@ -19,7 +19,7 @@ A guided **~8-minute** walkthrough for a portfolio reviewer or interviewer. It i
 
 ## 1 · The live pipeline (90s) — *the hook*
 
-1. Log in as **`atharva@lulu.ae`** (Super Admin).
+1. Log in as **`atharva@retaildemo.app`** (Super Admin).
 2. Land on the **home / Live Operations** screen. Point out:
    - The **KPI tickers** count up; the live streaming count flashes green on increase (and respects `prefers-reduced-motion`).
    - The **live sales table** appends new rows on its own — no refresh, no polling.
@@ -27,7 +27,7 @@ A guided **~8-minute** walkthrough for a portfolio reviewer or interviewer. It i
 4. (Optional, for the technical reviewer) show it on the wire:
    ```bash
    TOKEN=$(curl -s -XPOST localhost:8000/api/auth/login -H 'Content-Type: application/json' \
-     -d '{"email":"atharva@lulu.ae","password":"Lulu@2026!"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+     -d '{"email":"atharva@retaildemo.app","password":"Demo@2026!"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
    TICKET=$(curl -s -XPOST localhost:8000/api/auth/stream-ticket -H "Authorization: Bearer $TOKEN" \
      | python3 -c 'import sys,json;print(json.load(sys.stdin)["ticket"])')
    curl -sN --max-time 4 "localhost:8000/stream/sales?ticket=$TICKET"
@@ -48,9 +48,9 @@ A guided **~8-minute** walkthrough for a portfolio reviewer or interviewer. It i
 
 ## 3 · RBAC, live (75s) — *the security story*
 
-1. Log out, log in as **`krishna@lulu.ae`** (Regional Manager, Dubai).
+1. Log out, log in as **`krishna@retaildemo.app`** (Regional Manager, Dubai).
 2. Revisit home/Analytics — **same screens, less data**: only Dubai stores. The store-comparison panel narrows.
-3. Log in as **`yash@lulu.ae`** (Store Manager, Al Barsha) — now scoped to a single store.
+3. Log in as **`yash@retaildemo.app`** (Store Manager, Al Barsha) — now scoped to a single store.
 4. The point: *scoping is enforced **server-side** from the JWT's region→store expansion, not hidden in the UI.*
 
 ---

@@ -14,16 +14,18 @@ Start with `docs/README.md` for the organized documentation index. If you need t
 # Full stack (frontend :3000, backend :8000, Swagger :8000/docs)
 docker compose up -d
 
-# First run only — migrations are applied MANUALLY (no alembic despite the alembic/ dir):
-Get-Content database/migrations/001_auth_system.sql | docker exec -i sales_db psql -U salesuser -d salesdb
-# repeat for 002, 003, 004
+# Migrations now auto-apply on startup (services/migration_runner.run_migrations, called
+# from main.py lifespan) — no manual psql step. init.sql seeds a fresh volume; db_seeder
+# bulk-loads train.csv and date-shifts history so the latest day is "yesterday". No alembic
+# despite the alembic/ dir. To re-trigger a clean seed: docker compose down -v.
 
 # Full rebuild (Windows)
 ./rebuild.ps1
 
 # Backend tests
-docker exec sales_backend python -m pytest tests/ -v --tb=short   # in container
-cd backend; pytest                                                # locally (pytest.ini adds -v --tb=short)
+docker exec sales_backend python -m pytest tests/ -v --tb=short   # in container (pinned deps)
+cd backend; pytest                                                # locally — use a venv with
+                                                                  # requirements.txt (see trap below)
 pytest tests/test_security.py -k <name>                           # single test
 
 # Frontend (compose does NOT hot-reload; run dev server on host instead)
@@ -33,7 +35,9 @@ npm run build
 npx tsc --noEmit        # CI currently runs this with `|| true` — type errors exist silently
 ```
 
-Demo logins (password `Lulu@2026!`): `atharva@lulu.ae` (super_admin), `krishna@lulu.ae` (regional_manager, Dubai only), `yash@lulu.ae` (store_manager, Al Barsha only).
+Demo logins (password `Demo@2026!`): `atharva@retaildemo.app` (super_admin), `krishna@retaildemo.app` (regional_manager, Dubai only), `yash@retaildemo.app` (store_manager, Al Barsha only).
+
+**Product name is a placeholder.** The product is provisionally **"Retail IQ"**, centralized in one place: backend `settings.product_name` (`PRODUCT_NAME` env) and frontend `src/lib/brand.ts` (`NEXT_PUBLIC_PRODUCT_NAME`). The fictional demo retailer is **"Meridian Hypermarket"** (tenant 1 = "Meridian Retail"). The old "Lulu" brand has been removed except where it refers to the real Lulu Group (trademark/market discussion in `docs/product/*`) or the actual GitHub repo URL. When the final name is chosen, change those two config values.
 
 Tests set their own env (`backend/tests/conftest.py` forces `ENVIRONMENT=testing` and dummy secrets before app imports) and don't need live Postgres/Redis for the config/security/middleware suites.
 
@@ -43,9 +47,9 @@ FastAPI (async SQLAlchemy 2 + asyncpg) + PostgreSQL 15 + Redis 7 + Next.js 14 Ap
 
 **Live-data pipeline (the core of the app):** a `DataGenerator` asyncio task (started in `main.py` lifespan) writes a synthetic sale every ~5–15s to Postgres and publishes JSON to the Redis channel `sales:stream`; SSE endpoints under `/stream/*` (`routes/stream.py`, sse-starlette) relay Redis pub/sub to browsers; frontend components open `EventSource` connections. Channels: `sales:stream`, `alerts:stream`, `inventory:stream` (`services/redis_client.py`).
 
-**Three sales tables, one real:** `sales_historical` + `sales_stream_raw` + `sales_fact_view` implement the README's intended design, but **all runtime code (generator, kpis, sales, analytics, history, predictor, ai_assistant) uses the legacy `sales` table** (`is_streaming` flag distinguishes CSV history from generated events). Don't add features against the unused tables without migrating the readers.
+**Sales source of truth (post-migration 007):** `sales_historical` (immutable CSV) + `sales_stream_raw` (append-only generator) are unified by the `sales_fact_view` (UNION ALL, stream IDs offset by 1B). Runtime readers (kpis, sales, analytics, history, reports, forecast) now query `sales_fact_view`; the legacy `sales` table is retired. `is_streaming` distinguishes CSV history from generated events. The view carries `tenant_id` (migration 011) so RLS can scope it.
 
-**Auth split (important):** `routes/auth.py` defines `get_current_user` / `require_role` / `require_permission`; only `admin`, `inventory`, `promotions`, `alerts`, `reports` routers actually use them. `sales`, `kpis`, `analytics`, `history`, `stream`, `employees`, `monitoring`, `ai` are **unauthenticated**, despite the README claiming otherwise. RBAC data (`users`, `user_permissions`, region→store expansion) lives in `init.sql`; permission aggregation is in `services/auth_service.py`. JWTs embed permissions at login time; logout blacklists token hashes in Redis (checked by `SessionInvalidationMiddleware`, which fails open if Redis is down).
+**Auth (post-pull):** `routes/auth.py` defines `get_current_user` / `require_role` / `require_permission`, and the data routers (`sales`, `kpis`, `analytics`, `history`, `inventory`, `promotions`, `reports`, `employees`, `procurement`, etc.) now depend on them with tenant + accessible-store scoping. `public_api` is API-key-authenticated (per-tenant `lsk_` keys). RBAC data (`users`, `user_permissions`, region→store expansion) lives in `init.sql`; permission aggregation is in `services/auth_service.py`. JWTs embed permissions at login; logout blacklists token hashes in Redis (checked by `SessionInvalidationMiddleware`, which fails open if Redis is down). Multi-tenancy: app-layer `tenant_id` scoping + Postgres RLS (migrations 010–012, FORCE-RLS opt-in via `USE_RLS_ROLE`).
 
 **Schema is managed three ways:** `database/init.sql` (auto-runs only on a fresh postgres volume — includes CSV bulk load and demo users), manual `database/migrations/00*.sql`, and a runtime employee migration (`services/employee_seeder.py` called from lifespan). `backend/alembic/` is empty/unused. To re-trigger init.sql: `docker compose down -v`.
 
@@ -57,13 +61,13 @@ FastAPI (async SQLAlchemy 2 + asyncpg) + PostgreSQL 15 + Redis 7 + Next.js 14 Ap
 
 ## Known traps
 
-- `database/init.sql:369` has a bare `RAISE NOTICE` outside a `DO` block → **fresh-volume DB init fails** until fixed.
-- `main.py:214` uses `EventSourceResponse` without importing it → `/api/stream/sales` 500s; `hooks/useSSE.ts` defaults to `/api/stream`, which matches no route. Working SSE URL is `/stream/sales`.
-- The DB `sales` values are **units** (Kaggle store-item demand dataset, 10 stores × 50 items, dates 2013–2017), but `lib/formatters.ts` renders most figures as AED currency. There is no price column.
-- Historical data ends in 2017, so "today/this week" KPIs reflect only generator output.
-- CI runs only `tests/test_config.py` + `tests/test_security.py` and ignores tsc failures.
+- **Units vs currency (active accuracy focus).** The raw `sales` values are **units** (Kaggle store-item demand dataset, 10 stores × 50 items). Migration 005 added `items.unit_price_aed`, so AED **revenue is derived** as `SUM(sales * unit_price_aed)` (see `routes/kpis.py` — the reference implementation). The product convention is now: VOLUME metrics in units, VALUE metrics in AED, **never mixed on one axis**. Auditing/enforcing this everywhere is Phase 1 of the current plan; some frontend panels and `ai_assistant` prompt text still conflate the two (e.g. labeling a units series "Revenue (AED)").
+- **Local test env drift.** `requirements.txt` pins `httpx==0.26.0`; a newer global `httpx` (≥0.28) removed the `app=` kwarg and breaks starlette's `TestClient`, failing the ~7 TestClient-based suites. Run `pytest` in a venv installed from `requirements.txt` (or in the container) — CI/Docker are unaffected.
 - Compose volume mounts suggest hot reload, but uvicorn lacks `--reload` and the frontend image serves a pre-built standalone bundle — rebuild containers (or run `npm run dev` on host) to see changes.
 - `database/seed_data.sql` is empty (0 bytes) yet mounted by the production compose; production compose also mounts `train.csv` at a path `init.sql`'s COPY doesn't read.
+- `ai_assistant.py`'s hardcoded store list (Silicon Oasis, Mall of the Emirates, Al Ain, Fujairah…) does **not** match the seeded stores in `init.sql`/`employee_generator.py` — fix as part of the accuracy pass.
+
+**Resolved since the June 2026 audit** (don't re-report): the bare `RAISE NOTICE` in `init.sql` is now inside a `DO` block; `main.py` imports `EventSourceResponse` (working SSE is `/stream/sales`; `useSSE.ts` was deleted in favor of `hooks/useEventStream.ts`); migrations auto-apply on startup; history is date-shifted so "today/this week" KPIs are populated; CI now runs the full `pytest tests/` suite **and** `tsc --noEmit` (no longer `|| true`).
 
 
 

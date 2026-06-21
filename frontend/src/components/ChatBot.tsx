@@ -19,6 +19,7 @@ import {
   Lock
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { PRODUCT_NAME } from '@/lib/brand';
 
 // Web Speech API types
 interface SpeechRecognitionEvent extends Event {
@@ -91,7 +92,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
     {
       id: '0',
       role: 'assistant',
-      content: "👋 Hello! I'm **Lulu AI**, your intelligent sales analytics assistant. I can help you:\n\n• Analyze sales trends and patterns\n• Explain dashboard metrics\n• Provide insights on store performance\n• Answer questions about products and categories\n\n🎤 **Voice Input**: Click the mic button and speak. Your words will appear in real-time!\n\nHow can I assist you today?",
+      content: `👋 Hello! I'm **${PRODUCT_NAME} AI**, your intelligent sales analytics assistant. I can help you:\n\n• Analyze sales trends and patterns\n• Explain dashboard metrics\n• Provide insights on store performance\n• Answer questions about products and categories\n\n🎤 **Voice Input**: Click the mic button and speak. Your words will appear in real-time!\n\nHow can I assist you today?`,
       timestamp: new Date()
     }
   ]);
@@ -475,7 +476,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
               <Lock className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-white font-semibold">Lulu AI</h2>
+              <h2 className="text-white font-semibold">{PRODUCT_NAME} AI</h2>
               <p className="text-white/70 text-xs">Restricted Access</p>
             </div>
           </div>
@@ -522,7 +523,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
               <Sparkles className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-white font-semibold">Lulu AI</h2>
+              <h2 className="text-white font-semibold">{PRODUCT_NAME} AI</h2>
               <p className="text-white/70 text-xs">Sales Assistant</p>
             </div>
           </div>

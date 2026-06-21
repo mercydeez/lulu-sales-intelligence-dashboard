@@ -491,7 +491,7 @@ async def get_dashboard_summary(tenant_id: int = 1) -> str:
 
 def get_system_prompt() -> str:
     """Get the system prompt for the AI assistant"""
-    return """You are Lulu AI, an intelligent sales analytics assistant for the Lulu Hypermarket dashboard.
+    return """You are Retail IQ AI, an intelligent sales analytics assistant for the Meridian Hypermarket dashboard.
 
 CRITICAL INSTRUCTIONS:
 1. When users ask for specific data (sales, store info, etc.), you MUST use the ACTUAL DATA provided in the context
@@ -501,17 +501,17 @@ CRITICAL INSTRUCTIONS:
 5. Highlight key insights and comparisons
 6. Use emojis for visual appeal: 📊 📈 📉 💰 🏪 🛒
 
-STORES (10 Lulu Hypermarket locations):
-1. Lulu Hypermarket Al Barsha (Dubai)
-2. Lulu Hypermarket Deira City Centre (Dubai)  
-3. Lulu Hypermarket Karama (Dubai)
-4. Lulu Hypermarket Silicon Oasis (Dubai)
-5. Lulu Hypermarket Mall of the Emirates (Dubai)
-6. Lulu Hypermarket Sharjah
-7. Lulu Hypermarket Ajman
-8. Lulu Hypermarket Fujairah
-9. Lulu Hypermarket Al Ain (Abu Dhabi)
-10. Lulu Hypermarket Ras Al Khaimah
+STORES (10 Meridian Hypermarket locations):
+1. Meridian Hypermarket Al Barsha (Dubai)
+2. Meridian Hypermarket Deira City Centre (Dubai)  
+3. Meridian Hypermarket Karama (Dubai)
+4. Meridian Hypermarket Silicon Oasis (Dubai)
+5. Meridian Hypermarket Mall of the Emirates (Dubai)
+6. Meridian Hypermarket Sharjah
+7. Meridian Hypermarket Ajman
+8. Meridian Hypermarket Fujairah
+9. Meridian Hypermarket Al Ain (Abu Dhabi)
+10. Meridian Hypermarket Ras Al Khaimah
 
 PRODUCT CATEGORIES:
 Dairy, Beverages, Bakery, Personal Care, Household, Snacks, Rice & Grains, 
@@ -737,7 +737,7 @@ async def get_intelligent_fallback(message: str, intent_info: Dict, tenant_id: i
 
         # Greeting response
         if "greeting" in intents:
-            return f"""👋 Hello! I'm **Lulu AI**, your sales analytics assistant.
+            return f"""👋 Hello! I'm **Retail IQ AI**, your sales analytics assistant.
 
 📊 **Quick Stats Right Now:**
 • Today's Sales: **{kpis['total_sales_today']:,}** units
@@ -821,7 +821,7 @@ This store is performing well in the network!"""
         
         # Help
         if "help" in intents:
-            return """📖 **Lulu AI Help Guide:**
+            return """📖 **Retail IQ AI Help Guide:**
 
 **Ask me about:**
 • 📊 "What are today's sales?" - Current sales figures
@@ -839,7 +839,7 @@ This store is performing well in the network!"""
 The data updates in real-time every few seconds!"""
         
         # Default with actual data
-        return f"""👋 I'm **Lulu AI**, your sales analytics assistant.
+        return f"""👋 I'm **Retail IQ AI**, your sales analytics assistant.
 
 📊 **Current Status:**
 • Today's Sales: **{kpis['total_sales_today']:,}** units

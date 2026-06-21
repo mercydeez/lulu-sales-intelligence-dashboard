@@ -24,11 +24,11 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Lulu Hypermarket Sales Dashboard | Real-time Analytics',
-  description: 'Real-time sales streaming and analytics dashboard for Lulu Hypermarket UAE',
+  title: 'Retail IQ | Real-time Retail Analytics',
+  description: 'Real-time sales streaming and analytics dashboard for retail operations',
   manifest: '/manifest.webmanifest',
-  applicationName: 'Lulu Intel',
-  appleWebApp: { capable: true, title: 'Lulu Intel', statusBarStyle: 'default' },
+  applicationName: 'Retail IQ',
+  appleWebApp: { capable: true, title: 'Retail IQ', statusBarStyle: 'default' },
   icons: {
     icon: [
       { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },

@@ -98,7 +98,7 @@ jobs:
         run: docker compose config -q
 
       - name: Build backend image
-        run: docker build -t lulu-backend-test ./backend
+        run: docker build -t app-backend-test ./backend
 
       - name: Build frontend image
-        run: docker build -t lulu-frontend-test ./frontend
+        run: docker build -t app-frontend-test ./frontend

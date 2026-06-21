@@ -92,7 +92,7 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
   (migration 013): own stores/items/~120d sales + `owner@northwind.ae`.
 - The in-app **AI assistant is now tenant-scoped** too: `tenant_id` added to the Sale/Store/Item models
   and threaded through every `ai_assistant` data function + the authenticated `/api/ai/chat` routes, so a
-  tenant's chatbot only ever sees its own data (verified: Lulu 913k records vs Northwind 1.9k).
+  tenant's chatbot only ever sees its own data (verified: Meridian 913k records vs Northwind 1.9k).
 - **FORCE RLS + non-owner role** ✅ (migration 020): a dedicated, non-superuser `app_rw` role with
   `FORCE ROW LEVEL SECURITY` on all 16 tenant tables (+ parent-scoped policies on the line tables) and
   `security_invoker` on `sales_fact_view` (migration 021) so the view honours the caller's RLS. **Proven
@@ -183,5 +183,5 @@ lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
 - **Rebuild the backend image after dependency changes** (lightgbm/torch/scikit-learn):
   `docker compose up -d --build backend`.
 - Migrations auto-apply on boot (numbered SQL in `database/migrations/`, tracked in `schema_migrations`).
-- Demo logins (password `Lulu@2026!`): atharva@lulu.ae (super_admin), krishna@lulu.ae
-  (regional_manager), yash@lulu.ae (store_manager).
+- Demo logins (password `Demo@2026!`): atharva@retaildemo.app (super_admin), krishna@retaildemo.app
+  (regional_manager), yash@retaildemo.app (store_manager).

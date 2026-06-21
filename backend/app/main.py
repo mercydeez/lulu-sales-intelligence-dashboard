@@ -119,7 +119,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Sales Dashboard API",
+    title=f"{settings.product_name} API",
     description="Real-time sales streaming and analytics API",
     version="1.0.0",
     lifespan=lifespan

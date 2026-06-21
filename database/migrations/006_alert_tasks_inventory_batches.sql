@@ -1,5 +1,5 @@
 -- =============================================================================
--- LULU HYPERMARKET UAE - ALERT TASKS & INVENTORY BATCHES
+-- RETAIL IQ - ALERT TASKS & INVENTORY BATCHES
 -- Migration 006: Phase 2.2 (inventory batches + expiry) and 2.3 (alerts as tasks)
 -- =============================================================================
 

@@ -4,6 +4,7 @@ import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { PRODUCT_NAME } from '@/lib/brand';
 import {
   Eye, EyeOff, Lock, Mail, User, Building2, AlertCircle, Loader2,
   ShoppingBag, Rocket, Sparkles, ArrowRight, CheckCircle2,
@@ -60,7 +61,7 @@ export default function SignupPage() {
           <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm ring-1 ring-white/30">
             <ShoppingBag className="w-6 h-6" />
           </div>
-          <span className="text-xl font-bold tracking-tight">Lulu Intelligence</span>
+          <span className="text-xl font-bold tracking-tight">{PRODUCT_NAME}</span>
         </div>
 
         <div className="relative z-10 max-w-md">
@@ -89,7 +90,7 @@ export default function SignupPage() {
         </div>
 
         <div className="relative z-10 text-white/70 text-xs">
-          Independent student project · synthetic data · © 2026 Lulu Hypermarket UAE
+          Independent student project · synthetic data · © 2026 Meridian Hypermarket UAE
         </div>
       </div>
 
@@ -100,7 +101,7 @@ export default function SignupPage() {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-sunset">
               <ShoppingBag className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold gradient-text">Lulu Intelligence</h1>
+            <h1 className="text-2xl font-bold gradient-text">{PRODUCT_NAME}</h1>
           </div>
 
           <div className="mb-8">

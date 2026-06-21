@@ -70,19 +70,19 @@ CREATE INDEX IF NOT EXISTS idx_sales_stream_timestamp ON sales_stream_raw(timest
 CREATE INDEX IF NOT EXISTS idx_sales_stream_store_item ON sales_stream_raw(store_id, item_id);
 
 -- =============================================================================
--- Insert Lulu Hypermarket UAE stores
+-- Insert Meridian Hypermarket UAE stores
 -- =============================================================================
 INSERT INTO stores (id, name, location) VALUES 
-    (1, 'Lulu Hypermarket Al Barsha', 'Dubai'),
-    (2, 'Lulu Hypermarket Deira City Centre', 'Dubai'),
-    (3, 'Lulu Hypermarket Karama', 'Dubai'),
-    (4, 'Lulu Hypermarket Mushrif Mall', 'Abu Dhabi'),
-    (5, 'Lulu Hypermarket Al Wahda', 'Abu Dhabi'),
-    (6, 'Lulu Hypermarket Khalidiyah', 'Abu Dhabi'),
-    (7, 'Lulu Hypermarket Sharjah City Centre', 'Sharjah'),
-    (8, 'Lulu Hypermarket Al Nahda', 'Sharjah'),
-    (9, 'Lulu Hypermarket Ajman', 'Ajman'),
-    (10, 'Lulu Hypermarket Ras Al Khaimah', 'Ras Al Khaimah')
+    (1, 'Meridian Hypermarket Al Barsha', 'Dubai'),
+    (2, 'Meridian Hypermarket Deira City Centre', 'Dubai'),
+    (3, 'Meridian Hypermarket Karama', 'Dubai'),
+    (4, 'Meridian Hypermarket Mushrif Mall', 'Abu Dhabi'),
+    (5, 'Meridian Hypermarket Al Wahda', 'Abu Dhabi'),
+    (6, 'Meridian Hypermarket Khalidiyah', 'Abu Dhabi'),
+    (7, 'Meridian Hypermarket Sharjah City Centre', 'Sharjah'),
+    (8, 'Meridian Hypermarket Al Nahda', 'Sharjah'),
+    (9, 'Meridian Hypermarket Ajman', 'Ajman'),
+    (10, 'Meridian Hypermarket Ras Al Khaimah', 'Ras Al Khaimah')
 ON CONFLICT DO NOTHING;
 
 -- =============================================================================
@@ -289,8 +289,8 @@ CREATE TABLE IF NOT EXISTS regions (
 );
 
 INSERT INTO regions (code, name, description) VALUES 
-    ('dubai', 'Dubai Region', 'All Lulu stores in Dubai emirate'),
-    ('abu_dhabi', 'Abu Dhabi Region', 'All Lulu stores in Abu Dhabi emirate'),
+    ('dubai', 'Dubai Region', 'All Meridian stores in Dubai emirate'),
+    ('abu_dhabi', 'Abu Dhabi Region', 'All Meridian stores in Abu Dhabi emirate'),
     ('northern_emirates', 'Northern Emirates Region', 'Stores in Sharjah, Ajman, RAK')
 ON CONFLICT (code) DO NOTHING;
 
@@ -373,13 +373,13 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
 
 -- =============================================================================
 -- INSERT DEFAULT USERS
--- Password: Lulu@2026! (bcrypt hash)
+-- Password: Demo@2026! (bcrypt hash)
 -- =============================================================================
 
 INSERT INTO users (email, password_hash, first_name, last_name, role, status, job_title, department) VALUES 
-    ('atharva@lulu.ae', '$2b$12$ydZDowJdY8PjxC9O.8XlX.FuzEpaT4eNkimXs0at73I97pjJD8E3O', 'Atharva', 'Soundankar', 'super_admin', 'active', 'Senior Vice President', 'Executive Leadership'),
-    ('krishna@lulu.ae', '$2b$12$ydZDowJdY8PjxC9O.8XlX.FuzEpaT4eNkimXs0at73I97pjJD8E3O', 'Krishna', 'Sharma', 'regional_manager', 'active', 'Senior Regional Manager', 'Operations'),
-    ('yash@lulu.ae', '$2b$12$ydZDowJdY8PjxC9O.8XlX.FuzEpaT4eNkimXs0at73I97pjJD8E3O', 'Yash', 'Patel', 'store_manager', 'active', 'Store Manager', 'Store Operations')
+    ('atharva@retaildemo.app', '$2b$12$H5K0AMsU34kndvqz4reAkOOZ5QmINt67ZriaLAHJc5bCzK64SUv/i', 'Atharva', 'Soundankar', 'super_admin', 'active', 'Senior Vice President', 'Executive Leadership'),
+    ('krishna@retaildemo.app', '$2b$12$H5K0AMsU34kndvqz4reAkOOZ5QmINt67ZriaLAHJc5bCzK64SUv/i', 'Krishna', 'Sharma', 'regional_manager', 'active', 'Senior Regional Manager', 'Operations'),
+    ('yash@retaildemo.app', '$2b$12$H5K0AMsU34kndvqz4reAkOOZ5QmINt67ZriaLAHJc5bCzK64SUv/i', 'Yash', 'Patel', 'store_manager', 'active', 'Store Manager', 'Store Operations')
 ON CONFLICT (email) DO NOTHING;
 
 -- SET UP PERMISSIONS
@@ -387,14 +387,14 @@ ON CONFLICT (email) DO NOTHING;
 INSERT INTO user_permissions (user_id, region_id, can_view, can_edit, can_delete, can_export, can_manage_users, can_manage_inventory, can_manage_promotions, can_view_financials, can_approve_transfers)
 SELECT u.id, r.id, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE
 FROM users u, regions r
-WHERE u.email = 'atharva@lulu.ae'
+WHERE u.email = 'atharva@retaildemo.app'
 ON CONFLICT DO NOTHING;
 
 -- KRISHNA (Senior Manager) - Dubai Region only
 INSERT INTO user_permissions (user_id, region_id, can_view, can_edit, can_delete, can_export, can_manage_users, can_manage_inventory, can_manage_promotions, can_view_financials, can_approve_transfers)
 SELECT u.id, r.id, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE, TRUE, TRUE, TRUE
 FROM users u, regions r
-WHERE u.email = 'krishna@lulu.ae' AND r.code = 'dubai'
+WHERE u.email = 'krishna@retaildemo.app' AND r.code = 'dubai'
 ON CONFLICT DO NOTHING;
 
 -- 

@@ -1,4 +1,4 @@
-/* Lulu Intelligence service worker — offline app shell (Part III-H).
+/* Retail IQ service worker — offline app shell (Part III-H).
  *
  * - Precache the offline fallback + icons/manifest on install.
  * - Navigations: network-first, falling back to a cached page or /offline.html.
@@ -6,7 +6,7 @@
  * - Cross-origin requests (the API + SSE on :8000) are NOT intercepted, so live
  *   data and EventSource streaming behave exactly as normal.
  */
-const VERSION = 'lulu-pwa-v1';
+const VERSION = 'retailiq-pwa-v1';
 const PRECACHE = [
   '/offline.html',
   '/manifest.webmanifest',

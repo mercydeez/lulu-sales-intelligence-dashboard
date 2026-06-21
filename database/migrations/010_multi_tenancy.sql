@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS tenants (
 
 -- 2. Default tenant owns all existing seeded data (id pinned to 1)
 INSERT INTO tenants (id, slug, name, plan, status, brand_name, accent_color)
-VALUES (1, 'demo', 'Lulu Demo', 'enterprise', 'active', 'Lulu Demo', '#0f766e')
+VALUES (1, 'demo', 'Meridian Retail', 'enterprise', 'active', 'Meridian Retail', '#0f766e')
 ON CONFLICT (id) DO NOTHING;
 
 -- keep the serial sequence ahead of any pinned id

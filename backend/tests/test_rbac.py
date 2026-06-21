@@ -15,7 +15,7 @@ from app.services.database import get_db
 # Mock users
 MOCK_SUPER_ADMIN = {
     "id": 1,
-    "email": "atharva@lulu.ae",
+    "email": "atharva@retaildemo.app",
     "role": "super_admin",
     "status": "active",
     "permissions": {
@@ -27,7 +27,7 @@ MOCK_SUPER_ADMIN = {
 
 MOCK_REGIONAL_MANAGER = {
     "id": 2,
-    "email": "krishna@lulu.ae",
+    "email": "krishna@retaildemo.app",
     "role": "regional_manager",
     "status": "active",
     "permissions": {
@@ -39,7 +39,7 @@ MOCK_REGIONAL_MANAGER = {
 
 MOCK_STORE_MANAGER = {
     "id": 3,
-    "email": "yash@lulu.ae",
+    "email": "yash@retaildemo.app",
     "role": "store_manager",
     "status": "active",
     "permissions": {

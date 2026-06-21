@@ -17,8 +17,8 @@ git push origin main      # (or your branch)
 
 ## 2. Create the Blueprint
 In Render: **New + → Blueprint → select this repo → Apply.**
-Render reads `render.yaml` and creates: `lulu-postgres`, `lulu-redis`,
-`lulu-backend`, `lulu-frontend`. It auto-wires `DATABASE_URL` and `REDIS_URL`,
+Render reads `render.yaml` and creates: `app-postgres`, `app-redis`,
+`app-backend`, `app-frontend`. It auto-wires `DATABASE_URL` and `REDIS_URL`,
 and generates strong `JWT_SECRET_KEY` / `SECRET_KEY`.
 
 The **first backend boot runs the seeder** (creates the schema and bulk-loads
@@ -26,26 +26,26 @@ The **first backend boot runs the seeder** (creates the schema and bulk-loads
 healthy. This is normal and only happens once.
 
 ## 3. The URL handshake (two values render.yaml can't know up front)
-After the services exist, grab their URLs (e.g. `https://lulu-backend.onrender.com`,
-`https://lulu-frontend.onrender.com`) and set:
+After the services exist, grab their URLs (e.g. `https://app-backend.onrender.com`,
+`https://app-frontend.onrender.com`) and set:
 
 | Service | Env var | Value |
 |---|---|---|
-| **lulu-frontend** | `NEXT_PUBLIC_API_URL` | the **backend** URL (e.g. `https://lulu-backend.onrender.com`) |
-| **lulu-backend** | `CORS_ORIGINS` | the **frontend** URL (e.g. `https://lulu-frontend.onrender.com`) |
-| **lulu-backend** | `CSP_CONNECT_SRC` | `'self' https://lulu-backend.onrender.com` |
+| **app-frontend** | `NEXT_PUBLIC_API_URL` | the **backend** URL (e.g. `https://app-backend.onrender.com`) |
+| **app-backend** | `CORS_ORIGINS` | the **frontend** URL (e.g. `https://app-frontend.onrender.com`) |
+| **app-backend** | `CSP_CONNECT_SRC` | `'self' https://app-backend.onrender.com` |
 
 Then **redeploy both** (the frontend value is baked at build time, so it needs
 a rebuild). After this, the frontend talks to the backend and CORS/CSP allow it.
 
 ## 4. Verify
 - Open the frontend URL, log in with a demo account (below).
-- Backend health: `https://lulu-backend.onrender.com/health` → `200`.
+- Backend health: `https://app-backend.onrender.com/health` → `200`.
 - The live feed / KPIs should populate (KPIs are warmed, so ~instant).
 
 ## 5. Keep-warm pinger (so the free backend doesn't sleep)
 Use a free uptime monitor (UptimeRobot, cron-job.org, …):
-- **GET `https://lulu-backend.onrender.com/health` every ~10 minutes.**
+- **GET `https://app-backend.onrender.com/health` every ~10 minutes.**
 - (Optionally also ping the frontend URL.)
 
 One always-warm backend stays within Render's free monthly instance-hours, so
@@ -54,17 +54,17 @@ idle and the dashboard looks dead until the next visit wakes it (~30–60s cold
 start).
 
 ## 6. Optional: real AI answers
-Set `OPENAI_API_KEY` on **lulu-backend** to enable LLM chat. Without it, the
+Set `OPENAI_API_KEY` on **app-backend** to enable LLM chat. Without it, the
 assistant uses the built-in rule-based responder (still answers from live data).
 
 ---
 
-## Demo logins (password `Lulu@2026!`)
+## Demo logins (password `Demo@2026!`)
 | Email | Role | Scope |
 |---|---|---|
-| `atharva@lulu.ae` | super_admin | all 10 stores |
-| `krishna@lulu.ae` | regional_manager | Dubai (3 stores) |
-| `yash@lulu.ae` | store_manager | Al Barsha (1 store) |
+| `atharva@retaildemo.app` | super_admin | all 10 stores |
+| `krishna@retaildemo.app` | regional_manager | Dubai (3 stores) |
+| `yash@retaildemo.app` | store_manager | Al Barsha (1 store) |
 
 ## Gotchas
 - **Free Postgres expires ~90 days** after creation — back up / recreate before then.

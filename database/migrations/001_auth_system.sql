@@ -1,5 +1,5 @@
 -- =============================================================================
--- LULU HYPERMARKET UAE - AUTHENTICATION & AUTHORIZATION SCHEMA
+-- RETAIL IQ - AUTHENTICATION & AUTHORIZATION SCHEMA
 -- Migration 001: User Management, Roles, Permissions, Audit Logging
 -- =============================================================================
 
@@ -55,8 +55,8 @@ CREATE TABLE IF NOT EXISTS regions (
 
 -- Insert regions
 INSERT INTO regions (code, name, description) VALUES 
-    ('dubai', 'Dubai Region', 'All Lulu stores in Dubai emirate'),
-    ('abu_dhabi', 'Abu Dhabi Region', 'All Lulu stores in Abu Dhabi emirate'),
+    ('dubai', 'Dubai Region', 'All Meridian stores in Dubai emirate'),
+    ('abu_dhabi', 'Abu Dhabi Region', 'All Meridian stores in Abu Dhabi emirate'),
     ('northern_emirates', 'Northern Emirates Region', 'Stores in Sharjah, Ajman, RAK')
 ON CONFLICT (code) DO NOTHING;
 
@@ -254,18 +254,18 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_resource ON audit_log(resource_type, re
 -- INSERT DEFAULT USERS
 -- =============================================================================
 
--- Password for all users: Lulu@2026! (bcrypt hashed)
--- Hash generated with: passlib.hash.bcrypt.hash("Lulu@2026!")
+-- Password for all users: Demo@2026! (bcrypt hashed)
+-- Hash generated with: bcrypt.hashpw(b"Demo@2026!", bcrypt.gensalt(rounds=12))
 
 INSERT INTO users (email, password_hash, first_name, last_name, role, status, job_title, department) VALUES 
     -- Senior VP - ATHARVA (Super Admin - sees everything)
-    ('atharva@lulu.ae', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G.D.wLjwhWvEKi', 'Atharva', 'Soundankar', 'super_admin', 'active', 'Senior Vice President', 'Executive Leadership'),
+    ('atharva@retaildemo.app', '$2b$12$H5K0AMsU34kndvqz4reAkOOZ5QmINt67ZriaLAHJc5bCzK64SUv/i', 'Atharva', 'Soundankar', 'super_admin', 'active', 'Senior Vice President', 'Executive Leadership'),
     
     -- Senior Manager - KRISHNA (Regional Manager - Dubai Region)
-    ('krishna@lulu.ae', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G.D.wLjwhWvEKi', 'Krishna', 'Sharma', 'regional_manager', 'active', 'Senior Regional Manager', 'Operations'),
+    ('krishna@retaildemo.app', '$2b$12$H5K0AMsU34kndvqz4reAkOOZ5QmINt67ZriaLAHJc5bCzK64SUv/i', 'Krishna', 'Sharma', 'regional_manager', 'active', 'Senior Regional Manager', 'Operations'),
     
     -- Store Manager - YASH (Store Manager - Al Barsha only)
-    ('yash@lulu.ae', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G.D.wLjwhWvEKi', 'Yash', 'Patel', 'store_manager', 'active', 'Store Manager', 'Store Operations')
+    ('yash@retaildemo.app', '$2b$12$H5K0AMsU34kndvqz4reAkOOZ5QmINt67ZriaLAHJc5bCzK64SUv/i', 'Yash', 'Patel', 'store_manager', 'active', 'Store Manager', 'Store Operations')
 ON CONFLICT (email) DO NOTHING;
 
 -- =============================================================================
@@ -276,21 +276,21 @@ ON CONFLICT (email) DO NOTHING;
 INSERT INTO user_permissions (user_id, region_id, can_view, can_edit, can_delete, can_export, can_manage_users, can_manage_inventory, can_manage_promotions, can_view_financials, can_approve_transfers)
 SELECT u.id, r.id, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE
 FROM users u, regions r
-WHERE u.email = 'atharva@lulu.ae'
+WHERE u.email = 'atharva@retaildemo.app'
 ON CONFLICT DO NOTHING;
 
 -- KRISHNA (Senior Manager) - Dubai Region only
 INSERT INTO user_permissions (user_id, region_id, can_view, can_edit, can_delete, can_export, can_manage_users, can_manage_inventory, can_manage_promotions, can_view_financials, can_approve_transfers)
 SELECT u.id, r.id, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE, TRUE, TRUE, TRUE
 FROM users u, regions r
-WHERE u.email = 'krishna@lulu.ae' AND r.code = 'dubai'
+WHERE u.email = 'krishna@retaildemo.app' AND r.code = 'dubai'
 ON CONFLICT DO NOTHING;
 
 -- YASH (Store Manager) - Al Barsha store only
 INSERT INTO user_permissions (user_id, store_id, can_view, can_edit, can_delete, can_export, can_manage_users, can_manage_inventory, can_manage_promotions, can_view_financials, can_approve_transfers)
 SELECT u.id, s.id, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE, FALSE, FALSE, FALSE
 FROM users u, stores s
-WHERE u.email = 'yash@lulu.ae' AND s.id = 1
+WHERE u.email = 'yash@retaildemo.app' AND s.id = 1
 ON CONFLICT DO NOTHING;
 
 -- =============================================================================

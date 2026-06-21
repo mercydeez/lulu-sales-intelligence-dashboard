@@ -1,7 +1,7 @@
 version: '3.8'
 
 # =============================================================================
-# Lulu Intelligence Dashboard - Production Configuration
+# Retail IQ - Production Configuration
 # =============================================================================
 # 
 # Usage:
@@ -20,7 +20,7 @@ services:
   # ===========================================================================
   postgres:
     image: postgres:15-alpine
-    container_name: lulu_db_prod
+    container_name: app_db_prod
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-salesuser}
@@ -40,7 +40,7 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - lulu_network
+      - app_network
     # Production: Don't expose port externally, only internal access
     # ports:
     #   - "5432:5432"
@@ -56,7 +56,7 @@ services:
   # ===========================================================================
   redis:
     image: redis:7-alpine
-    container_name: lulu_redis_prod
+    container_name: app_redis_prod
     restart: always
     command: >
       redis-server 
@@ -73,7 +73,7 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - lulu_network
+      - app_network
     deploy:
       resources:
         limits:
@@ -88,7 +88,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: lulu_backend_prod
+    container_name: app_backend_prod
     restart: always
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-salesdb}
@@ -114,7 +114,7 @@ services:
       retries: 3
       start_period: 60s
     networks:
-      - lulu_network
+      - app_network
     deploy:
       resources:
         limits:
@@ -132,7 +132,7 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8000}
-    container_name: lulu_frontend_prod
+    container_name: app_frontend_prod
     restart: always
     environment:
       NODE_ENV: production
@@ -147,7 +147,7 @@ services:
       retries: 3
       start_period: 60s
     networks:
-      - lulu_network
+      - app_network
     deploy:
       resources:
         limits:
@@ -160,7 +160,7 @@ services:
   # ===========================================================================
   nginx:
     image: nginx:alpine
-    container_name: lulu_nginx_prod
+    container_name: app_nginx_prod
     restart: always
     ports:
       - "80:80"
@@ -173,7 +173,7 @@ services:
       - frontend
       - backend
     networks:
-      - lulu_network
+      - app_network
     deploy:
       resources:
         limits:
@@ -183,7 +183,7 @@ services:
 # Networks
 # =============================================================================
 networks:
-  lulu_network:
+  app_network:
     driver: bridge
     ipam:
       config:

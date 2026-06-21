@@ -28,5 +28,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_data_sources_one_active
 
 -- Seed the built-in demo source (active by default) once.
 INSERT INTO data_sources (name, type, is_active, status, mapping)
-SELECT 'Built-in demo (Lulu synthetic)', 'builtin', TRUE, 'ok', '{}'::jsonb
+SELECT 'Built-in demo (Meridian synthetic)', 'builtin', TRUE, 'ok', '{}'::jsonb
 WHERE NOT EXISTS (SELECT 1 FROM data_sources WHERE type = 'builtin');

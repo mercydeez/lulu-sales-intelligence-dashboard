@@ -1,6 +1,6 @@
 """
 Synthetic Employee Data Generator
-Generates realistic employee data for Lulu Hypermarket UAE with:
+Generates realistic employee data for Meridian Hypermarket UAE with:
 - Realistic UAE/South Asian names
 - Performance metrics matching historical patterns
 - Proper role distribution across stores
@@ -132,16 +132,16 @@ ROLE_CONFIG = {
 
 # Store mapping
 STORES = [
-    {"id": 1, "name": "Lulu Hypermarket Al Barsha", "location": "Dubai", "region_id": 1},
-    {"id": 2, "name": "Lulu Hypermarket Deira City Centre", "location": "Dubai", "region_id": 1},
-    {"id": 3, "name": "Lulu Hypermarket Karama", "location": "Dubai", "region_id": 1},
-    {"id": 4, "name": "Lulu Hypermarket Mushrif Mall", "location": "Abu Dhabi", "region_id": 2},
-    {"id": 5, "name": "Lulu Hypermarket Al Wahda", "location": "Abu Dhabi", "region_id": 2},
-    {"id": 6, "name": "Lulu Hypermarket Khalidiyah", "location": "Abu Dhabi", "region_id": 2},
-    {"id": 7, "name": "Lulu Hypermarket Sharjah City Centre", "location": "Sharjah", "region_id": 3},
-    {"id": 8, "name": "Lulu Hypermarket Al Nahda", "location": "Sharjah", "region_id": 3},
-    {"id": 9, "name": "Lulu Hypermarket Ajman", "location": "Ajman", "region_id": 3},
-    {"id": 10, "name": "Lulu Hypermarket Ras Al Khaimah", "location": "Ras Al Khaimah", "region_id": 3}
+    {"id": 1, "name": "Meridian Hypermarket Al Barsha", "location": "Dubai", "region_id": 1},
+    {"id": 2, "name": "Meridian Hypermarket Deira City Centre", "location": "Dubai", "region_id": 1},
+    {"id": 3, "name": "Meridian Hypermarket Karama", "location": "Dubai", "region_id": 1},
+    {"id": 4, "name": "Meridian Hypermarket Mushrif Mall", "location": "Abu Dhabi", "region_id": 2},
+    {"id": 5, "name": "Meridian Hypermarket Al Wahda", "location": "Abu Dhabi", "region_id": 2},
+    {"id": 6, "name": "Meridian Hypermarket Khalidiyah", "location": "Abu Dhabi", "region_id": 2},
+    {"id": 7, "name": "Meridian Hypermarket Sharjah City Centre", "location": "Sharjah", "region_id": 3},
+    {"id": 8, "name": "Meridian Hypermarket Al Nahda", "location": "Sharjah", "region_id": 3},
+    {"id": 9, "name": "Meridian Hypermarket Ajman", "location": "Ajman", "region_id": 3},
+    {"id": 10, "name": "Meridian Hypermarket Ras Al Khaimah", "location": "Ras Al Khaimah", "region_id": 3}
 ]
 
 REGION_PREFIXES = {
@@ -180,7 +180,7 @@ def generate_phone():
     return f"+971-{random.choice(prefixes)}-{random.randint(1000000, 9999999)}"
 
 
-def generate_email(first_name: str, last_name: str, domain: str = "lulu.ae") -> str:
+def generate_email(first_name: str, last_name: str, domain: str = "retaildemo.app") -> str:
     """Generate corporate email"""
     first = first_name.lower().replace(" ", "")
     last = last_name.lower().replace(" ", "").replace("-", "")

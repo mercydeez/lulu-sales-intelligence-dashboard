@@ -4,15 +4,16 @@ import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { PRODUCT_NAME } from '@/lib/brand';
 import {
   Eye, EyeOff, Lock, Mail, AlertCircle, Loader2, ShoppingBag,
   TrendingUp, ShieldCheck, Activity, Sparkles, ArrowRight,
 } from 'lucide-react';
 
 const DEMO_ACCOUNTS = [
-  { label: 'Super Admin', email: 'atharva@lulu.ae', accent: 'from-coral-500 to-violet-500' },
-  { label: 'Regional Mgr', email: 'krishna@lulu.ae', accent: 'from-violet-500 to-teal-400' },
-  { label: 'Store Mgr', email: 'yash@lulu.ae', accent: 'from-amber-400 to-coral-500' },
+  { label: 'Super Admin', email: 'atharva@retaildemo.app', accent: 'from-coral-500 to-violet-500' },
+  { label: 'Regional Mgr', email: 'krishna@retaildemo.app', accent: 'from-violet-500 to-teal-400' },
+  { label: 'Store Mgr', email: 'yash@retaildemo.app', accent: 'from-amber-400 to-coral-500' },
 ];
 
 export default function LoginPage() {
@@ -41,7 +42,7 @@ export default function LoginPage() {
 
   const fillDemo = (demoEmail: string) => {
     setEmail(demoEmail);
-    setPassword('Lulu@2026!');
+    setPassword('Demo@2026!');
     setLocalError('');
     clearError();
   };
@@ -62,7 +63,7 @@ export default function LoginPage() {
           <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm ring-1 ring-white/30">
             <ShoppingBag className="w-6 h-6" />
           </div>
-          <span className="text-xl font-bold tracking-tight">Lulu Intelligence</span>
+          <span className="text-xl font-bold tracking-tight">{PRODUCT_NAME}</span>
         </div>
 
         {/* Hero copy */}
@@ -75,7 +76,7 @@ export default function LoginPage() {
           </h1>
           <p className="text-white/85 text-lg leading-relaxed">
             Live KPIs, demand forecasting, and inventory intelligence across the
-            Lulu Hypermarket UAE network — in one playful, powerful dashboard.
+            Meridian Hypermarket UAE network — in one playful, powerful dashboard.
           </p>
 
           {/* Feature pills */}
@@ -96,7 +97,7 @@ export default function LoginPage() {
         </div>
 
         <div className="relative z-10 text-white/70 text-xs">
-          Independent student project · synthetic data · © 2026 Lulu Hypermarket UAE
+          Independent student project · synthetic data · © 2026 Meridian Hypermarket UAE
         </div>
       </div>
 
@@ -108,7 +109,7 @@ export default function LoginPage() {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-sunset">
               <ShoppingBag className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold gradient-text">Lulu Intelligence</h1>
+            <h1 className="text-2xl font-bold gradient-text">{PRODUCT_NAME}</h1>
             <p className="text-ink-muted text-sm">UAE Sales Analytics Dashboard</p>
           </div>
 
@@ -141,7 +142,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-white border border-coral-100 text-ink placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
-                  placeholder="your.email@lulu.ae"
+                  placeholder="your.email@retaildemo.app"
                   autoComplete="email"
                   disabled={isLoading}
                 />
@@ -235,7 +236,7 @@ export default function LoginPage() {
               ))}
             </div>
             <p className="mt-3 text-center text-xs text-ink-muted">
-              Password for all demos: <span className="font-mono font-medium text-ink-soft">Lulu@2026!</span>
+              Password for all demos: <span className="font-mono font-medium text-ink-soft">Demo@2026!</span>
             </p>
           </div>
 

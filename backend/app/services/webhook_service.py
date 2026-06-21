@@ -3,7 +3,7 @@ Outbound webhook service (B4).
 
 Tenants register HTTPS endpoints + the events they want; `dispatch_event` POSTs
 a signed JSON payload to every active, subscribed endpoint for a tenant. Each
-delivery carries an HMAC-SHA256 signature (`X-Lulu-Signature: sha256=<hex>`) over
+delivery carries an HMAC-SHA256 signature (`X-Webhook-Signature: sha256=<hex>`) over
 the exact request body so receivers can verify authenticity with their secret.
 
 Delivery is best-effort and fire-and-forget — a slow or failing receiver must
@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import logger
 from app.services.database import async_session
 
-SIGNATURE_HEADER = "X-Lulu-Signature"
+SIGNATURE_HEADER = "X-Webhook-Signature"
 DELIVERY_TIMEOUT = 5.0
 
 
@@ -107,7 +107,7 @@ async def _deliver(url: str, secret: str, body: bytes) -> int:
     headers = {
         "Content-Type": "application/json",
         SIGNATURE_HEADER: f"sha256={sign_payload(secret, body)}",
-        "User-Agent": "Lulu-Webhooks/1.0",
+        "User-Agent": "RetailIQ-Webhooks/1.0",
     }
     async with httpx.AsyncClient(timeout=DELIVERY_TIMEOUT) as client:
         resp = await client.post(url, content=body, headers=headers)
