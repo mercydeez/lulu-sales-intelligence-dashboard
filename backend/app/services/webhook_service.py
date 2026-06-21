@@ -107,7 +107,7 @@ async def _deliver(url: str, secret: str, body: bytes) -> int:
     headers = {
         "Content-Type": "application/json",
         SIGNATURE_HEADER: f"sha256={sign_payload(secret, body)}",
-        "User-Agent": "RetailIQ-Webhooks/1.0",
+        "User-Agent": "Foresia-Webhooks/1.0",
     }
     async with httpx.AsyncClient(timeout=DELIVERY_TIMEOUT) as client:
         resp = await client.post(url, content=body, headers=headers)
@@ -160,9 +160,26 @@ async def dispatch_event(tenant_id: int, event: str, data: Dict) -> int:
 
 
 def dispatch_event_background(tenant_id: int, event: str, data: Dict) -> None:
-    """Fire-and-forget dispatch — schedule on the running loop without awaiting,
-    so producers (alerts, stream) never block on webhook delivery."""
+    """Fire-and-forget dispatch for domain events (procurement, alerts).
+
+    Preferred path: enqueue a durable `webhook` job so the Node worker fans out
+    to subscribed endpoints and retries each delivery with exponential backoff.
+    Fallback (queue disabled/unavailable, or no running loop): the original
+    in-process best-effort delivery, so producers still work without the worker.
+    """
     try:
-        asyncio.get_running_loop().create_task(dispatch_event(tenant_id, event, data))
+        loop = asyncio.get_running_loop()
     except RuntimeError:
-        pass  # no running loop (e.g. called from sync context) — skip
+        return  # no running loop (sync context) — skip
+
+    async def _enqueue_or_inprocess() -> None:
+        from app.services.queue import enqueue, Q_WEBHOOK
+        job_id = await enqueue(
+            Q_WEBHOOK, "dispatch",
+            {"tenant_id": tenant_id, "event": event, "data": data},
+        )
+        if job_id is None:
+            # Queue off/unavailable — deliver in-process so nothing is lost.
+            await dispatch_event(tenant_id, event, data)
+
+    loop.create_task(_enqueue_or_inprocess())

@@ -1,0 +1,22 @@
+{
+  "name": "foresia-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Foresia BullMQ worker — durable background jobs (webhook delivery, proactive risk scans).",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "bullmq": "^5.34.0",
+    "ioredis": "5.10.1",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

@@ -113,6 +113,8 @@ async def lifespan(app: FastAPI):
             await t
         except asyncio.CancelledError:
             pass
+    from app.services.queue import close_queues
+    await close_queues()
     await close_db()
     await close_redis()
     logger.info("Shutdown complete")

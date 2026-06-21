@@ -67,6 +67,30 @@ services:
     networks:
       - sales_network
 
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: sales_worker
+    environment:
+      - REDIS_URL=redis://redis:6379
+      # Plain libpq URL (node-postgres) — distinct from the backend's asyncpg URL.
+      - DATABASE_URL=postgres://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD:-salespass}@postgres:5432/${POSTGRES_DB:-salesdb}
+      - WORKER_CONCURRENCY=8
+      - WORKER_HEALTH_PORT=9100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9100/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sales_network
+
   frontend:
     build:
       context: ./frontend

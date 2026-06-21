@@ -41,7 +41,13 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379"
-    
+
+    # Job queue (BullMQ). When enabled, durable background jobs (webhook
+    # delivery, risk scans) are enqueued to Redis and processed by the Node
+    # `worker` service. When disabled, producers fall back to the in-process
+    # path so the API still works without the worker running.
+    use_queue: bool = True
+
     # Application
     environment: str = "development"
     debug: bool = True

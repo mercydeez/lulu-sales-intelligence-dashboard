@@ -26,13 +26,17 @@ summary below. Strategy/product rationale lives in `docs/` (PRODUCT_STRATEGY, SA
 - Removed stale archive planning docs (architecture plan, codebase map, redesign brief); kept the
   original audit (`GAP_ANALYSIS.md`). Verified the codebase is otherwise lean (no orphaned modules).
 
-### Phase 1 — BullMQ worker service ❌
-- New `worker/` Node 20 + TypeScript service (BullMQ + ioredis), containerized, sharing Redis.
-  Queues: `forecast`, `risk-scan`, `webhook`, `report`, `digest`.
-- `backend/app/services/queue.py` (typed enqueue helpers; `bullmq` PyPI client). `USE_QUEUE` flag
-  (default true) with the in-process path as fallback.
-- Migrate webhook delivery (`webhook_service.dispatch_event`) and forecast training
-  (`forecast_trainer.py`) onto queues with retries/backoff + repeatable schedules.
+### Phase 1 — BullMQ worker service ✅
+- New `worker/` Node 20 + TypeScript service (BullMQ + ioredis + pg), containerized + health-checked,
+  sharing Redis. Queues: `webhook` (live), `risk-scan` (Phase 3), `report`/`digest` (scaffold).
+- `backend/app/services/queue.py` — `bullmq` PyPI producer (pinned 2.14.x for redis<6 compat).
+  `USE_QUEUE` flag (default true) with the in-process path as fallback.
+- **Webhook delivery migrated** to the queue: `dispatch_event_background` enqueues a `dispatch`
+  job → worker fans out one `deliver` job per subscribed endpoint → signed POST with per-endpoint
+  exponential-backoff retries; HMAC signing/payload byte-identical to the Python implementation
+  (cross-language signature verified). Proven end-to-end (Python producer → Node consumer → 200).
+- **Forecast training stays in Python** (in-process trainer): the heavy ML (lightgbm/torch) is
+  Python-bound, so the queue owns I/O-bound work (webhooks now, risk scans next) — the correct split.
 
 ### Phase 2 — Sage: true NL→SQL agent (Ollama) ❌
 - Dedicated read-only Postgres role (`foresia_ro`) + curated tenant-safe schema catalog.

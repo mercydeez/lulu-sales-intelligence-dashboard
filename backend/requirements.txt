@@ -22,6 +22,11 @@ torch==2.2.2
 httpx==0.26.0
 sse-starlette==2.0.0
 python-multipart==0.0.9
+# Job queue (producer side). The official BullMQ Python client speaks the same
+# Redis protocol/prefix as the Node `worker` service, so they interoperate.
+# Pinned to 2.14.x: the last line that depends on redis<6 (matches redis==5.0.1
+# above); still targets the BullMQ v5 job format the Node worker consumes.
+bullmq==2.14.0
 # Authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
