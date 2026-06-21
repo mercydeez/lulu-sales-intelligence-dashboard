@@ -24,11 +24,11 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Retail IQ | Real-time Retail Analytics',
-  description: 'Real-time sales streaming and analytics dashboard for retail operations',
+  title: 'Foresia | Anticipatory Retail Intelligence',
+  description: 'Foresia anticipates what is going right — and wrong — across retail operations, with Sage, an AI that answers any business question from your live data.',
   manifest: '/manifest.webmanifest',
-  applicationName: 'Retail IQ',
-  appleWebApp: { capable: true, title: 'Retail IQ', statusBarStyle: 'default' },
+  applicationName: 'Foresia',
+  appleWebApp: { capable: true, title: 'Foresia', statusBarStyle: 'default' },
   icons: {
     icon: [
       { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },

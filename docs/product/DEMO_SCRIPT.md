@@ -1,4 +1,4 @@
-# Demo Script — Retail IQ
+# Demo Script — Foresia
 
 A guided **~8-minute** walkthrough for a portfolio reviewer or interviewer. It is ordered to build a narrative: *live data → analytics → security → honest engineering*. Timings are approximate.
 

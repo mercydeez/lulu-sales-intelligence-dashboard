@@ -76,6 +76,6 @@ async def test_webhooks(
     _require_admin(user)
     tenant_id = user.get("tenant_id") or 1
     attempted = await wh.dispatch_event(
-        tenant_id, "webhook.test", {"message": "Hello from Retail IQ"}
+        tenant_id, "webhook.test", {"message": "Hello from Foresia"}
     )
     return {"dispatched_to": attempted}

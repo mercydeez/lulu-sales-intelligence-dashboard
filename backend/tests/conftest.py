@@ -1,5 +1,5 @@
 """
-Pytest configuration and shared fixtures for the Retail IQ test suite.
+Pytest configuration and shared fixtures for the Foresia test suite.
 """
 import os
 import pytest

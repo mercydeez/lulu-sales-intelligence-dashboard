@@ -1,4 +1,4 @@
-# API and SSE Testing Script for Retail IQ Dashboard
+# API and SSE Testing Script for Foresia Dashboard
 # Run this script to verify all endpoints are working properly
 
 import asyncio

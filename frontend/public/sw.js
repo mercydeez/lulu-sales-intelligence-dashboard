@@ -1,4 +1,4 @@
-/* Retail IQ service worker — offline app shell (Part III-H).
+/* Foresia service worker — offline app shell (Part III-H).
  *
  * - Precache the offline fallback + icons/manifest on install.
  * - Navigations: network-first, falling back to a cached page or /offline.html.

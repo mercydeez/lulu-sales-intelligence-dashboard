@@ -1,4 +1,4 @@
-# Retail IQ
+# Foresia
 
 > A full-stack, real-time retail sales-intelligence dashboard for a UAE supermarket chain — built as a **portfolio / MVP demonstration** of real-time data systems, analytics, RBAC security, and local-first AI. The data is **synthetic** (see [Data & Honesty Notes](#data--honesty-notes)); the engineering is real.
 

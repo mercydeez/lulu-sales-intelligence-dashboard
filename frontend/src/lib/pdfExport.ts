@@ -1,5 +1,5 @@
 /**
- * PDF Export Utility for the Retail IQ Dashboard
+ * PDF Export Utility for the Foresia Dashboard
  * Uses jsPDF and jsPDF-AutoTable for professional PDF generation
  */
 

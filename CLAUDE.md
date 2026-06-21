@@ -37,7 +37,9 @@ npx tsc --noEmit        # CI currently runs this with `|| true` — type errors 
 
 Demo logins (password `Demo@2026!`): `atharva@retaildemo.app` (super_admin), `krishna@retaildemo.app` (regional_manager, Dubai only), `yash@retaildemo.app` (store_manager, Al Barsha only).
 
-**Product name is a placeholder.** The product is provisionally **"Retail IQ"**, centralized in one place: backend `settings.product_name` (`PRODUCT_NAME` env) and frontend `src/lib/brand.ts` (`NEXT_PUBLIC_PRODUCT_NAME`). The fictional demo retailer is **"Meridian Hypermarket"** (tenant 1 = "Meridian Retail"). The old "Lulu" brand has been removed except where it refers to the real Lulu Group (trademark/market discussion in `docs/product/*`) or the actual GitHub repo URL. When the final name is chosen, change those two config values.
+**Product name is "Foresia"** (anticipatory retail intelligence), centralized in one place: backend `settings.product_name` (`PRODUCT_NAME` env) and frontend `src/lib/brand.ts` (`NEXT_PUBLIC_PRODUCT_NAME`). The in-product **AI assistant is named "Sage"**. The fictional demo retailer is **"Meridian Hypermarket"** (tenant 1 = "Meridian Retail"). The old "Lulu" brand has been removed except where it refers to the real Lulu Group (trademark/market discussion in `docs/product/*`) or the actual GitHub repo URL.
+
+**Architecture direction (Foresia evolution, see `implementation.md`):** a Node **BullMQ worker** service (`worker/`) for durable background jobs (forecasts, risk scans, webhooks); FastAPI enqueues via the `bullmq` Python client. **Sage** is evolving from a keyword intent-router into a true NL→SQL agent (Ollama) that executes tenant-scoped read-only `SELECT`s. A proactive **Risk Radar** surfaces what's going wrong/about to go wrong.
 
 Tests set their own env (`backend/tests/conftest.py` forces `ENVIRONMENT=testing` and dummy secrets before app imports) and don't need live Postgres/Redis for the config/security/middleware suites.
 

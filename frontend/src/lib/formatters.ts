@@ -1,5 +1,5 @@
 /**
- * Formatting utilities for the Retail IQ Dashboard
+ * Formatting utilities for the Foresia Dashboard
  * Includes AED (UAE Dirhams) currency formatting and standardized unit labels
  * Following enterprise standards similar to Apple, Microsoft, and major retailers
  */

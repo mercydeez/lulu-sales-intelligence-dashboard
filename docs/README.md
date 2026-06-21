@@ -27,9 +27,8 @@ The documentation is organized by how you should use it, not by when it was writ
 ## Historical docs
 
 ### `archive/`
-These files are worth keeping because they show the original audit, redesign thinking, and execution plan. They are historical context, not the current source of truth.
+Kept for historical context — the original audit, not the current source of truth. (Stale planning
+docs — architecture plan, codebase map, redesign brief — were removed during the Foresia evolution;
+the audit is preserved.)
 
 - [`archive/GAP_ANALYSIS.md`](archive/GAP_ANALYSIS.md) - the original audit of problems and credibility gaps.
-- [`archive/UI_UX_REDESIGN_PLAN.md`](archive/UI_UX_REDESIGN_PLAN.md) - the redesign brief for the frontend overhaul.
-- [`archive/ARCHITECTURE_PLAN.md`](archive/ARCHITECTURE_PLAN.md) - the earlier architectural target shape.
-- [`archive/CODEBASE_MAP.md`](archive/CODEBASE_MAP.md) - the June 2026 inspection snapshot of the repo before later fixes landed.

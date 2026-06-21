@@ -1,4 +1,4 @@
-# Retail IQ — One-Page Pitch
+# Foresia — One-Page Pitch
 
 **What it is:** a real-time retail sales-intelligence dashboard for a UAE supermarket chain. A background generator emits a synthetic sale every few seconds; it flows through PostgreSQL and Redis to a Next.js dashboard that updates live. Built solo as a portfolio MVP — **synthetic data, real engineering.**
 

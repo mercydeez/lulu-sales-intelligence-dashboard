@@ -1,7 +1,7 @@
-# Rebuild Script for Retail IQ
+# Rebuild Script for Foresia
 # Run this in PowerShell to rebuild the containers with latest code
 
-Write-Host "=== Retail IQ Rebuild ===" -ForegroundColor Cyan
+Write-Host "=== Foresia Rebuild ===" -ForegroundColor Cyan
 Write-Host ""
 
 # Stop all containers

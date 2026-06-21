@@ -1,4 +1,4 @@
-# Render Blueprint — Retail IQ (free tier)
+# Render Blueprint — Foresia (free tier)
 #
 # Deploy: push to GitHub, then in Render: New + > Blueprint > pick this repo.
 # Render provisions everything below. Two values can't be known until the

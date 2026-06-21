@@ -491,7 +491,7 @@ async def get_dashboard_summary(tenant_id: int = 1) -> str:
 
 def get_system_prompt() -> str:
     """Get the system prompt for the AI assistant"""
-    return """You are Retail IQ AI, an intelligent sales analytics assistant for the Meridian Hypermarket dashboard.
+    return """You are Sage, an intelligent sales analytics assistant for the Meridian Hypermarket dashboard.
 
 CRITICAL INSTRUCTIONS:
 1. When users ask for specific data (sales, store info, etc.), you MUST use the ACTUAL DATA provided in the context
@@ -743,7 +743,7 @@ async def get_intelligent_fallback(message: str, intent_info: Dict, tenant_id: i
 
         # Greeting response
         if "greeting" in intents:
-            return f"""👋 Hello! I'm **Retail IQ AI**, your sales analytics assistant.
+            return f"""👋 Hello! I'm **Sage**, your sales analytics assistant.
 
 📊 **Quick Stats Right Now:**
 • Today's Sales: **{kpis['total_sales_today']:,}** units
@@ -827,7 +827,7 @@ This store is performing well in the network!"""
         
         # Help
         if "help" in intents:
-            return """📖 **Retail IQ AI Help Guide:**
+            return """📖 **Sage Help Guide:**
 
 **Ask me about:**
 • 📊 "What are today's sales?" - Current sales figures
@@ -845,7 +845,7 @@ This store is performing well in the network!"""
 The data updates in real-time every few seconds!"""
         
         # Default with actual data
-        return f"""👋 I'm **Retail IQ AI**, your sales analytics assistant.
+        return f"""👋 I'm **Sage**, your sales analytics assistant.
 
 📊 **Current Status:**
 • Today's Sales: **{kpis['total_sales_today']:,}** units
