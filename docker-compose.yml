@@ -57,6 +57,8 @@ services:
       # running the call fast-fails and Sage falls back to the rule-based path.
       - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      # Shared secret the worker uses to trigger scheduled risk scans.
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-foresia-internal-dev-token}
     ports:
       - "8000:8000"
     depends_on:
@@ -86,6 +88,10 @@ services:
       - DATABASE_URL=postgres://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD:-salespass}@postgres:5432/${POSTGRES_DB:-salesdb}
       - WORKER_CONCURRENCY=8
       - WORKER_HEALTH_PORT=9100
+      # Risk-scan scheduling: where to trigger the Python scan + the shared token.
+      - BACKEND_URL=http://backend:8000
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-foresia-internal-dev-token}
+      - RISK_SCAN_EVERY_MS=${RISK_SCAN_EVERY_MS:-600000}
     depends_on:
       postgres:
         condition: service_healthy

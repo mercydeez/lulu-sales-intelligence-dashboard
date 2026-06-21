@@ -25,3 +25,13 @@ export const DELIVERY_TIMEOUT_MS = parseInt(
   process.env.WEBHOOK_TIMEOUT_MS || "5000",
   10,
 );
+
+// Risk scans: the worker triggers the Python scan via an internal endpoint on a
+// schedule (the heavy compute stays in Python; BullMQ owns durable scheduling).
+export const BACKEND_URL = process.env.BACKEND_URL || "http://backend:8000";
+export const INTERNAL_API_TOKEN =
+  process.env.INTERNAL_API_TOKEN || "foresia-internal-dev-token";
+export const RISK_SCAN_EVERY_MS = parseInt(
+  process.env.RISK_SCAN_EVERY_MS || "600000", // 10 minutes
+  10,
+);

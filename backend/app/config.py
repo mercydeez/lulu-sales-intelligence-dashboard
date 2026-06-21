@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     # path so the API still works without the worker running.
     use_queue: bool = True
 
+    # Shared secret the BullMQ worker presents to trigger scheduled risk scans
+    # (POST /api/intelligence/scan/internal). Set to a strong value in prod.
+    internal_api_token: str = "foresia-internal-dev-token"
+
     # Application
     environment: str = "development"
     debug: bool = True

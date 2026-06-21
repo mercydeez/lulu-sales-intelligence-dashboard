@@ -56,12 +56,19 @@ summary below. Strategy/product rationale lives in `docs/` (PRODUCT_STRATEGY, SA
 - Tested: 33 validator/helper unit tests + full suite **185 passing**; live NL→SQL verified with a
   local Ollama model (`qwen2.5:1.5b`) end-to-end (question → SQL → rows → narrated answer).
 
-### Phase 3 — Proactive intelligence / Risk Radar ❌
-- BullMQ repeatable `risk-scan` jobs per tenant: demand anomaly, stockout risk, margin erosion,
-  dead stock, return-rate spike, forecast deviation, supplier delivery risk.
-- `risk_findings` table (RLS), severity-scored + deduped; emits signed webhooks + `alerts:stream`.
-- `GET /api/intelligence/risks` + dashboard "Risk Radar"; Sage `risk_summary` path
-  ("what's going wrong right now?").
+### Phase 3 — Proactive intelligence / Risk Radar ✅
+- `services/intelligence/risk_scans.py`: four data-grounded detectors — **stockout risk**
+  (forecast-driven, reuses `reorder_suggestions`), **demand drop** (7d vs prior-3wk per store),
+  **return spike**, **dead stock** — severity-scored + deduped (`make_dedupe_key`), upserted into
+  `risk_findings` (migration 023, RLS + FORCE). Stale findings auto-resolve; new high-severity
+  emit `alerts:stream` SSE + signed webhooks (reusing the Phase 1 queue).
+- The Node **BullMQ worker owns durable scheduling**: a repeatable `risk-scan` job triggers the
+  Python all-tenant scan via an internal token-guarded endpoint (compute stays in Python).
+- `GET /api/intelligence/risks` (tenant-scoped, ranked) + `POST /scan` (super_admin) +
+  `/scan/internal` (worker). Dashboard **Risk Radar** card; Sage answers "what's going wrong?"
+  from the findings.
+- Verified live: scan produced 30 (t1) / 20 (t2) findings, tenant-isolated; worker repeatable job
+  completed against the backend; +4 tests (full suite **189 passing**).
 
 ### Phase 4 — B2B/B2G hardening + polish ❌
 - Finish FORCE-RLS request path (set `app.tenant_id` GUC after auth; special-case public-API key

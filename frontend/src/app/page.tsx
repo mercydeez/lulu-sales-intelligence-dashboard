@@ -7,6 +7,7 @@ import KPICards from '@/components/KPICards';
 import RevenueProjectionCard from '@/components/RevenueProjectionCard';
 import OnboardingChecklist from '@/components/OnboardingChecklist';
 import ActionCenter from '@/components/ActionCenter';
+import RiskRadar from '@/components/RiskRadar';
 import LiveTable from '@/components/LiveTable';
 import {
   SalesTrendChart,
@@ -61,6 +62,10 @@ export default function Home() {
 
         <section>
           <ActionCenter />
+        </section>
+
+        <section>
+          <RiskRadar />
         </section>
 
         <section>

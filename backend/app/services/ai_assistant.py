@@ -6,7 +6,7 @@ import asyncio
 from typing import Optional, List, Dict, AsyncGenerator
 from datetime import datetime, date, timedelta
 from pydantic import BaseModel
-from sqlalchemy import select, func, and_, desc
+from sqlalchemy import select, func, and_, desc, text
 from app.services.database import async_session
 from app.models.sales import Sale, Store, Item
 from app.services.llm import get_provider_chain, LLMError
@@ -908,6 +908,39 @@ def get_last_sage(session_id: str) -> Optional[Dict]:
     return ctx.last_sage if ctx else None
 
 
+_RISK_KEYWORDS = (
+    "what's wrong", "whats wrong", "what is wrong", "going wrong", "anything wrong",
+    "risk", "risks", "at risk", "problem", "problems", "issue", "issues", "anomal",
+    "concern", "worry", "worried", "should i worry", "red flag", "what's broken",
+)
+
+
+def _is_risk_question(message: str) -> bool:
+    m = message.lower()
+    return any(k in m for k in _RISK_KEYWORDS)
+
+
+async def _risk_data_context(tenant_id: int) -> str:
+    """Build the data context for "what's going wrong?" from the latest Risk
+    Radar findings (proactive intelligence), so Sage can summarize them."""
+    async with async_session() as db:
+        rows = (await db.execute(text("""
+            SELECT type, severity, title, detail, score
+            FROM risk_findings
+            WHERE tenant_id = :tid AND status = 'open'
+            ORDER BY score DESC, updated_at DESC
+            LIMIT 12
+        """), {"tid": tenant_id})).fetchall()
+    if not rows:
+        return ("No open risks were detected in the latest proactive scan — stockouts, demand "
+                "drops, return spikes and dead stock all look within normal range right now.")
+    lines = ["Open risk findings from Foresia's latest proactive scan (highest priority first). "
+             "Summarize what's going wrong and what to do:"]
+    for r in rows:
+        lines.append(f"- [{r.severity.upper()}] {r.title} — {r.detail}")
+    return "\n".join(lines)
+
+
 async def stream_chat_response(
     session_id: str,
     user_message: str,
@@ -921,11 +954,16 @@ async def stream_chat_response(
     intent_info = detect_intent(user_message)
     context.detected_intents.extend(intent_info["intents"])
 
-    # Primary: Sage turns the question into a tenant-scoped SQL query. Fall back
-    # to the keyword-intent data context when there is no query to run.
-    sage_context = await _try_sage(user_message, tenant_id, context)
-    data_context = sage_context if sage_context is not None else \
-        await build_data_context(intent_info, user_message, tenant_id)
+    # Proactive "what's going wrong?" path → summarize live Risk Radar findings.
+    # Otherwise Sage turns the question into a tenant-scoped SQL query, falling
+    # back to the keyword-intent data context when there is no query to run.
+    if _is_risk_question(user_message):
+        context.last_sage = None
+        data_context = await _risk_data_context(tenant_id)
+    else:
+        sage_context = await _try_sage(user_message, tenant_id, context)
+        data_context = sage_context if sage_context is not None else \
+            await build_data_context(intent_info, user_message, tenant_id)
     
     # Add user message with data context to conversation
     enhanced_message = f"""User Question: {user_message}
@@ -969,10 +1007,14 @@ async def get_chat_response(
     context = get_or_create_context(session_id)
     intent_info = detect_intent(user_message)
 
-    # Primary: Sage NL→SQL; fall back to keyword-intent data context.
-    sage_context = await _try_sage(user_message, tenant_id, context)
-    data_context = sage_context if sage_context is not None else \
-        await build_data_context(intent_info, user_message, tenant_id)
+    # Proactive risk path → Sage NL→SQL → keyword-intent data context.
+    if _is_risk_question(user_message):
+        context.last_sage = None
+        data_context = await _risk_data_context(tenant_id)
+    else:
+        sage_context = await _try_sage(user_message, tenant_id, context)
+        data_context = sage_context if sage_context is not None else \
+            await build_data_context(intent_info, user_message, tenant_id)
 
     enhanced_message = f"""User Question: {user_message}
 

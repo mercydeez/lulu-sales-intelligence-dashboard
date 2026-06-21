@@ -265,6 +265,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         "/health", "/docs", "/openapi.json", "/redoc",
         "/api/auth/login", "/api/auth/refresh", "/api/auth/signup",
         "/api/ai/chat/stream",  # Streaming endpoint
+        "/api/intelligence/scan/internal",  # service-to-service, guarded by X-Internal-Token
     }
     
     EXEMPT_PREFIXES = (

@@ -100,6 +100,9 @@ services:
       RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-60}
       STREAMING_INTERVAL_SECONDS: ${STREAMING_INTERVAL_SECONDS:-60}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://frontend:3000}
+      OLLAMA_URL: ${OLLAMA_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?internal token required}
     volumes:
       - ./database/migrations:/app/database/migrations:ro
     depends_on:
@@ -137,6 +140,9 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-salesdb}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-8}
       WORKER_HEALTH_PORT: 9100
+      BACKEND_URL: http://backend:8000
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?internal token required}
+      RISK_SCAN_EVERY_MS: ${RISK_SCAN_EVERY_MS:-600000}
     depends_on:
       postgres:
         condition: service_healthy

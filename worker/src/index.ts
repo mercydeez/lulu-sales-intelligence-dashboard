@@ -8,10 +8,10 @@
 import * as http from "http";
 import { Worker } from "bullmq";
 import { connection } from "./redis";
-import { Q_WEBHOOK } from "./queues";
-import { closeQueues } from "./queues";
+import { Q_WEBHOOK, Q_RISK_SCAN, getQueue, closeQueues } from "./queues";
 import { processWebhookJob } from "./jobs/webhook";
-import { CONCURRENCY, HEALTH_PORT } from "./config";
+import { processRiskScanJob } from "./jobs/riskScan";
+import { CONCURRENCY, HEALTH_PORT, RISK_SCAN_EVERY_MS } from "./config";
 
 const workers: Worker[] = [];
 
@@ -33,6 +33,25 @@ function startWorker(name: string, processor: (job: any) => Promise<unknown>): W
 
 // ── Queues ──────────────────────────────────────────────────────────────────
 startWorker(Q_WEBHOOK, processWebhookJob);
+startWorker(Q_RISK_SCAN, processRiskScanJob);
+
+// Schedule the recurring risk scan + one shortly after boot (delayed so the
+// backend is up). The repeatable jobId is stable so we don't stack duplicates.
+(async () => {
+  try {
+    const q = getQueue(Q_RISK_SCAN);
+    await q.add("scan-all", {}, {
+      repeat: { every: RISK_SCAN_EVERY_MS },
+      jobId: "risk-scan-cron",
+      removeOnComplete: 50,
+      removeOnFail: 50,
+    });
+    await q.add("scan-all", {}, { delay: 25_000, removeOnComplete: 50, removeOnFail: 50 });
+    console.log(`[worker] risk scan scheduled every ${RISK_SCAN_EVERY_MS}ms`);
+  } catch (err) {
+    console.error("[worker] failed to schedule risk scan:", (err as Error).message);
+  }
+})();
 
 // ── Health server ─────────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
