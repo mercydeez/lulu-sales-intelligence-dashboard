@@ -1,5 +1,5 @@
 -- =============================================================================
--- RETAIL IQ - AUTHENTICATION & AUTHORIZATION SCHEMA
+-- FORESIA - AUTHENTICATION & AUTHORIZATION SCHEMA
 -- Migration 001: User Management, Roles, Permissions, Audit Logging
 -- =============================================================================
 

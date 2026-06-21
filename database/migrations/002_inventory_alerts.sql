@@ -1,5 +1,5 @@
 -- =============================================================================
--- RETAIL IQ - INVENTORY MANAGEMENT SCHEMA
+-- FORESIA - INVENTORY MANAGEMENT SCHEMA
 -- Migration 002: Inventory, Stock Levels, Transfers, Alerts
 -- =============================================================================
 

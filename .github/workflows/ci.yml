@@ -102,3 +102,30 @@ jobs:
 
       - name: Build frontend image
         run: docker build -t app-frontend-test ./frontend
+
+      - name: Build worker image
+        run: docker build -t app-worker-test ./worker
+
+  # =========================================================================
+  # Worker — TypeScript type check
+  # =========================================================================
+  worker:
+    name: Worker Type Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./worker
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: TypeScript build (type check)
+        run: npm run build

@@ -33,13 +33,14 @@
 
 ## What This Is
 
-A real-time retail sales-intelligence dashboard for a fictional UAE supermarket chain ("Meridian"). It demonstrates:
+**Foresia** is an anticipatory retail-intelligence platform (B2B / B2G) for a fictional UAE supermarket chain ("Meridian"). It demonstrates:
 
 - **A live data pipeline** — a background generator writes a synthetic sale every ~5–15s to PostgreSQL and publishes it to Redis; Server-Sent Events relay it to the browser, which updates without polling.
-- **Analytics & forecasting** — sales trends, category/store breakdowns, top items, and a seasonal demand forecast with a MAPE backtest against a seasonal-naive baseline.
-- **RBAC security** — JWT auth with region→store access scoping, rate limiting, CSRF, and a hardened security-header/middleware stack.
-- **Operational modules** — inventory/expiry, alerts→tasks, promotions, employee performance, an admin console, reports, and system monitoring.
-- **Local-first AI** — a chat assistant that prefers a local Ollama model, optionally uses OpenAI, and always falls back to a deterministic rule-based responder backed by live DB data (no paid API key required to run).
+- **Sage — a natural-language analyst** — ask any business question in plain English; Sage turns it into a safe, **tenant-scoped, read-only SQL query** (validated, RLS-enforced), runs it, and narrates the answer with the SQL and a result table. Local-first: prefers Ollama, optionally OpenAI, always falls back to a deterministic rule-based responder (no paid key required).
+- **Risk Radar — proactive intelligence** — scheduled scans surface what's going *wrong* or about to: forecast-driven stockouts, demand drops, return spikes, dead stock — ranked by severity, with high-severity findings pushed to the live alert stream and signed webhooks.
+- **A durable job queue (BullMQ)** — a dedicated Node worker processes background work (webhook delivery with retries/backoff, scheduled risk scans); FastAPI enqueues over Redis via the BullMQ Python client.
+- **Multi-tenancy + RBAC security** — JWT auth with region→store access scoping, app-layer tenant isolation + Postgres **FORCE row-level security** (non-owner `app_rw` role), rate limiting, CSRF, and a hardened middleware stack.
+- **Analytics & forecasting** — sales trends, category/store breakdowns, top items, a tiered ML/DL forecast engine + Forecast Lab, and a full procure-to-pay system of record.
 
 It is a **single-developer MVP**, not a deployed production system. The honesty notes below say exactly what is real, what is synthetic, and what is simplified.
 

@@ -70,10 +70,19 @@ summary below. Strategy/product rationale lives in `docs/` (PRODUCT_STRATEGY, SA
 - Verified live: scan produced 30 (t1) / 20 (t2) findings, tenant-isolated; worker repeatable job
   completed against the backend; +4 tests (full suite **189 passing**).
 
-### Phase 4 — B2B/B2G hardening + polish ❌
-- Finish FORCE-RLS request path (set `app.tenant_id` GUC after auth; special-case public-API key
-  lookup; run `USE_RLS_ROLE=true`). CI smoke test + full pytest + `tsc` gate. Final dead-code
-  sweep + docs (README/DEMO/ADR) refreshed for Foresia/queue/Sage.
+### Phase 4 — B2B/B2G hardening + polish ✅
+- **Data rebrand**: seeded store names were still "Lulu Hypermarket" (older seed persisted in the
+  volume). `init.sql` store insert now `ON CONFLICT (id) DO UPDATE` so names self-heal to
+  "Meridian" on every boot; risk findings regenerate with the corrected names. Fixed remaining
+  uppercase "RETAIL IQ" in SQL migration headers + scripts. Verified: 0 "Lulu" in stores/findings;
+  only legit refs remain (repo URL + real Lulu Group trademark discussion in `docs/product`).
+- **CI**: already runs the full pytest suite + `tsc --noEmit` gate + image builds; added a
+  **worker type-check job** and worker image build. README + CLAUDE.md refreshed for
+  Foresia/queue/Sage/Risk Radar.
+- **FORCE-RLS request path** ⏭️ kept deferred: Sage already executes DB-enforced under `app_rw`+RLS
+  (the highest-risk surface), and app-layer scoping remains the primary control on the main request
+  path. Flipping `USE_RLS_ROLE=true` globally needs per-endpoint testing (GUC-after-auth +
+  public-API key cross-tenant lookup) — a deliberate follow-up, not a blind switch.
 
 ---
 

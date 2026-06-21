@@ -1,5 +1,5 @@
 -- =============================================================================
--- RETAIL IQ - REVENUE MODEL UPGRADE
+-- FORESIA - REVENUE MODEL UPGRADE
 -- Migration 005: Add unit_price_aed to items and seed realistic values
 -- =============================================================================
 

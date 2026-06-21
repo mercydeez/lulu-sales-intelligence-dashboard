@@ -1,5 +1,5 @@
 -- =============================================================================
--- RETAIL IQ - EMPLOYEE MANAGEMENT SYSTEM
+-- FORESIA - EMPLOYEE MANAGEMENT SYSTEM
 -- Migration 004: Employee Biodata, Performance Tracking, Transaction Attribution
 -- =============================================================================
 

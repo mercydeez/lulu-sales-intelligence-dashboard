@@ -83,7 +83,9 @@ INSERT INTO stores (id, name, location) VALUES
     (8, 'Meridian Hypermarket Al Nahda', 'Sharjah'),
     (9, 'Meridian Hypermarket Ajman', 'Ajman'),
     (10, 'Meridian Hypermarket Ras Al Khaimah', 'Ras Al Khaimah')
-ON CONFLICT DO NOTHING;
+-- Self-heal the names/locations on every boot so an older seed (e.g. a prior
+-- brand) is corrected without wiping the volume.
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, location = EXCLUDED.location;
 
 -- =============================================================================
 -- Insert grocery items with categories

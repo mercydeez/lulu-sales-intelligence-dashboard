@@ -1,5 +1,5 @@
 -- =============================================================================
--- RETAIL IQ - PROMOTIONS & ADVANCED ANALYTICS SCHEMA
+-- FORESIA - PROMOTIONS & ADVANCED ANALYTICS SCHEMA
 -- Migration 003: Promotions, Pricing, Reports, Scheduled Jobs
 -- =============================================================================
 

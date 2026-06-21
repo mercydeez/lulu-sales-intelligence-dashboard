@@ -159,7 +159,7 @@ class APITester:
 
     async def run_all_tests(self):
         """Run comprehensive API tests"""
-        print(header("RETAIL IQ - API TEST SUITE"))
+        print(header("FORESIA - API TEST SUITE"))
         print(f"Testing against: {BASE_URL}")
         print(f"Timestamp: {datetime.now().isoformat()}\n")
         

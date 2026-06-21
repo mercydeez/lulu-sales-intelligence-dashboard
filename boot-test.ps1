@@ -7,7 +7,7 @@ Set-Location $PSScriptRoot
 
 function Say($msg, $color = "White") { Write-Host $msg -ForegroundColor $color }
 
-Say "`n=== RETAIL IQ CLEAN-BOOT TEST ===" "Cyan"
+Say "`n=== FORESIA CLEAN-BOOT TEST ===" "Cyan"
 Say "This wipes the local DB volume and boots the stack from scratch.`n" "Gray"
 
 # 1. Fresh start — wipe volumes so the backend re-seeds as if it's a brand-new machine.
