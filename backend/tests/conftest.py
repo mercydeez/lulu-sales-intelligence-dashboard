@@ -1,5 +1,5 @@
 """
-Pytest configuration and shared fixtures for the Lulu Intelligence Dashboard test suite.
+Pytest configuration and shared fixtures for the Retail IQ test suite.
 """
 import os
 import pytest

@@ -75,7 +75,7 @@ lulu-sales-intelligence-dashboard-main/
 
 ## 3. Main User Flows
 
-1. **Login** → `frontend/src/app/login/page.tsx` → `POST /api/auth/login` → JWT access+refresh stored in **localStorage** → `AuthContext` gates pages via `withAuth` HOC. Demo users: `atharva@lulu.ae` (super_admin), `krishna@lulu.ae` (regional_manager, Dubai), `yash@lulu.ae` (store_manager, Al Barsha). Shared password `Lulu@2026!` (seeded in `init.sql`).
+1. **Login** → `frontend/src/app/login/page.tsx` → `POST /api/auth/login` → JWT access+refresh stored in **localStorage** → `AuthContext` gates pages via `withAuth` HOC. Demo users: `atharva@retaildemo.app` (super_admin), `krishna@retaildemo.app` (regional_manager, Dubai), `yash@retaildemo.app` (store_manager, Al Barsha). Shared password `Demo@2026!` (seeded in `init.sql`).
 2. **Live dashboard** (`/`) → KPI cards poll `/api/kpis`; LiveTable/LiveStreamChart open `EventSource(${API_URL}/stream/sales)`; events originate from the background `DataGenerator`.
 3. **Domain modules** — analytics, inventory, promotions, alerts, employees, reports, monitoring, admin — each is one large page component calling its corresponding router.
 4. **AI chat** → ChatBot component → `/api/ai/chat/stream` → OpenAI (if key set) else data-driven fallback built from live DB queries.

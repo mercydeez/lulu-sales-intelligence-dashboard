@@ -29,7 +29,7 @@ def _payload(token: str) -> dict:
     return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
 
-TOKEN_DATA = {"user_id": 1, "email": "atharva@lulu.ae", "role": "super_admin"}
+TOKEN_DATA = {"user_id": 1, "email": "atharva@retaildemo.app", "role": "super_admin"}
 
 
 # =============================================================================

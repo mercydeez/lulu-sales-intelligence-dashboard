@@ -1,7 +1,7 @@
-# Rebuild Script for Lulu Intelligence Dashboard
+# Rebuild Script for Retail IQ
 # Run this in PowerShell to rebuild the containers with latest code
 
-Write-Host "=== Lulu Intelligence Dashboard Rebuild ===" -ForegroundColor Cyan
+Write-Host "=== Retail IQ Rebuild ===" -ForegroundColor Cyan
 Write-Host ""
 
 # Stop all containers
@@ -10,8 +10,8 @@ docker compose down
 
 # Remove old images to force rebuild
 Write-Host "2. Removing old images..." -ForegroundColor Yellow
-docker rmi lulu-intelligence-dashboard-frontend -f 2>$null
-docker rmi lulu-intelligence-dashboard-backend -f 2>$null
+docker rmi app-frontend -f 2>$null
+docker rmi app-backend -f 2>$null
 
 # Build without cache
 Write-Host "3. Building containers (no cache)..." -ForegroundColor Yellow
@@ -26,7 +26,7 @@ Write-Host "=== Build Complete ===" -ForegroundColor Green
 Write-Host "Frontend: http://localhost:3000" -ForegroundColor Cyan
 Write-Host "Backend:  http://localhost:8000" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Login with: atharva@lulu.ae / Lulu@2026!" -ForegroundColor White
+Write-Host "Login with: atharva@retaildemo.app / Demo@2026!" -ForegroundColor White
 
 # Wait for services to be ready
 Write-Host ""

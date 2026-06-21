@@ -156,7 +156,7 @@ async def invite_user(
         return None, "A user with this email already exists"
 
     # A strong temp password that satisfies the strength policy.
-    temp_password = f"Lulu-{secrets.token_urlsafe(10)}-9!"
+    temp_password = f"Retail-{secrets.token_urlsafe(10)}-9!"
     async with async_session() as session:
         try:
             user_id = (await session.execute(text("""

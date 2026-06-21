@@ -1,8 +1,8 @@
-# Lulu Sales Intelligence Dashboard — One-Page Pitch
+# Retail IQ — One-Page Pitch
 
 **What it is:** a real-time retail sales-intelligence dashboard for a UAE supermarket chain. A background generator emits a synthetic sale every few seconds; it flows through PostgreSQL and Redis to a Next.js dashboard that updates live. Built solo as a portfolio MVP — **synthetic data, real engineering.**
 
-**Try it in 30 seconds:** `docker compose up -d` → http://localhost:3000 → log in as `atharva@lulu.ae` / `Lulu@2026!`.
+**Try it in 30 seconds:** `docker compose up -d` → http://localhost:3000 → log in as `atharva@retaildemo.app` / `Demo@2026!`.
 
 ---
 

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Printer, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { PRODUCT_NAME } from '@/lib/brand';
 import AuditTimeline from '@/components/AuditTimeline';
 
 interface POLine { id: number; item_name: string; quantity: number; unit_cost: number; line_total: number; received_qty: number; }
@@ -60,7 +61,7 @@ export default function PrintablePOPage() {
             <p className="text-ink-muted mt-1">{po.po_number}</p>
           </div>
           <div className="text-right">
-            <p className="text-lg font-bold gradient-text">Lulu Intelligence</p>
+            <p className="text-lg font-bold gradient-text">{PRODUCT_NAME}</p>
             <p className="text-xs text-ink-muted">Procurement</p>
           </div>
         </div>

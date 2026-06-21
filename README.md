@@ -1,4 +1,4 @@
-# Lulu Sales Intelligence Dashboard
+# Retail IQ
 
 > A full-stack, real-time retail sales-intelligence dashboard for a UAE supermarket chain — built as a **portfolio / MVP demonstration** of real-time data systems, analytics, RBAC security, and local-first AI. The data is **synthetic** (see [Data & Honesty Notes](#data--honesty-notes)); the engineering is real.
 
@@ -33,7 +33,7 @@
 
 ## What This Is
 
-A real-time retail sales-intelligence dashboard for a fictional UAE supermarket chain ("Lulu"). It demonstrates:
+A real-time retail sales-intelligence dashboard for a fictional UAE supermarket chain ("Meridian"). It demonstrates:
 
 - **A live data pipeline** — a background generator writes a synthetic sale every ~5–15s to PostgreSQL and publishes it to Redis; Server-Sent Events relay it to the browser, which updates without polling.
 - **Analytics & forecasting** — sales trends, category/store breakdowns, top items, and a seasonal demand forecast with a MAPE backtest against a seasonal-naive baseline.
@@ -92,13 +92,13 @@ With the stack running:
 | **Swagger / OpenAPI docs** | http://localhost:8000/docs |
 | **Health check** | http://localhost:8000/health |
 
-Demo users (password for all three: **`Lulu@2026!`**):
+Demo users (password for all three: **`Demo@2026!`**):
 
 | Role | Email | Access scope |
 |------|-------|-------------|
-| Super Admin | `atharva@lulu.ae` | all regions & stores |
-| Regional Manager | `krishna@lulu.ae` | Dubai region only |
-| Store Manager | `yash@lulu.ae` | Al Barsha store only |
+| Super Admin | `atharva@retaildemo.app` | all regions & stores |
+| Regional Manager | `krishna@retaildemo.app` | Dubai region only |
+| Store Manager | `yash@retaildemo.app` | Al Barsha store only |
 
 Logging in as the regional/store users is the quickest way to see RBAC scoping in action — the same screens show only the data each role is allowed to see.
 

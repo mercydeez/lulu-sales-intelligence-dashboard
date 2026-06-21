@@ -150,7 +150,7 @@ function ComponentGallery() {
 
       <Section title="Inputs &amp; select">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input label="Email" type="email" placeholder="you@lulu.ae" icon={<Mail className="w-4 h-4" />} />
+          <Input label="Email" type="email" placeholder="you@retaildemo.app" icon={<Mail className="w-4 h-4" />} />
           <Input label="Search" placeholder="Search items..." icon={<Search className="w-4 h-4" />} />
           <Input label="With error" defaultValue="bad value" error="This field is required" />
           <Select label="Region">

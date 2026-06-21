@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-KEY_LABEL = "lsk"  # Lulu secret key
+KEY_LABEL = "lsk"  # app secret key prefix
 
 
 def hash_key(full_key: str) -> str:

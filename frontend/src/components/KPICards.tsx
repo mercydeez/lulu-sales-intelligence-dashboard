@@ -316,7 +316,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
         </StatCard>
 
         <StatCard
-          label="Avg Daily Sales"
+          label="Avg Daily Revenue"
           tone="amber"
           icon={<Calendar className="w-5 h-5" />}
           value={formatCurrencyCompact(kpis.average_daily_revenue)}

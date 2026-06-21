@@ -1,7 +1,7 @@
 -- 013_seed_second_tenant.sql
 -- A second, fully-isolated tenant ("Northwind Foods", id=2) so multi-tenant
 -- isolation is visible end-to-end (B2): its own stores, items, ~120 days of
--- historical sales, and a super_admin login. Tenant 1 (Lulu Demo) and tenant 2
+-- historical sales, and a super_admin login. Tenant 1 (Meridian Retail) and tenant 2
 -- must never see each other's rows once every read is tenant-scoped + RLS is on.
 --
 -- Idempotent: each block self-guards on "does tenant 2 already have this?" so a
@@ -71,12 +71,12 @@ WHERE st.tenant_id = 2
   AND it.tenant_id = 2
   AND NOT EXISTS (SELECT 1 FROM sales_historical WHERE tenant_id = 2);
 
--- 5. A super_admin login for tenant 2 (password: Lulu@2026!) ----------------
+-- 5. A super_admin login for tenant 2 (password: Demo@2026!) ----------------
 INSERT INTO users (email, password_hash, first_name, last_name, role, status,
                    job_title, department, tenant_id)
 VALUES (
     'owner@northwind.ae',
-    '$2b$12$ydZDowJdY8PjxC9O.8XlX.FuzEpaT4eNkimXs0at73I97pjJD8E3O',
+    '$2b$12$H5K0AMsU34kndvqz4reAkOOZ5QmINt67ZriaLAHJc5bCzK64SUv/i',
     'Nadia', 'Al Mansouri', 'super_admin', 'active',
     'Owner', 'Executive Leadership', 2
 )

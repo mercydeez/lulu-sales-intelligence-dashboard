@@ -17,7 +17,7 @@ DEEPGRAM_TTS_URL = "https://api.deepgram.com/v1/speak"
 
 # Sales-specific vocabulary for better recognition
 SALES_VOCABULARY = [
-    "Lulu", "hypermarket", "sales", "revenue", "profit", "margin",
+    "Meridian", "hypermarket", "sales", "revenue", "profit", "margin",
     "store", "item", "category", "beverages", "dairy", "frozen",
     "vegetables", "personal care", "household", "snacks", "bakery",
     "Karama", "Barsha", "Deira", "Ajman", "Sharjah", "Fujairah",
@@ -54,7 +54,7 @@ class DeepgramService:
         
         # Fix common misrecognitions in sales context
         replacements = {
-            r'\blulu\b': 'Lulu',
+            r'\bmeridian\b': 'Meridian',
             r'\bkarama\b': 'Karama',
             r'\bbarsha\b': 'Barsha',
             r'\bdeira\b': 'Deira',

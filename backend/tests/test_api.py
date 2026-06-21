@@ -1,4 +1,4 @@
-# API and SSE Testing Script for Lulu Intelligence Dashboard
+# API and SSE Testing Script for Retail IQ Dashboard
 # Run this script to verify all endpoints are working properly
 
 import asyncio
@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 BASE_URL = "http://localhost:8000"
-TEST_USER = {"username": "yash@lulu.ae", "password": "Lulu@2026!"}
+TEST_USER = {"username": "yash@retaildemo.app", "password": "Demo@2026!"}
 
 class Colors:
     GREEN = '\033[92m'
@@ -159,7 +159,7 @@ class APITester:
 
     async def run_all_tests(self):
         """Run comprehensive API tests"""
-        print(header("LULU INTELLIGENCE DASHBOARD - API TEST SUITE"))
+        print(header("RETAIL IQ - API TEST SUITE"))
         print(f"Testing against: {BASE_URL}")
         print(f"Timestamp: {datetime.now().isoformat()}\n")
         

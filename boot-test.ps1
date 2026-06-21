@@ -7,7 +7,7 @@ Set-Location $PSScriptRoot
 
 function Say($msg, $color = "White") { Write-Host $msg -ForegroundColor $color }
 
-Say "`n=== LULU CLEAN-BOOT TEST ===" "Cyan"
+Say "`n=== RETAIL IQ CLEAN-BOOT TEST ===" "Cyan"
 Say "This wipes the local DB volume and boots the stack from scratch.`n" "Gray"
 
 # 1. Fresh start — wipe volumes so the backend re-seeds as if it's a brand-new machine.
@@ -65,7 +65,7 @@ Check "Frontend serves"        $frontendOk                 ""
 Say "============================" "Cyan"
 if ($pass) {
     Say "`nALL CHECKS PASSED — fresh install boots clean. This is the 'it's real' milestone.`n" "Green"
-    Say "Open http://localhost:3000 and log in as yash@lulu.ae / Lulu@2026!`n" "Green"
+    Say "Open http://localhost:3000 and log in as yash@retaildemo.app / Demo@2026!`n" "Green"
 } else {
     Say "`nSOME CHECKS FAILED — copy this output and send it to Claude; I'll diagnose the exact cause.`n" "Red"
 }

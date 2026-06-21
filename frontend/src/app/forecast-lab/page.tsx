@@ -470,7 +470,7 @@ export default function ForecastLabPage() {
                               <th className="text-left font-medium text-ink-muted px-2 sticky left-0 bg-surface">Category</th>
                               {stores.map(([sid, sname]) => (
                                 <th key={sid} className="font-medium text-ink-muted px-1 whitespace-nowrap" title={sname}>
-                                  {sname.replace(/^Lulu\s+/i, '').slice(0, 10)}
+                                  {sname.replace(/^Meridian Hypermarket\s+/i, '').slice(0, 10)}
                                 </th>
                               ))}
                             </tr>

@@ -72,9 +72,9 @@ This matters because the project's strongest existing assets (Redis→SSE live p
 
 | Persona | Demo user | What their screen proves |
 |---|---|---|
-| Group ops executive | `atharva@lulu.ae` (super_admin) | Cross-region comparison, network-wide KPIs, admin console |
-| Regional manager (Dubai) | `krishna@lulu.ae` | Data hard-scoped to 3 Dubai stores; transfer/promo approvals |
-| Store manager (Al Barsha) | `yash@lulu.ae` | Single-store ops: live feed, expiry queue, task acknowledgments |
+| Group ops executive | `atharva@retaildemo.app` (super_admin) | Cross-region comparison, network-wide KPIs, admin console |
+| Regional manager (Dubai) | `krishna@retaildemo.app` | Data hard-scoped to 3 Dubai stores; transfer/promo approvals |
+| Store manager (Al Barsha) | `yash@retaildemo.app` | Single-store ops: live feed, expiry queue, task acknowledgments |
 
 The 3-login walkthrough **is the demo script** — same product, three truthfully different views, enforced by the server.
 
