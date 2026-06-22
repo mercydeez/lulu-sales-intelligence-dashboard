@@ -3,8 +3,10 @@
 // is left resolved (operators' decisions stick) unless its window rolls over.
 import { query } from "./db.js";
 
+// Returns true if this finding row was newly INSERTED (vs an update of an existing
+// one) — `xmax = 0` is Postgres's tell for an insert in an upsert RETURNING.
 export async function upsertFinding(tenantId, f) {
-  await query(
+  const rows = await query(
     `INSERT INTO findings
        (tenant_id, rule, category, severity, title, detail, evidence,
         entity_type, entity_id, entity_name, metric_value, dedupe_key,
@@ -18,7 +20,8 @@ export async function upsertFinding(tenantId, f) {
        metric_value       = EXCLUDED.metric_value,
        recommended_action = EXCLUDED.recommended_action,
        action_type        = EXCLUDED.action_type,
-       updated_at         = now()`,
+       updated_at         = now()
+     RETURNING (xmax = 0) AS inserted`,
     [
       tenantId, f.rule, f.category, f.severity, f.title, f.detail,
       JSON.stringify(f.evidence ?? {}), f.entity_type ?? null, f.entity_id ?? null,
@@ -26,9 +29,13 @@ export async function upsertFinding(tenantId, f) {
       f.recommended_action ?? null, f.action_type ?? "investigate",
     ]
   );
+  return rows[0]?.inserted === true;
 }
 
 export async function writeFindings(tenantId, findings) {
-  for (const f of findings) await upsertFinding(tenantId, f);
-  return findings.length;
+  const inserted = [];
+  for (const f of findings) {
+    if (await upsertFinding(tenantId, f)) inserted.push(f);
+  }
+  return inserted; // newly-created findings (for notifications)
 }

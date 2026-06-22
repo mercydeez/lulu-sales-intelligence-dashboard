@@ -102,6 +102,16 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 100  # requests per minute
     rate_limit_window: int = 60  # seconds
     
+    # Observability (Track B) — env-gated, optional. No DSN/key => no-op, so the
+    # stack runs with zero external services. Drop in when you add the accounts.
+    sentry_dsn: Optional[str] = None        # error tracking
+    posthog_api_key: Optional[str] = None   # product analytics (frontend reads NEXT_PUBLIC_*)
+
+    # Notifications (Track B) — provider-agnostic. The diagnostics worker posts new
+    # high/critical findings to NOTIFY_WEBHOOK_URL (any Slack/Discord/Teams incoming
+    # webhook). Empty => the worker just logs. No SDK, no paid service.
+    notify_webhook_url: Optional[str] = None
+
     # Logging
     log_level: str = "INFO"
     log_format: str = "%(asctime)s | %(levelname)-8s | %(name)s | req=%(request_id)s | %(message)s"

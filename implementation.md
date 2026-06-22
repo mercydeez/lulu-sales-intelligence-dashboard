@@ -125,6 +125,20 @@ Goal: turn recommendations into proposed actions, slowly increasing autonomy.
 
 ---
 
+## Track B — Commercial & trust scaffolding 🟡 (drop-in-ready, no paid services)
+- ✅ **Notification dispatcher** (`worker/src/notify.js`): new high/critical findings post to any
+  Slack/Discord/Teams incoming webhook (`NOTIFY_WEBHOOK_URL`); no-op (logs) until set. Dedupe means
+  no re-notify on re-scans.
+- ✅ **Observability hooks**: env-gated `SENTRY_DSN` (optional `sentry-sdk` import; silent no-op if
+  absent) + `POSTHOG_API_KEY` settings. Nothing leaves the stack by default.
+- ✅ **SECURITY.md**: one-page security summary for buyer review (auth, RBAC, tenant isolation,
+  hardening, the known RLS-through-view gap).
+- ✅ **Brand centralization**: `settings.chatbot_name` + `brand.ts CHATBOT_NAME` (Sage) added to the
+  existing `product_name` single-source.
+- ❌ **Remaining (needs a decision / external service):** billing + metering (Stripe/Telr on
+  `tenants.plan`), ToS/Privacy/DPA, tenant export & delete-on-request, data residency, ingestion
+  dedup/freshness polish, the `security_invoker` fix that unblocks the app-wide `USE_RLS_ROLE` flip.
+
 ## Deferred (needs external services / a decision)
 - **Billing** — Stripe/Telr subscriptions + metering (maps onto `tenants.plan` + API-key metering).
 - **Payments / B2B AP** — partner for money movement; never build KYC/AML/licensing.

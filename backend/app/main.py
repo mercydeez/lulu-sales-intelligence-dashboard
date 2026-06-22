@@ -55,6 +55,19 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("🔒 Security configuration validated — no issues found.")
     
+    # Observability (Track B): init Sentry only if a DSN is set AND the SDK is
+    # installed. No DSN / no SDK => silent no-op, so nothing is forced on the stack.
+    if settings.sentry_dsn:
+        try:
+            import sentry_sdk  # optional dependency
+            sentry_sdk.init(dsn=settings.sentry_dsn, environment=settings.environment,
+                            traces_sample_rate=0.1)
+            logger.info("Sentry error tracking initialized")
+        except ImportError:
+            logger.warning("SENTRY_DSN set but sentry-sdk is not installed; skipping")
+        except Exception as e:
+            logger.warning(f"Sentry init failed (continuing without it): {e}")
+
     await init_db()
     logger.info("Database connection tested")
 

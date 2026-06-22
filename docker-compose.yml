@@ -109,6 +109,9 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD:-salespass}@postgres:5432/${POSTGRES_DB:-salesdb}
       - REDIS_URL=redis://redis:6379
       - DIAGNOSTICS_INTERVAL_MS=${DIAGNOSTICS_INTERVAL_MS:-300000}
+      # Optional: any Slack/Discord/Teams incoming webhook. Empty => worker just logs.
+      - NOTIFY_WEBHOOK_URL=${NOTIFY_WEBHOOK_URL:-}
+      - NOTIFY_MIN_SEVERITY=${NOTIFY_MIN_SEVERITY:-high}
     depends_on:
       postgres:
         condition: service_healthy
