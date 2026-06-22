@@ -56,7 +56,7 @@ export function TopItemsPanel({ limit = 10 }: TopItemsPanelProps) {
               props.payload?.category ?? 'Revenue',
             ]}
           />
-          <Bar dataKey="total_sales" fill={CHART.teal} radius={[0, 6, 6, 0]} maxBarSize={22} />
+          <Bar dataKey="total_revenue" fill={CHART.teal} radius={[0, 6, 6, 0]} maxBarSize={22} />
         </BarChart>
       </ResponsiveContainer>
     </ChartFrame>

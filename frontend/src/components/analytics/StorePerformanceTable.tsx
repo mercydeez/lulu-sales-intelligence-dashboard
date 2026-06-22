@@ -64,7 +64,7 @@ export function StorePerformanceTable() {
                   </span>
                 </Td>
                 <Td className="font-medium">{store.store_name}</Td>
-                <Td className="text-right font-semibold">{formatCurrency(store.total_sales)}</Td>
+                <Td className="text-right font-semibold">{formatCurrency(store.total_revenue)}</Td>
                 <Td className="text-right">
                   <Badge variant={index === 0 ? 'coral' : 'neutral'} size="sm">{store.percentage.toFixed(1)}%</Badge>
                 </Td>

@@ -102,3 +102,49 @@ jobs:
 
       - name: Build frontend image
         run: docker build -t app-frontend-test ./frontend
+
+  # =========================================================================
+  # Smoke — boot the full stack and assert the API actually responds
+  # =========================================================================
+  smoke:
+    name: Stack Smoke Test
+    runs-on: ubuntu-latest
+    needs: [docker]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Boot the stack
+        run: docker compose up -d --build
+
+      - name: Wait for backend health
+        run: |
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health || true)
+            if [ "$code" = "200" ]; then echo "healthy after ~$((i*5))s"; exit 0; fi
+            echo "attempt $i: http=$code"; sleep 5
+          done
+          echo "backend never became healthy"; docker compose logs backend | tail -50; exit 1
+
+      - name: Assert /health reports all subsystems healthy
+        run: |
+          curl -s http://localhost:8000/health | tee /tmp/health.json
+          grep -q '"database":"healthy"' /tmp/health.json
+          grep -q '"redis":"healthy"' /tmp/health.json
+
+      - name: Set up Python for golden tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run golden-number tests against the live stack
+        env:
+          SMOKE_API_URL: http://localhost:8000
+        run: |
+          pip install pytest
+          # Only the golden integration tests; the static guards run in the backend job.
+          pytest backend/tests/test_golden_numbers.py -v --tb=short
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

@@ -15,7 +15,7 @@ export interface AdminStore {
   id: number;
   name: string;
   location: string;
-  total_sales_30d: number;
+  total_revenue_30d: number; // AED (units × unit_price_aed); rendered with formatCurrency
   items_sold: number;
   last_sale_date: string | null;
   status: string;

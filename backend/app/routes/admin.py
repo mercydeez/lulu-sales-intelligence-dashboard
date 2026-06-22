@@ -284,12 +284,12 @@ async def get_stores(
             accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
             
             # Get stores with recent sales data
-            # total_sales_30d is AED revenue (VALUE), derived as units × unit_price_aed —
+            # total_revenue_30d is AED revenue (VALUE), derived as units × unit_price_aed —
             # the table renders it with formatCurrency. Volume (units) is items_sold count.
             query = """
                 SELECT
                     s.id, s.name, s.location,
-                    COALESCE(SUM(sl.sales * i.unit_price_aed), 0) as total_sales_30d,
+                    COALESCE(SUM(sl.sales * i.unit_price_aed), 0) as total_revenue_30d,
                     COUNT(DISTINCT sl.item_id) as items_sold,
                     MAX(sl.date) as last_sale_date
                 FROM stores s
@@ -311,7 +311,7 @@ async def get_stores(
                         "id": row[0],
                         "name": row[1],
                         "location": row[2],
-                        "total_sales_30d": float(row[3]) if row[3] else 0.0,
+                        "total_revenue_30d": float(row[3]) if row[3] else 0.0,
                         "items_sold": int(row[4]) if row[4] else 0,
                         "last_sale_date": row[5].isoformat() if row[5] else None,
                         "status": "active"

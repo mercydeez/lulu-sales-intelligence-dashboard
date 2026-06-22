@@ -1,7 +1,11 @@
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: sales_db
+    # container_name is parameterized so parallel checkouts of this repo don't
+    # collide on a fixed name (the failure you hit booting a second working dir).
+    # Default keeps the canonical `sales_db` so existing docs/scripts still work;
+    # set PROJECT_PREFIX (e.g. in a sibling dir's .env) to run stacks side by side.
+    container_name: ${PROJECT_PREFIX:-sales}_db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-salesuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-salespass}
@@ -22,7 +26,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: sales_redis
+    container_name: ${PROJECT_PREFIX:-sales}_redis
     ports:
       - "6379:6379"
     volumes:
@@ -39,7 +43,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: sales_backend
+    container_name: ${PROJECT_PREFIX:-sales}_backend
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD:-salespass}@postgres:5432/${POSTGRES_DB:-salesdb}
       # Defense-in-depth: set USE_RLS_ROLE=true to run the authenticated request
@@ -71,7 +75,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: sales_frontend
+    container_name: ${PROJECT_PREFIX:-sales}_frontend
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_SSE_URL=http://localhost:8000/stream/sales

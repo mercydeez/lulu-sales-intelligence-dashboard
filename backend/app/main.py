@@ -84,7 +84,17 @@ async def lifespan(app: FastAPI):
         logger.info("Employee system initialized")
     except Exception as e:
         logger.warning(f"Employee system initialization skipped: {e}")
-    
+
+    # Refresh per-category prices from the single price source (items.unit_price_aed)
+    # so inventory/promotions/procurement never drift from the analytics revenue math.
+    try:
+        from app.services.data_sync import DataSyncService
+        from app.services.database import async_session
+        async with async_session() as _s:
+            await DataSyncService.refresh_category_costs(_s)
+    except Exception as e:
+        logger.warning(f"Category cost refresh skipped: {e}")
+
     # Start the data generator background task
     generator = DataGenerator()
     task = asyncio.create_task(generator.start())

@@ -90,7 +90,7 @@ export default function AnalyticsPage() {
               headers: ['Category', 'Revenue (AED)', 'Share'],
               rows: categories.data.map((c) => [
                 c.category,
-                Math.round(c.total_sales).toLocaleString(),
+                Math.round(c.total_revenue).toLocaleString(),
                 `${c.percentage.toFixed(1)}%`,
               ]),
             },

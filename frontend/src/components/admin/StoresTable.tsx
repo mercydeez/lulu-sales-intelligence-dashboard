@@ -39,7 +39,7 @@ export function StoresTable({ stores, loading }: StoresTableProps) {
               <TableRow key={s.id}>
                 <Td className="font-medium">{s.name}</Td>
                 <Td className="text-ink-soft">{s.location}</Td>
-                <Td className="text-right font-semibold">{formatCurrency(s.total_sales_30d)}</Td>
+                <Td className="text-right font-semibold">{formatCurrency(s.total_revenue_30d)}</Td>
                 <Td className="text-right text-ink-soft">{formatNumber(s.items_sold)}</Td>
                 <Td className="text-ink-soft">{formatRelative(s.last_sale_date)}</Td>
                 <Td className="text-center">

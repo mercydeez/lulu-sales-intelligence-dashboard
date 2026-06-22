@@ -39,8 +39,15 @@ def _set_cache(key: str, data: Dict):
 
 class DataSyncService:
     """Service to sync and generate data from sales for inventory, promotions, and alerts"""
-    
-    # Category unit costs (base prices in AED)
+
+    # Per-category price in AED. This is a DERIVED VIEW of the single price source
+    # of truth — `items.unit_price_aed` (seeded in migration 005). It is the
+    # per-category AVERAGE of that column, refreshed at startup by
+    # `refresh_category_costs()`. The literal values below are only a cold-start
+    # fallback (used before the refresh runs, or if the items table is empty), so
+    # inventory/promotions/procurement never price off a table that can silently
+    # disagree with the analytics/KPI revenue math. Keep this as the ONLY place a
+    # per-category price is sourced. See PRODUCT_BUILD_PLAN.md (A1).
     CATEGORY_COSTS = {
         'Rice & Grains': 25.0,
         'Bakery': 8.0,
@@ -65,6 +72,29 @@ class DataSyncService:
         'Deli': 18.0,
         'Sweets': 35.0
     }
+
+    @classmethod
+    async def refresh_category_costs(cls, session: AsyncSession) -> None:
+        """Overwrite CATEGORY_COSTS from the single price source of truth.
+
+        Per-category price = AVG(items.unit_price_aed) per category. Called once at
+        startup (lifespan) so every downstream consumer (inventory valuation,
+        promotions, procurement) prices off the same column the analytics/KPI
+        revenue math uses — eliminating the old dual-source drift where a hardcoded
+        cost table could disagree with derived revenue. Failures are non-fatal: the
+        literal fallback values remain in place.
+        """
+        try:
+            rows = (await session.execute(text(
+                "SELECT category, ROUND(AVG(unit_price_aed)::numeric, 2) AS price "
+                "FROM items WHERE unit_price_aed IS NOT NULL GROUP BY category"
+            ))).fetchall()
+            derived = {r.category: float(r.price) for r in rows if r.category and r.price}
+            if derived:
+                cls.CATEGORY_COSTS = {**cls.CATEGORY_COSTS, **derived}
+                logger.info(f"CATEGORY_COSTS refreshed from items.unit_price_aed ({len(derived)} categories)")
+        except Exception as e:
+            logger.warning(f"Could not refresh CATEGORY_COSTS from items (using fallbacks): {e}")
 
     @staticmethod
     async def get_inventory_from_sales(

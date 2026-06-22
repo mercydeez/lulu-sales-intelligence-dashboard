@@ -30,20 +30,27 @@ Goal: the stack runs from the current build and the API actually responds under 
   Heavy compute now runs in a worker thread via `asyncio.to_thread`
   (`routes/analytics.py::_compute_model_metrics_sync`), DB I/O stays on the loop, and the trainer
   is gated by `forecast_trainer_enabled` + a startup delay (`services/forecast_trainer.py`).
-- 🟡 **Compose hygiene** — fixed `container_name:` collisions block parallel project dirs;
-  document the single canonical project + ports.
-- ❌ **Smoke check in CI** — `/health` + one authed `/api/kpis` after `docker compose up`, wired
-  into `.github/workflows/ci.yml`.
+- ✅ **Compose hygiene** — `container_name:` now `${PROJECT_PREFIX:-sales}_*` so parallel checkouts
+  don't collide (the failure hit booting a second dir). Default keeps `sales_*` for existing scripts.
+- ✅ **Smoke check in CI** — new `smoke` job in `.github/workflows/ci.yml`: `docker compose up --build`
+  → poll `/health` → assert db+redis healthy → run the golden-number tests against the live stack.
 
-## Phase 1 — Accuracy hardening ("tighten the screws") ❌
+## Phase 1 — Accuracy hardening ("tighten the screws") ✅ (mostly)
 Goal: every insight/output is provably correct. Builds on the shipped units/AED separation.
-- **Automated guards** — pytest asserting revenue endpoints derive AED (`SUM(sales*unit_price_aed)`)
-  and KPI volume fields are integer units; a test that flags `formatCurrency` bound to a units field.
-- **Golden-number tests** — from the seeded dataset, assert known KPI/analytics totals so any
-  aggregation regression fails CI. Files: `backend/tests/` (+ `conftest.py`).
-- **Resolve remaining smells** — per-tenant store names in `ai_assistant` (no hardcoded list); the
-  `total_sales` alias that actually holds AED in `analytics.py`/`admin.py` → rename `total_revenue`;
-  unify `promotions.CATEGORY_COSTS` vs `items.unit_price_aed` to a single price source.
+- ✅ **Automated guards** — `backend/tests/test_accuracy_guards.py` (DB-free, in the unit suite):
+  asserts analytics exposes no AED-bearing `total_sales` key, revenue derives via `unit_price_aed`,
+  KPI volume fields are `int` & revenue fields `float`, a SINGLE `CATEGORY_COSTS` definition, and
+  (frontend scan) `formatCurrency` is never bound to a units field.
+- ✅ **Golden-number tests** — `backend/tests/test_golden_numbers.py` (integration; auto-skips if API
+  down; runs in CI smoke): pins seed shape (913k rows / 10 stores / 50 items), asserts volume=int,
+  revenue=float, and revenue/units sits in the seeded AED price band (catches units-as-AED regressions).
+- ✅ **Rename the AED `total_sales` alias** → `total_revenue` in `analytics.py` (+ Pydantic models)
+  and `admin.py` (`total_sales_30d`→`total_revenue_30d`); frontend types + 6 consumers updated, `tsc` clean.
+- ✅ **Unify the price source** — `data_sync.CATEGORY_COSTS` is now DERIVED from `items.unit_price_aed`
+  at startup (`refresh_category_costs()` in the lifespan); the hardcoded dict is only a cold-start
+  fallback. promotions/procurement/inventory can no longer drift from the analytics revenue math.
+- ❌ **Remaining smell** — per-tenant store names in `ai_assistant` (no hardcoded list); folded into
+  Phase 2 (Sage rewrite supersedes the intent-stuffing assistant).
 
 ## Phase 2 — "Sage": NL→SQL diagnostic chatbot on Ollama ❌
 Goal: replace intent-stuffing with grounded NL→SQL so Sage answers arbitrary business questions

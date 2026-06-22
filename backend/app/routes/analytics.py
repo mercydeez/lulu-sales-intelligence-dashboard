@@ -30,16 +30,19 @@ router = APIRouter()
 
 
 # Response Models
+# Convention (see PRODUCT_BUILD_PLAN.md / kpis.py): VALUE metrics are AED revenue
+# floats; VOLUME metrics are integer units. These analytics endpoints are all
+# revenue (AED), so the money field is `total_revenue: float`, never `total_sales`.
 class SalesTrendPoint(BaseModel):
     date: str
-    sales: int
-    forecast: Optional[int] = None
+    revenue: float  # AED (units × unit_price_aed)
+    forecast: Optional[float] = None
 
 
 class StoreSalesData(BaseModel):
     store_id: int
     store_name: str
-    total_sales: int
+    total_revenue: float  # AED
     percentage: float
 
 
@@ -47,12 +50,12 @@ class ItemSalesData(BaseModel):
     item_id: int
     item_name: str
     category: str
-    total_sales: int
+    total_revenue: float  # AED
 
 
 class CategorySalesData(BaseModel):
     category: str
-    total_sales: int
+    total_revenue: float  # AED
     percentage: float
 
 
@@ -191,7 +194,7 @@ async def compute_and_cache_store_distribution(db: AsyncSession, allowed_stores)
         store_data.append({
             "store_id": row.store_id,
             "store_name": row.store_name,
-            "total_sales": float(row.total_sales),
+            "total_revenue": float(row.total_sales),
             "percentage": round((float(row.total_sales) / total * 100) if total > 0 else 0, 2)
         })
 
@@ -280,7 +283,7 @@ async def get_top_items(
             "item_id": row.item_id,
             "item_name": row.item_name,
             "category": row.category,
-            "total_sales": float(row.total_sales)
+            "total_revenue": float(row.total_sales)
         })
     
     response = {"data": items_data}
@@ -338,7 +341,7 @@ async def get_category_breakdown(
     for row in rows:
         category_data.append({
             "category": row.category,
-            "total_sales": float(row.total_sales),
+            "total_revenue": float(row.total_sales),
             "percentage": round((float(row.total_sales) / total * 100) if total > 0 else 0, 2)
         })
     
@@ -460,16 +463,16 @@ async def get_analytics_summary(
     return {
         "sales_trend": [{"date": row.date.isoformat(), "sales": float(row.total_sales)} for row in reversed(trend_rows)],
         "store_distribution": [
-            {"store_id": row.store_id, "store_name": row.store_name, "total_sales": float(row.total_sales), 
+            {"store_id": row.store_id, "store_name": row.store_name, "total_revenue": float(row.total_sales),
              "percentage": round((float(row.total_sales) / store_total * 100) if store_total > 0 else 0, 2)}
             for row in store_rows
         ],
         "top_items": [
-            {"item_id": row.item_id, "item_name": row.item_name, "category": row.category, "total_sales": float(row.total_sales)}
+            {"item_id": row.item_id, "item_name": row.item_name, "category": row.category, "total_revenue": float(row.total_sales)}
             for row in items_rows
         ],
         "category_breakdown": [
-            {"category": row.category, "total_sales": float(row.total_sales),
+            {"category": row.category, "total_revenue": float(row.total_sales),
              "percentage": round((float(row.total_sales) / cat_total * 100) if cat_total > 0 else 0, 2)}
             for row in cat_rows
         ]

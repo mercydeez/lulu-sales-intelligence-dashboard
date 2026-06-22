@@ -49,7 +49,7 @@ export function StoreDistributionPanel() {
             labelStyle={tooltipLabelStyle}
             formatter={(value: number) => [formatCurrency(value), 'Revenue']}
           />
-          <Bar dataKey="total_sales" radius={[0, 6, 6, 0]} maxBarSize={26}>
+          <Bar dataKey="total_revenue" radius={[0, 6, 6, 0]} maxBarSize={26}>
             {data.map((entry, index) => (
               <Cell key={entry.store_id} fill={SUNSET_COLORS[index % SUNSET_COLORS.length]} />
             ))}

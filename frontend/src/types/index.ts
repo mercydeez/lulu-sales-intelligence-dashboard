@@ -72,16 +72,19 @@ export interface RevenueProjection {
   status: 'ready' | 'insufficient_history';
 }
 
+// These three mirror /api/analytics/{stores,categories,top-items}, whose money
+// field is AED revenue. The field is `total_revenue` (AED) per the units/AED
+// convention — never `total_sales` (which denotes units elsewhere).
 export interface StoreDistributionPoint {
   store_id: number;
   store_name: string;
-  total_sales: number;
+  total_revenue: number;
   percentage: number;
 }
 
 export interface CategoryBreakdownPoint {
   category: string;
-  total_sales: number;
+  total_revenue: number;
   percentage: number;
 }
 
@@ -89,7 +92,7 @@ export interface TopItemPoint {
   item_id: number;
   item_name: string;
   category: string;
-  total_sales: number;
+  total_revenue: number;
 }
 
 export interface StreamEvent {

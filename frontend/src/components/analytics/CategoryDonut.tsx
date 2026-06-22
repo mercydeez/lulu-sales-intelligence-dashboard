@@ -57,7 +57,7 @@ export function CategoryDonut() {
           <Tooltip
             contentStyle={tooltipStyle}
             formatter={(_value: number, _name: string, props: { payload?: CategoryBreakdownPoint }) => [
-              formatCurrency(props.payload?.total_sales ?? 0),
+              formatCurrency(props.payload?.total_revenue ?? 0),
               props.payload?.category ?? '',
             ]}
           />
