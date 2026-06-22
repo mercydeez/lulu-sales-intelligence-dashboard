@@ -11,6 +11,7 @@ from app.services.database import async_session
 from app.models.sales import Sale, Store, Item
 from app.services.llm import get_provider_chain, LLMError
 from app.services.nl2sql import answer_question as sage_answer_question
+from app.services.federation import federated_answer
 
 
 class Message(BaseModel):
@@ -872,19 +873,21 @@ How can I help you?"""
 async def stream_chat_response(
     session_id: str,
     user_message: str,
-    tenant_id: int = 1
+    tenant_id: int = 1,
+    role: str = "store_manager",
 ) -> AsyncGenerator[str, None]:
     """Stream chat response with real-time data integration"""
-    
+
     context = get_or_create_context(session_id)
 
     # Detect intent
     intent_info = detect_intent(user_message)
     context.detected_intents.extend(intent_info["intents"])
 
-    # Sage NL->SQL first (grounded answer). When it succeeds, stream its answer and
-    # stop; otherwise fall through to the intent-stuffing + provider/rule-based path.
-    sage = await sage_answer_question(user_message, tenant_id)
+    # Federated Sage first (grounded NL->SQL across every source this role may see;
+    # single-source for non-admins). On success, stream it; else fall through to the
+    # intent-stuffing + provider/rule-based path.
+    sage = await federated_answer(user_message, tenant_id, role)
     if sage.ok:
         context.add_message("assistant", sage.answer)
         words = sage.answer.split(' ')
@@ -931,17 +934,18 @@ INSTRUCTIONS: Answer the user's question using the ACTUAL DATA above. Be specifi
 async def get_chat_response(
     session_id: str,
     user_message: str,
-    tenant_id: int = 1
+    tenant_id: int = 1,
+    role: str = "store_manager",
 ) -> str:
     """Get non-streaming chat response with real data"""
-    
+
     context = get_or_create_context(session_id)
     intent_info = detect_intent(user_message)
 
-    # Sage NL->SQL first: grounded, zero-hallucination answer over the curated
-    # tenant-scoped views. Falls through to intent-stuffing + rule-based when no
-    # LLM is configured or the query is rejected/empty.
-    sage = await sage_answer_question(user_message, tenant_id)
+    # Federated Sage first: grounded NL->SQL across the sources this role may query
+    # (just the internal source for non-admins). Falls through to intent-stuffing +
+    # rule-based when no LLM is configured or the query is rejected/empty.
+    sage = await federated_answer(user_message, tenant_id, role)
     if sage.ok:
         context.add_message("assistant", sage.answer)
         return sage.answer

@@ -112,6 +112,27 @@ Goal: a **system of diagnosis** that proactively finds problems, explains them, 
 - ⏭️ Findings queryable by Sage / forecast-vs-actual drift rule: easy follow-ups (a `sage_findings`
   view + a drift rule reusing the forecast engine).
 
+## Federated Sage — multi-source NL→SQL ✅ (Postgres verified; other engines drop-in)
+Goal: answer from MANY databases (not just one connected source), role-aware, zero-hallucination.
+- ✅ **One canonical contract, many executors** (`services/federation/`): Sage generates ONE SQL over
+  the canonical `sage_*` schema; each source executes it. `base.py` (SourceAdapter ABC), `catalog.py`
+  (role-filtered source registry from `data_sources` + the internal DB), `policy.py` (consumer vs
+  admin: source visibility, row caps, cross-source-merge gate), `orchestrator.py` (generate→guard→
+  run-per-source→merge→narrate, with **discrepancy detection** when sources disagree >5%).
+- ✅ **Postgres adapters** (verified live): internal app DB (reuses `sage_ro`), and external connected
+  Postgres via **canonical CTEs synthesized from the data-source `mapping`** — the same canonical SQL
+  ran across two real Postgres sources and returned comparable, source-tagged results.
+- ✅ **Other engines drop-in** (`adapters/others.py`): MySQL/BigQuery/Snowflake/Mongo/REST/dataset
+  register and route identically; honest scaffold (clear "enable per-engine" error) until their
+  driver/service is wired — no orchestrator change to enable one.
+- ✅ **Role-aware + wired** into the dashboard chat (`get_chat_response`/`stream_chat_response` take
+  the caller's role; consumers/store get the internal source only, regional+ merge across sources).
+  Public `/v1/ai/ask` stays single-source (consumer). 41 backend tests green (incl. 7 federation:
+  policy, discrepancy, narration, CTE safety).
+- ⏳ **Activates with the LLM** (same as Sage): SQL generation needs a provider; until then federated
+  questions fall back to the rule-based responder. Other-engine sources + tenant-scoping of external
+  `data_sources` rows are the documented follow-ups.
+
 ## Phase 4 — Agentic layer (last, incremental) ✅ (autonomy level 0)
 Goal: turn recommendations into proposed actions, slowly increasing autonomy.
 - ✅ **Recommendations on findings** (`migration 025`): every finding now carries a
