@@ -8,6 +8,7 @@ import {
   fetchFindingsSummary,
   acknowledgeFinding,
   resolveFinding,
+  acceptFindingAction,
 } from '@/lib/api';
 import { Finding, FindingsSummary, FindingSeverity, FindingStatus } from '@/types';
 
@@ -54,10 +55,12 @@ export default function InsightsPage() {
     return () => clearInterval(id);
   }, [load]);
 
-  const act = async (id: number, action: 'ack' | 'resolve') => {
+  const act = async (id: number, action: 'ack' | 'resolve' | 'accept') => {
     setBusyId(id);
     try {
-      await (action === 'ack' ? acknowledgeFinding(id) : resolveFinding(id));
+      if (action === 'ack') await acknowledgeFinding(id);
+      else if (action === 'resolve') await resolveFinding(id);
+      else await acceptFindingAction(id);
       await load();
     } finally {
       setBusyId(null);
@@ -141,6 +144,19 @@ export default function InsightsPage() {
                       {f.status !== 'open' && <Badge variant="neutral" size="sm">{f.status}</Badge>}
                     </div>
                     <p className="text-sm text-ink-soft mt-1">{f.detail}</p>
+                    {f.recommended_action && (
+                      <div className="mt-2 flex items-start gap-2 rounded-lg bg-teal-50/70 px-3 py-2">
+                        <Lightbulb className="w-4 h-4 text-teal-600 mt-0.5 shrink-0" />
+                        <div className="text-sm text-teal-800">
+                          <span className="font-medium">Recommended: </span>{f.recommended_action}
+                          {f.action_accepted_at && (
+                            <span className="ms-1 text-xs text-teal-600">
+                              · accepted by {f.action_accepted_by ?? 'a manager'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {f.entity_name && (
                       <p className="text-xs text-ink-muted mt-1">
                         {f.entity_type}: {f.entity_name} ·{' '}
@@ -150,6 +166,15 @@ export default function InsightsPage() {
                   </div>
                   {f.status !== 'resolved' && (
                     <div className="flex flex-col gap-2 shrink-0">
+                      {f.recommended_action && !f.action_accepted_at && (
+                        <Button
+                          variant="secondary" size="sm" disabled={busyId === f.id}
+                          onClick={() => act(f.id, 'accept')}
+                          title="Accept the recommended action (records your decision)"
+                        >
+                          <Lightbulb className="w-4 h-4 me-1.5" /> Accept action
+                        </Button>
+                      )}
                       {f.status === 'open' && (
                         <Button
                           variant="secondary" size="sm" disabled={busyId === f.id}

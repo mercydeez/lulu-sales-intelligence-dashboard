@@ -112,10 +112,16 @@ Goal: a **system of diagnosis** that proactively finds problems, explains them, 
 - ⏭️ Findings queryable by Sage / forecast-vs-actual drift rule: easy follow-ups (a `sage_findings`
   view + a drift rule reusing the forecast engine).
 
-## Phase 4 — Agentic layer (last, incremental) ❌
+## Phase 4 — Agentic layer (last, incremental) ✅ (autonomy level 0)
 Goal: turn recommendations into proposed actions, slowly increasing autonomy.
-- Findings → proposed actions reusing the procure-to-pay action layer (draft PO/alert),
-  **human-approved** first; expand autonomy gradually. Explicitly deferred / slow.
+- ✅ **Recommendations on findings** (`migration 025`): every finding now carries a
+  `recommended_action` + `action_type` (review_pricing | review_supplier | investigate | promote …),
+  emitted by the worker rules.
+- ✅ **Human-gated acceptance** (`POST /api/findings/{id}/accept-action`): an operator accepts the
+  recommendation; we record `action_accepted_by/at` and acknowledge the finding. The system NEVER
+  executes on its own (autonomy level 0). Surfaced in the Insights panel ("Accept action").
+- ⏭️ **Next increments (deliberately slow):** map `action_type` → a *drafted* PO/alert via the
+  existing procure-to-pay + `approval_rules` layer (still human-approved), then raise autonomy.
 
 ---
 

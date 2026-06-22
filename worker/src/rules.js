@@ -65,6 +65,9 @@ async function revenueDropByStore(tenantId) {
       entity_name: r.store_name,
       metric_value: change,
       dedupe_key: `revenue_drop:store:${r.store_id}:${WEEK}`,
+      recommended_action:
+        `Check ${r.store_name} for stockouts, staffing, or a local competitor; consider a targeted promotion.`,
+      action_type: "promote",
     };
   });
 }
@@ -104,6 +107,9 @@ async function categorySlump(tenantId) {
       entity_name: r.category,
       metric_value: change,
       dedupe_key: `category_slump:category:${r.category}:${WEEK}`,
+      recommended_action:
+        `Review ${r.category} pricing and shelf placement; check for supply gaps across stores.`,
+      action_type: "review_pricing",
     };
   });
 }
@@ -142,6 +148,9 @@ async function returnSpike(tenantId) {
       entity_name: "All stores",
       metric_value: change,
       dedupe_key: `return_spike:global:all:${WEEK}`,
+      recommended_action:
+        "Investigate the return spike — check for a defective batch, a mispriced item, or a delivery issue this week.",
+      action_type: "investigate",
     },
   ];
 }
@@ -189,6 +198,9 @@ async function laggardStore(tenantId) {
       entity_name: r.store_name,
       metric_value: Number(r.growth),
       dedupe_key: `laggard_store:store:${r.store_id}:${WEEK}`,
+      recommended_action:
+        `Compare ${r.store_name}'s assortment and promotions to the top stores; close the gap with a local campaign.`,
+      action_type: "promote",
     };
   });
 }
@@ -237,6 +249,9 @@ async function highReturnRateCategory(tenantId) {
       entity_name: r.category,
       metric_value: rate,
       dedupe_key: `high_return_rate:category:${r.category}:${WEEK}`,
+      recommended_action:
+        `Audit ${r.category} supplier quality and product descriptions; high returns often signal a quality or expectation gap.`,
+      action_type: "review_supplier",
     };
   });
 }

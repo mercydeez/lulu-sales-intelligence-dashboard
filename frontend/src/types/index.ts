@@ -112,6 +112,10 @@ export interface Finding {
   entity_name: string | null;
   metric_value: number | null;
   status: FindingStatus;
+  recommended_action: string | null;
+  action_type: string;
+  action_accepted_at: string | null;
+  action_accepted_by: string | null;
   detected_at: string;
   updated_at: string;
   resolved_at: string | null;

@@ -131,3 +131,7 @@ export async function acknowledgeFinding(id: number): Promise<{ id: number; stat
 export async function resolveFinding(id: number): Promise<{ id: number; status: string }> {
   return apiRequest(`/api/findings/${id}/resolve`, { method: 'POST', body: {} });
 }
+
+export async function acceptFindingAction(id: number): Promise<{ id: number; accepted: boolean }> {
+  return apiRequest(`/api/findings/${id}/accept-action`, { method: 'POST' });
+}

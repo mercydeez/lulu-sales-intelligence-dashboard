@@ -41,7 +41,8 @@ async def list_findings(
         where.append("category = :category"); params["category"] = category
     sql = (
         "SELECT id, rule, category, severity, title, detail, evidence, entity_type, "
-        "entity_id, entity_name, metric_value, status, detected_at, updated_at, resolved_at "
+        "entity_id, entity_name, metric_value, status, recommended_action, action_type, "
+        "action_accepted_at, action_accepted_by, detected_at, updated_at, resolved_at "
         f"FROM findings WHERE {' AND '.join(where)} "
         "ORDER BY (status='open') DESC, "
         "CASE severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END DESC, "
@@ -104,3 +105,32 @@ async def resolve_finding(
     current_user: dict = Depends(get_current_user),
 ):
     return await _set_status(db, current_user.get("tenant_id") or 1, finding_id, "resolved", current_user)
+
+
+@router.post("/{finding_id}/accept-action")
+async def accept_action(
+    finding_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Agentic layer, autonomy level 0 (A4): the operator ACCEPTS the finding's
+    recommended action. We record the decision and acknowledge the finding — the
+    system never executes on its own. Higher autonomy (auto-drafting a PO/alert
+    from action_type) builds on this human-gated decision later."""
+    tenant_id = current_user.get("tenant_id") or 1
+    row = (await db.execute(text(
+        "UPDATE findings SET action_accepted_at = now(), action_accepted_by = :who, "
+        "status = CASE WHEN status = 'open' THEN 'acknowledged' ELSE status END, updated_at = now() "
+        "WHERE id = :id AND tenant_id = :tid "
+        "RETURNING id, action_type, recommended_action"
+    ), {"who": current_user.get("email"), "id": finding_id, "tid": tenant_id})).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    await db.commit()
+    return {
+        "id": row[0],
+        "action_type": row[1],
+        "recommended_action": row[2],
+        "accepted": True,
+        "accepted_by": current_user.get("email"),
+    }
