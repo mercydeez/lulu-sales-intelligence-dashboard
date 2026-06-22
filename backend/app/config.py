@@ -73,6 +73,19 @@ class Settings(BaseSettings):
     # Local LLM via Ollama (preferred provider when configured — zero paid keys)
     ollama_url: Optional[str] = None  # e.g. http://ollama:11434
     ollama_model: str = "llama3.2"
+
+    # Sage — NL->SQL diagnostic assistant (A2). Generates SQL with the LLM, runs it
+    # through an allow-list guard, then executes it as the least-privilege `sage_ro`
+    # role (migration 023) against the tenant-filtered sage_* views only. Works with
+    # zero LLM provider configured — it falls back to the rule-based responder.
+    chatbot_name: str = "Sage"
+    sage_enabled: bool = True
+    # Connection for Sage's read-only execution. Defaults to database_url with the
+    # sage_ro creds (least privilege: SELECT on sage_* views only). Set explicitly
+    # in prod (and override the dev password on the role).
+    sage_database_url: Optional[str] = None
+    sage_query_timeout_ms: int = 5000   # statement_timeout for generated SQL
+    sage_max_rows: int = 200            # hard LIMIT injected/clamped by the guard
     
     # Streaming - 10 seconds for fast real-time updates
     streaming_interval_seconds: int = 10

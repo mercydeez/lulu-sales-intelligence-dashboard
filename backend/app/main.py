@@ -125,6 +125,11 @@ async def lifespan(app: FastAPI):
             pass
     await close_db()
     await close_redis()
+    try:
+        from app.services.nl2sql.executor import dispose_sage_engine
+        await dispose_sage_engine()
+    except Exception:
+        pass
     logger.info("Shutdown complete")
 
 

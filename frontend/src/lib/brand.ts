@@ -17,3 +17,10 @@ export const PRODUCT_NAME_SHORT: string =
 export const PRODUCT_TAGLINE: string =
   process.env.NEXT_PUBLIC_PRODUCT_TAGLINE?.trim() ||
   'Retail operations intelligence';
+
+/**
+ * The AI assistant's name (NL->SQL diagnostic chatbot). Single source of truth
+ * for the frontend; keep in sync with the backend settings.chatbot_name ("Sage").
+ */
+export const CHATBOT_NAME: string =
+  process.env.NEXT_PUBLIC_CHATBOT_NAME?.trim() || 'Sage';

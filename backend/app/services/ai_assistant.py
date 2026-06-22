@@ -10,6 +10,7 @@ from sqlalchemy import select, func, and_, desc
 from app.services.database import async_session
 from app.models.sales import Sale, Store, Item
 from app.services.llm import get_provider_chain, LLMError
+from app.services.nl2sql import answer_question as sage_answer_question
 
 
 class Message(BaseModel):
@@ -491,7 +492,9 @@ async def get_dashboard_summary(tenant_id: int = 1) -> str:
 
 def get_system_prompt() -> str:
     """Get the system prompt for the AI assistant"""
-    return """You are Retail IQ AI, an intelligent sales analytics assistant for the Meridian Hypermarket dashboard.
+    from app.config import get_settings
+    bot = get_settings().chatbot_name
+    return f"""You are {bot}, an intelligent sales analytics assistant for the Meridian Hypermarket dashboard.
 
 CRITICAL INSTRUCTIONS:
 1. When users ask for specific data (sales, store info, etc.), you MUST use the ACTUAL DATA provided in the context
@@ -683,6 +686,8 @@ RETURNS BY STORE:""")
 
 async def get_intelligent_fallback(message: str, intent_info: Dict, tenant_id: int = 1) -> str:
     """Generate intelligent fallback response with REAL DATA when API unavailable"""
+    from app.config import get_settings
+    bot = get_settings().chatbot_name
     intents = intent_info.get("intents", [])
     mentioned_store = intent_info.get("mentioned_store")
     is_returns = intent_info.get("is_returns", False)
@@ -743,7 +748,7 @@ async def get_intelligent_fallback(message: str, intent_info: Dict, tenant_id: i
 
         # Greeting response
         if "greeting" in intents:
-            return f"""👋 Hello! I'm **Retail IQ AI**, your sales analytics assistant.
+            return f"""👋 Hello! I'm **{bot}**, your sales analytics assistant.
 
 📊 **Quick Stats Right Now:**
 • Today's Sales: **{kpis['total_sales_today']:,}** units
@@ -827,7 +832,7 @@ This store is performing well in the network!"""
         
         # Help
         if "help" in intents:
-            return """📖 **Retail IQ AI Help Guide:**
+            return f"""📖 **{bot} Help Guide:**
 
 **Ask me about:**
 • 📊 "What are today's sales?" - Current sales figures
@@ -845,7 +850,7 @@ This store is performing well in the network!"""
 The data updates in real-time every few seconds!"""
         
         # Default with actual data
-        return f"""👋 I'm **Retail IQ AI**, your sales analytics assistant.
+        return f"""👋 I'm **{bot}**, your sales analytics assistant.
 
 📊 **Current Status:**
 • Today's Sales: **{kpis['total_sales_today']:,}** units
@@ -872,11 +877,22 @@ async def stream_chat_response(
     """Stream chat response with real-time data integration"""
     
     context = get_or_create_context(session_id)
-    
+
     # Detect intent
     intent_info = detect_intent(user_message)
     context.detected_intents.extend(intent_info["intents"])
-    
+
+    # Sage NL->SQL first (grounded answer). When it succeeds, stream its answer and
+    # stop; otherwise fall through to the intent-stuffing + provider/rule-based path.
+    sage = await sage_answer_question(user_message, tenant_id)
+    if sage.ok:
+        context.add_message("assistant", sage.answer)
+        words = sage.answer.split(' ')
+        for i, word in enumerate(words):
+            yield word + (' ' if i < len(words) - 1 else '')
+            await asyncio.sleep(0.012)
+        return
+
     # Build real-time data context
     data_context = await build_data_context(intent_info, user_message, tenant_id)
     
@@ -921,7 +937,15 @@ async def get_chat_response(
     
     context = get_or_create_context(session_id)
     intent_info = detect_intent(user_message)
-    
+
+    # Sage NL->SQL first: grounded, zero-hallucination answer over the curated
+    # tenant-scoped views. Falls through to intent-stuffing + rule-based when no
+    # LLM is configured or the query is rejected/empty.
+    sage = await sage_answer_question(user_message, tenant_id)
+    if sage.ok:
+        context.add_message("assistant", sage.answer)
+        return sage.answer
+
     # Build data context
     data_context = await build_data_context(intent_info, user_message, tenant_id)
     

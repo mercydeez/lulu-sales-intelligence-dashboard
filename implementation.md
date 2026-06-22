@@ -52,7 +52,35 @@ Goal: every insight/output is provably correct. Builds on the shipped units/AED 
 - ❌ **Remaining smell** — per-tenant store names in `ai_assistant` (no hardcoded list); folded into
   Phase 2 (Sage rewrite supersedes the intent-stuffing assistant).
 
-## Phase 2 — "Sage": NL→SQL diagnostic chatbot on Ollama ❌
+## Phase 2 — "Sage": NL→SQL diagnostic chatbot on Ollama ✅ (engine; LLM drops in last)
+**Built & verified (provider-agnostic — works with zero LLM via rule-based fallback):**
+- ✅ **Semantic layer** (`database/migrations/023_sage_semantic_views.sql`): seven curated
+  `sage_*` views, each tenant-filtered by `WHERE tenant_id = current_tenant_id()` so isolation
+  is baked into the view SQL (independent of RLS-through-view). Encodes units vs revenue_aed.
+- ✅ **Least-privilege role** `sage_ro`: SELECT on the `sage_*` views ONLY (verified it CANNOT read
+  `users`). Sage's executor connects as `sage_ro` + sets the `app.tenant_id` GUC + statement timeout.
+  Verified tenant isolation end-to-end (tenant 1: 913k rows, tenant 2: 1.9k).
+- ✅ **`services/nl2sql/`**: `schema.py` (allow-list + prompt), `guard.py` (single SELECT, no
+  comments/`;`/DDL/DML, no pg_*/set_config/catalog, allow-list relations, hard LIMIT wrap),
+  `executor.py` (sage_ro read-only), `prompt.py`, `pipeline.py` (NL→SQL→guard→exec→narrate, with a
+  deterministic rows-only narration fallback). Fails closed at every step → rule-based fallback.
+- ✅ **Integrated** into `ai_assistant.get_chat_response`/`stream_chat_response` (Sage first, then the
+  existing path). **Renamed** chatbot → **Sage** (`settings.chatbot_name`, `brand.ts CHATBOT_NAME`,
+  ChatBot/AIToggleButton, prompts/fallbacks).
+- ✅ **Ollama** service added to `docker-compose.yml` (profile `ai`); `OLLAMA_URL` empty by default.
+- ✅ **Tests**: `test_nl2sql_guard.py` (29, DB-free — injection/DDL/cross-table/GUC-tamper all
+  rejected) + `test_nl2sql_pipeline.py` (5, integration — cross-table blocked, tenant isolation),
+  wired into CI smoke.
+- ⏳ **Last step (you):** add the LLM — set `OLLAMA_URL`/pull a model, or set `OPENAI_API_KEY`. The
+  provider chain (`services/llm/`) picks it up; no code change. Until then Sage uses the fallback.
+
+> **RLS gap found (Track B follow-up):** migration 021's `security_invoker` is NOT in effect on
+> `sales_fact_view` (likely recreated after; an `ALTER VIEW` also blocks behind the live generator's
+> read load). So app_rw querying that view bypasses RLS (runs as the superuser owner). Sage sidesteps
+> this entirely (dedicated `sage_*` definer views with a baked tenant filter), but the app-wide
+> `USE_RLS_ROLE` flip still needs this fixed first. Tracked for Track B / Phase 2 hardening.
+
+## Phase 2 — (original notes) ❌
 Goal: replace intent-stuffing with grounded NL→SQL so Sage answers arbitrary business questions
 accurately, with **zero hallucination**.
 - **Rename** the chatbot to **Sage** everywhere (`ai_assistant.py`, `routes/ai.py`, frontend

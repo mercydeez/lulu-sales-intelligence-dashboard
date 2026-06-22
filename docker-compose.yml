@@ -57,6 +57,16 @@ services:
       - MAX_BODY_SIZE_MB=10
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+      # Sage NL->SQL / AI provider chain. Empty by default => Sage uses the
+      # rule-based fallback (no key needed to run). To enable the local model:
+      #   docker compose --profile ai up -d        # starts the ollama service
+      #   docker exec sales_ollama ollama pull llama3.2
+      #   set OLLAMA_URL=http://ollama:11434 (e.g. in .env) and restart backend
+      - OLLAMA_URL=${OLLAMA_URL:-}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      # Sage's least-privilege read role (migration 023). Defaults to deriving
+      # sage_ro creds from DATABASE_URL; override in prod.
+      - SAGE_DATABASE_URL=${SAGE_DATABASE_URL:-}
     ports:
       - "8000:8000"
     depends_on:
@@ -88,9 +98,24 @@ services:
     networks:
       - sales_network
 
+  # Local LLM for Sage (and the AI assistant). Behind the "ai" profile so the
+  # default `docker compose up` stays lean — start it with `--profile ai`.
+  # No paid key: pull a model once with `docker exec sales_ollama ollama pull llama3.2`.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ${PROJECT_PREFIX:-sales}_ollama
+    profiles: ["ai"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - sales_network
+
 volumes:
   postgres_data:
   redis_data:
+  ollama_models:
 
 networks:
   sales_network:

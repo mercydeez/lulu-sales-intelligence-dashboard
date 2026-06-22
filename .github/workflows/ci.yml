@@ -137,13 +137,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Run golden-number tests against the live stack
+      - name: Run golden-number + Sage integration tests against the live stack
         env:
           SMOKE_API_URL: http://localhost:8000
+          # Sage's least-privilege role, reachable on the runner's published port.
+          SAGE_DATABASE_URL: postgresql+asyncpg://sage_ro:sage_ro_dev_pass@localhost:5432/salesdb
         run: |
-          pip install pytest
-          # Only the golden integration tests; the static guards run in the backend job.
-          pytest backend/tests/test_golden_numbers.py -v --tb=short
+          pip install pytest pytest-asyncio asyncpg sqlalchemy
+          # Integration suites (need the live stack). Static guards run in the backend job.
+          pytest backend/tests/test_golden_numbers.py backend/tests/test_nl2sql_pipeline.py -v --tb=short
 
       - name: Tear down
         if: always()
