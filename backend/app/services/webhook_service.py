@@ -148,6 +148,7 @@ async def dispatch_event(tenant_id: int, event: str, data: Dict) -> int:
                                              THEN failure_count + 1 ELSE 0 END
                     WHERE id = :id
                 """), {"now": datetime.now(timezone.utc), "status": status, "id": r.id})
+                await _log_delivery(db, tenant_id, r.id, event, status, status < 400, None)
             except Exception as e:
                 logger.warning(f"Webhook delivery to {r.url} failed: {e}")
                 await db.execute(text("""
@@ -155,8 +156,36 @@ async def dispatch_event(tenant_id: int, event: str, data: Dict) -> int:
                     SET last_delivery_at = :now, failure_count = failure_count + 1
                     WHERE id = :id
                 """), {"now": datetime.now(timezone.utc), "id": r.id})
+                await _log_delivery(db, tenant_id, r.id, event, None, False, str(e)[:500])
         await db.commit()
         return attempted
+
+
+async def _log_delivery(db, tenant_id: int, webhook_id: int, event: str,
+                        status: Optional[int], ok: bool, error: Optional[str]) -> None:
+    """Append a row to the delivery log (best-effort — never breaks dispatch)."""
+    try:
+        await db.execute(text("""
+            INSERT INTO webhook_deliveries (tenant_id, webhook_id, event, status_code, ok, error)
+            VALUES (:tid, :wid, :event, :status, :ok, :error)
+        """), {"tid": tenant_id, "wid": webhook_id, "event": event,
+               "status": status, "ok": ok, "error": error})
+    except Exception as e:
+        logger.warning(f"Could not log webhook delivery: {e}")
+
+
+async def list_deliveries(db, tenant_id: int, webhook_id: int, limit: int = 20) -> List[Dict]:
+    """Recent delivery attempts for one webhook (tenant-scoped)."""
+    rows = (await db.execute(text("""
+        SELECT id, event, status_code, ok, error, delivered_at
+        FROM webhook_deliveries
+        WHERE tenant_id = :tid AND webhook_id = :wid
+        ORDER BY delivered_at DESC LIMIT :limit
+    """), {"tid": tenant_id, "wid": webhook_id, "limit": max(1, min(limit, 100))})).mappings().all()
+    return [
+        {**dict(r), "delivered_at": r["delivered_at"].isoformat() if r["delivered_at"] else None}
+        for r in rows
+    ]
 
 
 def dispatch_event_background(tenant_id: int, event: str, data: Dict) -> None:

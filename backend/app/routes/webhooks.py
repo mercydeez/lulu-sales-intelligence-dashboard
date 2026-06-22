@@ -55,6 +55,19 @@ async def list_webhooks(
     return {"webhooks": await wh.list_webhooks(db, user.get("tenant_id") or 1)}
 
 
+@router.get("/{webhook_id}/deliveries")
+async def webhook_deliveries(
+    webhook_id: int,
+    limit: int = 20,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recent delivery attempts for one webhook — the delivery log the Developer
+    Portal shows for debugging integrations."""
+    _require_admin(user)
+    return {"deliveries": await wh.list_deliveries(db, user.get("tenant_id") or 1, webhook_id, limit)}
+
+
 @router.delete("/{webhook_id}")
 async def delete_webhook(
     webhook_id: int,

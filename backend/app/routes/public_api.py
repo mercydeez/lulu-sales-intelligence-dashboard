@@ -116,23 +116,58 @@ async def public_reorder(
     )
 
 
+@router.get("/v1/findings")
+async def public_findings(
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    limit: int = 50,
+    ctx: dict = Depends(get_api_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tenant-scoped diagnostics findings (A3) for the authenticated key — so a
+    customer can pull "what's going wrong" into their own tools/Slack."""
+    _require_scope(ctx, "read")
+    from sqlalchemy import text
+    where = ["tenant_id = :tid"]
+    params: dict = {"tid": ctx["tenant_id"], "limit": max(1, min(limit, 200))}
+    if status in ("open", "acknowledged", "resolved"):
+        where.append("status = :status"); params["status"] = status
+    if severity in ("low", "medium", "high", "critical"):
+        where.append("severity = :severity"); params["severity"] = severity
+    rows = (await db.execute(text(
+        "SELECT id, rule, category, severity, title, detail, evidence, entity_type, "
+        "entity_name, metric_value, status, recommended_action, detected_at "
+        f"FROM findings WHERE {' AND '.join(where)} "
+        "ORDER BY detected_at DESC LIMIT :limit"
+    ), params)).mappings().all()
+    return {"data": [dict(r) for r in rows], "count": len(rows)}
+
+
 @router.post("/v1/ai/ask")
 async def public_ai_ask(
     body: AskRequest,
     ctx: dict = Depends(get_api_context),
     db: AsyncSession = Depends(get_db),
 ):
-    """Embeddable, tenant-scoped AI answer. Uses the configured LLM provider
-    (Ollama → OpenAI) when available and always falls back to a data-grounded
-    rule-based answer, so it works with zero paid keys."""
+    """Embeddable, tenant-scoped AI answer. Prefers Sage (NL→SQL over the curated
+    tenant views) when an LLM provider is configured, then a data-grounded
+    deterministic answer — so it works with zero paid keys."""
     _require_scope(ctx, "read")
     from app.services.ai_assistant import detect_intent
     from app.services.forecast_service import forecast_narrative, revenue_projection
+    from app.services.nl2sql import answer_question as sage_answer_question
 
     tenant_id = ctx["tenant_id"]
     question = (body.question or "").strip()
     if not question:
         raise HTTPException(status_code=400, detail="question is required")
+
+    # Sage NL→SQL first (grounded, tenant-scoped). Falls through when no LLM is
+    # configured or the query is rejected — same contract as the dashboard chat.
+    sage = await sage_answer_question(question, tenant_id)
+    if sage.ok:
+        return {"question": question, "answer": sage.answer, "tenant_id": tenant_id,
+                "source": "sage", "sql": sage.sql}
 
     intents = detect_intent(question).get("intents", [])
     horizon = max(7, min(body.horizon, 60))
