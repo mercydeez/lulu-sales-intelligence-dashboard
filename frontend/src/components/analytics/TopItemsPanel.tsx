@@ -6,7 +6,7 @@ import { ChartFrame } from '@/components/ui';
 import { fetchTopItems } from '@/lib/api';
 import { TopItemPoint } from '@/types';
 import { CHART, tooltipStyle, tooltipLabelStyle } from './chartTheme';
-import { formatCompact, formatCurrency } from './format';
+import { formatCompact, formatCurrency, shortItemLabel } from './format';
 
 interface TopItemsPanelProps {
   limit?: number;
@@ -46,7 +46,7 @@ export function TopItemsPanel({ limit = 10 }: TopItemsPanelProps) {
         <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} horizontal={false} />
           <XAxis type="number" stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
-          <YAxis type="category" dataKey="item_name" stroke={CHART.axis} fontSize={12} width={120} tickLine={false} axisLine={false} />
+          <YAxis type="category" dataKey="item_name" stroke={CHART.axis} fontSize={11} width={140} interval={0} tickFormatter={shortItemLabel} tickLine={false} axisLine={false} />
           <Tooltip
             cursor={{ fill: 'rgba(45, 212, 191, 0.06)' }}
             contentStyle={tooltipStyle}

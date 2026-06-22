@@ -9,7 +9,7 @@ import {
   Card, StatCard, ChartFrame, Table, TableHead, TableBody, TableRow, Th, Td, Badge, SkeletonText, EmptyState,
 } from '@/components/ui';
 import { SUNSET_COLORS, CHART, tooltipStyle, tooltipLabelStyle } from '@/components/analytics/chartTheme';
-import { formatCompact, formatDateShort } from '@/components/analytics/format';
+import { formatCompact, formatDateShort, shortItemLabel } from '@/components/analytics/format';
 import { ReportKpis, ReportDailyPoint, ReportCategory, ReportStore, ReportTopItem } from './types';
 
 const fmtUnits = (v: number) => `${formatCompact(v)} u`;
@@ -75,7 +75,7 @@ export function ReportTopItemsPanel({ data, loading }: { data: ReportTopItem[]; 
         <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} horizontal={false} />
           <XAxis type="number" stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
-          <YAxis type="category" dataKey="item_name" stroke={CHART.axis} fontSize={12} width={120} tickLine={false} axisLine={false} />
+          <YAxis type="category" dataKey="item_name" stroke={CHART.axis} fontSize={11} width={140} interval={0} tickFormatter={shortItemLabel} tickLine={false} axisLine={false} />
           <Tooltip cursor={{ fill: 'rgba(45,212,191,0.06)' }} contentStyle={tooltipStyle} formatter={(value: number, _n: string, p: { payload?: ReportTopItem }) => [fmtUnits(value), p.payload?.category ?? 'Units']} />
           <Bar dataKey="total_sales" fill={CHART.teal} radius={[0, 6, 6, 0]} maxBarSize={22} />
         </BarChart>

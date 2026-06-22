@@ -13,7 +13,11 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { isAuthenticated, isLoading } = useAuth();
   
-  const isPublicPath = publicPaths.some(path => pathname?.startsWith(path));
+  // Match a public path exactly or as a path segment — NOT as a bare prefix, or
+  // '/dev' would swallow '/developers' and bounce authed users to the dashboard.
+  const isPublicPath = publicPaths.some(
+    (path) => pathname === path || pathname?.startsWith(path + '/')
+  );
 
   useEffect(() => {
     if (!isLoading) {

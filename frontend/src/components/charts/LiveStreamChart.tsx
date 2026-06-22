@@ -17,6 +17,7 @@ import {
 import { Activity, Zap, Clock, ShoppingBag, Store, TrendingUp, Package, ArrowDown, ArrowUp, RefreshCw } from 'lucide-react';
 import { useEventStream } from '@/hooks/useEventStream';
 import { authFetch } from '@/contexts/AuthContext';
+import { shortStoreLabel } from '@/components/analytics/format';
 
 interface StreamingDataPoint {
   timestamp: string;
@@ -308,7 +309,7 @@ export default function LiveStreamChart() {
   const storeChartData = Object.entries(salesByStore)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-    .map(([name, sales], index) => ({ name: name.replace('Store ', 'S'), fullName: name, sales, color: COLORS[index % COLORS.length] }));
+    .map(([name, sales], index) => ({ name: shortStoreLabel(name), fullName: name, sales, color: COLORS[index % COLORS.length] }));
 
   if (loading) {
     return (
@@ -591,7 +592,7 @@ export default function LiveStreamChart() {
                   tickLine={false}
                   fontSize={11}
                   stroke="#a89a96"
-                  width={30}
+                  width={96}
                 />
                 <Tooltip
                   formatter={(value: number) => [formatNumber(value), 'Sales']}

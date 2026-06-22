@@ -6,7 +6,7 @@ import { ChartFrame } from '@/components/ui';
 import { fetchStoreDistribution } from '@/lib/api';
 import { StoreDistributionPoint } from '@/types';
 import { SUNSET_COLORS, CHART, tooltipStyle, tooltipLabelStyle } from './chartTheme';
-import { formatCompact, formatCurrency } from './format';
+import { formatCompact, formatCurrency, shortStoreLabel } from './format';
 
 export function StoreDistributionPanel() {
   const [data, setData] = useState<StoreDistributionPoint[]>([]);
@@ -42,7 +42,7 @@ export function StoreDistributionPanel() {
         <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} horizontal={false} />
           <XAxis type="number" stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
-          <YAxis type="category" dataKey="store_name" stroke={CHART.axis} fontSize={12} width={110} tickLine={false} axisLine={false} />
+          <YAxis type="category" dataKey="store_name" stroke={CHART.axis} fontSize={11} width={130} interval={0} tickFormatter={shortStoreLabel} tickLine={false} axisLine={false} />
           <Tooltip
             cursor={{ fill: 'rgba(255, 107, 92, 0.06)' }}
             contentStyle={tooltipStyle}
