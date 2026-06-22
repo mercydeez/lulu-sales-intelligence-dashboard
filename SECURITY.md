@@ -25,9 +25,10 @@ are marked.
   Verified: `sage_ro` cannot read `users` or any base table, and the views filter to the
   caller's tenant via `current_tenant_id()`. An allow-list guard (single SELECT, no
   DDL/DML/comments/`;`, no catalog/GUC functions, hard row cap) sits in front.
-- **Known gap (tracked):** `security_invoker` is not currently in effect on `sales_fact_view`,
-  so the app-wide `USE_RLS_ROLE` flip is deferred until that is fixed. Sage is unaffected
-  (it uses the dedicated `sage_*` views).
+- **Through-view RLS:** `sales_fact_view` runs with `security_invoker=true` (migration 026), so the
+  base-table tenant policies apply to the querying role through the view. Verified: `app_rw` sees
+  only its tenant's rows through the view. This unblocks the app-wide `USE_RLS_ROLE` flip (remaining
+  follow-ups: GUC-after-auth ordering, cross-tenant public-API-key lookup).
 
 ## Application hardening
 - **CSP** (env-driven `connect-src`, `object-src 'none'`, prod `upgrade-insecure-requests`),

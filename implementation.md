@@ -135,9 +135,13 @@ Goal: turn recommendations into proposed actions, slowly increasing autonomy.
   hardening, the known RLS-through-view gap).
 - ✅ **Brand centralization**: `settings.chatbot_name` + `brand.ts CHATBOT_NAME` (Sage) added to the
   existing `product_name` single-source.
+- ✅ **`security_invoker` fix** (`migration 026`): `sales_fact_view` now honours the caller's RLS;
+  verified `app_rw` isolates to its tenant through the view (tenant1=913k vs tenant2=1.9k). Owner
+  request path unaffected (KPIs verified). The app-wide `USE_RLS_ROLE` flip is now unblocked
+  (remaining: GUC-after-auth ordering + cross-tenant public-API-key lookup).
 - ❌ **Remaining (needs a decision / external service):** billing + metering (Stripe/Telr on
   `tenants.plan`), ToS/Privacy/DPA, tenant export & delete-on-request, data residency, ingestion
-  dedup/freshness polish, the `security_invoker` fix that unblocks the app-wide `USE_RLS_ROLE` flip.
+  dedup/freshness polish.
 
 ## Deferred (needs external services / a decision)
 - **Billing** — Stripe/Telr subscriptions + metering (maps onto `tenants.plan` + API-key metering).
