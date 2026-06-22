@@ -25,6 +25,7 @@ from app.routes import inventory, promotions, alerts, admin, reports, monitoring
 from app.routes import data_sources
 from app.routes import tenants
 from app.routes import public_api, api_keys, webhooks, procurement
+from app.routes import findings as findings_routes
 from app.middleware import (
     RequestIDMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware,
     BodySizeLimitMiddleware, CSRFMiddleware, SessionInvalidationMiddleware
@@ -272,6 +273,7 @@ app.include_router(tenants.router, prefix="/api/tenants", tags=["Tenants"])
 app.include_router(api_keys.router, prefix="/api/api-keys", tags=["API Keys"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 app.include_router(procurement.router, prefix="/api/procurement", tags=["Procurement"])
+app.include_router(findings_routes.router, prefix="/api/findings", tags=["Diagnostics"])
 app.include_router(public_api.router, prefix="/api/public", tags=["Public API"])
 
 # Also mount /api/latest from stream router

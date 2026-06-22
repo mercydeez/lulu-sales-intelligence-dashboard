@@ -95,6 +95,34 @@ export interface TopItemPoint {
   total_revenue: number;
 }
 
+// Diagnostics findings (A3) — written by the BullMQ worker, read by the Insights panel.
+export type FindingSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type FindingStatus = 'open' | 'acknowledged' | 'resolved';
+
+export interface Finding {
+  id: number;
+  rule: string;
+  category: string;
+  severity: FindingSeverity;
+  title: string;
+  detail: string;
+  evidence: Record<string, number | string>;
+  entity_type: string | null;
+  entity_id: string | null;
+  entity_name: string | null;
+  metric_value: number | null;
+  status: FindingStatus;
+  detected_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+}
+
+export interface FindingsSummary {
+  open: number;
+  by_severity: Partial<Record<FindingSeverity, number>>;
+  by_status: Partial<Record<FindingStatus, number>>;
+}
+
 export interface StreamEvent {
   event_type: string;
   data: Sale;

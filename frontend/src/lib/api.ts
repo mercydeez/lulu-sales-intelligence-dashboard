@@ -1,6 +1,7 @@
 import {
   Sale, SalesAggregation, DashboardMetrics, Prediction, Store, Item, BacktestResult, TrendPoint,
   StoreDistributionPoint, CategoryBreakdownPoint, TopItemPoint, RevenueProjection,
+  Finding, FindingsSummary,
 } from '@/types';
 import { apiRequest, clearApiCache } from './apiClient';
 
@@ -108,4 +109,25 @@ export async function fetchCategoryBreakdown(): Promise<{ data: CategoryBreakdow
 
 export async function fetchTopItems(limit: number = 10): Promise<{ data: TopItemPoint[] }> {
   return cachedFetch<{ data: TopItemPoint[] }>('/api/analytics/top-items', 'aggregated', { limit });
+}
+
+// ============================================================================
+// DIAGNOSTICS / FINDINGS (A3) — live ops data, never cached.
+// ============================================================================
+export async function fetchFindings(params?: {
+  status?: string; severity?: string; category?: string; limit?: number;
+}): Promise<{ data: Finding[]; count: number }> {
+  return apiRequest('/api/findings', { params: params as Record<string, unknown> });
+}
+
+export async function fetchFindingsSummary(): Promise<FindingsSummary> {
+  return apiRequest('/api/findings/summary');
+}
+
+export async function acknowledgeFinding(id: number): Promise<{ id: number; status: string }> {
+  return apiRequest(`/api/findings/${id}/acknowledge`, { method: 'POST' });
+}
+
+export async function resolveFinding(id: number): Promise<{ id: number; status: string }> {
+  return apiRequest(`/api/findings/${id}/resolve`, { method: 'POST', body: {} });
 }

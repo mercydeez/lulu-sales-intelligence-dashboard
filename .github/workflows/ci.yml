@@ -103,6 +103,9 @@ jobs:
       - name: Build frontend image
         run: docker build -t app-frontend-test ./frontend
 
+      - name: Build diagnostics worker image
+        run: docker build -t app-worker-test ./worker
+
   # =========================================================================
   # Smoke — boot the full stack and assert the API actually responds
   # =========================================================================
@@ -146,6 +149,9 @@ jobs:
           pip install pytest pytest-asyncio asyncpg sqlalchemy
           # Integration suites (need the live stack). Static guards run in the backend job.
           pytest backend/tests/test_golden_numbers.py backend/tests/test_nl2sql_pipeline.py -v --tb=short
+
+      - name: Diagnostics worker runs a scan without error
+        run: docker compose run --rm worker npm run scan:once
 
       - name: Tear down
         if: always()

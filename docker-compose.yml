@@ -98,6 +98,28 @@ services:
     networks:
       - sales_network
 
+  # Diagnostics worker (A3): Node + BullMQ on the existing Redis. Runs deterministic
+  # rules on a schedule and writes explainable `findings` rows the dashboard + Sage read.
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: ${PROJECT_PREFIX:-sales}_worker
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD:-salespass}@postgres:5432/${POSTGRES_DB:-salesdb}
+      - REDIS_URL=redis://redis:6379
+      - DIAGNOSTICS_INTERVAL_MS=${DIAGNOSTICS_INTERVAL_MS:-300000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started   # ensure migrations (findings table) have run
+    networks:
+      - sales_network
+    restart: unless-stopped
+
   # Local LLM for Sage (and the AI assistant). Behind the "ai" profile so the
   # default `docker compose up` stays lean — start it with `--profile ai`.
   # No paid key: pull a model once with `docker exec sales_ollama ollama pull llama3.2`.

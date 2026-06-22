@@ -95,14 +95,22 @@ accurately, with **zero hallucination**.
 - Add an **`ollama`** service to `docker-compose.yml`; config `OLLAMA_URL` / `OLLAMA_MODEL`.
 - Tests: golden NL→SQL pairs; injection/guard tests (DDL/DML/cross-tenant rejected).
 
-## Phase 3 — Diagnostic intelligence + BullMQ worker ❌
+## Phase 3 — Diagnostic intelligence + BullMQ worker ✅
 Goal: a **system of diagnosis** that proactively finds problems, explains them, and recommends action.
-- **Node BullMQ worker** (new `worker/`, added to compose) on the existing Redis. Scheduled jobs
-  scan for: sales/margin drops, stockout risk, return spikes, forecast-vs-actual drift, anomalies —
-  writing explainable **findings** rows (new migration) that the dashboard + Sage read.
-- **Deterministic, explainable rules engine** (no paid ML), augmented by the existing forecasting
-  engine for anticipation.
-- **Insights/Diagnostics feed** (new frontend panel); findings are queryable by Sage.
+- ✅ **`findings` contract** (`migration 024`): explainable rows (rule, severity, evidence JSONB, the
+  human sentence, entity, dedupe_key, status), RLS-scoped. Shared by the Python app + Node worker.
+- ✅ **Node BullMQ worker** (`worker/`, in compose, runs by default) on the existing Redis: a
+  repeatable scan job runs deterministic rules and upserts findings. Verified end-to-end (finds e.g.
+  "Deira City Centre is lagging peers — grew 2.3% vs the chain's 8.3%").
+- ✅ **Deterministic rules** (`worker/src/rules.js`, no ML): revenue_drop (store), category_slump,
+  return_spike, **laggard_store** (relative underperformance — fires on healthy/growing data too),
+  high_return_rate. Each emits evidence + an explanation. Add new rules in one place.
+- ✅ **Findings API** (`routes/findings.py`): list (severity/status filters), summary, acknowledge,
+  resolve — tenant-scoped.
+- ✅ **Insights frontend panel** (`/insights` + nav): severity summary, status filter, ack/resolve,
+  30s auto-refresh. `tsc` clean. (Frontend image needs a rebuild to serve the new route.)
+- ⏭️ Findings queryable by Sage / forecast-vs-actual drift rule: easy follow-ups (a `sage_findings`
+  view + a drift rule reusing the forecast engine).
 
 ## Phase 4 — Agentic layer (last, incremental) ❌
 Goal: turn recommendations into proposed actions, slowly increasing autonomy.

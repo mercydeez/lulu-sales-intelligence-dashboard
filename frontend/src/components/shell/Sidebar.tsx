@@ -26,6 +26,7 @@ import {
   Truck,
   Code2,
   Inbox,
+  Lightbulb,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -45,6 +46,7 @@ export const navItems: NavItem[] = [
   { label: 'Procurement', tKey: 'nav.procurement', href: '/procurement', icon: <Truck className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Approvals', tKey: 'nav.approvals', href: '/approvals', icon: <Inbox className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Analytics', tKey: 'nav.analytics', href: '/analytics', icon: <BarChart3 className="w-5 h-5" /> },
+  { label: 'Insights', tKey: 'nav.insights', href: '/insights', icon: <Lightbulb className="w-5 h-5" /> },
   { label: 'Forecast Lab', tKey: 'nav.forecastLab', href: '/forecast-lab', icon: <Brain className="w-5 h-5" /> },
   { label: 'Employees', tKey: 'nav.employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Reports', tKey: 'nav.reports', href: '/reports', icon: <FileText className="w-5 h-5" />, permission: 'can_export' },
