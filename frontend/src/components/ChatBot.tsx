@@ -459,7 +459,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
     return content
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/`(.*?)`/g, '<code class="bg-slate-700 px-1 rounded">$1</code>')
+      .replace(/`(.*?)`/g, '<code class="bg-[#f3e7e0] px-1 rounded">$1</code>')
       .replace(/\n/g, '<br/>');
   };
 
@@ -468,9 +468,9 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
   // If user doesn't have chat permission, show restricted message
   if (!canUseChat) {
     return (
-      <div className={`fixed right-0 top-0 h-full bg-slate-900 border-l border-slate-700 shadow-2xl flex flex-col z-50 w-[400px]`}>
+      <div className={`fixed right-0 top-0 h-full bg-white border-l border-line shadow-2xl flex flex-col z-50 w-[400px]`}>
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-600 to-slate-700 border-b border-slate-700">
+        <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-600 to-purple-600 border-b border-line">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
               <Lock className="w-5 h-5 text-white" />
@@ -492,17 +492,17 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
         {/* Restricted Access Message */}
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-700/50 flex items-center justify-center">
-              <Lock className="w-8 h-8 text-slate-400" />
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#f3e7e0]/50 flex items-center justify-center">
+              <Lock className="w-8 h-8 text-ink-muted" />
             </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Access Restricted</h3>
-            <p className="text-slate-400 text-sm mb-4">
+            <h3 className="text-lg font-semibold text-ink mb-2">Access Restricted</h3>
+            <p className="text-ink-muted text-sm mb-4">
               You don't have permission to use the AI assistant.
             </p>
-            <p className="text-slate-500 text-xs">
+            <p className="text-ink-muted text-xs">
               Contact your administrator to request access.
             </p>
-            <p className="text-slate-600 text-xs mt-2">
+            <p className="text-ink-muted text-xs mt-2">
               Logged in as: {user?.email || 'Unknown'}
             </p>
           </div>
@@ -512,11 +512,11 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
   }
 
   return (
-    <div className={`fixed right-0 top-0 h-full bg-slate-900 border-l border-slate-700 shadow-2xl flex flex-col z-50 transition-all duration-300 ${
+    <div className={`fixed right-0 top-0 h-full bg-white border-l border-line shadow-2xl flex flex-col z-50 transition-all duration-300 ${
       isMinimized ? 'w-16' : 'w-[400px]'
     }`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-600 to-purple-600 border-b border-slate-700">
+      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-600 to-purple-600 border-b border-line">
         {!isMinimized && (
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
@@ -550,24 +550,24 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
       {!isMinimized && (
         <>
           {/* Voice Controls */}
-          <div className="flex items-center justify-between px-4 py-2 bg-slate-800/50 border-b border-slate-700/50">
+          <div className="flex items-center justify-between px-4 py-2 bg-[#faf3ee]/50 border-b border-line/50">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setAutoSpeak(!autoSpeak)}
                 className={`p-2 rounded-lg transition-colors ${
-                  autoSpeak ? 'bg-violet-500/20 text-violet-400' : 'hover:bg-slate-700 text-slate-400'
+                  autoSpeak ? 'bg-violet-500/20 text-violet-400' : 'hover:bg-[#f3e7e0] text-ink-muted'
                 }`}
                 title={autoSpeak ? "Disable auto-speak" : "Enable auto-speak"}
               >
                 {autoSpeak ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
               </button>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-ink-muted">
                 {autoSpeak ? 'Voice replies on' : 'Voice replies off'}
               </span>
             </div>
             <button
               onClick={clearChat}
-              className="p-2 hover:bg-slate-700 rounded-lg transition-colors text-slate-400"
+              className="p-2 hover:bg-[#f3e7e0] rounded-lg transition-colors text-ink-muted"
               title="Clear chat"
             >
               <Trash2 className="w-4 h-4" />
@@ -584,11 +584,11 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                 {message.role !== 'system' && (
                   <div className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center ${
                     message.role === 'user' 
-                      ? 'bg-cyan-500/20' 
+                      ? 'bg-teal-50' 
                       : 'bg-violet-500/20'
                   }`}>
                     {message.role === 'user' 
-                      ? <User className="w-4 h-4 text-cyan-400" />
+                      ? <User className="w-4 h-4 text-teal-600" />
                       : <Bot className="w-4 h-4 text-violet-400" />
                     }
                   </div>
@@ -598,10 +598,10 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                   <div
                     className={`inline-block max-w-[85%] p-3 rounded-2xl ${
                       message.role === 'user'
-                        ? 'bg-cyan-500/20 text-white rounded-tr-sm'
+                        ? 'bg-teal-50 text-ink rounded-tr-sm'
                         : message.role === 'system'
                         ? 'bg-amber-500/10 text-amber-200 border border-amber-500/30 text-xs'
-                        : 'bg-slate-800 text-slate-200 rounded-tl-sm'
+                        : 'bg-[#faf3ee] text-ink rounded-tl-sm'
                     }`}
                   >
                     <div 
@@ -615,17 +615,17 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                   
                   {message.role !== 'system' && (
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-slate-600">
+                      <span className="text-xs text-ink-muted">
                         {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                       {message.role === 'assistant' && !message.isStreaming && message.content && (
                         <button
                           onClick={() => speakText(message.content)}
                           disabled={isSpeaking}
-                          className="p-1 hover:bg-slate-700 rounded transition-colors"
+                          className="p-1 hover:bg-[#f3e7e0] rounded transition-colors"
                           title="Speak"
                         >
-                          <Volume2 className={`w-3 h-3 ${isSpeaking ? 'text-violet-400 animate-pulse' : 'text-slate-500'}`} />
+                          <Volume2 className={`w-3 h-3 ${isSpeaking ? 'text-violet-400 animate-pulse' : 'text-ink-muted'}`} />
                         </button>
                       )}
                     </div>
@@ -635,7 +635,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
             ))}
             
             {isLoading && messages[messages.length - 1]?.content === '' && (
-              <div className="flex items-center gap-2 text-slate-500">
+              <div className="flex items-center gap-2 text-ink-muted">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span className="text-sm">Thinking...</span>
               </div>
@@ -645,7 +645,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
           </div>
 
           {/* Input */}
-          <form onSubmit={handleSubmit} className="p-4 border-t border-slate-700 bg-slate-800/50">
+          <form onSubmit={handleSubmit} className="p-4 border-t border-line bg-[#faf3ee]/50">
             <div className="flex items-center gap-2">
               {/* Voice Button - only show if user has voice permission */}
               {canUseVoice ? (
@@ -658,7 +658,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                       ? 'bg-rose-500 text-white scale-110 shadow-lg shadow-rose-500/50 animate-pulse' 
                       : isProcessingVoice
                       ? 'bg-amber-500 text-white'
-                      : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:scale-105'
+                      : 'bg-[#f3e7e0] hover:bg-[#ecdcd3] text-ink hover:scale-105'
                   }`}
                   title={isRecording ? "Click to stop recording" : "Click to start recording"}
                 >
@@ -680,7 +680,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                 <button
                   type="button"
                   disabled
-                  className="relative p-3 rounded-xl bg-slate-700/50 text-slate-500 cursor-not-allowed"
+                  className="relative p-3 rounded-xl bg-[#f3e7e0]/50 text-ink-muted cursor-not-allowed"
                   title="Voice chat not available for your role"
                 >
                   <Lock className="w-5 h-5" />
@@ -693,7 +693,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={isRecording ? "🎤 Recording... Click mic to stop" : "Ask about sales, trends, insights..."}
-                className="flex-1 bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-violet-500 transition-colors"
+                className="flex-1 bg-white border border-line rounded-xl px-4 py-3 text-ink placeholder-ink-muted focus:outline-none focus:border-violet-500 transition-colors"
                 disabled={isLoading || isRecording}
               />
               
