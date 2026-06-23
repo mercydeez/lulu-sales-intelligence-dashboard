@@ -62,4 +62,4 @@ async def test_flagship_recomposes_all_parts():
     assert crm.ok and crm.rows and list(crm.rows[0].values())[0] == 3447836
     dist = next(p for p in res.parts if p.label.startswith("Distributors"))
     assert dist.ok and len(dist.rows) == 8
-    assert "| Metric | Value | Source |" in res.answer
+    assert "Here's the breakdown:" in res.answer and "**CRM pipeline expected revenue" in res.answer

@@ -74,10 +74,18 @@ def _format_value(rows: List[dict]) -> str:
 
 
 def _recompose(parts: List[SubAnswer]) -> str:
-    lines = ["Here's the breakdown:", "", "| Metric | Value | Source |", "|---|---|---|"]
+    """Bold-line summary — renders cleanly in the chat (which supports **bold** +
+    line breaks, not markdown tables) and stays readable as plain text / JSON.
+    Every value is rows-only; non-default sources (docs / APIs) are attributed."""
+    lines = ["Here's the breakdown:", ""]
+    multi_source = len({p.source for p in parts if p.ok}) > 1
     for p in parts:
-        val = _format_value(p.rows) if p.ok else f"_error: {p.error}_"
-        lines.append(f"| {p.label} | {val} | {p.source} |")
+        if not p.ok:
+            lines.append(f"**{p.label}:** _unavailable ({p.error})_")
+            continue
+        val = _format_value(p.rows)
+        attrib = f"  _(source: {p.source})_" if (multi_source and p.source != "Retail IQ") else ""
+        lines.append(f"**{p.label}:** {val}{attrib}")
     return "\n".join(lines)
 
 
