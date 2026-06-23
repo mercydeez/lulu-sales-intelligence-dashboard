@@ -12,6 +12,7 @@ from app.models.sales import Sale, Store, Item
 from app.services.llm import get_provider_chain, LLMError
 from app.services.nl2sql import answer_question as sage_answer_question
 from app.services.federation import federated_answer
+from app.services.sage2 import answer_multipart, is_multipart
 
 
 class Message(BaseModel):
@@ -884,7 +885,18 @@ async def stream_chat_response(
     intent_info = detect_intent(user_message)
     context.detected_intents.extend(intent_info["intents"])
 
-    # Federated Sage first (grounded NL->SQL across every source this role may see;
+    # Sage v2 (decompose-route-recompose) for multi-part questions — stream the
+    # recomposed table; else fall through to federated single-question Sage.
+    if is_multipart(user_message):
+        multi = await answer_multipart(user_message, tenant_id, role)
+        if multi.ok:
+            context.add_message("assistant", multi.answer)
+            for i, word in enumerate(multi.answer.split(' ')):
+                yield (' ' if i else '') + word
+                await asyncio.sleep(0.008)
+            return
+
+    # Federated Sage (grounded NL->SQL across every source this role may see;
     # single-source for non-admins). On success, stream it; else fall through to the
     # intent-stuffing + provider/rule-based path.
     sage = await federated_answer(user_message, tenant_id, role)
@@ -942,7 +954,15 @@ async def get_chat_response(
     context = get_or_create_context(session_id)
     intent_info = detect_intent(user_message)
 
-    # Federated Sage first: grounded NL->SQL across the sources this role may query
+    # Sage v2 (decompose-route-recompose) for genuinely multi-part questions —
+    # answers each sub-question from its domain and recomposes one grounded table.
+    if is_multipart(user_message):
+        multi = await answer_multipart(user_message, tenant_id, role)
+        if multi.ok:
+            context.add_message("assistant", multi.answer)
+            return multi.answer
+
+    # Federated Sage: grounded NL->SQL across the sources this role may query
     # (just the internal source for non-admins). Falls through to intent-stuffing +
     # rule-based when no LLM is configured or the query is rejected/empty.
     sage = await federated_answer(user_message, tenant_id, role)

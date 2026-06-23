@@ -10,6 +10,7 @@ from __future__ import annotations
 # The ONLY relations Sage's SQL may read. Anything else -> guard rejection
 # (and the sage_ro DB role can't read it anyway). Keep in sync with migration 023.
 ALLOWED_RELATIONS: frozenset[str] = frozenset({
+    # Sales domain
     "sage_sales",
     "sage_daily_sales",
     "sage_store_performance",
@@ -17,6 +18,12 @@ ALLOWED_RELATIONS: frozenset[str] = frozenset({
     "sage_item_performance",
     "sage_stores",
     "sage_items",
+    # Sage v2 domains (migration 028)
+    "sage_distributors",
+    "sage_crm_pipeline",
+    "sage_online_prices",
+    "sage_targets",
+    "sage_zones",
 })
 
 # Human/LLM-readable schema. Deliberately compact so it fits a small local model's
@@ -44,10 +51,27 @@ VIEW sage_item_performance  -- per item
   item_id INT, item_name TEXT, category TEXT, unit_price_aed NUMERIC,
   units BIGINT, revenue_aed NUMERIC
 
-VIEW sage_stores  -- store dimension: store_id INT, store_name TEXT, location TEXT
+VIEW sage_stores  -- store dimension: store_id INT, store_name TEXT, location TEXT, zone TEXT
 VIEW sage_items   -- item dimension: item_id INT, item_name TEXT, category TEXT, unit_price_aed NUMERIC
 
+-- Sage v2 domains --
+VIEW sage_distributors  -- channel partners
+  distributor_id INT, distributor_name TEXT, zone TEXT, active BOOL
+VIEW sage_crm_pipeline   -- CRM opportunities
+  opportunity_id INT, opportunity_name TEXT, zone TEXT, stage TEXT
+  (Lead|Qualified|Proposal|Won|Lost), expected_revenue NUMERIC (AED), distributor_id INT
+VIEW sage_online_prices  -- e-commerce selling prices
+  item_id INT, item_name TEXT, category TEXT, channel TEXT, price_aed NUMERIC
+VIEW sage_targets        -- company strategy targets
+  metric TEXT, label TEXT, year INT, value NUMERIC, unit TEXT, source_doc TEXT
+VIEW sage_zones          -- list of zones: zone TEXT
+
 CONVENTIONS (critical for correctness):
+- Pick the RIGHT view for the domain: sales/revenue -> sage_*sales/performance;
+  "distributors serving X zone" -> sage_distributors WHERE zone = 'X';
+  "CRM pipeline / expected revenue" -> sage_crm_pipeline (SUM(expected_revenue));
+  "online selling price" -> sage_online_prices (AVG(price_aed));
+  "2030 target / strategy target" -> sage_targets.
 - VOLUME questions ("how many units / sold / quantity") -> use `units`.
 - VALUE / money questions ("revenue / sales in AED / how much money") -> use `revenue_aed`.
 - NEVER multiply by price yourself; revenue_aed is already units * unit_price_aed.

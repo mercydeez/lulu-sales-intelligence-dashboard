@@ -156,14 +156,21 @@ async def public_ai_ask(
     from app.services.ai_assistant import detect_intent
     from app.services.forecast_service import forecast_narrative, revenue_projection
     from app.services.nl2sql import answer_question as sage_answer_question
+    from app.services.sage2 import answer_multipart, is_multipart
 
     tenant_id = ctx["tenant_id"]
     question = (body.question or "").strip()
     if not question:
         raise HTTPException(status_code=400, detail="question is required")
 
-    # Sage NL→SQL first (grounded, tenant-scoped). Falls through when no LLM is
-    # configured or the query is rejected — same contract as the dashboard chat.
+    # Multi-part questions → Sage v2 decompose-route-recompose (consumer scope).
+    if is_multipart(question):
+        multi = await answer_multipart(question, tenant_id, role="consumer")
+        if multi.ok:
+            return {"question": question, "answer": multi.answer, "tenant_id": tenant_id, "source": "sage2"}
+
+    # Single-part → Sage NL→SQL (grounded, tenant-scoped). Falls through when no LLM
+    # is configured or the query is rejected — same contract as the dashboard chat.
     sage = await sage_answer_question(question, tenant_id)
     if sage.ok:
         return {"question": question, "answer": sage.answer, "tenant_id": tenant_id,
