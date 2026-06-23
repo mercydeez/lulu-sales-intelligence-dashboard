@@ -93,14 +93,36 @@ async def _run_sql(label: str, sql: str, tenant_id: int) -> SubAnswer:
         return SubAnswer(label, False, sql=safe, error=str(e))
 
 
-async def _deterministic(question: str, tenant_id: int) -> List[SubAnswer]:
+async def _run_doc(label: str, query: str, question: str, tenant_id: int, providers) -> SubAnswer:
+    from app.services.rag import answer_from_docs
+    rag = await answer_from_docs(question, tenant_id, providers=providers, query=query or question)
+    src = rag.citations[0] if rag.citations else "Document"
+    if not rag.ok:
+        return SubAnswer(label, False, error=rag.answer, source=src)
+    return SubAnswer(label, True, rows=[{"answer": rag.answer}], source=src)
+
+
+async def _deterministic(question: str, tenant_id: int, providers=None) -> List[SubAnswer]:
     zone = I.extract_zone(question)
     parts: List[SubAnswer] = []
     for intent in I.match_intents(question):
         label = intent.label
         if intent.zone_aware and zone:
             label = f"{intent.label} ({zone})"
-        parts.append(await _run_sql(label, intent.build_sql(zone), tenant_id))
+        if intent.kind == "document":
+            parts.append(await _run_doc(label, intent.doc_query, question, tenant_id, providers))
+        else:
+            parts.append(await _run_sql(label, intent.build_sql(zone), tenant_id))
+
+    # External API sources (S4) — only present when configured; otherwise no-op.
+    from .api_source import match_api_sources, call_source
+    for src in match_api_sources(question):
+        res = await call_source(src)
+        parts.append(SubAnswer(
+            f"{src.name} (live API)", res["ok"],
+            rows=[{src.name: res["value"]}] if res["ok"] else [],
+            error=None if res["ok"] else res["error"], source=src.name,
+        ))
     return parts
 
 
@@ -143,7 +165,7 @@ async def answer_multipart(question: str, tenant_id: int, role: str = "admin",
         except LLMError:
             parts = []
     if not parts:
-        parts = await _deterministic(question, tenant_id)
+        parts = await _deterministic(question, tenant_id, providers)
 
     if not parts:
         return MultiPartResult(ok=False, reason="no recognized sub-questions")

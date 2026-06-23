@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     sage_database_url: Optional[str] = None
     sage_query_timeout_ms: int = 5000   # statement_timeout for generated SQL
     sage_max_rows: int = 200            # hard LIMIT injected/clamped by the guard
+
+    # Sage v2 external API sources (S4) — JSON map of third-party data feeds the
+    # decompose-route-recompose engine can call for a sub-question, e.g. weather /
+    # FX / market prices. Empty by default (no-op). Shape:
+    #   {"fx": {"keyword":"exchange rate","url":"https://api.x/rate?base=AED",
+    #           "value_path":"rates.USD","header_env":"FX_API_KEY","header_name":"X-Api-Key"}}
+    external_api_sources: str = ""
     
     # Streaming - 10 seconds for fast real-time updates
     streaming_interval_seconds: int = 10

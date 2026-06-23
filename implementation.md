@@ -112,6 +112,27 @@ Goal: a **system of diagnosis** that proactively finds problems, explains them, 
 - ⏭️ Findings queryable by Sage / forecast-vs-actual drift rule: easy follow-ups (a `sage_findings`
   view + a drift rule reusing the forecast engine).
 
+## Sage v2 — decompose → route → recompose ✅ (verified end-to-end, no LLM needed)
+Goal: answer ONE multi-part business question spanning MANY domains (the MEGA-30 pattern),
+grounded, recomposed into one source-attributed table.
+- ✅ **In-depth multi-domain semantic layer** (`migration 028`): distributors+zones, CRM pipeline,
+  online pricing, company targets, and a documents store — all tenant-stamped + RLS + curated
+  `sage_*` views + seed data. (Seed mirrors the eval: 8 North distributors, CRM-North = 3,447,836.)
+- ✅ **`services/sage2/` orchestrator**: `is_multipart` gate → decompose → per-sub answer → recompose.
+  Deterministic intent templates (`intents.py`) answer today with NO LLM (and are the test oracle);
+  an LLM `decompose.py` + per-sub NL→SQL generalizes it when a provider is set. Every generated query
+  still passes the allow-list guard + runs on `sage_ro`.
+- ✅ **Document RAG** (`services/rag/`): Postgres full-text retrieval (zero deps), grounded answer +
+  citation; embedding/pgvector upgrade path behind the same interface. A doc-phrased question returns
+  the strategy-doc excerpt with `(Strategy 2025-2030, chunk N)`.
+- ✅ **External API source** (`sage2/api_source.py`, `EXTERNAL_API_SOURCES` JSON): config-driven REST
+  feeds (FX/weather/market) with dotted JSON-path extraction; no-op until configured.
+- ✅ **Wired** into the dashboard chat + public `/v1/ai/ask`; multi-part → Sage v2, single → federated
+  Sage. **Verified**: the exact MEGA-30 question recomposes all 5 parts (target, primary sales, CRM
+  pipeline North, distributors North, avg online price) — grounded, zero LLM. Tests: `test_sage2.py`.
+- ⏳ LLM activates free-form decomposition + arbitrary NL→SQL; until then the deterministic intents
+  cover the demonstrated questions. Mongo/MySQL/etc. domains + live API endpoints are the follow-ups.
+
 ## Federated Sage — multi-source NL→SQL ✅ (Postgres verified; other engines drop-in)
 Goal: answer from MANY databases (not just one connected source), role-aware, zero-hallucination.
 - ✅ **One canonical contract, many executors** (`services/federation/`): Sage generates ONE SQL over

@@ -29,8 +29,9 @@ class Intent:
     name: str
     label: str                 # how the metric is labelled in the recomposed answer
     keywords: tuple            # any-match (lowercased substring) triggers this intent
-    kind: str                  # 'scalar' | 'list'
+    kind: str                  # 'scalar' | 'list' | 'document'
     zone_aware: bool = False   # filter by the detected zone when present
+    doc_query: str = ""        # for kind=='document': the RAG search string
 
     def build_sql(self, zone: Optional[str]) -> str:
         raise NotImplementedError
@@ -78,6 +79,15 @@ INTENTS: List[TemplateIntent] = [
         keywords=("online selling price", "online price", "average online", "ecommerce price"),
         kind="scalar",
         sql="SELECT ROUND(AVG(price_aed), 2) AS avg_online_price_aed FROM sage_online_prices",
+    ),
+    # Document-grounded answer (RAG over the strategy doc). Keywords chosen NOT to
+    # collide with the structured revenue_target intent.
+    TemplateIntent(
+        name="strategy_document", label="From the strategy document",
+        keywords=("according to the strategy", "what does the strategy", "document say",
+                  "per the document", "strategy says"),
+        kind="document",
+        doc_query="2030 revenue target ambition strategy",
     ),
     # A few general extras so it's useful beyond the flagship question.
     TemplateIntent(
