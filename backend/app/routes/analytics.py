@@ -102,16 +102,19 @@ async def get_sales_trend(
     if cached:
         return cached
 
-    # Get historical daily sales (AED revenue)
+    # Get historical daily sales (AED revenue). Explicit tenant filter (defense in
+    # depth) so the result is correct even if RLS is disabled.
+    tenant_id = current_user.get('tenant_id') or 1
     query = select(
         Sale.date,
         func.sum(Sale.sales * Item.unit_price_aed).label('total_sales')
     ).join(
         Item, Sale.item_id == Item.id
     ).where(
-        Sale.is_streaming == False
+        Sale.is_streaming == False,
+        Sale.tenant_id == tenant_id,
     )
-    
+
     if allowed_stores:
         query = query.where(Sale.store_id.in_(allowed_stores))
         
@@ -156,16 +159,21 @@ async def get_sales_trend(
     return response
 
 
-def store_distribution_cache_key(allowed_stores):
-    """Cache key for the store-distribution scope (empty/None => all stores)."""
+def store_distribution_cache_key(allowed_stores, tenant_id: int = 1):
+    """Cache key for the store-distribution scope (empty/None => all stores),
+    scoped by tenant so super_admins of different tenants (who share the 'all'
+    scope) never collide on one key."""
     stores_suffix = f"_stores_{','.join(map(str, sorted(allowed_stores)))}" if allowed_stores else "_all"
-    return generate_cache_key(f"analytics_stores{stores_suffix}")
+    return generate_cache_key(f"analytics_stores_t{tenant_id}{stores_suffix}")
 
 
-async def compute_and_cache_store_distribution(db: AsyncSession, allowed_stores) -> dict:
+async def compute_and_cache_store_distribution(db: AsyncSession, allowed_stores, tenant_id: int = 1) -> dict:
     """
     Compute sales distribution by store, cache it under the scope's key, and
     return it. Shared by the route (on cache miss) and the cache warmer.
+
+    Filters by tenant_id at the APP layer (defense in depth) so it is correct
+    even on the owner/superuser session the cache warmer uses, which bypasses RLS.
     """
     query = select(
         Sale.store_id,
@@ -175,7 +183,7 @@ async def compute_and_cache_store_distribution(db: AsyncSession, allowed_stores)
         Store, Sale.store_id == Store.id
     ).join(
         Item, Sale.item_id == Item.id
-    )
+    ).where(Sale.tenant_id == tenant_id)
 
     if allowed_stores:
         query = query.where(Sale.store_id.in_(allowed_stores))
@@ -199,7 +207,7 @@ async def compute_and_cache_store_distribution(db: AsyncSession, allowed_stores)
         })
 
     response = {"data": store_data, "total": total}
-    await set_cached(store_distribution_cache_key(allowed_stores), response, CACHE_TTL['analytics'])
+    await set_cached(store_distribution_cache_key(allowed_stores, tenant_id), response, CACHE_TTL['analytics'])
     return response
 
 
@@ -212,6 +220,7 @@ async def get_store_distribution(
     Get sales distribution by store for pie chart.
     """
     allowed_stores = get_accessible_store_ids(current_user)
+    tenant_id = current_user.get('tenant_id') or 1
 
     ext = await active_external_source()
     if ext:
@@ -223,11 +232,11 @@ async def get_store_distribution(
         await set_cached(key, data, CACHE_TTL['analytics'])
         return data
 
-    cached = await get_cached(store_distribution_cache_key(allowed_stores))
+    cached = await get_cached(store_distribution_cache_key(allowed_stores, tenant_id))
     if cached:
         return cached
 
-    return await compute_and_cache_store_distribution(db, allowed_stores)
+    return await compute_and_cache_store_distribution(db, allowed_stores, tenant_id)
 
 
 @router.get("/top-items")
@@ -258,6 +267,7 @@ async def get_top_items(
     if cached:
         return cached
     
+    tenant_id = current_user.get('tenant_id') or 1
     query = select(
         Sale.item_id,
         Item.name.label('item_name'),
@@ -265,11 +275,11 @@ async def get_top_items(
         func.sum(Sale.sales * Item.unit_price_aed).label('total_sales')
     ).join(
         Item, Sale.item_id == Item.id
-    )
-    
+    ).where(Sale.tenant_id == tenant_id)
+
     if allowed_stores:
         query = query.where(Sale.store_id.in_(allowed_stores))
-        
+
     query = query.group_by(
         Sale.item_id, Item.name, Item.category
     ).order_by(func.sum(Sale.sales * Item.unit_price_aed).desc()).limit(limit)
@@ -318,16 +328,17 @@ async def get_category_breakdown(
     if cached:
         return cached
     
+    tenant_id = current_user.get('tenant_id') or 1
     query = select(
         Item.category,
         func.sum(Sale.sales * Item.unit_price_aed).label('total_sales')
     ).join(
         Item, Sale.item_id == Item.id
-    )
-    
+    ).where(Sale.tenant_id == tenant_id)
+
     if allowed_stores:
         query = query.where(Sale.store_id.in_(allowed_stores))
-        
+
     query = query.group_by(
         Item.category
     ).order_by(func.sum(Sale.sales * Item.unit_price_aed).desc())

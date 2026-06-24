@@ -27,6 +27,7 @@ import {
   Code2,
   Inbox,
   Lightbulb,
+  ShieldAlert,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -52,6 +53,7 @@ export const navItems: NavItem[] = [
   { label: 'Reports', tKey: 'nav.reports', href: '/reports', icon: <FileText className="w-5 h-5" />, permission: 'can_export' },
   { label: 'Alerts', tKey: 'nav.alerts', href: '/alerts', icon: <Bell className="w-5 h-5" /> },
   { label: 'Admin', tKey: 'nav.admin', href: '/admin', icon: <Shield className="w-5 h-5" />, roles: ['super_admin'] },
+  { label: 'Security', tKey: 'nav.security', href: '/security', icon: <ShieldAlert className="w-5 h-5" />, roles: ['super_admin'] },
   { label: 'Data Sources', tKey: 'nav.dataSources', href: '/data-sources', icon: <Database className="w-5 h-5" />, roles: ['super_admin'] },
   { label: 'Developers', tKey: 'nav.developers', href: '/developers', icon: <Code2 className="w-5 h-5" />, roles: ['super_admin'] },
   { label: 'Monitoring', tKey: 'nav.monitoring', href: '/monitoring', icon: <Activity className="w-5 h-5" />, permission: 'is_admin' },
@@ -85,6 +87,26 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     })();
     return () => { active = false; };
   }, [isAuthenticated, authFetch]);
+
+  // Live count of active security threats (24h) for the Security nav badge.
+  const [threatCount, setThreatCount] = useState(0);
+  useEffect(() => {
+    if (!isAuthenticated || !hasRole(['super_admin'])) return;
+    let active = true;
+    const poll = async () => {
+      try {
+        const res = await authFetch('/api/security/kpi');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (active) setThreatCount(data.threats_active ?? 0);
+      } catch {
+        /* leave badge hidden on failure */
+      }
+    };
+    poll();
+    const id = setInterval(poll, 30000);
+    return () => { active = false; clearInterval(id); };
+  }, [isAuthenticated, authFetch, hasRole]);
 
   // Live count of POs awaiting approval for the Approvals nav badge.
   const [approvalCount, setApprovalCount] = useState(0);
@@ -129,6 +151,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           const active = pathname === item.href;
           const showBadge = item.href === '/alerts' && criticalCount > 0;
           const showApprovals = item.href === '/approvals' && approvalCount > 0;
+          const showThreats = item.href === '/security' && threatCount > 0;
           return (
             <Link
               key={item.href}
@@ -149,6 +172,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               {showApprovals && (
                 <span className="ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-teal-500 text-white text-[10px] font-bold">
                   {approvalCount}
+                </span>
+              )}
+              {showThreats && (
+                <span className="ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#e11d48] text-white text-[10px] font-bold">
+                  {threatCount}
                 </span>
               )}
             </Link>

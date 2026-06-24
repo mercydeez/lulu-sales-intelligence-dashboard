@@ -1,10 +1,11 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
 from sqlalchemy import text
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from contextvars import ContextVar
 import asyncio
 import logging
+from fastapi import Request, Depends
 from app.config import get_settings
 from app.models.sales import Base
 
@@ -114,10 +115,63 @@ async def close_db():
     await engine.dispose()
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def resolve_request_tenant(request: Request) -> int:
+    """Bind the request's tenant to `tenant_context` BEFORE get_db opens its
+    session, so the RLS GUC (apply_tenant_guc) is correct regardless of the order
+    in which FastAPI resolves a route's dependencies (routes commonly declare
+    `db=Depends(get_db)` before `current_user`, which would otherwise apply the
+    GUC with the default tenant).
+
+    This does NOT authenticate — the route's own get_current_user / get_api_context
+    dependency still enforces auth and returns 401 on a bad token/key. It only
+    resolves the tenant for connection scoping, failing safe to tenant 1.
+
+    Resolution order: JWT `tenant_id` claim (no DB hit) → API key (looked up on the
+    OWNER session so the cross-tenant key→tenant lookup isn't itself RLS-filtered)
+    → SSE stream ticket. Lazy imports avoid a circular import with auth_service.
+    """
+    tenant_id = 1
+    try:
+        from app.services.auth_service import decode_token
+        from app.services import api_key_service
+
+        auth = request.headers.get("authorization", "")
+        bearer = auth[7:].strip() if auth[:7].lower() == "bearer " else None
+        api_key = request.headers.get("x-api-key") or (
+            bearer if bearer and bearer.startswith(f"{api_key_service.KEY_LABEL}_") else None
+        )
+
+        if api_key:
+            async with async_session() as s:  # owner session: not RLS-filtered
+                resolved = await api_key_service.tenant_for_key(s, api_key)
+                if resolved:
+                    tenant_id = resolved
+        elif bearer:
+            td = decode_token(bearer)  # access-typed; returns None otherwise
+            if td and td.tenant_id:
+                tenant_id = td.tenant_id
+        else:
+            ticket = request.query_params.get("ticket")
+            if ticket:
+                td = decode_token(ticket)
+                if td and td.tenant_id:
+                    tenant_id = td.tenant_id
+    except Exception:
+        pass  # fail safe to tenant 1; auth dependency still guards the route
+
+    tenant_context.set(tenant_id)
+    return tenant_id
+
+
+async def get_db(
+    _tenant: int = Depends(resolve_request_tenant),
+) -> AsyncGenerator[AsyncSession, None]:
     """Request-scoped DB session. Uses the non-owner app_rw engine when RLS
     enforcement is enabled (settings.use_rls_role), so Postgres FORCE RLS scopes
-    every query to the caller's tenant; otherwise the (superuser) owner engine."""
+    every query to the caller's tenant; otherwise the (superuser) owner engine.
+
+    Depends on resolve_request_tenant so `tenant_context` (and thus the RLS GUC
+    applied below) reflects the authenticated tenant before any query runs."""
     async with rls_session() as session:
         try:
             await apply_tenant_guc(session)

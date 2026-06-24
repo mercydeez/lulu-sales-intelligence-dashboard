@@ -100,6 +100,25 @@ async def revoke_key(db: AsyncSession, tenant_id: int, key_id: int) -> bool:
     return (res.rowcount or 0) > 0
 
 
+async def tenant_for_key(db: AsyncSession, full_key: str) -> Optional[int]:
+    """Resolve an API key to its (active) tenant id WITHOUT side effects.
+
+    Used by services/database.resolve_request_tenant to bind the RLS tenant GUC
+    before the request's DB session opens. Must run on the owner session: under
+    RLS the request session is scoped to a tenant we don't know yet, so a
+    cross-tenant key lookup would be filtered out.
+    """
+    if not full_key or not full_key.startswith(f"{KEY_LABEL}_"):
+        return None
+    row = (await db.execute(text("""
+        SELECT k.tenant_id
+        FROM tenant_api_keys k
+        JOIN tenants t ON t.id = k.tenant_id
+        WHERE k.key_hash = :hash AND k.revoked_at IS NULL AND t.status = 'active'
+    """), {"hash": hash_key(full_key)})).fetchone()
+    return row.tenant_id if row else None
+
+
 async def authenticate(db: AsyncSession, full_key: str) -> Optional[Dict]:
     """Resolve a plaintext key to its (active) tenant + scopes, or None. Updates
     last_used_at / request_count as a side effect on success."""

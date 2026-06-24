@@ -28,7 +28,7 @@ async def _warm_once() -> None:
         # allowed_stores=None => the full "all stores" scope (the heaviest query).
         # Warm the demo tenant (id=1); other tenants warm lazily on first request.
         await compute_and_cache_kpis(session, None, tenant_id=1)
-        await compute_and_cache_store_distribution(session, None)
+        await compute_and_cache_store_distribution(session, None, tenant_id=1)
 
 
 async def run_cache_warmer() -> None:

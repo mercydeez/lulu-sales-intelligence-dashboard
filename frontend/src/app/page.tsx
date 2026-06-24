@@ -16,6 +16,7 @@ import {
 } from '@/components/charts';
 import { StoreDistributionPanel, CategoryDonut, TopItemsPanel } from '@/components/analytics';
 import { HomeHero, AlertQuickLinks, FinancialOverview, AlertStats } from '@/components/home';
+import SecurityPostureCard from '@/components/home/SecurityPostureCard';
 
 export default function Home() {
   const { hasRole, authFetch } = useAuth();
@@ -66,6 +67,12 @@ export default function Home() {
         <section>
           <KPICards refreshInterval={30000} />
         </section>
+
+        {hasRole(['super_admin']) && (
+          <section>
+            <SecurityPostureCard />
+          </section>
+        )}
 
         <section>
           <RevenueProjectionCard />

@@ -11,7 +11,7 @@ from app.services.auth_service import (
     AuthService, UserLogin, Token, UserResponse, 
     PasswordChange, decode_token, UserCreate
 )
-from app.config import logger
+from app.config import logger, get_settings
 
 router = APIRouter()
 security = HTTPBearer(auto_error=False)
@@ -31,19 +31,34 @@ async def get_current_user(
     
     token_data = decode_token(credentials.credentials)
     if not token_data:
+        from app.services.security_events import record_event
+        await record_event("token_invalid", request=request,
+                           detail="Rejected an invalid, expired, or wrong-type token")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    
+
     # Check token expiration
     if token_data.exp < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Token has expired")
-    
+
     # Get fresh user data
     user = await AuthService.get_user_by_id(token_data.user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-    
+
     if user['status'] != 'active':
         raise HTTPException(status_code=401, detail="Account is not active")
+
+    # Token tenant tampering: a token claiming a different tenant than the user's
+    # real one is a critical signal (stolen/forged/stale token). Reject it.
+    if token_data.tenant_id is not None and user.get('tenant_id') is not None \
+            and token_data.tenant_id != user['tenant_id']:
+        from app.services.security_events import record_event
+        await record_event("token_tenant_mismatch", request=request,
+                           tenant_id=user['tenant_id'], actor_user_id=user['id'],
+                           actor_email=user.get('email'),
+                           detail=f"Token tenant claim {token_data.tenant_id} != user tenant {user['tenant_id']}",
+                           evidence={"token_tenant": token_data.tenant_id, "user_tenant": user['tenant_id']})
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     # Bind the active tenant for this request (drives the RLS GUC, B2).
     try:
@@ -71,10 +86,16 @@ async def get_current_user_optional(
 
 def require_role(*roles: str):
     """Dependency factory to require specific roles"""
-    async def role_checker(user: dict = Depends(get_current_user)) -> dict:
+    async def role_checker(request: Request, user: dict = Depends(get_current_user)) -> dict:
         if user['role'] not in roles:
+            from app.services.security_events import record_event
+            await record_event("role_denied", request=request,
+                               tenant_id=user.get('tenant_id'), actor_user_id=user.get('id'),
+                               actor_email=user.get('email'),
+                               detail=f"{user.get('email')} (role {user['role']}) was denied {request.url.path} — requires {', '.join(roles)}",
+                               evidence={"have_role": user['role'], "need_roles": list(roles)})
             raise HTTPException(
-                status_code=403, 
+                status_code=403,
                 detail=f"Access denied. Required role: {', '.join(roles)}"
             )
         return user
@@ -83,8 +104,14 @@ def require_role(*roles: str):
 
 def require_permission(permission: str):
     """Dependency factory to require specific permission"""
-    async def permission_checker(user: dict = Depends(get_current_user)) -> dict:
+    async def permission_checker(request: Request, user: dict = Depends(get_current_user)) -> dict:
         if not user.get('permissions', {}).get(permission):
+            from app.services.security_events import record_event
+            await record_event("permission_denied", request=request,
+                               tenant_id=user.get('tenant_id'), actor_user_id=user.get('id'),
+                               actor_email=user.get('email'),
+                               detail=f"{user.get('email')} was denied {request.url.path} — missing '{permission}'",
+                               evidence={"missing_permission": permission})
             raise HTTPException(
                 status_code=403,
                 detail=f"Access denied. Missing permission: {permission}"
@@ -138,11 +165,20 @@ class MessageResponse(BaseModel):
     success: bool = True
 
 
+class TwoFactorCodeRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=8)
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    mfa_token: str
+    code: str = Field(..., min_length=6, max_length=8)
+
+
 # =============================================================================
 # ROUTES
 # =============================================================================
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login")
 async def login(request: Request, login_data: LoginRequest):
     """
     Authenticate user and return JWT tokens
@@ -151,11 +187,13 @@ async def login(request: Request, login_data: LoginRequest):
     - **password**: User's password
     - **remember_me**: If true, token expires in 7 days instead of 30 minutes
     """
-    # Get client IP
+    # Get client IP. Only trust X-Forwarded-For behind a known proxy, else it's
+    # spoofable and would poison the audit log's recorded login IP.
     ip_address = request.client.host if request.client else None
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        ip_address = forwarded.split(",")[0].strip()
+    if get_settings().trust_proxy_headers:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            ip_address = forwarded.split(",")[0].strip()
     
     # Authenticate
     user_data, error = await AuthService.authenticate_user(
@@ -167,12 +205,23 @@ async def login(request: Request, login_data: LoginRequest):
     if error:
         logger.warning(f"Login failed for {login_data.email}: {error}")
         raise HTTPException(status_code=401, detail=error)
-    
+
+    # If the account has 2FA enabled, password alone is not enough: issue a
+    # short-lived challenge and require a TOTP code at /2fa/verify.
+    if user_data.get("two_factor_enabled"):
+        from app.services.auth_service import create_mfa_challenge
+        logger.info(f"2FA challenge issued: {user_data['email']}")
+        return {
+            "requires_2fa": True,
+            "mfa_token": create_mfa_challenge(user_data["id"]),
+            "email": user_data["email"],
+        }
+
     # Create tokens
     tokens = await AuthService.create_tokens(user_data, login_data.remember_me)
-    
+
     logger.info(f"User logged in: {user_data['email']} (role: {user_data['role']})")
-    
+
     return LoginResponse(
         access_token=tokens.access_token,
         refresh_token=tokens.refresh_token,
@@ -220,6 +269,10 @@ async def signup(request: Request, body: SignupRequest):
     user_data = await AuthService.get_user_by_id(user_id)
     tokens = await AuthService.create_tokens(user_data)
     logger.info(f"New tenant signup: {body.email} (tenant {user_data.get('tenant_id')})")
+    from app.services.security_events import record_event
+    await record_event("signup", request=request, tenant_id=user_data.get('tenant_id'),
+                       actor_user_id=user_id, actor_email=body.email,
+                       detail=f"New tenant workspace created for {body.email}")
     return LoginResponse(
         access_token=tokens.access_token,
         refresh_token=tokens.refresh_token,
@@ -345,6 +398,78 @@ async def change_password(
     return MessageResponse(message=message)
 
 
+# =============================================================================
+# TWO-FACTOR AUTHENTICATION (TOTP / "2-step verification")
+# =============================================================================
+
+@router.post("/2fa/setup")
+async def setup_2fa(user: dict = Depends(get_current_user)):
+    """Begin 2FA enrollment: returns a secret + otpauth URI to add to an
+    authenticator app. 2FA is not active until confirmed at /2fa/enable."""
+    data = await AuthService.start_2fa_setup(user['id'])
+    if not data:
+        raise HTTPException(status_code=400, detail="Could not start 2FA setup")
+    return data
+
+
+@router.post("/2fa/enable", response_model=MessageResponse)
+async def enable_2fa(body: TwoFactorCodeRequest, request: Request,
+                     user: dict = Depends(get_current_user)):
+    """Confirm enrollment by verifying the first code, then turn 2FA on."""
+    ok, msg = await AuthService.confirm_2fa(user['id'], body.code)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    from app.services.security_events import record_event
+    await record_event("2fa_enabled", severity="low", category="audit", request=request,
+                       tenant_id=user.get('tenant_id'), actor_user_id=user['id'],
+                       actor_email=user.get('email'),
+                       detail=f"2-step verification enabled for {user.get('email')}")
+    return MessageResponse(message=msg)
+
+
+@router.post("/2fa/disable", response_model=MessageResponse)
+async def disable_2fa(body: TwoFactorCodeRequest, request: Request,
+                      user: dict = Depends(get_current_user)):
+    """Disable 2FA (requires a current code so a hijacked session can't turn it off)."""
+    ok, msg = await AuthService.disable_2fa(user['id'], body.code)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    from app.services.security_events import record_event
+    await record_event("2fa_disabled", severity="medium", category="audit", request=request,
+                       tenant_id=user.get('tenant_id'), actor_user_id=user['id'],
+                       actor_email=user.get('email'),
+                       detail=f"2-step verification DISABLED for {user.get('email')}")
+    return MessageResponse(message=msg)
+
+
+@router.post("/2fa/verify")
+async def verify_2fa(body: TwoFactorVerifyRequest, request: Request):
+    """Exchange a login 2FA challenge + TOTP code for real access/refresh tokens."""
+    from app.services.auth_service import decode_mfa_challenge
+    user_id = decode_mfa_challenge(body.mfa_token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or expired 2FA challenge")
+
+    if not await AuthService.verify_2fa(user_id, body.code):
+        from app.services.security_events import record_event
+        await record_event("2fa_failed", request=request, actor_user_id=user_id,
+                           detail="Incorrect 2FA code at login")
+        raise HTTPException(status_code=401, detail="Invalid 2FA code")
+
+    user_data = await AuthService.get_user_by_id(user_id)
+    if not user_data or user_data.get('status') != 'active':
+        raise HTTPException(status_code=401, detail="Account is not active")
+    tokens = await AuthService.create_tokens(user_data)
+    logger.info(f"2FA login completed: {user_data['email']}")
+    return LoginResponse(
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        token_type=tokens.token_type,
+        expires_in=tokens.expires_in,
+        user=tokens.user,
+    )
+
+
 @router.get("/users")
 async def list_users(
     page: int = Query(1, ge=1),
@@ -352,10 +477,12 @@ async def list_users(
     user: dict = Depends(require_role('super_admin')),
 ):
     """
-    List users (Super Admin only), paginated.
+    List users in the caller's tenant (Super Admin only), paginated.
     Returns {users, total, page, limit, pages}.
     """
-    return await AuthService.get_all_users(page=page, limit=limit)
+    return await AuthService.get_all_users(
+        page=page, limit=limit, tenant_id=user.get('tenant_id')
+    )
 
 
 @router.get("/validate")

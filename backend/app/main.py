@@ -26,6 +26,7 @@ from app.routes import data_sources
 from app.routes import tenants
 from app.routes import public_api, api_keys, webhooks, procurement
 from app.routes import findings as findings_routes
+from app.routes import security as security_routes
 from app.middleware import (
     RequestIDMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware,
     BodySizeLimitMiddleware, CSRFMiddleware, SessionInvalidationMiddleware
@@ -147,11 +148,17 @@ async def lifespan(app: FastAPI):
     logger.info("Shutdown complete")
 
 
+# Interactive API docs (/docs, /redoc, /openapi.json) expose the full API
+# surface, so they're disabled outside development to avoid info disclosure.
+_docs_enabled = settings.environment.lower() not in ("production", "prod", "staging")
 app = FastAPI(
     title=f"{settings.product_name} API",
     description="Real-time sales streaming and analytics API",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
 # =============================================================================
@@ -287,6 +294,7 @@ app.include_router(api_keys.router, prefix="/api/api-keys", tags=["API Keys"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 app.include_router(procurement.router, prefix="/api/procurement", tags=["Procurement"])
 app.include_router(findings_routes.router, prefix="/api/findings", tags=["Diagnostics"])
+app.include_router(security_routes.router, prefix="/api/security", tags=["Security"])
 app.include_router(public_api.router, prefix="/api/public", tags=["Public API"])
 
 # Also mount /api/latest from stream router

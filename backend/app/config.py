@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     
     # Request Body Size Limit (MB)
     max_body_size_mb: int = 10
+
+    # Reverse-proxy trust. X-Forwarded-For / X-Real-IP are client-spoofable
+    # unless a trusted proxy overwrites them. OFF by default so an attacker can't
+    # forge their source IP to evade per-IP rate limiting or poison audit-log IPs.
+    # Set TRUST_PROXY_HEADERS=true ONLY when the app sits behind a proxy (nginx,
+    # load balancer) that strips inbound XFF and sets the real client IP.
+    trust_proxy_headers: bool = False
     
     # API Keys (optional - for AI features)
     openai_api_key: Optional[str] = None
@@ -118,6 +125,20 @@ class Settings(BaseSettings):
     # high/critical findings to NOTIFY_WEBHOOK_URL (any Slack/Discord/Teams incoming
     # webhook). Empty => the worker just logs. No SDK, no paid service.
     notify_webhook_url: Optional[str] = None
+
+    # Security alerting (Google-style "we noticed a security event" emails). Fires
+    # when a security event at/above security_alert_min_severity is recorded. All
+    # env-gated and no-op until configured, so nothing leaves the stack by default.
+    # SMTP works with any provider — e.g. Gmail: smtp.gmail.com:587 + an app password.
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_tls: bool = True
+    security_alert_email_from: Optional[str] = None   # defaults to smtp_user
+    security_alert_email_to: Optional[str] = None      # comma-separated recipients
+    security_alert_webhook_url: Optional[str] = None   # Slack/Discord/Teams incoming webhook
+    security_alert_min_severity: str = "high"          # critical | high | medium | low | info
 
     # Logging
     log_level: str = "INFO"

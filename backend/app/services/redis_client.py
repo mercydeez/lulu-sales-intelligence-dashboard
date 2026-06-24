@@ -12,6 +12,7 @@ CHANNEL_SALES_STREAM = "sales:stream"
 CHANNEL_PREDICTIONS = "predictions:update"
 CHANNEL_ALERTS_STREAM = "alerts:stream"
 CHANNEL_INVENTORY_STREAM = "inventory:stream"
+CHANNEL_SECURITY_STREAM = "security:stream"
 
 
 async def init_redis():
@@ -60,6 +61,15 @@ async def publish_inventory_update(inventory_data: dict):
         await redis_client.publish(
             CHANNEL_INVENTORY_STREAM,
             json.dumps(inventory_data, default=str)
+        )
+
+
+async def publish_security_event(event_data: dict):
+    """Publish a security event to the Redis channel for live SOC dashboards."""
+    if redis_client:
+        await redis_client.publish(
+            CHANNEL_SECURITY_STREAM,
+            json.dumps(event_data, default=str)
         )
 
 

@@ -135,3 +135,57 @@ export async function resolveFinding(id: number): Promise<{ id: number; status: 
 export async function acceptFindingAction(id: number): Promise<{ id: number; accepted: boolean }> {
   return apiRequest(`/api/findings/${id}/accept-action`, { method: 'POST' });
 }
+
+// ============================================================================
+// SECURITY OPERATIONS — real-time security telemetry, never cached.
+// ============================================================================
+export type SecuritySeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+export interface SecurityEvent {
+  id: number;
+  occurred_at: string;
+  event_type: string;
+  severity: SecuritySeverity;
+  category: 'threat' | 'audit';
+  actor_email: string | null;
+  ip_address: string | null;
+  method: string | null;
+  path: string | null;
+  detail: string | null;
+  evidence: Record<string, unknown>;
+}
+
+export interface SecuritySummary {
+  window_hours: number;
+  total_events: number;
+  by_severity: Record<SecuritySeverity, number>;
+  by_type: Record<string, number>;
+  threats_active: number;
+  failed_logins: number;
+  blocked_requests: number;
+  distinct_ips: number;
+  top_ips: { ip_address: string; events: number }[];
+  posture_score: number;
+  status: 'ok' | 'watch' | 'alert';
+}
+
+export interface SecurityKpi {
+  posture_score: number;
+  threats_active: number;
+  events_24h: number;
+  status: 'ok' | 'watch' | 'alert';
+}
+
+export async function fetchSecuritySummary(hours = 24): Promise<SecuritySummary> {
+  return apiRequest('/api/security/summary', { params: { hours } });
+}
+
+export async function fetchSecurityEvents(params?: {
+  severity?: string; event_type?: string; category?: string; hours?: number; limit?: number;
+}): Promise<{ data: SecurityEvent[]; count: number }> {
+  return apiRequest('/api/security/events', { params: params as Record<string, unknown> });
+}
+
+export async function fetchSecurityKpi(): Promise<SecurityKpi> {
+  return apiRequest('/api/security/kpi');
+}

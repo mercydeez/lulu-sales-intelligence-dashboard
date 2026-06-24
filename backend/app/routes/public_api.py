@@ -36,6 +36,11 @@ async def get_api_context(
 
     ctx = await keys.authenticate(db, key)
     if not ctx:
+        from app.services.security_events import record_event
+        prefix = key.rsplit("_", 1)[0] if key and "_" in key else None
+        await record_event("api_key_invalid", request=request,
+                           detail="Public API call with an invalid or revoked API key",
+                           evidence={"key_prefix": prefix})
         raise HTTPException(status_code=401, detail="Invalid or revoked API key")
 
     # Bind the tenant for this request so RLS + helpers scope correctly.

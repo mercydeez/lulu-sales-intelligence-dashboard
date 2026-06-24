@@ -1,6 +1,8 @@
 // Postgres access for the diagnostics worker. Trusted code: it iterates tenants
-// and scopes every query with an explicit `tenant_id = $1` (app-layer scoping),
-// connecting as the owner so it can read across tenants in a loop.
+// and scopes every query with an explicit `tenant_id = $1` (app-layer scoping).
+// Connects as the least-privilege `worker_rw` role (migration 029) via
+// WORKER_DATABASE_URL — SELECT on sales/items/stores + R/W on findings only, no
+// access to users/credentials. Falls back to DATABASE_URL if unset.
 import pg from "pg";
 
 const { Pool } = pg;
@@ -14,7 +16,8 @@ function normalizeUrl(url) {
 
 export const pool = new Pool({
   connectionString: normalizeUrl(
-    process.env.DATABASE_URL ||
+    process.env.WORKER_DATABASE_URL ||
+      process.env.DATABASE_URL ||
       "postgresql://salesuser:salespass@postgres:5432/salesdb"
   ),
   max: 4,

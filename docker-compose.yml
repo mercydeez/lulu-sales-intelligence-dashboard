@@ -106,6 +106,10 @@ services:
       dockerfile: Dockerfile
     container_name: ${PROJECT_PREFIX:-sales}_worker
     environment:
+      # Least-privilege role (migration 029): SELECT on sales/items/stores +
+      # R/W on findings only — no access to users/credentials. Falls back to the
+      # owner DATABASE_URL in worker/src/db.js if WORKER_DATABASE_URL is unset.
+      - WORKER_DATABASE_URL=postgresql://worker_rw:${WORKER_DB_PASSWORD:-worker_rw_dev_pass}@postgres:5432/${POSTGRES_DB:-salesdb}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD:-salespass}@postgres:5432/${POSTGRES_DB:-salesdb}
       - REDIS_URL=redis://redis:6379
       - DIAGNOSTICS_INTERVAL_MS=${DIAGNOSTICS_INTERVAL_MS:-300000}

@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, Badge, PageHeader } from '@/components/ui';
+import TwoFactorSettings from '@/components/settings/TwoFactorSettings';
 import { ROLE_DISPLAY_NAMES, UserRole } from '@/types/auth';
 import {
   User as UserIcon,
@@ -134,6 +135,9 @@ export default function ProfilePage() {
             </div>
           </Card>
         )}
+
+        {/* Security: 2-step verification */}
+        <TwoFactorSettings />
       </div>
     </main>
   );

@@ -38,7 +38,13 @@ async def create_api_key(
     bad = [s for s in scopes if s not in allowed_scopes]
     if bad:
         raise HTTPException(status_code=400, detail=f"Unknown scopes: {bad}")
-    return await keys.create_key(db, tenant_id, body.name, scopes, created_by=user.get("id"))
+    created = await keys.create_key(db, tenant_id, body.name, scopes, created_by=user.get("id"))
+    from app.services.security_events import record_event
+    await record_event("api_key_created", tenant_id=tenant_id, actor_user_id=user.get("id"),
+                       actor_email=user.get("email"),
+                       detail=f"API key '{body.name}' created (scopes: {', '.join(scopes)})",
+                       evidence={"key_prefix": created.get("key_prefix"), "scopes": scopes})
+    return created
 
 
 @router.get("")
@@ -62,4 +68,8 @@ async def revoke_api_key(
     ok = await keys.revoke_key(db, tenant_id, key_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Key not found or already revoked")
+    from app.services.security_events import record_event
+    await record_event("api_key_revoked", tenant_id=tenant_id, actor_user_id=user.get("id"),
+                       actor_email=user.get("email"), detail=f"API key #{key_id} revoked",
+                       evidence={"key_id": key_id})
     return {"success": True, "key_id": key_id, "revoked": True}

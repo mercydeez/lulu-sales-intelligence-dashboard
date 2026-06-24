@@ -45,10 +45,22 @@ def _json_default(o: Any):
 
 
 def generate_cache_key(prefix: str, **kwargs) -> str:
-    """Generate a unique cache key from prefix and parameters"""
+    """Generate a unique, TENANT-SCOPED cache key from prefix and parameters.
+
+    The active tenant (tenant_context) is ALWAYS folded into the key so a cached
+    response can never be served across tenants. This is essential: super_admins
+    of different tenants share the same scope params (e.g. accessible_stores=[] =>
+    the 'all' scope), which previously collided on a single key and leaked one
+    tenant's data to another. Defaults to tenant 1 outside a request (cache warmer).
+    Imported lazily to avoid a circular import with services.database."""
+    try:
+        from app.services.database import tenant_context
+        tid = tenant_context.get()
+    except Exception:
+        tid = "_"
     params_str = json.dumps(kwargs, sort_keys=True, default=str)
     params_hash = hashlib.md5(params_str.encode()).hexdigest()[:12]
-    return f"cache:{prefix}:{params_hash}"
+    return f"cache:t{tid}:{prefix}:{params_hash}"
 
 
 async def get_cached(key: str) -> Optional[Any]:

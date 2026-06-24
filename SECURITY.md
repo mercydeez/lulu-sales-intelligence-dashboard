@@ -6,9 +6,22 @@ are marked.
 
 ## Authentication & sessions
 - **JWT** access + refresh tokens (python-jose), bcrypt password hashing (passlib).
+- Access tokens are type-pinned (a refresh token cannot be replayed as an access token).
 - Refresh-token rotation; logout **blacklists token hashes in Redis**, enforced by
   `SessionInvalidationMiddleware` (fails open if Redis is down, so availability is preserved).
+- **Two-step verification (TOTP / RFC 6238)** — opt-in per user; when enabled, password
+  alone returns a short-lived challenge and a 6-digit authenticator code is required to mint
+  tokens. Works with Google Authenticator / Authy / 1Password. (`services/totp.py`, `/api/auth/2fa/*`.)
 - Per-tenant **public API keys** (`lsk_`) for programmatic access, separate from user JWTs.
+
+## Real-time security monitoring & alerting
+- A `security_events` table (tenant-scoped + RLS) records failed logins, lockouts, role/
+  permission denials, rate-limit breaches, CSRF failures, token replay/tampering, API-key abuse,
+  and sensitive actions. Written on the owner session so RLS can never suppress a log.
+- **Security Operations dashboard** (`/security`, admin) with live SSE feed, posture score, and
+  high/critical flash alerts; a posture tile + threat badge surface it on the main dashboard.
+- **Alerting**: high/critical events dispatch an email (SMTP, e.g. a Gmail app password) and/or an
+  incoming webhook — the "we noticed a new sign-in" pattern. Env-gated; no-op until configured.
 
 ## Authorization (RBAC)
 - Roles: super_admin · regional_manager · store_manager, with region→store scope expansion.
@@ -17,9 +30,19 @@ are marked.
 
 ## Tenant isolation (multi-tenancy)
 - **App-layer scoping** (primary): every query filters `tenant_id`.
-- **Postgres Row-Level Security** (defense in depth): policies keyed off the per-connection
-  `app.tenant_id` GUC (migrations 010–012). A non-owner `app_rw` role exists for the
-  FORCE-RLS request path (opt-in via `USE_RLS_ROLE`).
+- **Postgres Row-Level Security — ENFORCED** (defense in depth): the authenticated request
+  path connects as the non-owner `app_rw` role under FORCE RLS (`USE_RLS_ROLE=true`), so
+  Postgres itself blocks cross-tenant reads — verified: as `app_rw` scoped to tenant B, an
+  explicit `WHERE tenant_id = A` returns zero rows. Policies are keyed off the per-connection
+  `app.tenant_id` GUC (migrations 010–012, 020), which is bound BEFORE any query runs by
+  `resolve_request_tenant` (from the JWT `tenant_id` claim, or an owner-session API-key lookup),
+  independent of FastAPI dependency order.
+- **Least-privilege background worker**: the diagnostics worker connects as `worker_rw`
+  (migration 029) — SELECT on sales/items/stores + R/W on `findings` only; it cannot read
+  `users`, credentials, or any other table.
+- **Tenant-scoped caching**: every cache key folds in the active tenant, so a cached response
+  can never be served across tenants (super_admins of different tenants share the same scope
+  params and previously collided on one key).
 - **Sage (NL→SQL) isolation:** model-generated SQL runs as a dedicated least-privilege
   `sage_ro` role with SELECT on only seven tenant-filtered `sage_*` views (migration 023).
   Verified: `sage_ro` cannot read `users` or any base table, and the views filter to the
@@ -56,6 +79,9 @@ This is a prototype. For a production deployment, route reports to a monitored s
 and acknowledge within a defined SLA. (Placeholder — set the contact before go-to-market.)
 
 ## Roadmap before handling real customer data (Track B)
-- Flip `USE_RLS_ROLE` after the `security_invoker` fix + GUC-after-auth ordering.
+- ~~Flip `USE_RLS_ROLE`~~ — DONE: RLS is enforced on the request path (see Tenant isolation).
+- Extend explicit app-layer `tenant_id` filters to the remaining analytics/reports/alerts/
+  promotions queries (they are correct under RLS today; this is defense-in-depth).
+- Enforce 2FA (schema columns exist but login does not yet check them).
 - Backups + restore drill; data residency (UAE PDPL); ToS / Privacy / DPA; tenant
   export & delete-on-request; billing/metering.

@@ -175,3 +175,28 @@ class TestRefreshRotation:
     async def test_access_token_rejected_as_refresh(self):
         access = create_access_token(TOKEN_DATA)
         assert await AuthService.refresh_access_token(access) is None
+
+
+# =============================================================================
+# 5. Token-type confusion (P0 fix) — decode_token pins the `type` claim so a
+#    long-lived refresh token cannot be replayed as a Bearer access token.
+# =============================================================================
+
+class TestTokenTypeConfusion:
+
+    def test_access_token_accepted_on_access_path(self):
+        # Default expected_type="access" accepts a real access token.
+        assert decode_token(create_access_token(TOKEN_DATA)) is not None
+
+    def test_refresh_token_rejected_on_access_path(self):
+        # The core fix: a refresh token must NOT validate as an access token.
+        assert decode_token(create_refresh_token(TOKEN_DATA)) is None
+
+    def test_refresh_token_accepted_when_expected(self):
+        assert decode_token(
+            create_refresh_token(TOKEN_DATA), expected_type="refresh"
+        ) is not None
+
+    def test_type_check_can_be_skipped(self):
+        # expected_type=None preserves the legacy "any valid JWT" behaviour.
+        assert decode_token(create_refresh_token(TOKEN_DATA), expected_type=None) is not None

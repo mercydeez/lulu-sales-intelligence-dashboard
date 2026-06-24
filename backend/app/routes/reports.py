@@ -24,22 +24,25 @@ async def get_sales_report(
 ):
     """Get comprehensive sales report from real data"""
     accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
-    
+    tenant_id = current_user.get("tenant_id") or 1
+
     # Check cache
     cache_key = generate_cache_key("reports_sales", days=days, store_id=store_id, stores=accessible_stores)
     cached = await get_cached(cache_key)
     if cached:
         return cached
-    
+
     async with async_session() as session:
         try:
-            # Build store filter
-            store_filter = ""
+            # Build store filter. This endpoint uses the owner session (RLS does not
+            # apply), so an EXPLICIT tenant filter is the isolation control — every
+            # query below appends {store_filter}, so all inherit it.
+            store_filter = f"AND s.tenant_id = {int(tenant_id)}"
             if store_id and store_id in accessible_stores:
-                store_filter = f"AND s.store_id = {store_id}"
+                store_filter += f" AND s.store_id = {int(store_id)}"
             elif accessible_stores:
-                store_list = ','.join(map(str, accessible_stores))
-                store_filter = f"AND s.store_id IN ({store_list})"
+                store_list = ','.join(str(int(x)) for x in accessible_stores)
+                store_filter += f" AND s.store_id IN ({store_list})"
             
             # Get daily sales trend
             trend_query = await session.execute(text(f"""

@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { PRODUCT_NAME } from '@/lib/brand';
 import {
   Eye, EyeOff, Lock, Mail, AlertCircle, Loader2, ShoppingBag,
-  TrendingUp, ShieldCheck, Activity, Sparkles, ArrowRight,
+  TrendingUp, ShieldCheck, Activity, Sparkles, ArrowRight, KeyRound,
 } from 'lucide-react';
 
 const DEMO_ACCOUNTS = [
@@ -18,13 +18,17 @@ const DEMO_ACCOUNTS = [
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isLoading, error, clearError } = useAuth();
+  const { login, verifyTwoFactor, isLoading, error, clearError } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState('');
+
+  // 2-step verification: set once the password step returns a challenge.
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [code, setCode] = useState('');
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -36,8 +40,21 @@ export default function LoginPage() {
       return;
     }
 
-    const success = await login({ email, password, remember_me: rememberMe });
-    if (success) router.push('/');
+    const res = await login({ email, password, remember_me: rememberMe });
+    if (res.ok) router.push('/');
+    else if (res.requires2fa && res.mfaToken) setMfaToken(res.mfaToken);
+  };
+
+  const handleVerify = async (e: FormEvent) => {
+    e.preventDefault();
+    setLocalError('');
+    clearError();
+    if (code.replace(/\s/g, '').length < 6) {
+      setLocalError('Enter the 6-digit code from your authenticator app');
+      return;
+    }
+    const ok = await verifyTwoFactor(mfaToken!, code.replace(/\s/g, ''));
+    if (ok) router.push('/');
   };
 
   const fillDemo = (demoEmail: string) => {
@@ -126,6 +143,51 @@ export default function LoginPage() {
             </div>
           )}
 
+          {mfaToken ? (
+            <form onSubmit={handleVerify} className="space-y-5">
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-teal-50 border border-teal-100">
+                <ShieldCheck className="w-5 h-5 text-teal-600 shrink-0" />
+                <p className="text-sm text-teal-800">
+                  Two-step verification is on. Enter the 6-digit code from your authenticator app.
+                </p>
+              </div>
+              <div>
+                <label htmlFor="code" className="block text-sm font-medium text-ink-soft mb-2">
+                  Authentication code
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <KeyRound className="w-5 h-5 text-ink-muted group-focus-within:text-coral-500 transition-colors" />
+                  </div>
+                  <input
+                    id="code"
+                    inputMode="numeric"
+                    autoFocus
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/[^0-9 ]/g, '').slice(0, 7))}
+                    className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-white border border-coral-100 text-ink tracking-[0.4em] text-lg placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
+                    placeholder="123456"
+                    autoComplete="one-time-code"
+                    disabled={isLoading}
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="btn-sunset w-full py-3.5 px-4 rounded-2xl font-semibold flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (<><Loader2 className="w-5 h-5 animate-spin" /> Verifying...</>) : (<>Verify <ArrowRight className="w-5 h-5" /></>)}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMfaToken(null); setCode(''); setLocalError(''); clearError(); }}
+                className="w-full text-sm font-medium text-ink-muted hover:text-ink transition-colors"
+              >
+                ← Back to sign in
+              </button>
+            </form>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email */}
             <div>
@@ -212,6 +274,7 @@ export default function LoginPage() {
               )}
             </button>
           </form>
+          )}
 
           {/* Demo accounts */}
           <div className="mt-8">

@@ -74,13 +74,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._fallback_requests: Dict[str, list] = defaultdict(list)
     
     def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP from request, considering proxies."""
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
+        """Extract client IP. X-Forwarded-For / X-Real-IP are honored ONLY when
+        trust_proxy_headers is set — otherwise they're spoofable and a client
+        could rotate them to evade per-IP rate limiting."""
+        if settings.trust_proxy_headers:
+            forwarded = request.headers.get("X-Forwarded-For")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
+            real_ip = request.headers.get("X-Real-IP")
+            if real_ip:
+                return real_ip
         return request.client.host if request.client else "unknown"
     
     async def _check_rate_limit_redis(self, client_ip: str) -> tuple[bool, int, int]:
@@ -157,7 +160,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not allowed:
             request_id = getattr(request.state, 'request_id', 'unknown')
             logger.warning(f"[{request_id}] Rate limit exceeded for IP: {client_ip}")
-            
+
+            try:
+                from app.services.security_events import record_event
+                await record_event("rate_limited", request=request, ip_address=client_ip,
+                                   detail=f"Rate limit exceeded ({self.requests_limit}/{self.window_seconds}s)",
+                                   evidence={"limit": self.requests_limit, "window_s": self.window_seconds})
+            except Exception:
+                pass
+
             return JSONResponse(
                 status_code=429,
                 content={
@@ -264,6 +275,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     EXEMPT_PATHS = {
         "/health", "/docs", "/openapi.json", "/redoc",
         "/api/auth/login", "/api/auth/refresh", "/api/auth/signup",
+        "/api/auth/2fa/verify",  # pre-auth 2FA step (no bearer yet)
         "/api/ai/chat/stream",  # Streaming endpoint
     }
     
@@ -311,6 +323,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         csrf_header = request.headers.get("x-csrf-token")
         
         if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+            try:
+                from app.services.security_events import record_event
+                await record_event("csrf_failed", request=request,
+                                   detail=f"CSRF validation failed on {request.method} {request.url.path}")
+            except Exception:
+                pass
             return JSONResponse(
                 status_code=403,
                 content={
@@ -340,6 +358,12 @@ class SessionInvalidationMiddleware(BaseHTTPMiddleware):
                 if redis_client:
                     is_blacklisted = await redis_client.get(f"blacklisted_token:{token_hash}")
                     if is_blacklisted:
+                        try:
+                            from app.services.security_events import record_event
+                            await record_event("token_blacklisted", request=request,
+                                               detail="Use of a logged-out / revoked token")
+                        except Exception:
+                            pass
                         return JSONResponse(
                             status_code=401,
                             content={

@@ -16,8 +16,15 @@ export interface SignupData {
   seed_sample_data?: boolean;
 }
 
+export interface LoginResult {
+  ok: boolean;
+  requires2fa?: boolean;
+  mfaToken?: string;
+}
+
 interface AuthContextType extends AuthState {
-  login: (credentials: LoginCredentials) => Promise<boolean>;
+  login: (credentials: LoginCredentials) => Promise<LoginResult>;
+  verifyTwoFactor: (mfaToken: string, code: string) => Promise<boolean>;
   signup: (data: SignupData) => Promise<boolean>;
   logout: () => Promise<void>;
   refreshToken: () => Promise<boolean>;
@@ -126,54 +133,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (credentials: LoginCredentials): Promise<boolean> => {
+  // Persist tokens + user from a successful auth response and flip to logged-in.
+  const establishSession = (loginResponse: LoginResponse) => {
+    clearApiCache(); // drop any cache from a previous session before this user's data lands (M2)
+    localStorage.setItem(ACCESS_TOKEN_KEY, loginResponse.access_token);
+    localStorage.setItem(REFRESH_TOKEN_KEY, loginResponse.refresh_token);
+    localStorage.setItem(USER_KEY, JSON.stringify(loginResponse.user));
+    setState({ user: loginResponse.user, isAuthenticated: true, isLoading: false, error: null });
+  };
+
+  const login = async (credentials: LoginCredentials): Promise<LoginResult> => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials)
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setState(prev => ({
-          ...prev,
-          isLoading: false,
-          error: data.detail || 'Login failed'
-        }));
-        return false;
+        setState(prev => ({ ...prev, isLoading: false, error: data.detail || 'Login failed' }));
+        return { ok: false };
       }
 
-      const loginResponse: LoginResponse = data;
+      // Account has 2-step verification: not logged in yet — caller collects a code.
+      if (data.requires_2fa) {
+        setState(prev => ({ ...prev, isLoading: false }));
+        return { ok: false, requires2fa: true, mfaToken: data.mfa_token };
+      }
 
-      // Drop any cache left over from a previous session before this user's data lands (M2)
-      clearApiCache();
-
-      // Store tokens and user
-      localStorage.setItem(ACCESS_TOKEN_KEY, loginResponse.access_token);
-      localStorage.setItem(REFRESH_TOKEN_KEY, loginResponse.refresh_token);
-      localStorage.setItem(USER_KEY, JSON.stringify(loginResponse.user));
-
-      setState({
-        user: loginResponse.user,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null
-      });
-
-      return true;
+      establishSession(data as LoginResponse);
+      return { ok: true };
     } catch (error) {
       console.error('Login error:', error);
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: 'Network error. Please try again.'
-      }));
+      setState(prev => ({ ...prev, isLoading: false, error: 'Network error. Please try again.' }));
+      return { ok: false };
+    }
+  };
+
+  const verifyTwoFactor = async (mfaToken: string, code: string): Promise<boolean> => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    try {
+      const response = await fetch(`${API_URL}/api/auth/2fa/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mfa_token: mfaToken, code }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setState(prev => ({ ...prev, isLoading: false, error: data.detail || 'Invalid code' }));
+        return false;
+      }
+      establishSession(data as LoginResponse);
+      return true;
+    } catch (error) {
+      console.error('2FA verify error:', error);
+      setState(prev => ({ ...prev, isLoading: false, error: 'Network error. Please try again.' }));
       return false;
     }
   };
@@ -272,6 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         ...state,
         login,
+        verifyTwoFactor,
         signup,
         logout,
         refreshToken,

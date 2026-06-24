@@ -40,6 +40,7 @@ class TokenData(BaseModel):
     user_id: int
     email: str
     role: str
+    tenant_id: Optional[int] = None
     permissions: Dict[str, Any] = {}
     exp: datetime
 
@@ -160,19 +161,55 @@ def create_refresh_token(data: dict, remember_me: bool = False) -> str:
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def decode_token(token: str) -> Optional[TokenData]:
-    """Decode and validate JWT token"""
+def decode_token(token: str, expected_type: Optional[str] = "access") -> Optional[TokenData]:
+    """Decode and validate a JWT.
+
+    `expected_type` pins the token's `type` claim (default "access") so a
+    long-lived refresh token can't be replayed as a Bearer access token (token
+    type confusion). Pass `expected_type="refresh"` on the refresh path, or
+    `None` to skip the check.
+    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if expected_type is not None and payload.get("type") != expected_type:
+            logger.warning(
+                f"Rejected token: expected type '{expected_type}', got '{payload.get('type')}'"
+            )
+            return None
         return TokenData(
             user_id=payload.get("user_id"),
             email=payload.get("email"),
             role=payload.get("role"),
+            tenant_id=payload.get("tenant_id"),
             permissions=payload.get("permissions", {}),
             exp=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
         )
     except JWTError as e:
         logger.error(f"JWT decode error: {e}")
+        return None
+
+
+# =============================================================================
+# 2FA LOGIN CHALLENGE — a short-lived token issued after a correct password when
+# the account has 2FA on. It is NOT an access token (distinct `type`), so it can't
+# be used to call the API; /2fa/verify exchanges it + a TOTP code for real tokens.
+# =============================================================================
+
+def create_mfa_challenge(user_id: int) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=5)
+    return jwt.encode(
+        {"user_id": user_id, "type": "mfa_challenge", "exp": expire},
+        SECRET_KEY, algorithm=ALGORITHM,
+    )
+
+
+def decode_mfa_challenge(token: str) -> Optional[int]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "mfa_challenge":
+            return None
+        return payload.get("user_id")
+    except JWTError:
         return None
 
 
@@ -228,7 +265,7 @@ class AuthService:
                 text("""
                     SELECT id, email, password_hash, first_name, last_name, role, status,
                            job_title, department, failed_login_attempts, locked_until,
-                           two_factor_enabled, two_factor_secret
+                           two_factor_enabled, two_factor_secret, tenant_id
                     FROM users WHERE email = :email
                 """),
                 {"email": email.lower()}
@@ -237,6 +274,10 @@ class AuthService:
             
             if not user_row:
                 logger.warning(f"Login attempt for non-existent user: {email}")
+                from app.services.security_events import record_event
+                await record_event("login_failed", actor_email=email, ip_address=ip_address,
+                                    detail=f"Login attempt for unknown account {email}",
+                                    evidence={"reason": "unknown_user"})
                 return None, "Invalid email or password"
             
             user = dict(user_row._mapping)
@@ -271,14 +312,25 @@ class AuthService:
                     {"attempts": new_attempts, "locked_until": locked_until, "id": user['id']}
                 )
                 await session.commit()
-                
+
                 # Log failed attempt
                 await AuthService._log_audit(
-                    session, user['id'], 'login_failed', 
+                    session, user['id'], 'login_failed',
                     f"Failed login attempt ({new_attempts}/{MAX_LOGIN_ATTEMPTS})",
                     ip_address
                 )
-                
+
+                from app.services.security_events import record_event
+                await record_event(
+                    "account_locked" if locked_until else "login_failed",
+                    tenant_id=user.get('tenant_id'), actor_user_id=user['id'],
+                    actor_email=email, ip_address=ip_address,
+                    detail=(f"Account {email} locked after {new_attempts} failed attempts"
+                            if locked_until else
+                            f"Failed login for {email} ({new_attempts}/{MAX_LOGIN_ATTEMPTS})"),
+                    evidence={"attempts": new_attempts, "max": MAX_LOGIN_ATTEMPTS},
+                )
+
                 if locked_until:
                     return None, f"Too many failed attempts. Account locked for {LOCKOUT_DURATION_MINUTES} minutes"
                 return None, "Invalid email or password"
@@ -319,9 +371,11 @@ class AuthService:
                 "status": user['status'],
                 "job_title": user['job_title'],
                 "department": user['department'],
+                "tenant_id": user.get('tenant_id'),
+                "two_factor_enabled": bool(user.get('two_factor_enabled')),
                 "permissions": permissions
             }
-            
+
             return user_data, None
     
     @staticmethod
@@ -438,11 +492,15 @@ class AuthService:
     @staticmethod
     async def create_tokens(user_data: Dict, remember_me: bool = False) -> Token:
         """Create access and refresh tokens for user"""
-        # Keep JWT payload minimal — permissions are looked up from DB on each request
+        # Keep JWT payload minimal — permissions are looked up from DB on each request.
+        # tenant_id IS embedded so the request path can bind the RLS tenant GUC
+        # before the DB session opens (services/database.resolve_request_tenant),
+        # independent of dependency-resolution order.
         token_data = {
             "user_id": user_data["id"],
             "email": user_data["email"],
             "role": user_data["role"],
+            "tenant_id": user_data.get("tenant_id"),
         }
         
         # Access token is always short-lived. remember_me only extends the refresh token.
@@ -465,14 +523,13 @@ class AuthService:
         its remaining lifetime and a new pair is issued (rotation). A replayed
         refresh token is rejected.
         """
-        token_data = decode_token(refresh_token)
+        token_data = decode_token(refresh_token, expected_type="refresh")
         if not token_data:
             return None
 
-        # Verify it's a refresh token
+        # Already validated as a refresh token above; decode again only to read
+        # the remember_me claim used to preserve the rotated token's lifetime.
         payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("type") != "refresh":
-            return None
 
         # Reject already-used (rotated) or logged-out refresh tokens
         if await is_token_blacklisted(refresh_token):
@@ -586,29 +643,129 @@ class AuthService:
             
             await AuthService._log_audit(session, user_id, 'change_password', "Password changed")
             await session.commit()
-            
+
+            from app.services.security_events import record_event
+            await record_event("password_changed", actor_user_id=user_id,
+                               detail="Account password was changed")
+
             return True, "Password changed successfully"
     
+    # =========================================================================
+    # TWO-FACTOR AUTHENTICATION (TOTP)
+    # =========================================================================
+
     @staticmethod
-    async def get_all_users(page: int = 1, limit: int = 50) -> Dict:
-        """Get users (admin only), paginated to bound the result set."""
+    async def start_2fa_setup(user_id: int) -> Dict:
+        """Generate (or replace) a pending TOTP secret and return enrollment data.
+        The secret is stored but two_factor_enabled stays FALSE until confirmed."""
+        from app.services import totp
+        from app.config import get_settings
+        async with async_session() as session:
+            from sqlalchemy import text
+            row = (await session.execute(
+                text("SELECT email FROM users WHERE id = :id"), {"id": user_id})).fetchone()
+            if not row:
+                return {}
+            secret = totp.generate_secret()
+            await session.execute(text("""
+                UPDATE users SET two_factor_secret = :s, two_factor_enabled = FALSE
+                WHERE id = :id
+            """), {"s": secret, "id": user_id})
+            await session.commit()
+            issuer = get_settings().product_name
+            return {
+                "secret": secret,
+                "otpauth_uri": totp.provisioning_uri(secret, row.email, issuer),
+                "issuer": issuer,
+                "account": row.email,
+            }
+
+    @staticmethod
+    async def _get_2fa_secret(session, user_id: int):
+        from sqlalchemy import text
+        row = (await session.execute(text(
+            "SELECT two_factor_secret, two_factor_enabled FROM users WHERE id = :id"),
+            {"id": user_id})).fetchone()
+        return row
+
+    @staticmethod
+    async def confirm_2fa(user_id: int, code: str) -> tuple[bool, str]:
+        """Verify the first code against the pending secret and turn 2FA on."""
+        from app.services import totp
+        async with async_session() as session:
+            from sqlalchemy import text
+            row = await AuthService._get_2fa_secret(session, user_id)
+            if not row or not row.two_factor_secret:
+                return False, "Start 2FA setup first"
+            if not totp.verify(row.two_factor_secret, code):
+                return False, "Invalid code — check your authenticator app"
+            await session.execute(text(
+                "UPDATE users SET two_factor_enabled = TRUE WHERE id = :id"), {"id": user_id})
+            await session.commit()
+            return True, "Two-factor authentication enabled"
+
+    @staticmethod
+    async def disable_2fa(user_id: int, code: str) -> tuple[bool, str]:
+        """Disable 2FA after verifying a current code (so a hijacked session can't)."""
+        from app.services import totp
+        async with async_session() as session:
+            from sqlalchemy import text
+            row = await AuthService._get_2fa_secret(session, user_id)
+            if not row or not row.two_factor_enabled:
+                return False, "2FA is not enabled"
+            if not totp.verify(row.two_factor_secret or "", code):
+                return False, "Invalid code"
+            await session.execute(text(
+                "UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL WHERE id = :id"),
+                {"id": user_id})
+            await session.commit()
+            return True, "Two-factor authentication disabled"
+
+    @staticmethod
+    async def verify_2fa(user_id: int, code: str) -> bool:
+        """Verify a login-time code against the user's enabled secret."""
+        from app.services import totp
+        async with async_session() as session:
+            row = await AuthService._get_2fa_secret(session, user_id)
+            if not row or not row.two_factor_enabled or not row.two_factor_secret:
+                return False
+            return totp.verify(row.two_factor_secret, code)
+
+    @staticmethod
+    async def get_all_users(page: int = 1, limit: int = 50, tenant_id: Optional[int] = None) -> Dict:
+        """List users for ONE tenant (admin only), paginated to bound the result set.
+
+        Scoped to `tenant_id` so a per-tenant super_admin (every self-signup owner
+        is one) can never enumerate another tenant's users. A platform-wide
+        operator view must use a separate privileged role — not this endpoint.
+        Callers must pass tenant_id; `None` would list across tenants and is only
+        for trusted internal/platform use.
+        """
         page = max(1, page)
         limit = max(1, min(limit, 200))
         offset = (page - 1) * limit
+        where = "" if tenant_id is None else "WHERE tenant_id = :tenant_id"
         async with async_session() as session:
             from sqlalchemy import text
+            params: Dict[str, Any] = {"limit": limit, "offset": offset}
+            if tenant_id is not None:
+                params["tenant_id"] = tenant_id
             result = await session.execute(
-                text("""
+                text(f"""
                     SELECT id, email, first_name, last_name, role, status,
                            job_title, department, last_login_at, created_at
                     FROM users
+                    {where}
                     ORDER BY created_at DESC
                     LIMIT :limit OFFSET :offset
                 """),
-                {"limit": limit, "offset": offset},
+                params,
             )
             users = [dict(row._mapping) for row in result.fetchall()]
-            total = (await session.execute(text("SELECT COUNT(*) FROM users"))).scalar() or 0
+            total = (await session.execute(
+                text(f"SELECT COUNT(*) FROM users {where}"),
+                {"tenant_id": tenant_id} if tenant_id is not None else {},
+            )).scalar() or 0
             return {
                 "users": users,
                 "total": total,
