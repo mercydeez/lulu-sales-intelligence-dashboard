@@ -165,13 +165,23 @@ class MessageResponse(BaseModel):
     success: bool = True
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
 class TwoFactorCodeRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=8)
 
 
 class TwoFactorVerifyRequest(BaseModel):
     mfa_token: str
-    code: str = Field(..., min_length=6, max_length=8)
+    # 6-digit TOTP OR a backup/recovery code like 'a1b2-c3d4'.
+    code: str = Field(..., min_length=6, max_length=16)
 
 
 # =============================================================================
@@ -399,6 +409,51 @@ async def change_password(
 
 
 # =============================================================================
+# PASSWORD RESET (email token)
+# =============================================================================
+
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(body: ForgotPasswordRequest, request: Request):
+    """Email a single-use reset link. Always returns the same message — never
+    reveals whether an account exists (prevents user enumeration)."""
+    from app.services.auth_service import create_password_reset_token
+    user_id = await AuthService.get_user_id_by_email(body.email)
+    if user_id:
+        token = create_password_reset_token(user_id)
+        frontend = (get_settings().cors_origins.split(",")[0] or "http://localhost:3000").strip()
+        link = f"{frontend}/reset-password?token={token}"
+        from app.services.security_notify import send_email
+        await send_email(
+            body.email, f"Reset your {get_settings().product_name} password",
+            f"We received a request to reset your password.\n\n"
+            f"Reset link (valid 30 minutes): {link}\n\n"
+            f"If you didn't request this, you can ignore this email — your password is unchanged.",
+        )
+        from app.services.security_events import record_event
+        await record_event("password_reset_requested", severity="low", category="audit",
+                           request=request, actor_user_id=user_id, actor_email=body.email,
+                           detail=f"Password reset requested for {body.email}")
+        logger.info(f"Password reset requested: {body.email}")
+    return MessageResponse(message="If that account exists, a reset link has been sent.")
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(body: ResetPasswordRequest, request: Request):
+    """Validate the reset token and set a new password."""
+    from app.services.auth_service import decode_password_reset_token
+    user_id = decode_password_reset_token(body.token)
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link")
+    ok, msg = await AuthService.reset_password(user_id, body.new_password)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    from app.services.security_events import record_event
+    await record_event("password_changed", severity="medium", category="audit", request=request,
+                       actor_user_id=user_id, detail="Password changed via reset link")
+    return MessageResponse(message=msg)
+
+
+# =============================================================================
 # TWO-FACTOR AUTHENTICATION (TOTP / "2-step verification")
 # =============================================================================
 
@@ -412,11 +467,12 @@ async def setup_2fa(user: dict = Depends(get_current_user)):
     return data
 
 
-@router.post("/2fa/enable", response_model=MessageResponse)
+@router.post("/2fa/enable")
 async def enable_2fa(body: TwoFactorCodeRequest, request: Request,
                      user: dict = Depends(get_current_user)):
-    """Confirm enrollment by verifying the first code, then turn 2FA on."""
-    ok, msg = await AuthService.confirm_2fa(user['id'], body.code)
+    """Confirm enrollment by verifying the first code, then turn 2FA on. Returns
+    one-time backup codes (shown ONCE — the user must save them)."""
+    ok, msg, backup_codes = await AuthService.confirm_2fa(user['id'], body.code)
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
     from app.services.security_events import record_event
@@ -424,7 +480,7 @@ async def enable_2fa(body: TwoFactorCodeRequest, request: Request,
                        tenant_id=user.get('tenant_id'), actor_user_id=user['id'],
                        actor_email=user.get('email'),
                        detail=f"2-step verification enabled for {user.get('email')}")
-    return MessageResponse(message=msg)
+    return {"success": True, "message": msg, "backup_codes": backup_codes}
 
 
 @router.post("/2fa/disable", response_model=MessageResponse)

@@ -156,3 +156,48 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  # =========================================================================
+  # Security — dependency + image vulnerability scanning (supply chain, A06)
+  # =========================================================================
+  security-scan:
+    name: Dependency & Image Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Python dependency audit (pip-audit)
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt || echo "::warning::pip-audit found advisories — review above"
+
+      - name: Node dependency audit (npm)
+        working-directory: ./frontend
+        run: npm audit --omit=dev || echo "::warning::npm audit found advisories — review above"
+
+      - name: Build backend image for scanning
+        run: docker build -t scan/backend:ci ./backend
+
+      - name: Trivy image scan (backend)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: scan/backend:ci
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: "0"   # report-only initially; flip to "1" to gate merges
+          ignore-unfixed: true
+
+      - name: Trivy filesystem scan (IaC + manifests)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+          ignore-unfixed: true

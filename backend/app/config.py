@@ -66,6 +66,13 @@ class Settings(BaseSettings):
     # Request Body Size Limit (MB)
     max_body_size_mb: int = 10
 
+    # Session revocation posture. When Redis (the JWT blacklist store) is
+    # unreachable, the token blacklist can't be consulted. Secure default is
+    # FAIL-CLOSED: reject the request so a logged-out / rotated token can never be
+    # honored during an outage. Set AUTH_FAIL_OPEN_ON_REDIS_DOWN=true ONLY if you
+    # consciously prefer availability over revocation guarantees.
+    auth_fail_open_on_redis_down: bool = False
+
     # Reverse-proxy trust. X-Forwarded-For / X-Real-IP are client-spoofable
     # unless a trusted proxy overwrites them. OFF by default so an attacker can't
     # forge their source IP to evade per-IP rate limiting or poison audit-log IPs.

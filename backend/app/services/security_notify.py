@@ -47,6 +47,36 @@ def _send_email_sync(subject: str, body: str) -> None:
     logger.info(f"🛡️📧 Security alert emailed to {s.security_alert_email_to}: {subject}")
 
 
+def _send_to_sync(to: str, subject: str, body: str) -> None:
+    """Send an email to a SPECIFIC recipient (e.g. password reset). No-op + log
+    when SMTP isn't configured, so the flow works end-to-end without a mail server."""
+    s = get_settings()
+    if not s.smtp_host:
+        logger.info(f"📧 [email skipped — SMTP not configured] to={to} :: {subject}\n{body}")
+        return
+    sender = s.security_alert_email_from or s.smtp_user or "no-reply@retaildemo.app"
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = sender
+    msg["To"] = to
+    msg.set_content(body)
+    with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=10) as server:
+        if s.smtp_use_tls:
+            server.starttls()
+        if s.smtp_user and s.smtp_password:
+            server.login(s.smtp_user, s.smtp_password)
+        server.send_message(msg)
+    logger.info(f"📧 Email sent to {to}: {subject}")
+
+
+async def send_email(to: str, subject: str, body: str) -> None:
+    """Async wrapper — runs the blocking SMTP send off the event loop. Never raises."""
+    try:
+        await asyncio.to_thread(_send_to_sync, to, subject, body)
+    except Exception as e:
+        logger.warning(f"send_email failed for {to}: {e}")
+
+
 async def _post_webhook(text: str) -> None:
     s = get_settings()
     if not s.security_alert_webhook_url:

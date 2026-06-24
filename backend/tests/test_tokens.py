@@ -108,11 +108,13 @@ class TestBlacklist:
             assert await is_token_blacklisted(token) is True
 
     @pytest.mark.asyncio
-    async def test_fails_open_when_redis_down(self):
+    async def test_fails_closed_when_redis_down(self):
+        # Secure default: if the blacklist can't be consulted, treat the token as
+        # revoked (return True) so a logged-out / rotated token isn't honored.
         broken = AsyncMock()
         broken.get = AsyncMock(side_effect=ConnectionError("redis down"))
         with patch("app.services.redis_client.redis_client", broken):
-            assert await is_token_blacklisted("any-token") is False
+            assert await is_token_blacklisted("any-token") is True
 
 
 # =============================================================================

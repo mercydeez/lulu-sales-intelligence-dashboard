@@ -276,6 +276,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         "/health", "/docs", "/openapi.json", "/redoc",
         "/api/auth/login", "/api/auth/refresh", "/api/auth/signup",
         "/api/auth/2fa/verify",  # pre-auth 2FA step (no bearer yet)
+        "/api/auth/forgot-password", "/api/auth/reset-password",  # pre-auth
         "/api/ai/chat/stream",  # Streaming endpoint
     }
     
@@ -352,26 +353,38 @@ class SessionInvalidationMiddleware(BaseHTTPMiddleware):
         if auth_header.startswith("Bearer "):
             token = auth_header.split(" ", 1)[1]
             token_hash = hashlib.sha256(token.encode()).hexdigest()
-            
+
+            revoked = False
+            reason = "logged-out / revoked token"
             try:
                 from app.services.redis_client import redis_client
-                if redis_client:
-                    is_blacklisted = await redis_client.get(f"blacklisted_token:{token_hash}")
-                    if is_blacklisted:
-                        try:
-                            from app.services.security_events import record_event
-                            await record_event("token_blacklisted", request=request,
-                                               detail="Use of a logged-out / revoked token")
-                        except Exception:
-                            pass
-                        return JSONResponse(
-                            status_code=401,
-                            content={
-                                "error": "Token Invalidated",
-                                "message": "This session has been logged out. Please login again."
-                            }
-                        )
-            except Exception:
-                pass  # If Redis is down, allow the request through (fail-open)
-        
+                if not redis_client:
+                    raise RuntimeError("redis_client unavailable")
+                revoked = bool(await redis_client.get(f"blacklisted_token:{token_hash}"))
+            except Exception as e:
+                # Can't consult the blacklist. Fail CLOSED by default so a revoked
+                # token isn't silently honored during a Redis outage.
+                if settings.auth_fail_open_on_redis_down:
+                    revoked = False
+                    logger.warning(f"Blacklist check failed ({e}); allowing (fail-open)")
+                else:
+                    revoked = True
+                    reason = "session store unavailable (fail-closed)"
+                    logger.error(f"Blacklist check failed ({e}); REJECTING (fail-closed)")
+
+            if revoked:
+                try:
+                    from app.services.security_events import record_event
+                    await record_event("token_blacklisted", request=request,
+                                       detail=f"Rejected request — {reason}")
+                except Exception:
+                    pass
+                return JSONResponse(
+                    status_code=401,
+                    content={
+                        "error": "Token Invalidated",
+                        "message": "This session is no longer valid. Please login again."
+                    }
+                )
+
         return await call_next(request)

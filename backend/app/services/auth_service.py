@@ -213,6 +213,26 @@ def decode_mfa_challenge(token: str) -> Optional[int]:
         return None
 
 
+def create_password_reset_token(user_id: int) -> str:
+    """Short-lived (30 min) single-purpose reset token. Distinct `type` so it can't
+    be used as an access token; bound to the user."""
+    expire = datetime.now(timezone.utc) + timedelta(minutes=30)
+    return jwt.encode(
+        {"user_id": user_id, "type": "pwd_reset", "exp": expire, "jti": secrets.token_hex(8)},
+        SECRET_KEY, algorithm=ALGORITHM,
+    )
+
+
+def decode_password_reset_token(token: str) -> Optional[int]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "pwd_reset":
+            return None
+        return payload.get("user_id")
+    except JWTError:
+        return None
+
+
 # =============================================================================
 # TOKEN BLACKLIST (Redis-backed; fails open when Redis is down,
 # consistent with SessionInvalidationMiddleware)
@@ -236,14 +256,25 @@ async def blacklist_token(token: str, ttl_seconds: int) -> None:
 
 
 async def is_token_blacklisted(token: str) -> bool:
-    """Check the Redis blacklist. Returns False when Redis is unavailable (fail-open)."""
+    """Check the Redis JWT blacklist.
+
+    Fails CLOSED by default (returns True => treat as revoked) when Redis is
+    unreachable, so a logged-out / rotated token can't be honored during an
+    outage. Operators can opt into fail-open via AUTH_FAIL_OPEN_ON_REDIS_DOWN.
+    """
     try:
         from app.services.redis_client import redis_client
         if redis_client:
             return bool(await redis_client.get(f"blacklisted_token:{_token_hash(token)}"))
+        # Redis not initialized — can't verify revocation.
+        raise RuntimeError("redis_client unavailable")
     except Exception as e:
-        logger.warning(f"Failed to check token blacklist in Redis: {e}")
-    return False
+        fail_open = get_settings().auth_fail_open_on_redis_down
+        logger.warning(
+            f"Token blacklist check failed ({e}); "
+            f"{'allowing (fail-open)' if fail_open else 'REJECTING (fail-closed)'}"
+        )
+        return not fail_open
 
 
 # =============================================================================
@@ -650,6 +681,34 @@ class AuthService:
 
             return True, "Password changed successfully"
     
+    @staticmethod
+    async def get_user_id_by_email(email: str) -> Optional[int]:
+        async with async_session() as session:
+            from sqlalchemy import text
+            row = (await session.execute(
+                text("SELECT id FROM users WHERE email = :e AND status = 'active'"),
+                {"e": email.lower()})).fetchone()
+            return row.id if row else None
+
+    @staticmethod
+    async def reset_password(user_id: int, new_password: str) -> tuple[bool, str]:
+        """Set a new password WITHOUT the current one (post reset-token validation)."""
+        is_valid, message = validate_password_strength(new_password)
+        if not is_valid:
+            return False, message
+        async with async_session() as session:
+            from sqlalchemy import text
+            res = await session.execute(text("""
+                UPDATE users SET password_hash = :h, password_changed_at = :now,
+                    must_change_password = FALSE, failed_login_attempts = 0, locked_until = NULL
+                WHERE id = :id
+            """), {"h": get_password_hash(new_password), "now": datetime.now(timezone.utc), "id": user_id})
+            if (res.rowcount or 0) == 0:
+                return False, "User not found"
+            await AuthService._log_audit(session, user_id, 'password_reset', "Password reset via email token")
+            await session.commit()
+            return True, "Password has been reset"
+
     # =========================================================================
     # TWO-FACTOR AUTHENTICATION (TOTP)
     # =========================================================================
@@ -689,20 +748,26 @@ class AuthService:
         return row
 
     @staticmethod
-    async def confirm_2fa(user_id: int, code: str) -> tuple[bool, str]:
-        """Verify the first code against the pending secret and turn 2FA on."""
+    async def confirm_2fa(user_id: int, code: str) -> tuple[bool, str, list]:
+        """Verify the first code against the pending secret, enable 2FA, and mint
+        one-time backup/recovery codes (returned ONCE for the user to save)."""
+        import json as _json
         from app.services import totp
         async with async_session() as session:
             from sqlalchemy import text
             row = await AuthService._get_2fa_secret(session, user_id)
             if not row or not row.two_factor_secret:
-                return False, "Start 2FA setup first"
+                return False, "Start 2FA setup first", []
             if not totp.verify(row.two_factor_secret, code):
-                return False, "Invalid code — check your authenticator app"
+                return False, "Invalid code — check your authenticator app", []
+            codes = totp.generate_backup_codes()
+            hashes = [totp.hash_backup_code(c) for c in codes]
             await session.execute(text(
-                "UPDATE users SET two_factor_enabled = TRUE WHERE id = :id"), {"id": user_id})
+                "UPDATE users SET two_factor_enabled = TRUE, "
+                "two_factor_backup_codes = CAST(:codes AS jsonb) WHERE id = :id"),
+                {"codes": _json.dumps(hashes), "id": user_id})
             await session.commit()
-            return True, "Two-factor authentication enabled"
+            return True, "Two-factor authentication enabled", codes
 
     @staticmethod
     async def disable_2fa(user_id: int, code: str) -> tuple[bool, str]:
@@ -716,20 +781,40 @@ class AuthService:
             if not totp.verify(row.two_factor_secret or "", code):
                 return False, "Invalid code"
             await session.execute(text(
-                "UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL WHERE id = :id"),
+                "UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL, "
+                "two_factor_backup_codes = '[]'::jsonb WHERE id = :id"),
                 {"id": user_id})
             await session.commit()
             return True, "Two-factor authentication disabled"
 
     @staticmethod
     async def verify_2fa(user_id: int, code: str) -> bool:
-        """Verify a login-time code against the user's enabled secret."""
+        """Verify a login-time code: TOTP first, then a one-time backup code
+        (consumed on use)."""
+        import json as _json
+        from sqlalchemy import text
         from app.services import totp
         async with async_session() as session:
-            row = await AuthService._get_2fa_secret(session, user_id)
+            row = (await session.execute(text(
+                "SELECT two_factor_secret, two_factor_enabled, two_factor_backup_codes "
+                "FROM users WHERE id = :id"), {"id": user_id})).fetchone()
             if not row or not row.two_factor_enabled or not row.two_factor_secret:
                 return False
-            return totp.verify(row.two_factor_secret, code)
+            if totp.verify(row.two_factor_secret, code):
+                return True
+            # One-time backup code: consume it on a match.
+            stored = row.two_factor_backup_codes or []
+            if isinstance(stored, str):
+                stored = _json.loads(stored)
+            h = totp.hash_backup_code(code)
+            if h in stored:
+                remaining = [c for c in stored if c != h]
+                await session.execute(text(
+                    "UPDATE users SET two_factor_backup_codes = CAST(:c AS jsonb) WHERE id = :id"),
+                    {"c": _json.dumps(remaining), "id": user_id})
+                await session.commit()
+                return True
+            return False
 
     @staticmethod
     async def get_all_users(page: int = 1, limit: int = 50, tenant_id: Optional[int] = None) -> Dict:

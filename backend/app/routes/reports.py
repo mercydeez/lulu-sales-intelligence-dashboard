@@ -214,20 +214,22 @@ async def get_inventory_report(
 ):
     """Get inventory status report"""
     accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
-    
+    tenant_id = current_user.get("tenant_id") or 1
+
     cache_key = generate_cache_key("reports_inventory", store_id=store_id, stores=accessible_stores)
     cached = await get_cached(cache_key)
     if cached:
         return cached
-    
+
     async with async_session() as session:
         try:
-            store_filter = ""
+            # Owner session (no RLS) — explicit tenant filter is the isolation control.
+            store_filter = f"AND s.tenant_id = {int(tenant_id)}"
             if store_id and store_id in accessible_stores:
-                store_filter = f"AND s.store_id = {store_id}"
+                store_filter += f" AND s.store_id = {int(store_id)}"
             elif accessible_stores:
-                store_list = ','.join(map(str, accessible_stores))
-                store_filter = f"AND s.store_id IN ({store_list})"
+                store_list = ','.join(str(int(x)) for x in accessible_stores)
+                store_filter += f" AND s.store_id IN ({store_list})"
             
             # Get inventory by category
             query = await session.execute(text(f"""
@@ -282,18 +284,20 @@ async def get_performance_report(
 ):
     """Get store performance comparison report"""
     accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
-    
+    tenant_id = current_user.get("tenant_id") or 1
+
     cache_key = generate_cache_key("reports_performance", days=days, stores=accessible_stores)
     cached = await get_cached(cache_key)
     if cached:
         return cached
-    
+
     async with async_session() as session:
         try:
-            store_filter = ""
+            # Owner session (no RLS) — explicit tenant filter is the isolation control.
+            store_filter = f"AND s.tenant_id = {int(tenant_id)}"
             if accessible_stores:
-                store_list = ','.join(map(str, accessible_stores))
-                store_filter = f"AND s.store_id IN ({store_list})"
+                store_list = ','.join(str(int(x)) for x in accessible_stores)
+                store_filter += f" AND s.store_id IN ({store_list})"
             
             query = await session.execute(text(f"""
                 WITH current_period AS (

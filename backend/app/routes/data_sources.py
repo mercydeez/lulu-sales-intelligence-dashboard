@@ -32,8 +32,8 @@ class CreateSource(BaseModel):
 
 
 @router.get("")
-async def list_data_sources(_user: dict = Depends(require_role("super_admin"))):
-    return {"sources": await ds.list_sources()}
+async def list_data_sources(user: dict = Depends(require_role("super_admin"))):
+    return {"sources": await ds.list_sources(tenant_id=user.get("tenant_id") or 1)}
 
 
 @router.post("/test")
@@ -55,6 +55,7 @@ async def create_data_source(body: CreateSource, user: dict = Depends(require_ro
         connection=body.connection,
         mapping=body.mapping,
         user_id=user.get("id") or user.get("user_id"),
+        tenant_id=user.get("tenant_id") or 1,
     )
     logger.info("Data source created: id=%s type=%s by user=%s", source["id"], body.type, user.get("email"))
     return source

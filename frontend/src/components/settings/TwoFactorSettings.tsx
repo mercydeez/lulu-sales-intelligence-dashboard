@@ -19,6 +19,7 @@ export default function TwoFactorSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
 
   const startSetup = async () => {
     setError(''); setBusy(true);
@@ -42,6 +43,7 @@ export default function TwoFactorSettings() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Invalid code');
       setEnabled(true); setStage('idle'); setCode(''); setSecret('');
+      setBackupCodes(Array.isArray(data.backup_codes) ? data.backup_codes : []);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not enable');
     } finally { setBusy(false); }
@@ -86,6 +88,23 @@ export default function TwoFactorSettings() {
       </p>
 
       {error && <div className="mb-3 text-sm text-rose-700 bg-rose-50 rounded-lg px-3 py-2">{error}</div>}
+
+      {backupCodes.length > 0 && (
+        <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 p-4">
+          <p className="text-sm font-semibold text-amber-800 mb-1">Save your recovery codes</p>
+          <p className="text-xs text-amber-700 mb-3">
+            Each works once if you lose your authenticator. Store them somewhere safe — they won&apos;t be shown again.
+          </p>
+          <div className="grid grid-cols-2 gap-2 font-mono text-sm">
+            {backupCodes.map((c) => (
+              <code key={c} className="px-2 py-1 rounded bg-white border border-amber-200 text-ink">{c}</code>
+            ))}
+          </div>
+          <button onClick={() => setBackupCodes([])} className="mt-3 text-xs font-medium text-amber-800 underline">
+            I&apos;ve saved them
+          </button>
+        </div>
+      )}
 
       {stage === 'idle' && !enabled && (
         <Button variant="primary" size="sm" onClick={startSetup} disabled={busy}>

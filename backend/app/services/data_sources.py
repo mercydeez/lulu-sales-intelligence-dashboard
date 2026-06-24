@@ -121,27 +121,28 @@ def _row_public(row) -> dict:
     }
 
 
-async def list_sources() -> list[dict]:
+async def list_sources(tenant_id: int = 1) -> list[dict]:
     async with async_session() as s:
         rows = (await s.execute(text(
             "SELECT id, name, type, mapping, is_active, status, last_tested_at, "
-            "last_error, connection_enc, created_at FROM data_sources ORDER BY id"
-        ))).fetchall()
+            "last_error, connection_enc, created_at FROM data_sources "
+            "WHERE tenant_id = :tid ORDER BY id"
+        ), {"tid": tenant_id})).fetchall()
     return [_row_public(r) for r in rows]
 
 
 async def create_source(name: str, source_type: str, connection: Optional[str],
-                        mapping: dict, user_id: Optional[int]) -> dict:
+                        mapping: dict, user_id: Optional[int], tenant_id: int = 1) -> dict:
     enc = encrypt(connection) if connection else None
     async with async_session() as s:
         row = (await s.execute(text(
-            "INSERT INTO data_sources (name, type, connection_enc, mapping, created_by) "
-            "VALUES (:name, :type, :enc, CAST(:mapping AS jsonb), :uid) "
+            "INSERT INTO data_sources (name, type, connection_enc, mapping, created_by, tenant_id) "
+            "VALUES (:name, :type, :enc, CAST(:mapping AS jsonb), :uid, :tid) "
             "RETURNING id, name, type, mapping, is_active, status, last_tested_at, "
             "last_error, connection_enc, created_at"
         ), {
             "name": name, "type": source_type, "enc": enc,
-            "mapping": _json(mapping), "uid": user_id,
+            "mapping": _json(mapping), "uid": user_id, "tid": tenant_id,
         })).fetchone()
         await s.commit()
     return _row_public(row)

@@ -49,6 +49,19 @@ def verify(secret: str, code: str, window: int = 1) -> bool:
     return False
 
 
+def generate_backup_codes(n: int = 8) -> list[str]:
+    """n human-friendly one-time recovery codes, e.g. 'a1b2-c3d4'."""
+    out = []
+    for _ in range(n):
+        raw = secrets.token_hex(4)  # 8 hex chars
+        out.append(f"{raw[:4]}-{raw[4:]}")
+    return out
+
+
+def hash_backup_code(code: str) -> str:
+    return hashlib.sha256(code.strip().replace(" ", "").lower().encode()).hexdigest()
+
+
 def provisioning_uri(secret: str, account: str, issuer: str = "Retail IQ") -> str:
     """otpauth:// URI for QR enrollment in an authenticator app."""
     label = quote(f"{issuer}:{account}")

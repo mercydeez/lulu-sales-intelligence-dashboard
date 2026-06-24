@@ -57,6 +57,20 @@ export default function LoginPage() {
     if (ok) router.push('/');
   };
 
+  const [forgotMsg, setForgotMsg] = useState('');
+  const handleForgot = async () => {
+    setForgotMsg(''); setLocalError('');
+    if (!email) { setLocalError('Enter your email above, then click “Forgot password?”'); return; }
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      await fetch(`${API_URL}/api/auth/forgot-password`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+    } catch { /* ignore — generic message either way */ }
+    setForgotMsg('If that account exists, a password reset link has been sent.');
+  };
+
   const fillDemo = (demoEmail: string) => {
     setEmail(demoEmail);
     setPassword('Demo@2026!');
@@ -140,6 +154,12 @@ export default function LoginPage() {
             <div className="mb-6 p-4 rounded-2xl bg-coral-50 border border-coral-200 flex items-start gap-3 animate-fade-in">
               <AlertCircle className="w-5 h-5 text-coral-600 flex-shrink-0 mt-0.5" />
               <p className="text-coral-700 text-sm">{displayError}</p>
+            </div>
+          )}
+          {forgotMsg && (
+            <div className="mb-6 p-4 rounded-2xl bg-teal-50 border border-teal-200 flex items-start gap-3 animate-fade-in">
+              <ShieldCheck className="w-5 h-5 text-teal-600 flex-shrink-0 mt-0.5" />
+              <p className="text-teal-700 text-sm">{forgotMsg}</p>
             </div>
           )}
 
@@ -252,7 +272,7 @@ export default function LoginPage() {
                 />
                 <span className="ml-2 text-sm text-ink-soft">Remember me</span>
               </label>
-              <button type="button" className="text-sm font-medium text-violet-600 hover:text-coral-500 transition-colors">
+              <button type="button" onClick={handleForgot} className="text-sm font-medium text-violet-600 hover:text-coral-500 transition-colors">
                 Forgot password?
               </button>
             </div>

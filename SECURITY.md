@@ -75,8 +75,10 @@ are marked.
   the `findings` table.
 
 ## Reporting a vulnerability
-This is a prototype. For a production deployment, route reports to a monitored security inbox
-and acknowledge within a defined SLA. (Placeholder — set the contact before go-to-market.)
+Coordinated disclosure: email **security@retaildemo.app** (placeholder — set a real monitored
+inbox before go-to-market). A machine-readable contact is published at
+`/.well-known/security.txt` (RFC 9116). Please don't access data that isn't yours and allow a
+reasonable remediation window before public disclosure. Target acknowledgement SLA: 2 business days.
 
 ## Roadmap before handling real customer data (Track B)
 - ~~Flip `USE_RLS_ROLE`~~ — DONE: RLS is enforced on the request path (see Tenant isolation).
