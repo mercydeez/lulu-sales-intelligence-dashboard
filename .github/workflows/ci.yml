@@ -190,7 +190,7 @@ jobs:
           image-ref: scan/backend:ci
           format: table
           severity: HIGH,CRITICAL
-          exit-code: "0"   # report-only initially; flip to "1" to gate merges
+          exit-code: "1"   # BLOCKING: fail the build on fixable HIGH/CRITICAL CVEs
           ignore-unfixed: true
 
       - name: Trivy filesystem scan (IaC + manifests)
