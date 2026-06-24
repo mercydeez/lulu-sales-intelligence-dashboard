@@ -69,7 +69,7 @@ function ResetForm() {
             type="password" value={val as string}
             onChange={(e) => (set as (s: string) => void)(e.target.value)}
             placeholder={label as string}
-            className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-white border border-coral-100 text-ink shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400"
+            className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-surface border border-coral-100 text-ink shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400"
             disabled={busy}
           />
         </div>
@@ -84,7 +84,7 @@ function ResetForm() {
 export default function ResetPasswordPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface px-4">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8">
+      <div className="w-full max-w-md bg-surface rounded-3xl shadow-xl p-8">
         <p className="text-xs font-medium text-ink-muted mb-6">{PRODUCT_NAME}</p>
         <Suspense fallback={<Loader2 className="w-6 h-6 animate-spin mx-auto" />}>
           <ResetForm />

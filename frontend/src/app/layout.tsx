@@ -4,6 +4,7 @@ import './globals.css';
 import AIProvider from '@/components/AIProvider';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 import { ToastProvider } from '@/components/ui/Toast';
 import ClientLayout from '@/components/ClientLayout';
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
@@ -51,7 +52,7 @@ export default function RootLayout({
             runtime by LanguageContext. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var l=localStorage.getItem('lang');if(l==='ar'){document.documentElement.lang='ar';document.documentElement.dir='rtl';}}catch(e){}})();`,
+            __html: `(function(){try{var l=localStorage.getItem('lang');if(l==='ar'){document.documentElement.lang='ar';document.documentElement.dir='rtl';}var t=localStorage.getItem('theme');if(t==='dark'){document.documentElement.classList.remove('light');document.documentElement.classList.add('dark');}}catch(e){}})();`,
           }}
         />
       </head>
@@ -59,6 +60,7 @@ export default function RootLayout({
         <ServiceWorkerRegister />
         <div className="min-h-screen">
           <LanguageProvider>
+            <ThemeProvider>
             <AuthProvider>
               <ToastProvider>
                 <AIProvider>
@@ -68,6 +70,7 @@ export default function RootLayout({
                 </AIProvider>
               </ToastProvider>
             </AuthProvider>
+            </ThemeProvider>
           </LanguageProvider>
         </div>
       </body>

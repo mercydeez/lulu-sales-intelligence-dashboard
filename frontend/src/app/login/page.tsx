@@ -91,7 +91,7 @@ export default function LoginPage() {
 
         {/* Brand */}
         <div className="relative z-10 flex items-center gap-3">
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm ring-1 ring-white/30">
+          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-surface/20 backdrop-blur-sm ring-1 ring-white/30">
             <ShoppingBag className="w-6 h-6" />
           </div>
           <span className="text-xl font-bold tracking-tight">{PRODUCT_NAME}</span>
@@ -99,7 +99,7 @@ export default function LoginPage() {
 
         {/* Hero copy */}
         <div className="relative z-10 max-w-md">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur-sm ring-1 ring-white/25 mb-5">
+          <div className="inline-flex items-center gap-2 rounded-full bg-surface/15 px-3 py-1 text-xs font-medium backdrop-blur-sm ring-1 ring-white/25 mb-5">
             <Sparkles className="w-3.5 h-3.5" /> Real-time retail analytics
           </div>
           <h1 className="text-4xl font-bold leading-tight mb-4">
@@ -118,7 +118,7 @@ export default function LoginPage() {
               { icon: ShieldCheck, text: 'Role-based access scoped to your stores' },
             ].map(({ icon: Icon, text }) => (
               <div key={text} className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/15 backdrop-blur-sm ring-1 ring-white/25">
+                <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-surface/15 backdrop-blur-sm ring-1 ring-white/25">
                   <Icon className="w-4 h-4" />
                 </div>
                 <span className="text-white/90 text-sm">{text}</span>
@@ -185,7 +185,7 @@ export default function LoginPage() {
                     autoFocus
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/[^0-9 ]/g, '').slice(0, 7))}
-                    className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-white border border-coral-100 text-ink tracking-[0.4em] text-lg placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
+                    className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-surface border border-coral-100 text-ink tracking-[0.4em] text-lg placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
                     placeholder="123456"
                     autoComplete="one-time-code"
                     disabled={isLoading}
@@ -223,7 +223,7 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-white border border-coral-100 text-ink placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
+                  className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-surface border border-coral-100 text-ink placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
                   placeholder="your.email@retaildemo.app"
                   autoComplete="email"
                   disabled={isLoading}
@@ -245,7 +245,7 @@ export default function LoginPage() {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-12 py-3.5 rounded-2xl bg-white border border-coral-100 text-ink placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
+                  className="w-full pl-12 pr-12 py-3.5 rounded-2xl bg-surface border border-coral-100 text-ink placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
                   placeholder="••••••••"
                   autoComplete="current-password"
                   disabled={isLoading}
@@ -310,7 +310,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={() => fillDemo(acc.email)}
                   disabled={isLoading}
-                  className="card-pop rounded-2xl border border-coral-100 bg-white p-3 text-left hover:border-coral-300 disabled:opacity-60"
+                  className="card-pop rounded-2xl border border-coral-100 bg-surface p-3 text-left hover:border-coral-300 disabled:opacity-60"
                 >
                   <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${acc.accent} mb-2`} />
                   <p className="text-xs font-semibold text-ink leading-tight">{acc.label}</p>

@@ -33,7 +33,7 @@ export default function HomeHero() {
           <div>
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Meridian Hypermarket UAE</h1>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 backdrop-blur-sm ring-1 ring-white/30">
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-surface/20 backdrop-blur-sm ring-1 ring-white/30">
                 {ROLE_DISPLAY_NAMES[user?.role as UserRole] || user?.role}
               </span>
             </div>
@@ -43,16 +43,16 @@ export default function HomeHero() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="rounded-2xl px-4 py-2 flex items-center gap-2 bg-white/15 backdrop-blur-sm ring-1 ring-white/25">
+            <div className="rounded-2xl px-4 py-2 flex items-center gap-2 bg-surface/15 backdrop-blur-sm ring-1 ring-white/25">
               <Store className="w-4 h-4" />
               <span className="text-sm font-medium">
                 {storeCount} {storeCount === 1 ? 'Store' : 'Stores'}
               </span>
             </div>
-            <div className="rounded-2xl px-4 py-2 flex items-center gap-2 bg-white/15 backdrop-blur-sm ring-1 ring-white/25">
+            <div className="rounded-2xl px-4 py-2 flex items-center gap-2 bg-surface/15 backdrop-blur-sm ring-1 ring-white/25">
               <span className="relative flex h-3 w-3">
-                <span className="absolute inline-flex h-3 w-3 rounded-full bg-white/80 animate-ping" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-white" />
+                <span className="absolute inline-flex h-3 w-3 rounded-full bg-surface/80 animate-ping" />
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-surface" />
               </span>
               <span className="text-sm font-semibold">LIVE</span>
             </div>

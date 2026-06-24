@@ -58,14 +58,14 @@ export default function SignupPage() {
         <div className="blob w-80 h-80 bg-teal-300/40 bottom-10 -right-10 animate-blob" style={{ animationDelay: '3s' }} />
 
         <div className="relative z-10 flex items-center gap-3">
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm ring-1 ring-white/30">
+          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-surface/20 backdrop-blur-sm ring-1 ring-white/30">
             <ShoppingBag className="w-6 h-6" />
           </div>
           <span className="text-xl font-bold tracking-tight">{PRODUCT_NAME}</span>
         </div>
 
         <div className="relative z-10 max-w-md">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur-sm ring-1 ring-white/25 mb-5">
+          <div className="inline-flex items-center gap-2 rounded-full bg-surface/15 px-3 py-1 text-xs font-medium backdrop-blur-sm ring-1 ring-white/25 mb-5">
             <Rocket className="w-3.5 h-3.5" /> Start free — no card required
           </div>
           <h1 className="text-4xl font-bold leading-tight mb-4">

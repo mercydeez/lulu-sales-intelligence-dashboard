@@ -116,7 +116,7 @@ export default function SecurityPage() {
         icon={<Shield className="w-6 h-6" />}
         actions={
           <div className="flex items-center gap-3">
-            <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${isConnected ? 'text-teal-700 bg-teal-50' : 'text-ink-muted bg-[#faf3ee]'}`}>
+            <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${isConnected ? 'text-teal-700 bg-teal-50' : 'text-ink-muted bg-surface-2'}`}>
               <Radio className={`w-3.5 h-3.5 ${isConnected ? 'animate-pulse' : ''}`} />
               {isConnected ? 'Live' : 'Offline'}
             </span>
@@ -213,7 +213,7 @@ export default function SecurityPage() {
             key={f.label}
             onClick={() => setCategory(f.value)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              category === f.value ? 'bg-teal-50 text-teal-700' : 'text-ink-muted hover:bg-[#faf3ee]'
+              category === f.value ? 'bg-teal-50 text-teal-700' : 'text-ink-muted hover:bg-surface-2'
             }`}
           >
             {f.label}

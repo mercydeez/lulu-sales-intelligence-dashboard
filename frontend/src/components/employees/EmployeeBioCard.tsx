@@ -64,12 +64,12 @@ export function EmployeeBioCard({ employee, performance, compact = false, onClic
             <h3 className="text-xl font-bold truncate">{employee.full_name}</h3>
             <p className="text-white/80">{employee.designation || roleLabel(employee.role)}</p>
             <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-white/20">{roleLabel(employee.role)}</span>
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-surface/20">{roleLabel(employee.role)}</span>
               <span className="text-xs text-white/70 font-mono">{employee.employee_code}</span>
             </div>
           </div>
           <div className="text-center shrink-0">
-            <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-xl font-bold">
+            <div className="w-14 h-14 rounded-full bg-surface/20 flex items-center justify-center text-xl font-bold">
               {grade}
             </div>
             <p className="text-xs text-white/80 mt-1">{score.toFixed(0)}%</p>

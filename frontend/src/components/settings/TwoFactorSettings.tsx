@@ -97,7 +97,7 @@ export default function TwoFactorSettings() {
           </p>
           <div className="grid grid-cols-2 gap-2 font-mono text-sm">
             {backupCodes.map((c) => (
-              <code key={c} className="px-2 py-1 rounded bg-white border border-amber-200 text-ink">{c}</code>
+              <code key={c} className="px-2 py-1 rounded bg-surface border border-amber-200 text-ink">{c}</code>
             ))}
           </div>
           <button onClick={() => setBackupCodes([])} className="mt-3 text-xs font-medium text-amber-800 underline">
@@ -130,13 +130,13 @@ export default function TwoFactorSettings() {
 
       {stage === 'enrolling' && (
         <div className="space-y-4">
-          <div className="rounded-xl bg-[#faf3ee] p-4">
+          <div className="rounded-xl bg-surface-2 p-4">
             <p className="text-sm text-ink-soft mb-2">
               1. In your authenticator app, add an account and enter this key (or scan the otpauth link):
             </p>
             <div className="flex items-center gap-2">
-              <code className="px-3 py-1.5 rounded-lg bg-white border border-line text-ink font-mono text-sm break-all">{secret}</code>
-              <button onClick={copySecret} className="p-2 rounded-lg hover:bg-white text-ink-muted" title="Copy key">
+              <code className="px-3 py-1.5 rounded-lg bg-surface border border-line text-ink font-mono text-sm break-all">{secret}</code>
+              <button onClick={copySecret} className="p-2 rounded-lg hover:bg-surface text-ink-muted" title="Copy key">
                 {copied ? <Check className="w-4 h-4 text-teal-600" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>

@@ -48,7 +48,7 @@ function Verifier() {
 export default function VerifyEmailPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface px-4">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8">
+      <div className="w-full max-w-md bg-surface rounded-3xl shadow-xl p-8">
         <p className="text-xs font-medium text-ink-muted mb-6">{PRODUCT_NAME}</p>
         <Suspense fallback={<Loader2 className="w-6 h-6 animate-spin mx-auto" />}>
           <Verifier />

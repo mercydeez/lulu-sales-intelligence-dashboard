@@ -246,7 +246,7 @@ export default function LiveTable() {
                         : 'bg-teal-50'
                       : index % 2 === 0
                         ? 'bg-coral-50/40'
-                        : 'bg-white'
+                        : 'bg-surface'
                   } hover:bg-coral-50`}
                 >
                   {/* Timestamp Column */}

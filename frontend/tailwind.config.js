@@ -55,20 +55,22 @@ module.exports = {
           800: '#5c2010',
           900: '#3f160b',
         },
-        // Warm-neutral surfaces + neutral ink text (no more purple ink).
-        canvas: '#fafaf8',
+        // Themeable neutral tokens — driven by CSS channel variables (globals.css
+        // :root / html.dark). Light values equal the old hard-coded hex, so light
+        // mode is pixel-unchanged; html.dark swaps the channels.
+        canvas: 'rgb(var(--c-canvas) / <alpha-value>)',
         surface: {
-          DEFAULT: '#ffffff',
-          1: '#ffffff',
-          2: '#f4f4f0',
-          3: '#eaeae4',
+          DEFAULT: 'rgb(var(--c-surface) / <alpha-value>)',
+          1: 'rgb(var(--c-surface-1) / <alpha-value>)',
+          2: 'rgb(var(--c-surface-2) / <alpha-value>)',
+          3: 'rgb(var(--c-surface-3) / <alpha-value>)',
         },
         ink: {
-          DEFAULT: '#1a1d21',
-          soft: '#4b5258',
-          muted: '#5f6660', // AA on white (>=4.5:1)
+          DEFAULT: 'rgb(var(--c-ink) / <alpha-value>)',
+          soft: 'rgb(var(--c-ink-soft) / <alpha-value>)',
+          muted: 'rgb(var(--c-ink-muted) / <alpha-value>)',
         },
-        line: '#ece9e3', // default hairline border (warm, matches design)
+        line: 'rgb(var(--c-line) / <alpha-value>)', // default hairline border
         // Semantic signals — color only ever means meaning, never decoration.
         signal: { up: '#0f8f73', down: '#c8451f' },
         alert: { critical: '#dc2626', warn: '#d97706', info: '#2563eb' },

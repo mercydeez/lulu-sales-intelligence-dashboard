@@ -33,7 +33,7 @@ export function Tabs({ items, value, onChange, className, ...props }: TabsProps)
             onClick={() => onChange(item.id)}
             className={cn(
               'flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all',
-              active ? 'bg-white text-coral-700 shadow-soft' : 'text-ink-muted hover:text-ink hover:bg-white/60'
+              active ? 'bg-surface text-coral-700 shadow-soft' : 'text-ink-muted hover:text-ink hover:bg-surface/60'
             )}
           >
             {item.icon}

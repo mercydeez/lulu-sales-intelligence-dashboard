@@ -102,7 +102,7 @@ export default function CommandPalette() {
             <p className="px-4 py-6 text-center text-sm text-ink-muted">No matches.</p>
           ) : results.map((c, i) => (
             <button key={c.href + c.label} onClick={() => run(c)} onMouseEnter={() => setActive(i)}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left ${i === active ? 'bg-[#faf3ee]' : ''}`}>
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left ${i === active ? 'bg-surface-2' : ''}`}>
               <span className="text-[10px] uppercase tracking-wide text-ink-muted w-12 shrink-0">{c.hint}</span>
               <span className="flex-1 text-ink">{c.label}</span>
               {i === active && <CornerDownLeft className="w-4 h-4 text-ink-muted" />}

@@ -41,7 +41,7 @@ export default function ResolveModal({ open, alert, onCancel, onConfirm }: Resol
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
             placeholder="What was done to resolve this?"
-            className="w-full py-3 px-4 rounded-2xl bg-white border border-coral-100 text-ink placeholder-ink-muted shadow-sm transition-all focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400"
+            className="w-full py-3 px-4 rounded-2xl bg-surface border border-coral-100 text-ink placeholder-ink-muted shadow-sm transition-all focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400"
           />
         </div>
       </div>

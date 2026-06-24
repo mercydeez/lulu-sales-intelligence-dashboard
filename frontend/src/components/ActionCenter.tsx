@@ -62,7 +62,7 @@ export default function ActionCenter() {
       <div className="space-y-2">
         {actions.map((a) => (
           <Link key={a.key} href={a.href}
-            className="flex items-center gap-3 p-3 rounded-xl hover:bg-[#faf3ee] transition-colors group">
+            className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface-2 transition-colors group">
             <span className={a.tone}>{a.icon}</span>
             <span className="flex-1 text-sm text-ink">{a.text}</span>
             <ChevronRight className="w-4 h-4 text-ink-muted group-hover:translate-x-0.5 transition-transform" />

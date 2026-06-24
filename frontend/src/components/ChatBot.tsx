@@ -468,11 +468,11 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
   // If user doesn't have chat permission, show restricted message
   if (!canUseChat) {
     return (
-      <div className={`fixed right-0 top-0 h-full bg-white border-l border-line shadow-2xl flex flex-col z-50 w-[400px]`}>
+      <div className={`fixed right-0 top-0 h-full bg-surface border-l border-line shadow-2xl flex flex-col z-50 w-[400px]`}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-600 to-purple-600 border-b border-line">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-surface/20 flex items-center justify-center">
               <Lock className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -482,7 +482,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
           </div>
           <button
             onClick={onToggle}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            className="p-2 hover:bg-surface/10 rounded-lg transition-colors"
             title="Close"
           >
             <X className="w-4 h-4 text-white" />
@@ -512,14 +512,14 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
   }
 
   return (
-    <div className={`fixed right-0 top-0 h-full bg-white border-l border-line shadow-2xl flex flex-col z-50 transition-all duration-300 ${
+    <div className={`fixed right-0 top-0 h-full bg-surface border-l border-line shadow-2xl flex flex-col z-50 transition-all duration-300 ${
       isMinimized ? 'w-16' : 'w-[400px]'
     }`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-600 to-purple-600 border-b border-line">
         {!isMinimized && (
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-surface/20 flex items-center justify-center">
               <Sparkles className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -532,14 +532,14 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
         <div className="flex items-center gap-1">
           <button
             onClick={() => setIsMinimized(!isMinimized)}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            className="p-2 hover:bg-surface/10 rounded-lg transition-colors"
             title={isMinimized ? "Expand" : "Minimize"}
           >
             {isMinimized ? <Maximize2 className="w-4 h-4 text-white" /> : <Minimize2 className="w-4 h-4 text-white" />}
           </button>
           <button
             onClick={onToggle}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            className="p-2 hover:bg-surface/10 rounded-lg transition-colors"
             title="Close"
           >
             <X className="w-4 h-4 text-white" />
@@ -550,7 +550,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
       {!isMinimized && (
         <>
           {/* Voice Controls */}
-          <div className="flex items-center justify-between px-4 py-2 bg-[#faf3ee]/50 border-b border-line/50">
+          <div className="flex items-center justify-between px-4 py-2 bg-surface-2/50 border-b border-line/50">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setAutoSpeak(!autoSpeak)}
@@ -601,7 +601,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                         ? 'bg-teal-50 text-ink rounded-tr-sm'
                         : message.role === 'system'
                         ? 'bg-amber-500/10 text-amber-200 border border-amber-500/30 text-xs'
-                        : 'bg-[#faf3ee] text-ink rounded-tl-sm'
+                        : 'bg-surface-2 text-ink rounded-tl-sm'
                     }`}
                   >
                     <div 
@@ -645,7 +645,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
           </div>
 
           {/* Input */}
-          <form onSubmit={handleSubmit} className="p-4 border-t border-line bg-[#faf3ee]/50">
+          <form onSubmit={handleSubmit} className="p-4 border-t border-line bg-surface-2/50">
             <div className="flex items-center gap-2">
               {/* Voice Button - only show if user has voice permission */}
               {canUseVoice ? (
@@ -693,7 +693,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={isRecording ? "🎤 Recording... Click mic to stop" : "Ask about sales, trends, insights..."}
-                className="flex-1 bg-white border border-line rounded-xl px-4 py-3 text-ink placeholder-ink-muted focus:outline-none focus:border-violet-500 transition-colors"
+                className="flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-ink placeholder-ink-muted focus:outline-none focus:border-violet-500 transition-colors"
                 disabled={isLoading || isRecording}
               />
               

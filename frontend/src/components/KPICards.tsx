@@ -61,7 +61,7 @@ function AnimatedTooltip({ title, description, details, tone, icon, onClose }: T
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center animate-fade-in">
       <div className="absolute inset-0 bg-ink/30 backdrop-blur-sm rounded-2xl" onClick={onClose}></div>
-      <div className={`relative bg-white rounded-xl p-4 mx-3 border ${toneClasses.border} shadow-2xl transform animate-scale-in`}>
+      <div className={`relative bg-surface rounded-xl p-4 mx-3 border ${toneClasses.border} shadow-2xl transform animate-scale-in`}>
         <button
           onClick={onClose}
           className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-coral-50 hover:bg-coral-100 flex items-center justify-center transition-colors"
@@ -347,7 +347,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           value={<AnimatedNumber value={kpis.total_revenue_today} formatter={formatCurrency} />}
           footnote={`Volume: ${new Intl.NumberFormat().format(kpis.total_sales_today)} units`}
         >
-          <button onClick={() => setActiveTooltip('today')} className="absolute top-4 right-4 z-10 p-1 rounded-full hover:bg-white/20">
+          <button onClick={() => setActiveTooltip('today')} className="absolute top-4 right-4 z-10 p-1 rounded-full hover:bg-surface/20">
             <Info className="w-3.5 h-3.5 text-white/80" />
           </button>
           {activeTooltip === 'today' && (
@@ -362,7 +362,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           value={<AnimatedNumber value={kpis.total_revenue_month} formatter={formatCurrencyCompact} />}
           footnote={`Volume: ${new Intl.NumberFormat().format(kpis.total_sales_month)} units`}
         >
-          <button onClick={() => setActiveTooltip('monthly')} className="absolute top-4 right-4 z-10 p-1 rounded-full hover:bg-white/20">
+          <button onClick={() => setActiveTooltip('monthly')} className="absolute top-4 right-4 z-10 p-1 rounded-full hover:bg-surface/20">
             <Info className="w-3.5 h-3.5 text-white/80" />
           </button>
           {activeTooltip === 'monthly' && (
@@ -386,7 +386,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           }
           footnote={mounted ? formatTimeAgo(kpis.last_stream_timestamp) : '--'}
         >
-          <button onClick={() => setActiveTooltip('lastStream')} className="absolute top-4 right-4 z-10 p-1 rounded-full hover:bg-white/20">
+          <button onClick={() => setActiveTooltip('lastStream')} className="absolute top-4 right-4 z-10 p-1 rounded-full hover:bg-surface/20">
             <Info className="w-3.5 h-3.5 text-white/80" />
           </button>
           {activeTooltip === 'lastStream' && (

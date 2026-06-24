@@ -104,7 +104,7 @@ export default function InsightsPage() {
             key={f.label}
             onClick={() => setStatus(f.value)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              status === f.value ? 'bg-teal-50 text-teal-700' : 'text-ink-muted hover:bg-[#faf3ee]'
+              status === f.value ? 'bg-teal-50 text-teal-700' : 'text-ink-muted hover:bg-surface-2'
             }`}
           >
             {f.label}

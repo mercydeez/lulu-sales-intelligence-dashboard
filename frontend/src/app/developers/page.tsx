@@ -74,7 +74,7 @@ export default function DevelopersPage() {
           <div className="p-4 rounded-xl bg-amber-50 border border-amber-300">
             <p className="text-sm font-medium text-amber-800 mb-2">{secret.label} — copy it now, you won&apos;t see it again:</p>
             <div className="flex items-center gap-2">
-              <code className="flex-1 px-3 py-2 rounded-lg bg-white border border-amber-200 text-xs break-all">{secret.value}</code>
+              <code className="flex-1 px-3 py-2 rounded-lg bg-surface border border-amber-200 text-xs break-all">{secret.value}</code>
               <Button variant="ghost" size="sm" onClick={() => copy(secret.value)}><Copy className="w-4 h-4" /></Button>
               <Button variant="ghost" size="sm" onClick={() => setSecret(null)}>Dismiss</Button>
             </div>
@@ -340,7 +340,7 @@ function Playground({ liveKey, setLiveKey, onCopy }: { liveKey: string; setLiveK
       <div className="flex items-center gap-2 mb-2">
         {(['curl', 'js', 'python'] as const).map((l) => (
           <button key={l} onClick={() => setLang(l)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium ${lang === l ? 'bg-teal-50 text-teal-700' : 'text-ink-muted hover:bg-[#faf3ee]'}`}>
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium ${lang === l ? 'bg-teal-50 text-teal-700' : 'text-ink-muted hover:bg-surface-2'}`}>
             {l === 'js' ? 'JavaScript' : l === 'curl' ? 'cURL' : 'Python'}
           </button>
         ))}

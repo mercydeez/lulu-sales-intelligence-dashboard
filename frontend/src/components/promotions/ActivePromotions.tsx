@@ -46,7 +46,7 @@ export function ActivePromotions({ promotions, loading }: ActivePromotionsProps)
             >
               <div className="relative z-10">
                 <div className="flex justify-between items-start mb-3 gap-2">
-                  <span className="px-2 py-1 bg-white/20 rounded-lg text-xs font-medium">
+                  <span className="px-2 py-1 bg-surface/20 rounded-lg text-xs font-medium">
                     {promo.category || 'All Categories'}
                   </span>
                   <span className="text-xl font-bold whitespace-nowrap">{discountDisplay(promo)}</span>
@@ -64,7 +64,7 @@ export function ActivePromotions({ promotions, loading }: ActivePromotionsProps)
                   </div>
                 </div>
               </div>
-              <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-white/15 rounded-full blur-xl" />
+              <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-surface/15 rounded-full blur-xl" />
             </div>
           ))}
         </div>

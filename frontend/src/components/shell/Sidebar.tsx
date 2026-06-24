@@ -159,7 +159,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               onClick={onNavigate}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
-                active ? 'bg-teal-50 text-teal-700' : 'text-ink-muted hover:text-ink hover:bg-[#faf3ee]'
+                active ? 'bg-teal-50 text-teal-700' : 'text-ink-muted hover:text-ink hover:bg-surface-2'
               )}
             >
               {item.icon}
@@ -188,7 +188,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <Link
           href="/settings"
           onClick={onNavigate}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-[#faf3ee] transition-all"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-surface-2 transition-all"
         >
           <Settings className="w-5 h-5" />
           Preferences
@@ -202,14 +202,14 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   return (
     <>
-      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:start-0 lg:w-64 bg-white border-e border-line z-30">
+      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:start-0 lg:w-64 bg-surface border-e border-line z-30">
         <SidebarContent />
       </aside>
 
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-          <aside className="absolute inset-y-0 start-0 w-72 bg-white shadow-2xl flex flex-col animate-slide-in">
+          <aside className="absolute inset-y-0 start-0 w-72 bg-surface shadow-2xl flex flex-col animate-slide-in">
             <button
               onClick={onClose}
               className="absolute top-4 end-4 p-1.5 rounded-full text-ink-muted hover:text-ink hover:bg-coral-50 transition-colors"

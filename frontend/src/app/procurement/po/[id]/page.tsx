@@ -42,7 +42,7 @@ export default function PrintablePOPage() {
   if (!po) return <div className="p-8 animate-pulse text-ink-muted">Loading purchase order…</div>;
 
   return (
-    <main className="min-h-screen bg-white p-6 md:p-10 text-ink">
+    <main className="min-h-screen bg-surface p-6 md:p-10 text-ink">
       {/* Toolbar — hidden when printing */}
       <div className="max-w-3xl mx-auto flex items-center justify-between mb-6 print:hidden">
         <button onClick={() => router.push('/procurement')} className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink">

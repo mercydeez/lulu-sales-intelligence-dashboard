@@ -33,7 +33,7 @@ export function ErrorState({
         <button
           type="button"
           onClick={onRetry}
-          className="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-white border border-coral-200 text-ink font-semibold text-sm hover:border-coral-300 hover:bg-coral-50 transition-colors"
+          className="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-surface border border-coral-200 text-ink font-semibold text-sm hover:border-coral-300 hover:bg-coral-50 transition-colors"
         >
           <RefreshCw className="w-4 h-4" />
           {retryLabel}
