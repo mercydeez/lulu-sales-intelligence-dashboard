@@ -33,6 +33,9 @@ interface NotificationItem {
   category: 'inventory' | 'sales' | 'system' | 'promotion';
   time: string;
   read: boolean;
+  // True for DB-backed alerts (from /api/alerts/recent) — read-state is persisted
+  // server-side. Live SSE alerts are ephemeral demo events and stay client-only.
+  persistent?: boolean;
 }
 
 const notificationConfig = {
@@ -91,6 +94,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         category: alert.category || 'inventory',
         time: 'Just now',
         read: false,
+        persistent: false,
       };
 
       setNotifications(prev => {
@@ -118,7 +122,8 @@ export function Topbar({ onMenuClick }: TopbarProps) {
             type: alert.severity === 'critical' ? 'critical' : alert.severity === 'warning' ? 'warning' : 'info',
             category: alert.alert_type || 'inventory',
             time: alert.time_ago || 'Recently',
-            read: alert.status !== 'active'
+            read: alert.status !== 'active',
+            persistent: true,
           }));
           setNotifications(prev => {
             const merged = [...prev, ...apiNotifications];
@@ -150,12 +155,37 @@ export function Topbar({ onMenuClick }: TopbarProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Persist read-state for DB-backed alerts (best-effort) so it survives refresh;
+  // live SSE demo alerts have no server row, so they stay client-only.
+  const acknowledge = (n: NotificationItem) => {
+    if (n.persistent && !n.read) {
+      authFetch(`/api/alerts/${n.id}/acknowledge`, { method: 'POST' }).catch(() => {});
+    }
+  };
+
   const markAsRead = (id: number) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    setNotifications(prev => {
+      const target = prev.find(n => n.id === id);
+      if (target) acknowledge(target);
+      return prev.map(n => n.id === id ? { ...n, read: true } : n);
+    });
   };
 
   const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    setNotifications(prev => {
+      prev.forEach(acknowledge);
+      return prev.map(n => ({ ...n, read: true }));
+    });
+  };
+
+  // Deep-link a notification to the most relevant page for its category.
+  const CATEGORY_ROUTE: Record<string, string> = {
+    inventory: '/inventory', sales: '/analytics', promotion: '/promotions', system: '/alerts',
+  };
+  const openNotification = (n: NotificationItem) => {
+    markAsRead(n.id);
+    setNotificationOpen(false);
+    router.push(CATEGORY_ROUTE[n.category] || '/alerts');
   };
 
   const handleLogout = async () => {
@@ -270,7 +300,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                       return (
                         <div
                           key={notification.id}
-                          onClick={() => markAsRead(notification.id)}
+                          onClick={() => openNotification(notification)}
                           className={`px-4 py-3 border-b border-coral-100 hover:bg-coral-50/60 cursor-pointer transition-all ${
                             !notification.read ? 'bg-coral-50/40' : ''
                           }`}

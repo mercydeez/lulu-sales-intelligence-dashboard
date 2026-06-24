@@ -117,9 +117,10 @@ async def create_tenant_with_owner(
 
             user_id = (await session.execute(text("""
                 INSERT INTO users (email, password_hash, first_name, last_name,
-                                   role, status, job_title, department, tenant_id)
+                                   role, status, job_title, department, tenant_id,
+                                   email_verified)
                 VALUES (:email, :pw, :first, :last, 'super_admin', 'active',
-                        'Owner', 'Executive', :tid)
+                        'Owner', 'Executive', :tid, FALSE)
                 RETURNING id
             """), {
                 "email": email, "pw": get_password_hash(password),

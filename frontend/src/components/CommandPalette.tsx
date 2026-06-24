@@ -15,10 +15,11 @@ interface Command { label: string; href: string; hint?: string; }
 
 export default function CommandPalette() {
   const router = useRouter();
-  const { hasRole, hasPermission, isAuthenticated } = useAuth();
+  const { hasRole, hasPermission, isAuthenticated, authFetch } = useAuth();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const [live, setLive] = useState<Command[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Toggle on Cmd/Ctrl-K; close on Esc.
@@ -49,10 +50,30 @@ export default function CommandPalette() {
     return [...nav, ...extra];
   }, [hasRole, hasPermission]);
 
+  // Live entity search (stores + items) — debounced, tenant-scoped via the API.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) { setLive([]); return; }
+    const id = setTimeout(async () => {
+      try {
+        const res = await authFetch(`/api/search?q=${encodeURIComponent(q)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setLive((data.results || []).map((r: { title: string; href: string; type: string; subtitle?: string }) => ({
+          label: r.subtitle ? `${r.title} · ${r.subtitle}` : r.title,
+          href: r.href,
+          hint: r.type,
+        })));
+      } catch { /* keep prior */ }
+    }, 180);
+    return () => clearTimeout(id);
+  }, [query, authFetch]);
+
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? commands.filter((c) => c.label.toLowerCase().includes(q)) : commands;
-  }, [query, commands]);
+    const pages = q ? commands.filter((c) => c.label.toLowerCase().includes(q)) : commands;
+    return [...pages, ...live];
+  }, [query, commands, live]);
 
   const run = useCallback((c: Command) => { setOpen(false); router.push(c.href); }, [router]);
 
@@ -72,7 +93,7 @@ export default function CommandPalette() {
         <div className="flex items-center gap-3 px-4 border-b border-line">
           <Search className="w-5 h-5 text-ink-muted shrink-0" />
           <input ref={inputRef} value={query} onChange={(e) => { setQuery(e.target.value); setActive(0); }}
-            onKeyDown={onInputKey} placeholder="Search pages and actions…"
+            onKeyDown={onInputKey} placeholder="Search pages, stores, items…"
             className="flex-1 py-3.5 bg-transparent text-ink outline-none text-sm" />
           <kbd className="text-[10px] text-ink-muted border border-line rounded px-1.5 py-0.5">ESC</kbd>
         </div>

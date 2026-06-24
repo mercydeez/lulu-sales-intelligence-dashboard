@@ -233,6 +233,24 @@ def decode_password_reset_token(token: str) -> Optional[int]:
         return None
 
 
+def create_email_verify_token(user_id: int) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(days=3)
+    return jwt.encode(
+        {"user_id": user_id, "type": "email_verify", "exp": expire},
+        SECRET_KEY, algorithm=ALGORITHM,
+    )
+
+
+def decode_email_verify_token(token: str) -> Optional[int]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "email_verify":
+            return None
+        return payload.get("user_id")
+    except JWTError:
+        return None
+
+
 # =============================================================================
 # TOKEN BLACKLIST (Redis-backed; fails open when Redis is down,
 # consistent with SessionInvalidationMiddleware)
@@ -296,7 +314,7 @@ class AuthService:
                 text("""
                     SELECT id, email, password_hash, first_name, last_name, role, status,
                            job_title, department, failed_login_attempts, locked_until,
-                           two_factor_enabled, two_factor_secret, tenant_id
+                           two_factor_enabled, two_factor_secret, tenant_id, email_verified
                     FROM users WHERE email = :email
                 """),
                 {"email": email.lower()}
@@ -404,6 +422,7 @@ class AuthService:
                 "department": user['department'],
                 "tenant_id": user.get('tenant_id'),
                 "two_factor_enabled": bool(user.get('two_factor_enabled')),
+                "email_verified": bool(user.get('email_verified')),
                 "permissions": permissions
             }
 
@@ -619,7 +638,7 @@ class AuthService:
                 text("""
                     SELECT id, email, first_name, last_name, role, status,
                            job_title, department, last_login_at, created_at,
-                           tenant_id
+                           tenant_id, email_verified
                     FROM users WHERE id = :id
                 """),
                 {"id": user_id}
@@ -681,6 +700,15 @@ class AuthService:
 
             return True, "Password changed successfully"
     
+    @staticmethod
+    async def mark_email_verified(user_id: int) -> bool:
+        async with async_session() as session:
+            from sqlalchemy import text
+            res = await session.execute(
+                text("UPDATE users SET email_verified = TRUE WHERE id = :id"), {"id": user_id})
+            await session.commit()
+            return (res.rowcount or 0) > 0
+
     @staticmethod
     async def get_user_id_by_email(email: str) -> Optional[int]:
         async with async_session() as session:

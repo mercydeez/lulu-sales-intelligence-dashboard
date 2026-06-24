@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Shield, ShieldAlert, ShieldCheck, RefreshCw, Activity, KeyRound,
-  UserX, Ban, AlertTriangle, Radio,
+  UserX, Ban, AlertTriangle, Radio, Download,
 } from 'lucide-react';
 import { PageHeader, Card, Badge, Button, Skeleton, EmptyState } from '@/components/ui';
 import { useEventStream } from '@/hooks/useEventStream';
+import { exportCsv } from '@/lib/csv';
 import {
   fetchSecuritySummary, fetchSecurityEvents,
   SecuritySummary, SecurityEvent, SecuritySeverity,
@@ -121,6 +122,19 @@ export default function SecurityPage() {
             </span>
             <Button variant="secondary" size="sm" onClick={load}>
               <RefreshCw className="w-4 h-4 me-1.5" /> Refresh
+            </Button>
+            <Button
+              variant="secondary" size="sm" disabled={shown.length === 0}
+              onClick={() => exportCsv(
+                `security-events-${new Date().toISOString().slice(0, 10)}`,
+                shown.map((e) => ({
+                  occurred_at: e.occurred_at, severity: e.severity, event_type: e.event_type,
+                  category: e.category, actor: e.actor_email, ip: e.ip_address,
+                  method: e.method, path: e.path, detail: e.detail,
+                })),
+              )}
+            >
+              <Download className="w-4 h-4 me-1.5" /> Export CSV
             </Button>
           </div>
         }

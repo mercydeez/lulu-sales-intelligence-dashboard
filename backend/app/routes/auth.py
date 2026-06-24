@@ -283,6 +283,7 @@ async def signup(request: Request, body: SignupRequest):
     await record_event("signup", request=request, tenant_id=user_data.get('tenant_id'),
                        actor_user_id=user_id, actor_email=body.email,
                        detail=f"New tenant workspace created for {body.email}")
+    await send_verification_email(user_id, body.email)
     return LoginResponse(
         access_token=tokens.access_token,
         refresh_token=tokens.refresh_token,
@@ -377,6 +378,7 @@ async def get_current_user_info(user: dict = Depends(get_current_user)):
         "role": user['role'],
         "role_display": user['role'].replace('_', ' ').title(),
         "status": user['status'],
+        "email_verified": bool(user.get('email_verified', True)),
         "job_title": user.get('job_title'),
         "department": user.get('department'),
         "last_login_at": user.get('last_login_at'),
@@ -451,6 +453,47 @@ async def reset_password(body: ResetPasswordRequest, request: Request):
     await record_event("password_changed", severity="medium", category="audit", request=request,
                        actor_user_id=user_id, detail="Password changed via reset link")
     return MessageResponse(message=msg)
+
+
+# =============================================================================
+# EMAIL VERIFICATION
+# =============================================================================
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+def _verify_link(user_id: int) -> str:
+    from app.services.auth_service import create_email_verify_token
+    frontend = (get_settings().cors_origins.split(",")[0] or "http://localhost:3000").strip()
+    return f"{frontend}/verify-email?token={create_email_verify_token(user_id)}"
+
+
+async def send_verification_email(user_id: int, email: str) -> None:
+    from app.services.security_notify import send_email
+    await send_email(
+        email, f"Verify your {get_settings().product_name} email",
+        f"Welcome! Confirm your email to finish setting up your account:\n\n{_verify_link(user_id)}\n\n"
+        f"This link is valid for 3 days.",
+    )
+
+
+@router.post("/verify-email", response_model=MessageResponse)
+async def verify_email(body: VerifyEmailRequest):
+    from app.services.auth_service import decode_email_verify_token
+    user_id = decode_email_verify_token(body.token)
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification link")
+    await AuthService.mark_email_verified(user_id)
+    return MessageResponse(message="Email verified")
+
+
+@router.post("/resend-verification", response_model=MessageResponse)
+async def resend_verification(user: dict = Depends(get_current_user)):
+    if user.get("email_verified"):
+        return MessageResponse(message="Your email is already verified")
+    await send_verification_email(user["id"], user["email"])
+    return MessageResponse(message="Verification email sent")
 
 
 # =============================================================================

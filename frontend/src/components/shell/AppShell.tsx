@@ -4,6 +4,7 @@ import { ReactNode, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import VerifyEmailBanner from './VerifyEmailBanner';
 import CommandPalette from '@/components/CommandPalette';
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -18,6 +19,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       <div className="lg:ps-64">
         <Topbar onMenuClick={() => setMobileNavOpen(true)} />
+        <VerifyEmailBanner />
         {children}
       </div>
     </div>
