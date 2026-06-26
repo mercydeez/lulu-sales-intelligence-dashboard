@@ -29,6 +29,31 @@ from app.routes.auth import get_current_user, get_accessible_store_ids
 router = APIRouter()
 
 
+# =============================================================================
+# AI ACCESS GATES (server-side — must mirror the UI gate in ChatBot.tsx so a
+# direct API call cannot bypass it). can_use_ai_chat / can_use_voice_chat are
+# optional per-user grants on top of the always-allowed manager roles.
+# =============================================================================
+_AI_CHAT_ROLES = ("super_admin", "regional_manager", "store_manager")
+_AI_VOICE_ROLES = ("super_admin", "regional_manager")
+
+
+def require_ai_chat(user: dict = Depends(get_current_user)) -> dict:
+    """Allow the manager roles, or any user explicitly granted can_use_ai_chat."""
+    perms = user.get("permissions", {}) or {}
+    if user.get("role") in _AI_CHAT_ROLES or perms.get("can_use_ai_chat"):
+        return user
+    raise HTTPException(status_code=403, detail="You do not have access to the AI assistant.")
+
+
+def require_voice_chat(user: dict = Depends(get_current_user)) -> dict:
+    """Voice is more restricted: manager roles or an explicit can_use_voice_chat grant."""
+    perms = user.get("permissions", {}) or {}
+    if user.get("role") in _AI_VOICE_ROLES or perms.get("can_use_voice_chat"):
+        return user
+    raise HTTPException(status_code=403, detail="You do not have access to voice chat.")
+
+
 # Request/Response Models
 class ChatRequest(BaseModel):
     message: str
@@ -60,7 +85,7 @@ class ClearConversationRequest(BaseModel):
 
 # Chat Endpoints
 @router.post("/chat")
-async def chat(request: ChatRequest, current_user: dict = Depends(get_current_user)):
+async def chat(request: ChatRequest, current_user: dict = Depends(require_ai_chat)):
     """
     Send a message to the AI chatbot (non-streaming)
     """
@@ -103,7 +128,7 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_current_user)):
+async def chat_stream(request: ChatRequest, current_user: dict = Depends(require_ai_chat)):
     """
     Send a message to the AI chatbot with SSE streaming response
     """
@@ -139,7 +164,7 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
 
 
 @router.post("/chat/clear")
-async def clear_chat(request: ClearConversationRequest, current_user: dict = Depends(get_current_user)):
+async def clear_chat(request: ClearConversationRequest, current_user: dict = Depends(require_ai_chat)):
     """
     Clear conversation history for a session
     """
@@ -148,7 +173,7 @@ async def clear_chat(request: ClearConversationRequest, current_user: dict = Dep
 
 
 @router.get("/chat/summary/{session_id}")
-async def get_chat_summary(session_id: str, current_user: dict = Depends(get_current_user)):
+async def get_chat_summary(session_id: str, current_user: dict = Depends(require_ai_chat)):
     """
     Get conversation summary for a session
     """
@@ -158,7 +183,7 @@ async def get_chat_summary(session_id: str, current_user: dict = Depends(get_cur
 
 # Voice Endpoints
 @router.post("/voice/transcribe")
-async def voice_transcribe(request: VoiceTranscribeRequest, current_user: dict = Depends(get_current_user)):
+async def voice_transcribe(request: VoiceTranscribeRequest, current_user: dict = Depends(require_voice_chat)):
     """
     Transcribe audio to text using Deepgram STT
     """
@@ -185,7 +210,7 @@ async def voice_transcribe_file(
     audio: UploadFile = File(...),
     language: str = Form("en"),
     detect_language: bool = Form(False),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_voice_chat)
 ):
     """
     Transcribe uploaded audio file to text
@@ -207,7 +232,7 @@ async def voice_transcribe_file(
 
 
 @router.post("/voice/synthesize")
-async def voice_synthesize(request: VoiceSynthesizeRequest, current_user: dict = Depends(get_current_user)):
+async def voice_synthesize(request: VoiceSynthesizeRequest, current_user: dict = Depends(require_voice_chat)):
     """
     Synthesize text to speech using Deepgram TTS
     """
@@ -226,7 +251,7 @@ async def voice_synthesize(request: VoiceSynthesizeRequest, current_user: dict =
 
 
 @router.get("/voice/voices")
-async def get_available_voices(current_user: dict = Depends(get_current_user)):
+async def get_available_voices(current_user: dict = Depends(require_voice_chat)):
     """
     Get list of available TTS voices
     """
@@ -240,7 +265,7 @@ async def voice_chat(
     session_id: Optional[str] = Form(None),
     voice: str = Form("aura-asteria-en"),
     language: str = Form("en"),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_voice_chat)
 ):
     """
     Complete voice chat: transcribe audio, get AI response, synthesize speech

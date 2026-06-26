@@ -32,6 +32,12 @@ MOCK_STORE_MANAGER = {
     "status": "active", "tenant_id": 1,
     "permissions": {"accessible_stores": [1], "can_use_ai_chat": True},
 }
+# A role outside the manager set, with AI explicitly disabled.
+MOCK_ANALYST = {
+    "id": 4, "email": "analyst@retaildemo.app", "role": "analyst",
+    "status": "active", "tenant_id": 1,
+    "permissions": {"accessible_stores": [1], "can_use_ai_chat": False},
+}
 
 
 @pytest.fixture(autouse=True)
@@ -82,6 +88,29 @@ async def test_super_admin_unrestricted():
     resp, mock_chat = await _ask(MOCK_SUPER_ADMIN)
     assert resp.status_code == 200
     assert _allowed_stores_arg(mock_chat) == []
+
+
+# --- P0.2: server-side permission gate ----------------------------------------
+
+@pytest.mark.asyncio
+async def test_permission_denied_without_ai_access():
+    """A non-manager role without can_use_ai_chat is refused — no UI-gate bypass."""
+    app.dependency_overrides[get_current_user] = lambda: MOCK_ANALYST
+    with patch("app.routes.ai.get_chat_response", new_callable=AsyncMock) as mock_chat:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/ai/chat", json={"message": "hi", "stream": False})
+    assert resp.status_code == 403
+    mock_chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_permission_granted_via_explicit_flag():
+    """A non-manager role explicitly granted can_use_ai_chat is allowed."""
+    user = {**MOCK_ANALYST, "permissions": {"accessible_stores": [1], "can_use_ai_chat": True}}
+    resp, mock_chat = await _ask(user, message="hi")
+    assert resp.status_code == 200
+    mock_chat.assert_called_once()
 
 
 # --- _sale_scope helper --------------------------------------------------------
