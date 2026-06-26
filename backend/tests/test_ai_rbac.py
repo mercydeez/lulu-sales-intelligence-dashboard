@@ -113,6 +113,33 @@ async def test_permission_granted_via_explicit_flag():
     mock_chat.assert_called_once()
 
 
+# --- P0.3: session isolation ---------------------------------------------------
+
+def test_session_namespaced_by_user():
+    """The same client session_id yields different context keys per user."""
+    from app.routes.ai import _scoped_session
+    a = _scoped_session(MOCK_STORE_MANAGER, "shared-sid")
+    b = _scoped_session(MOCK_REGIONAL_MANAGER, "shared-sid")
+    assert a != b
+    assert a.startswith("u3:") and b.startswith("u2:")
+
+
+@pytest.mark.asyncio
+async def test_session_summary_isolated_between_users():
+    """User B cannot see user A's conversation via a shared client session_id."""
+    from app.routes.ai import _scoped_session
+    from app.services import ai_assistant as svc
+    # User A (store manager) starts a conversation under client sid "s1".
+    svc.get_or_create_context(_scoped_session(MOCK_STORE_MANAGER, "s1"))
+    # User B (regional manager) asks for the summary of the same client sid.
+    app.dependency_overrides[get_current_user] = lambda: MOCK_REGIONAL_MANAGER
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/ai/chat/summary/s1")
+    assert resp.status_code == 200
+    assert resp.json()["active"] is False
+
+
 # --- _sale_scope helper --------------------------------------------------------
 
 def test_sale_scope_adds_store_filter_when_restricted():

@@ -54,6 +54,14 @@ def require_voice_chat(user: dict = Depends(get_current_user)) -> dict:
     raise HTTPException(status_code=403, detail="You do not have access to voice chat.")
 
 
+def _scoped_session(user: dict, session_id: str) -> str:
+    """Namespace the client-supplied session id with the authenticated user id so
+    one user can never read, continue, or clear another user's conversation
+    context by guessing/reusing a session_id (P0.3). The raw session_id is still
+    returned to the client; the route always re-scopes it with the same user id."""
+    return f"u{user.get('id')}:{session_id}"
+
+
 # Request/Response Models
 class ChatRequest(BaseModel):
     message: str
@@ -102,11 +110,12 @@ async def chat(request: ChatRequest, current_user: dict = Depends(require_ai_cha
     allowed_stores = get_accessible_store_ids(current_user)
     tenant_id = current_user.get('tenant_id') or 1
     role = current_user.get('role') or 'store_manager'
+    scoped_session = _scoped_session(current_user, session_id)
 
     if request.stream:
         # Return streaming response
         async def generate():
-            async for chunk in stream_chat_response(session_id, request.message, tenant_id, role, allowed_stores):
+            async for chunk in stream_chat_response(scoped_session, request.message, tenant_id, role, allowed_stores):
                 yield {
                     "event": "message",
                     "data": json.dumps({"content": chunk, "session_id": session_id})
@@ -119,7 +128,7 @@ async def chat(request: ChatRequest, current_user: dict = Depends(require_ai_cha
         return EventSourceResponse(generate())
     else:
         # Non-streaming response
-        response = await get_chat_response(session_id, request.message, tenant_id, role, allowed_stores)
+        response = await get_chat_response(scoped_session, request.message, tenant_id, role, allowed_stores)
         return ChatResponse(
             response=response,
             session_id=session_id,
@@ -142,6 +151,7 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(require
     allowed_stores = get_accessible_store_ids(current_user)
     tenant_id = current_user.get('tenant_id') or 1
     role = current_user.get('role') or 'store_manager'
+    scoped_session = _scoped_session(current_user, session_id)
 
     async def generate():
         yield {
@@ -149,7 +159,7 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(require
             "data": json.dumps({"session_id": session_id})
         }
 
-        async for chunk in stream_chat_response(session_id, request.message, tenant_id, role, allowed_stores):
+        async for chunk in stream_chat_response(scoped_session, request.message, tenant_id, role, allowed_stores):
             yield {
                 "event": "chunk",
                 "data": json.dumps({"content": chunk})
@@ -168,7 +178,7 @@ async def clear_chat(request: ClearConversationRequest, current_user: dict = Dep
     """
     Clear conversation history for a session
     """
-    clear_conversation(request.session_id)
+    clear_conversation(_scoped_session(current_user, request.session_id))
     return {"status": "cleared", "session_id": request.session_id}
 
 
@@ -177,7 +187,7 @@ async def get_chat_summary(session_id: str, current_user: dict = Depends(require
     """
     Get conversation summary for a session
     """
-    summary = get_conversation_summary(session_id)
+    summary = get_conversation_summary(_scoped_session(current_user, session_id))
     return summary
 
 
@@ -295,9 +305,9 @@ async def voice_chat(
             "error": "No speech detected"
         }
     
-    # 2. Get AI response (RBAC: scoped to the caller's stores)
+    # 2. Get AI response (RBAC: scoped to the caller's stores + session bound to user)
     assistant_text = await get_chat_response(
-        session_id, user_text,
+        _scoped_session(current_user, session_id), user_text,
         current_user.get('tenant_id') or 1, current_user.get('role') or 'store_manager',
         get_accessible_store_ids(current_user),
     )
