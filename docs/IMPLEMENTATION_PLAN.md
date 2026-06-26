@@ -69,16 +69,20 @@ the `ELSE` (attributes-only) path and never set a password. Fix applied in-place
 | 0 | Promote `b888b34` (reset + force-push) | ✅ done |
 | 1 | Runtime baseline (Docker) | ✅ green (187 passed; artifacts documented) |
 | 2 | This plan committed to repo | ✅ done |
-| 3 | P0.1 store-level scoping in chat | 🟡 in progress |
-| 4 | P0.2 server-side AI permission gate | ⬜ |
-| 5 | P0.3 bind chat session to user | ⬜ |
-| 6 | P1.2 grounded refusing guardrail prompt | ⬜ |
-| 7 | P0.4 consolidate AI safety tests (`test_ai_rbac.py`) | ⬜ |
-| 8 | P1.1 branding straggler (`ai_assistant.py:535`) | ⬜ |
-| 9 | P1.3 httpOnly cookie auth + cookie blacklist | ⬜ |
+| 3 | P0.1 store-level scoping in chat | ✅ done (`e15b3a2`) |
+| 4 | P0.2 server-side AI permission gate | ✅ done (`498afe4`) |
+| 5 | P0.3 bind chat session to user | ✅ done (`dd61ef8`) |
+| 6 | P1.2 grounded refusing guardrail prompt | ✅ done (`e92e49c`) |
+| 7 | P0.4 consolidate AI safety tests (`test_ai_rbac.py`, 10 tests) | ✅ done (`e92e49c`) |
+| 8 | P1.1 branding straggler (`ai_assistant.py`) | ✅ done (`e92e49c`) |
+| 9 | P1.3 httpOnly cookie auth + cookie blacklist | 🟡 next |
 | 10 | P1.4 README honesty pass | ⬜ |
 | 11 | P2 verify intelligence loop; minimal measure/outcome gap | ⬜ |
 | 12 | P3 cleanup | ⬜ |
+
+**Milestone:** all P0 (AI RBAC/permission/session/safety-tests) + P1.1/P1.2 (branding,
+guardrails) landed; `test_ai_rbac.py` = 10 tests green; regression across AI/RBAC/Sage/
+federation/security suites = 68 passed, 1 skipped, 0 regressions.
 
 ## Per-step detail (acceptance · tests · files · rollback)
 
