@@ -24,7 +24,7 @@ from app.services.voice_service import (
     synthesize_speech,
     get_voices
 )
-from app.routes.auth import get_current_user
+from app.routes.auth import get_current_user, get_accessible_store_ids
 
 router = APIRouter()
 
@@ -71,11 +71,17 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
     
     # Get intent for analytics
     intent = detect_intent(request.message)
-    
+
+    # RBAC: restrict every data query to the stores this user may see.
+    # Empty list => super_admin (all stores in the tenant); see get_accessible_store_ids.
+    allowed_stores = get_accessible_store_ids(current_user)
+    tenant_id = current_user.get('tenant_id') or 1
+    role = current_user.get('role') or 'store_manager'
+
     if request.stream:
         # Return streaming response
         async def generate():
-            async for chunk in stream_chat_response(session_id, request.message, current_user.get('tenant_id') or 1, current_user.get('role') or 'store_manager'):
+            async for chunk in stream_chat_response(session_id, request.message, tenant_id, role, allowed_stores):
                 yield {
                     "event": "message",
                     "data": json.dumps({"content": chunk, "session_id": session_id})
@@ -84,11 +90,11 @@ async def chat(request: ChatRequest, current_user: dict = Depends(get_current_us
                 "event": "done",
                 "data": json.dumps({"session_id": session_id, "intent": intent})
             }
-        
+
         return EventSourceResponse(generate())
     else:
         # Non-streaming response
-        response = await get_chat_response(session_id, request.message, current_user.get('tenant_id') or 1, current_user.get('role') or 'store_manager')
+        response = await get_chat_response(session_id, request.message, tenant_id, role, allowed_stores)
         return ChatResponse(
             response=response,
             session_id=session_id,
@@ -107,14 +113,18 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(get_cur
         raise HTTPException(status_code=400, detail="Message cannot be empty")
     
     intent = detect_intent(request.message)
-    
+
+    allowed_stores = get_accessible_store_ids(current_user)
+    tenant_id = current_user.get('tenant_id') or 1
+    role = current_user.get('role') or 'store_manager'
+
     async def generate():
         yield {
             "event": "start",
             "data": json.dumps({"session_id": session_id})
         }
-        
-        async for chunk in stream_chat_response(session_id, request.message, current_user.get('tenant_id') or 1, current_user.get('role') or 'store_manager'):
+
+        async for chunk in stream_chat_response(session_id, request.message, tenant_id, role, allowed_stores):
             yield {
                 "event": "chunk",
                 "data": json.dumps({"content": chunk})
@@ -260,10 +270,11 @@ async def voice_chat(
             "error": "No speech detected"
         }
     
-    # 2. Get AI response
+    # 2. Get AI response (RBAC: scoped to the caller's stores)
     assistant_text = await get_chat_response(
         session_id, user_text,
         current_user.get('tenant_id') or 1, current_user.get('role') or 'store_manager',
+        get_accessible_store_ids(current_user),
     )
     
     # 3. Synthesize response

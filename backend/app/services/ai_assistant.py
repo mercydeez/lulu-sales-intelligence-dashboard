@@ -71,12 +71,29 @@ def get_or_create_context(session_id: str) -> ConversationContext:
 # REAL-TIME DATA FETCHING FUNCTIONS
 # =============================================================================
 
-async def get_real_time_kpis(tenant_id: int = 1) -> Dict:
-    """Fetch real-time KPIs from database (tenant-scoped)"""
+def _sale_scope(tenant_id: int, allowed_stores: Optional[List[int]] = None):
+    """Combined tenant + store RBAC scope for Sale queries.
+
+    Always restricts to the tenant; additionally restricts to allowed_stores when
+    that list is non-empty. An empty list / None means no store restriction
+    (super_admin => every store in the tenant). See get_accessible_store_ids."""
+    clause = Sale.tenant_id == tenant_id
+    if allowed_stores:
+        clause = and_(clause, Sale.store_id.in_(allowed_stores))
+    return clause
+
+
+async def get_real_time_kpis(tenant_id: int = 1, allowed_stores: Optional[List[int]] = None) -> Dict:
+    """Fetch real-time KPIs from database (tenant- and store-scoped).
+
+    allowed_stores: the store ids the caller may see. An empty list / None means
+    no store restriction (super_admin => every store in the tenant)."""
     today = date.today()
     week_ago = today - timedelta(days=7)
     month_ago = today - timedelta(days=30)
     T = Sale.tenant_id == tenant_id
+    if allowed_stores:
+        T = and_(T, Sale.store_id.in_(allowed_stores))
 
     async with async_session() as session:
         # Today's sales
@@ -141,15 +158,23 @@ async def get_real_time_kpis(tenant_id: int = 1) -> Dict:
         }
 
 
-async def get_store_sales(store_name: Optional[str] = None, tenant_id: int = 1) -> Dict:
-    """Fetch store-specific sales data (tenant-scoped)"""
+async def get_store_sales(store_name: Optional[str] = None, tenant_id: int = 1,
+                          allowed_stores: Optional[List[int]] = None) -> Dict:
+    """Fetch store-specific sales data (tenant- and store-scoped).
+
+    A caller restricted to certain stores cannot look up or aggregate a store
+    outside that set: the store lookup itself is filtered by allowed_stores."""
     T = Sale.tenant_id == tenant_id
+    if allowed_stores:
+        T = and_(T, Sale.store_id.in_(allowed_stores))
     async with async_session() as session:
         if store_name:
-            # Search for specific store (within the tenant)
+            # Search for a specific store (within the tenant AND the caller's scope)
+            store_conds = [Store.name.ilike(f'%{store_name}%'), Store.tenant_id == tenant_id]
+            if allowed_stores:
+                store_conds.append(Store.id.in_(allowed_stores))
             store_result = await session.execute(
-                select(Store).where(and_(Store.name.ilike(f'%{store_name}%'),
-                                         Store.tenant_id == tenant_id))
+                select(Store).where(and_(*store_conds))
             )
             store = store_result.scalar_one_or_none()
 
@@ -186,14 +211,17 @@ async def get_store_sales(store_name: Optional[str] = None, tenant_id: int = 1) 
                 }
             return {'found': False, 'store_name': store_name}
 
-        # Get all stores performance (this tenant's stores only)
+        # Get all stores performance (this tenant's stores only, within the caller's scope)
+        store_conds = [Store.tenant_id == tenant_id]
+        if allowed_stores:
+            store_conds.append(Store.id.in_(allowed_stores))
         query = select(
             Store.id,
             Store.name,
             Store.location,
             func.coalesce(func.sum(Sale.sales), 0).label('total_sales')
         ).outerjoin(Sale, and_(Sale.store_id == Store.id, T)).where(
-            Store.tenant_id == tenant_id
+            and_(*store_conds)
         ).group_by(
             Store.id, Store.name, Store.location
         ).order_by(desc('total_sales'))
@@ -217,15 +245,15 @@ async def get_store_sales(store_name: Optional[str] = None, tenant_id: int = 1) 
         }
 
 
-async def get_category_sales(tenant_id: int = 1) -> Dict:
-    """Fetch sales by category (tenant-scoped)"""
+async def get_category_sales(tenant_id: int = 1, allowed_stores: Optional[List[int]] = None) -> Dict:
+    """Fetch sales by category (tenant- and store-scoped)"""
     async with async_session() as session:
         query = select(
             Item.category,
             func.coalesce(func.sum(Sale.sales), 0).label('total_sales'),
             func.count(Sale.id).label('transaction_count')
         ).join(Item, Sale.item_id == Item.id).where(
-            Sale.tenant_id == tenant_id
+            _sale_scope(tenant_id, allowed_stores)
         ).group_by(
             Item.category
         ).order_by(desc('total_sales'))
@@ -249,15 +277,15 @@ async def get_category_sales(tenant_id: int = 1) -> Dict:
         }
 
 
-async def get_top_items(limit: int = 10, tenant_id: int = 1) -> Dict:
-    """Fetch top selling items (tenant-scoped)"""
+async def get_top_items(limit: int = 10, tenant_id: int = 1, allowed_stores: Optional[List[int]] = None) -> Dict:
+    """Fetch top selling items (tenant- and store-scoped)"""
     async with async_session() as session:
         query = select(
             Item.name,
             Item.category,
             func.coalesce(func.sum(Sale.sales), 0).label('total_sales')
         ).join(Item, Sale.item_id == Item.id).where(
-            Sale.tenant_id == tenant_id
+            _sale_scope(tenant_id, allowed_stores)
         ).group_by(
             Item.id, Item.name, Item.category
         ).order_by(desc('total_sales')).limit(limit)
@@ -277,14 +305,14 @@ async def get_top_items(limit: int = 10, tenant_id: int = 1) -> Dict:
         }
 
 
-async def get_recent_transactions(limit: int = 10, tenant_id: int = 1) -> Dict:
-    """Fetch recent streaming transactions (tenant-scoped)"""
+async def get_recent_transactions(limit: int = 10, tenant_id: int = 1, allowed_stores: Optional[List[int]] = None) -> Dict:
+    """Fetch recent streaming transactions (tenant- and store-scoped)"""
     async with async_session() as session:
         query = select(
             Sale, Store.name.label('store_name'), Item.name.label('item_name'), Item.category
         ).join(Store, Sale.store_id == Store.id).join(
             Item, Sale.item_id == Item.id
-        ).where(and_(Sale.is_streaming == True, Sale.tenant_id == tenant_id)).order_by(
+        ).where(and_(Sale.is_streaming == True, _sale_scope(tenant_id, allowed_stores))).order_by(
             desc(Sale.created_at)
         ).limit(limit)
         
@@ -307,13 +335,14 @@ async def get_recent_transactions(limit: int = 10, tenant_id: int = 1) -> Dict:
         }
 
 
-async def get_returns_data(store_name: Optional[str] = None, tenant_id: int = 1) -> Dict:
-    """Fetch detailed returns data - items with negative sales values (tenant-scoped)"""
+async def get_returns_data(store_name: Optional[str] = None, tenant_id: int = 1,
+                           allowed_stores: Optional[List[int]] = None) -> Dict:
+    """Fetch detailed returns data - items with negative sales values (tenant- and store-scoped)"""
     today = date.today()
 
     async with async_session() as session:
-        # Base query for returns (negative sales), scoped to the tenant
-        base_filter = and_(Sale.sales < 0, Sale.tenant_id == tenant_id)
+        # Base query for returns (negative sales), scoped to tenant + the caller's stores
+        base_filter = and_(Sale.sales < 0, _sale_scope(tenant_id, allowed_stores))
         
         # Today's returns
         today_returns_query = select(
@@ -344,12 +373,12 @@ async def get_returns_data(store_name: Optional[str] = None, tenant_id: int = 1)
         )
         today_stat = today_stats.fetchone()
         
-        # Total returns all time (streaming)
+        # Total returns all time (streaming) — scoped to tenant + the caller's stores
         all_stats = await session.execute(
             select(
                 func.count(Sale.id).label('count'),
                 func.coalesce(func.sum(Sale.sales), 0).label('total')
-            ).where(and_(Sale.sales < 0, Sale.is_streaming == True))
+            ).where(and_(base_filter, Sale.is_streaming == True))
         )
         all_stat = all_stats.fetchone()
         
@@ -425,24 +454,26 @@ async def get_returns_data(store_name: Optional[str] = None, tenant_id: int = 1)
         }
 
 
-async def _get_forecast_narrative(horizon: int = 14, tenant_id: int = 1) -> str:
+async def _get_forecast_narrative(horizon: int = 14, tenant_id: int = 1,
+                                  allowed_stores: Optional[List[int]] = None) -> str:
     """Engine-driven forecast answer for the assistant (B1.7), scoped to the
-    caller's tenant across all their stores."""
+    caller's tenant and accessible stores."""
     try:
         from app.services.forecast_service import forecast_narrative
         async with async_session() as session:
-            return await forecast_narrative(session, tenant_id=tenant_id, allowed=None, horizon=horizon)
+            return await forecast_narrative(session, tenant_id=tenant_id,
+                                            allowed=allowed_stores or None, horizon=horizon)
     except Exception as e:
         return f"📈 I couldn't compute a forecast right now ({e})."
 
 
-async def get_dashboard_summary(tenant_id: int = 1) -> str:
-    """Generate a comprehensive dashboard summary with real data (tenant-scoped)"""
-    kpis = await get_real_time_kpis(tenant_id)
-    stores = await get_store_sales(tenant_id=tenant_id)
-    categories = await get_category_sales(tenant_id)
-    top_items = await get_top_items(5, tenant_id)
-    recent = await get_recent_transactions(5, tenant_id)
+async def get_dashboard_summary(tenant_id: int = 1, allowed_stores: Optional[List[int]] = None) -> str:
+    """Generate a comprehensive dashboard summary with real data (tenant- and store-scoped)"""
+    kpis = await get_real_time_kpis(tenant_id, allowed_stores)
+    stores = await get_store_sales(tenant_id=tenant_id, allowed_stores=allowed_stores)
+    categories = await get_category_sales(tenant_id, allowed_stores)
+    top_items = await get_top_items(5, tenant_id, allowed_stores)
+    recent = await get_recent_transactions(5, tenant_id, allowed_stores)
     
     # Find top performing store
     top_store = stores['stores'][0] if stores.get('stores') else None
@@ -596,15 +627,16 @@ def detect_intent(message: str) -> Dict:
     }
 
 
-async def build_data_context(intent_info: Dict, message: str, tenant_id: int = 1) -> str:
-    """Build real-time data context based on detected intent (tenant-scoped)"""
+async def build_data_context(intent_info: Dict, message: str, tenant_id: int = 1,
+                             allowed_stores: Optional[List[int]] = None) -> str:
+    """Build real-time data context based on detected intent (tenant- and store-scoped)"""
     intents = intent_info.get("intents", [])
     mentioned_store = intent_info.get("mentioned_store")
 
     context_parts = []
 
     # Always include KPIs for context
-    kpis = await get_real_time_kpis(tenant_id)
+    kpis = await get_real_time_kpis(tenant_id, allowed_stores)
     context_parts.append(f"""
 CURRENT KPIs:
 - Today's Sales: {kpis['total_sales_today']:,} units
@@ -617,12 +649,12 @@ CURRENT KPIs:
     
     # Add specific data based on intent
     if "dashboard_summary" in intents:
-        summary = await get_dashboard_summary(tenant_id)
+        summary = await get_dashboard_summary(tenant_id, allowed_stores)
         context_parts.append(f"\nDASHBOARD SUMMARY:\n{summary}")
-    
+
     if "store_query" in intents or mentioned_store:
         if mentioned_store:
-            store_data = await get_store_sales(mentioned_store, tenant_id)
+            store_data = await get_store_sales(mentioned_store, tenant_id, allowed_stores)
             if store_data.get('found'):
                 context_parts.append(f"""
 STORE DATA FOR {store_data['store_name'].upper()}:
@@ -632,35 +664,35 @@ STORE DATA FOR {store_data['store_name'].upper()}:
 - Total Returns: {store_data['total_returns']:,} units
 """)
         else:
-            stores = await get_store_sales(tenant_id=tenant_id)
+            stores = await get_store_sales(tenant_id=tenant_id, allowed_stores=allowed_stores)
             context_parts.append("\nALL STORES PERFORMANCE:")
             for s in stores['stores']:
                 context_parts.append(f"- {s['name']}: {s['total_sales']:,} units ({s['percentage']}%)")
-    
+
     if "category_query" in intents or "top_items" in intents:
-        categories = await get_category_sales(tenant_id)
+        categories = await get_category_sales(tenant_id, allowed_stores)
         context_parts.append("\nCATEGORY BREAKDOWN:")
         for c in categories['categories']:
             context_parts.append(f"- {c['name']}: {c['total_sales']:,} units ({c['percentage']}%)")
-        
-        items = await get_top_items(10, tenant_id)
+
+        items = await get_top_items(10, tenant_id, allowed_stores)
         context_parts.append("\nTOP 10 PRODUCTS:")
         for i, item in enumerate(items['items'], 1):
             context_parts.append(f"{i}. {item['name']} ({item['category']}): {item['total_sales']:,} units")
-    
+
     if "recent_activity" in intents:
-        recent = await get_recent_transactions(10, tenant_id)
+        recent = await get_recent_transactions(10, tenant_id, allowed_stores)
         context_parts.append("\nRECENT LIVE TRANSACTIONS:")
         for t in recent['transactions']:
             status = "RETURN" if t['is_return'] else "SALE"
             context_parts.append(f"- [{status}] {t['item']} at {t['store']}: {t['sales']} units")
-    
+
     if "prediction" in intents:
-        forecast_text = await _get_forecast_narrative(tenant_id=tenant_id)
+        forecast_text = await _get_forecast_narrative(tenant_id=tenant_id, allowed_stores=allowed_stores)
         context_parts.append(f"\nFORECAST (engine-driven):\n{forecast_text}")
 
     if "returns_query" in intents:
-        returns_data = await get_returns_data(tenant_id=tenant_id)
+        returns_data = await get_returns_data(tenant_id=tenant_id, allowed_stores=allowed_stores)
         context_parts.append(f"""
 RETURNS DATA (DETAILED):
 TODAY'S RETURNS:
@@ -686,21 +718,23 @@ RETURNS BY STORE:""")
     return "\n".join(context_parts)
 
 
-async def get_intelligent_fallback(message: str, intent_info: Dict, tenant_id: int = 1) -> str:
-    """Generate intelligent fallback response with REAL DATA when API unavailable"""
+async def get_intelligent_fallback(message: str, intent_info: Dict, tenant_id: int = 1,
+                                   allowed_stores: Optional[List[int]] = None) -> str:
+    """Generate intelligent fallback response with REAL DATA when API unavailable
+    (tenant- and store-scoped to the caller)."""
     from app.config import get_settings
     bot = get_settings().chatbot_name
     intents = intent_info.get("intents", [])
     mentioned_store = intent_info.get("mentioned_store")
     is_returns = intent_info.get("is_returns", False)
-    
+
     try:
         # Fetch real data for the response
-        kpis = await get_real_time_kpis(tenant_id)
-        
+        kpis = await get_real_time_kpis(tenant_id, allowed_stores)
+
         # CRITICAL: Check returns query FIRST - highest priority!
         if "returns_query" in intents or is_returns:
-            returns_data = await get_returns_data(tenant_id=tenant_id)
+            returns_data = await get_returns_data(tenant_id=tenant_id, allowed_stores=allowed_stores)
             
             response = f"""🔄 **Returns Analysis - All Stores**
 
@@ -746,7 +780,7 @@ async def get_intelligent_fallback(message: str, intent_info: Dict, tenant_id: i
         
         # Forecast / prediction query — engine-driven (B1.7)
         if "prediction" in intents:
-            return await _get_forecast_narrative(tenant_id=tenant_id)
+            return await _get_forecast_narrative(tenant_id=tenant_id, allowed_stores=allowed_stores)
 
         # Greeting response
         if "greeting" in intents:
@@ -762,12 +796,12 @@ How can I help you analyze your sales data today?"""
         
         # Dashboard summary
         if "dashboard_summary" in intents:
-            return await get_dashboard_summary(tenant_id)
-        
+            return await get_dashboard_summary(tenant_id, allowed_stores)
+
         # Store-specific query
         if "store_query" in intents or mentioned_store:
             if mentioned_store:
-                store_data = await get_store_sales(mentioned_store, tenant_id)
+                store_data = await get_store_sales(mentioned_store, tenant_id, allowed_stores)
                 if store_data.get('found'):
                     return f"""🏪 **{store_data['store_name']}**
 
@@ -782,7 +816,7 @@ This store is performing well in the network!"""
                 else:
                     return f"I couldn't find a store matching '{mentioned_store}'. Try: Karama, Barsha, Deira, Ajman, Sharjah, Fujairah, Al Ain, or Ras Al Khaimah."
             else:
-                stores = await get_store_sales(tenant_id=tenant_id)
+                stores = await get_store_sales(tenant_id=tenant_id, allowed_stores=allowed_stores)
                 response = "🏪 **Store Performance Overview:**\n\n"
                 for i, s in enumerate(stores['stores'][:5], 1):
                     response += f"{i}. **{s['name']}**: {s['total_sales']:,} units ({s['percentage']}%)\n"
@@ -791,7 +825,7 @@ This store is performing well in the network!"""
         
         # Category query
         if "category_query" in intents:
-            categories = await get_category_sales(tenant_id)
+            categories = await get_category_sales(tenant_id, allowed_stores)
             response = "🛒 **Sales by Category:**\n\n"
             for c in categories['categories'][:8]:
                 response += f"• **{c['name']}**: {c['total_sales']:,} units ({c['percentage']}%)\n"
@@ -799,7 +833,7 @@ This store is performing well in the network!"""
         
         # Top items
         if "top_items" in intents:
-            items = await get_top_items(10, tenant_id)
+            items = await get_top_items(10, tenant_id, allowed_stores)
             response = "🏆 **Top 10 Best-Selling Products:**\n\n"
             for i, item in enumerate(items['items'], 1):
                 response += f"{i}. **{item['name']}** ({item['category']}): {item['total_sales']:,} units\n"
@@ -825,7 +859,7 @@ This store is performing well in the network!"""
         
         # Recent activity
         if "recent_activity" in intents:
-            recent = await get_recent_transactions(10, tenant_id)
+            recent = await get_recent_transactions(10, tenant_id, allowed_stores)
             response = "📡 **Recent Live Transactions:**\n\n"
             for t in recent['transactions']:
                 emoji = "🔄" if t['is_return'] else "💰"
@@ -876,8 +910,9 @@ async def stream_chat_response(
     user_message: str,
     tenant_id: int = 1,
     role: str = "store_manager",
+    allowed_stores: Optional[List[int]] = None,
 ) -> AsyncGenerator[str, None]:
-    """Stream chat response with real-time data integration"""
+    """Stream chat response with real-time data integration (tenant- and store-scoped)"""
 
     context = get_or_create_context(session_id)
 
@@ -909,8 +944,8 @@ async def stream_chat_response(
         return
 
     # Build real-time data context
-    data_context = await build_data_context(intent_info, user_message, tenant_id)
-    
+    data_context = await build_data_context(intent_info, user_message, tenant_id, allowed_stores)
+
     # Add user message with data context to conversation
     enhanced_message = f"""User Question: {user_message}
 
@@ -918,9 +953,9 @@ REAL-TIME DATA CONTEXT (use this data to answer):
 {data_context}
 
 INSTRUCTIONS: Answer the user's question using the ACTUAL DATA above. Be specific with numbers and percentages. Format large numbers with commas."""
-    
+
     context.add_message("user", enhanced_message)
-    
+
     # Try providers in priority order (Ollama → OpenAI → rule-based fallback)
     for provider in get_provider_chain():
         full_response = ""
@@ -935,7 +970,7 @@ INSTRUCTIONS: Answer the user's question using the ACTUAL DATA above. Be specifi
             continue  # next provider
 
     # Rule-based fallback — always works, data-driven
-    fallback = await get_intelligent_fallback(user_message, intent_info, tenant_id)
+    fallback = await get_intelligent_fallback(user_message, intent_info, tenant_id, allowed_stores)
     context.add_message("assistant", fallback)
     words = fallback.split(' ')
     for i, word in enumerate(words):
@@ -948,8 +983,9 @@ async def get_chat_response(
     user_message: str,
     tenant_id: int = 1,
     role: str = "store_manager",
+    allowed_stores: Optional[List[int]] = None,
 ) -> str:
-    """Get non-streaming chat response with real data"""
+    """Get non-streaming chat response with real data (tenant- and store-scoped)"""
 
     context = get_or_create_context(session_id)
     intent_info = detect_intent(user_message)
@@ -971,17 +1007,17 @@ async def get_chat_response(
         return sage.answer
 
     # Build data context
-    data_context = await build_data_context(intent_info, user_message, tenant_id)
-    
+    data_context = await build_data_context(intent_info, user_message, tenant_id, allowed_stores)
+
     enhanced_message = f"""User Question: {user_message}
 
 REAL-TIME DATA CONTEXT:
 {data_context}
 
 Answer using the actual data above. Be specific with numbers."""
-    
+
     context.add_message("user", enhanced_message)
-    
+
     # Try providers in priority order (Ollama → OpenAI → rule-based fallback)
     for provider in get_provider_chain():
         try:
@@ -993,7 +1029,7 @@ Answer using the actual data above. Be specific with numbers."""
             continue  # next provider
 
     # Rule-based fallback — always works, data-driven
-    fallback = await get_intelligent_fallback(user_message, intent_info, tenant_id)
+    fallback = await get_intelligent_fallback(user_message, intent_info, tenant_id, allowed_stores)
     context.add_message("assistant", fallback)
     return fallback
 
