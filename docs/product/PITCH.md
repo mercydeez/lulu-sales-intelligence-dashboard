@@ -38,7 +38,7 @@ Nine screens (Live Ops, Analytics/Forecast, Inventory, Alerts→Tasks, Promotion
 - **92 backend tests**; CI runs the full suite + enforced TypeScript check + Next build + Docker builds on every push.
 - **Phase 4 hardening, each change measured:** enumerated CORS (wildcards are invalid with credentials), env-driven CSP, a `request_id` threaded through every log line, a covering index that turned the hot aggregation into an **index-only scan**, and **savepoints** so one failing alert sub-query can't poison a shared transaction.
 - **Self-audited:** found and fixed a fresh-boot seeding crash (ORM `String` columns vs PG enum columns) and a CORS spec violation that the original config shipped with.
-- **Documented end-to-end:** [`README.md`](../../README.md) (incl. Data & Honesty Notes), [`docs/architecture/ADR.md`](../architecture/ADR.md) (decisions), [`docs/product/DEMO_SCRIPT.md`](DEMO_SCRIPT.md) (walkthrough), and [`implementation.md`](../../implementation.md) (phase-by-phase log with commits).
+- **Documented end-to-end:** [`README.md`](../../README.md) (incl. Data & Honesty Notes), [`docs/architecture/ADR.md`](../architecture/ADR.md) (decisions), [`docs/product/DEMO_SCRIPT.md`](DEMO_SCRIPT.md) (walkthrough), and [`implementation.md`](../../implementation.md) (the forward roadmap: verified state + what's next).
 
 ## Stack
 

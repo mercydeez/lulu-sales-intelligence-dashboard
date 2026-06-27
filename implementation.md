@@ -1,19 +1,22 @@
-# Implementation Plan
+# Implementation Plan — Retail IQ
 
-The **forward** roadmap — what's left to build. Completed work lives in git history and is no
-longer tracked here. Strategic/product rationale lives in `docs/` (PRODUCT_STRATEGY, SAAS_PATH, ADR).
+The **single, forward** roadmap: what's verified-done and what's left to build. Completed work
+lives in git history and is not re-tracked here. Strategic/product rationale lives in `docs/`
+(`PRODUCT_STRATEGY`, `SAAS_PATH`, `architecture/ADR`).
 
-> **Where we are:** the product is a working **system of intelligence** (auth/RBAC, multi-tenancy
-> + RLS, live sales pipeline, forecasting + Forecast Lab, procure-to-pay system of record, PaaS
-> layer, PWA shell). The next milestone turns it into a **rock-solid, accuracy-first diagnostic
-> SaaS** — tenant-generic so it serves either **B2B** retail or **B2G** oversight — that surfaces
-> not just *what's going right* but *what's going wrong*, answers arbitrary business questions
-> accurately via a local NL→SQL chatbot (**Sage**), and becomes **agentic** last, incrementally.
+> **Where we are.** The product is a working **system of intelligence**: JWT/RBAC auth,
+> multi-tenancy + Postgres RLS, a live Redis→SSE sales pipeline, forecasting + Forecast Lab, a
+> procure-to-pay system of record, a per-tenant public API/PaaS layer, and **Sage** — a grounded,
+> RBAC-safe NL→SQL assistant (decompose-route-recompose + federation + document RAG, all wired and
+> tested). A **Node BullMQ diagnostics worker** runs the loop **detect → diagnose → recommend →
+> (human) accept**. The next milestone **tightens the screws**: close the one missing loop stage
+> (**measure**), harden accuracy/security, activate the local LLM, and scope the near-term SaaS path
+> — keeping it tenant-generic so it serves either **B2B** retail or **B2G** oversight.
 
 ## Prototype constraints
 - **No paid services.** Local **Ollama** for the LLM, **BullMQ on the existing Redis** for jobs,
-  deterministic rules for diagnostics. Paid tiers (Stripe, hosted LLMs, Temporal, WorkOS, etc.)
-  stay deferred until go-to-market.
+  deterministic rules for diagnostics. Paid tiers (Stripe/Telr, hosted LLMs, Temporal, WorkOS) stay
+  deferred until go-to-market.
 - **Accuracy is the product.** Every number Sage or a panel shows must be derivable and correct.
   Convention: VOLUME metrics in **units**, VALUE metrics in **AED**, never mixed on one axis
   (reference: `backend/app/routes/kpis.py`).
@@ -23,182 +26,107 @@ longer tracked here. Strategic/product rationale lives in `docs/` (PRODUCT_STRAT
 
 ---
 
-## Phase 0 — Reliability foundation (unblock the API) 🟡
-Goal: the stack runs from the current build and the API actually responds under load.
-- ✅ **Event-loop unblock** — the Forecast Lab trainer was running CPU-bound model work
-  (pandas/sklearn/torch) on the asyncio loop, pinning all cores and starving the HTTP server.
-  Heavy compute now runs in a worker thread via `asyncio.to_thread`
-  (`routes/analytics.py::_compute_model_metrics_sync`), DB I/O stays on the loop, and the trainer
-  is gated by `forecast_trainer_enabled` + a startup delay (`services/forecast_trainer.py`).
-- ✅ **Compose hygiene** — `container_name:` now `${PROJECT_PREFIX:-sales}_*` so parallel checkouts
-  don't collide (the failure hit booting a second dir). Default keeps `sales_*` for existing scripts.
-- ✅ **Smoke check in CI** — new `smoke` job in `.github/workflows/ci.yml`: `docker compose up --build`
-  → poll `/health` → assert db+redis healthy → run the golden-number tests against the live stack.
+## Verified state (what's shipped)
+The post-recovery remediation is complete; these are proven against the running stack and tests.
 
-## Phase 1 — Accuracy hardening ("tighten the screws") ✅ (mostly)
-Goal: every insight/output is provably correct. Builds on the shipped units/AED separation.
-- ✅ **Automated guards** — `backend/tests/test_accuracy_guards.py` (DB-free, in the unit suite):
-  asserts analytics exposes no AED-bearing `total_sales` key, revenue derives via `unit_price_aed`,
-  KPI volume fields are `int` & revenue fields `float`, a SINGLE `CATEGORY_COSTS` definition, and
-  (frontend scan) `formatCurrency` is never bound to a units field.
-- ✅ **Golden-number tests** — `backend/tests/test_golden_numbers.py` (integration; auto-skips if API
-  down; runs in CI smoke): pins seed shape (913k rows / 10 stores / 50 items), asserts volume=int,
-  revenue=float, and revenue/units sits in the seeded AED price band (catches units-as-AED regressions).
-- ✅ **Rename the AED `total_sales` alias** → `total_revenue` in `analytics.py` (+ Pydantic models)
-  and `admin.py` (`total_sales_30d`→`total_revenue_30d`); frontend types + 6 consumers updated, `tsc` clean.
-- ✅ **Unify the price source** — `data_sync.CATEGORY_COSTS` is now DERIVED from `items.unit_price_aed`
-  at startup (`refresh_category_costs()` in the lifespan); the hardcoded dict is only a cold-start
-  fallback. promotions/procurement/inventory can no longer drift from the analytics revenue math.
-- ❌ **Remaining smell** — per-tenant store names in `ai_assistant` (no hardcoded list); folded into
-  Phase 2 (Sage rewrite supersedes the intent-stuffing assistant).
+| Capability | State | Notes |
+|---|---|---|
+| Live sales pipeline (generator → Redis pub/sub → SSE) | ✅ | `/stream/*`, ticket-authenticated; consumers centralized in `hooks/useEventStream.ts` |
+| Units vs AED accuracy | ✅ | Derived revenue (`unit_price_aed`), guarded by `tests/test_accuracy_guards.py` + `test_golden_numbers.py` |
+| RBAC + tenant scoping | ✅ | region→store expansion, server-side; tenant scoping + RLS (FORCE-RLS opt-in) |
+| Sage AI safety | ✅ | store-scoped chat, server-side AI gate, user-bound sessions, grounded refusing guardrails, `tests/test_ai_rbac.py` (10) |
+| httpOnly cookie auth | ✅ | Bearer **or** cookie; logout clears + blacklists; `test_tokens.py::TestCookieAuth` |
+| Sage engine | ✅ | `nl2sql` (guard + `sage_ro`), `sage2` (multi-part), `federation` (multi-source), `rag` (FTS) — all wired; deterministic fallback works with **zero LLM** |
+| Diagnostics loop: detect→diagnose→recommend→accept | ✅ | worker `scan` job, 5 rules, `findings` + `recommended_action`/`action_type`, human-gated `accept-action` |
+| Forecasting + Forecast Lab | ✅ | classical/LightGBM + optional deep tier; MAPE/WAPE backtest vs seasonal-naive |
 
-## Phase 2 — "Sage": NL→SQL diagnostic chatbot on Ollama ✅ (engine; LLM drops in last)
-**Built & verified (provider-agnostic — works with zero LLM via rule-based fallback):**
-- ✅ **Semantic layer** (`database/migrations/023_sage_semantic_views.sql`): seven curated
-  `sage_*` views, each tenant-filtered by `WHERE tenant_id = current_tenant_id()` so isolation
-  is baked into the view SQL (independent of RLS-through-view). Encodes units vs revenue_aed.
-- ✅ **Least-privilege role** `sage_ro`: SELECT on the `sage_*` views ONLY (verified it CANNOT read
-  `users`). Sage's executor connects as `sage_ro` + sets the `app.tenant_id` GUC + statement timeout.
-  Verified tenant isolation end-to-end (tenant 1: 913k rows, tenant 2: 1.9k).
-- ✅ **`services/nl2sql/`**: `schema.py` (allow-list + prompt), `guard.py` (single SELECT, no
-  comments/`;`/DDL/DML, no pg_*/set_config/catalog, allow-list relations, hard LIMIT wrap),
-  `executor.py` (sage_ro read-only), `prompt.py`, `pipeline.py` (NL→SQL→guard→exec→narrate, with a
-  deterministic rows-only narration fallback). Fails closed at every step → rule-based fallback.
-- ✅ **Integrated** into `ai_assistant.get_chat_response`/`stream_chat_response` (Sage first, then the
-  existing path). **Renamed** chatbot → **Sage** (`settings.chatbot_name`, `brand.ts CHATBOT_NAME`,
-  ChatBot/AIToggleButton, prompts/fallbacks).
-- ✅ **Ollama** service added to `docker-compose.yml` (profile `ai`); `OLLAMA_URL` empty by default.
-- ✅ **Tests**: `test_nl2sql_guard.py` (29, DB-free — injection/DDL/cross-table/GUC-tamper all
-  rejected) + `test_nl2sql_pipeline.py` (5, integration — cross-table blocked, tenant isolation),
-  wired into CI smoke.
-- ⏳ **Last step (you):** add the LLM — set `OLLAMA_URL`/pull a model, or set `OPENAI_API_KEY`. The
-  provider chain (`services/llm/`) picks it up; no code change. Until then Sage uses the fallback.
-
-> **RLS gap found (Track B follow-up):** migration 021's `security_invoker` is NOT in effect on
-> `sales_fact_view` (likely recreated after; an `ALTER VIEW` also blocks behind the live generator's
-> read load). So app_rw querying that view bypasses RLS (runs as the superuser owner). Sage sidesteps
-> this entirely (dedicated `sage_*` definer views with a baked tenant filter), but the app-wide
-> `USE_RLS_ROLE` flip still needs this fixed first. Tracked for Track B / Phase 2 hardening.
-
-## Phase 2 — (original notes) ❌
-Goal: replace intent-stuffing with grounded NL→SQL so Sage answers arbitrary business questions
-accurately, with **zero hallucination**.
-- **Rename** the chatbot to **Sage** everywhere (`ai_assistant.py`, `routes/ai.py`, frontend
-  `ChatBot.tsx`/`AIToggleButton.tsx`, add `CHATBOT_NAME` to `brand.ts`).
-- **NL→SQL pipeline** (new `backend/app/services/nl2sql/`): Ollama gets a curated, tenant-scoped
-  schema + few-shot examples → emits a single `SELECT` → **allow-list guard** (one statement,
-  SELECT-only, whitelisted tables/views, mandatory `LIMIT`, no DDL/DML/`;`-stacking) → executed on
-  a **read-only, tenant-scoped session** (reuse `app_rw` + RLS GUC) with a statement timeout → rows
-  returned → Ollama narrates **strictly from the returned rows**. On failure/low confidence:
-  clarify or fall back to the existing rule-based responder (`get_intelligent_fallback`).
-- Reuse the provider chain (`services/llm/`, `OllamaProvider`) + existing `/chat` `/chat/stream` routes.
-- Add an **`ollama`** service to `docker-compose.yml`; config `OLLAMA_URL` / `OLLAMA_MODEL`.
-- Tests: golden NL→SQL pairs; injection/guard tests (DDL/DML/cross-tenant rejected).
-
-## Phase 3 — Diagnostic intelligence + BullMQ worker ✅
-Goal: a **system of diagnosis** that proactively finds problems, explains them, and recommends action.
-- ✅ **`findings` contract** (`migration 024`): explainable rows (rule, severity, evidence JSONB, the
-  human sentence, entity, dedupe_key, status), RLS-scoped. Shared by the Python app + Node worker.
-- ✅ **Node BullMQ worker** (`worker/`, in compose, runs by default) on the existing Redis: a
-  repeatable scan job runs deterministic rules and upserts findings. Verified end-to-end (finds e.g.
-  "Deira City Centre is lagging peers — grew 2.3% vs the chain's 8.3%").
-- ✅ **Deterministic rules** (`worker/src/rules.js`, no ML): revenue_drop (store), category_slump,
-  return_spike, **laggard_store** (relative underperformance — fires on healthy/growing data too),
-  high_return_rate. Each emits evidence + an explanation. Add new rules in one place.
-- ✅ **Findings API** (`routes/findings.py`): list (severity/status filters), summary, acknowledge,
-  resolve — tenant-scoped.
-- ✅ **Insights frontend panel** (`/insights` + nav): severity summary, status filter, ack/resolve,
-  30s auto-refresh. `tsc` clean. (Frontend image needs a rebuild to serve the new route.)
-- ⏭️ Findings queryable by Sage / forecast-vs-actual drift rule: easy follow-ups (a `sage_findings`
-  view + a drift rule reusing the forecast engine).
-
-## Sage v2 — decompose → route → recompose ✅ (verified end-to-end, no LLM needed)
-Goal: answer ONE multi-part business question spanning MANY domains (the MEGA-30 pattern),
-grounded, recomposed into one source-attributed table.
-- ✅ **In-depth multi-domain semantic layer** (`migration 028`): distributors+zones, CRM pipeline,
-  online pricing, company targets, and a documents store — all tenant-stamped + RLS + curated
-  `sage_*` views + seed data. (Seed mirrors the eval: 8 North distributors, CRM-North = 3,447,836.)
-- ✅ **`services/sage2/` orchestrator**: `is_multipart` gate → decompose → per-sub answer → recompose.
-  Deterministic intent templates (`intents.py`) answer today with NO LLM (and are the test oracle);
-  an LLM `decompose.py` + per-sub NL→SQL generalizes it when a provider is set. Every generated query
-  still passes the allow-list guard + runs on `sage_ro`.
-- ✅ **Document RAG** (`services/rag/`): Postgres full-text retrieval (zero deps), grounded answer +
-  citation; embedding/pgvector upgrade path behind the same interface. A doc-phrased question returns
-  the strategy-doc excerpt with `(Strategy 2025-2030, chunk N)`.
-- ✅ **External API source** (`sage2/api_source.py`, `EXTERNAL_API_SOURCES` JSON): config-driven REST
-  feeds (FX/weather/market) with dotted JSON-path extraction; no-op until configured.
-- ✅ **Wired** into the dashboard chat + public `/v1/ai/ask`; multi-part → Sage v2, single → federated
-  Sage. **Verified**: the exact MEGA-30 question recomposes all 5 parts (target, primary sales, CRM
-  pipeline North, distributors North, avg online price) — grounded, zero LLM. Tests: `test_sage2.py`.
-- ⏳ LLM activates free-form decomposition + arbitrary NL→SQL; until then the deterministic intents
-  cover the demonstrated questions. Mongo/MySQL/etc. domains + live API endpoints are the follow-ups.
-
-## Federated Sage — multi-source NL→SQL ✅ (Postgres verified; other engines drop-in)
-Goal: answer from MANY databases (not just one connected source), role-aware, zero-hallucination.
-- ✅ **One canonical contract, many executors** (`services/federation/`): Sage generates ONE SQL over
-  the canonical `sage_*` schema; each source executes it. `base.py` (SourceAdapter ABC), `catalog.py`
-  (role-filtered source registry from `data_sources` + the internal DB), `policy.py` (consumer vs
-  admin: source visibility, row caps, cross-source-merge gate), `orchestrator.py` (generate→guard→
-  run-per-source→merge→narrate, with **discrepancy detection** when sources disagree >5%).
-- ✅ **Postgres adapters** (verified live): internal app DB (reuses `sage_ro`), and external connected
-  Postgres via **canonical CTEs synthesized from the data-source `mapping`** — the same canonical SQL
-  ran across two real Postgres sources and returned comparable, source-tagged results.
-- ✅ **Other engines drop-in** (`adapters/others.py`): MySQL/BigQuery/Snowflake/Mongo/REST/dataset
-  register and route identically; honest scaffold (clear "enable per-engine" error) until their
-  driver/service is wired — no orchestrator change to enable one.
-- ✅ **Role-aware + wired** into the dashboard chat (`get_chat_response`/`stream_chat_response` take
-  the caller's role; consumers/store get the internal source only, regional+ merge across sources).
-  Public `/v1/ai/ask` stays single-source (consumer). 41 backend tests green (incl. 7 federation:
-  policy, discrepancy, narration, CTE safety).
-- ⏳ **Activates with the LLM** (same as Sage): SQL generation needs a provider; until then federated
-  questions fall back to the rule-based responder. Other-engine sources + tenant-scoping of external
-  `data_sources` rows are the documented follow-ups.
-
-## Phase 4 — Agentic layer (last, incremental) ✅ (autonomy level 0)
-Goal: turn recommendations into proposed actions, slowly increasing autonomy.
-- ✅ **Recommendations on findings** (`migration 025`): every finding now carries a
-  `recommended_action` + `action_type` (review_pricing | review_supplier | investigate | promote …),
-  emitted by the worker rules.
-- ✅ **Human-gated acceptance** (`POST /api/findings/{id}/accept-action`): an operator accepts the
-  recommendation; we record `action_accepted_by/at` and acknowledge the finding. The system NEVER
-  executes on its own (autonomy level 0). Surfaced in the Insights panel ("Accept action").
-- ⏭️ **Next increments (deliberately slow):** map `action_type` → a *drafted* PO/alert via the
-  existing procure-to-pay + `approval_rules` layer (still human-approved), then raise autonomy.
+**Loop status:** `measure` is the **only missing stage** — accepting an action records the human
+decision but nothing checks whether the metric recovered. That's Track 1 below.
 
 ---
 
-## Track B — Commercial & trust scaffolding 🟡 (drop-in-ready, no paid services)
-- ✅ **Notification dispatcher** (`worker/src/notify.js`): new high/critical findings post to any
-  Slack/Discord/Teams incoming webhook (`NOTIFY_WEBHOOK_URL`); no-op (logs) until set. Dedupe means
-  no re-notify on re-scans.
-- ✅ **Observability hooks**: env-gated `SENTRY_DSN` (optional `sentry-sdk` import; silent no-op if
-  absent) + `POSTHOG_API_KEY` settings. Nothing leaves the stack by default.
-- ✅ **SECURITY.md**: one-page security summary for buyer review (auth, RBAC, tenant isolation,
-  hardening, the known RLS-through-view gap).
-- ✅ **Brand centralization**: `settings.chatbot_name` + `brand.ts CHATBOT_NAME` (Sage) added to the
-  existing `product_name` single-source.
-- ✅ **`security_invoker` fix** (`migration 026`): `sales_fact_view` now honours the caller's RLS;
-  verified `app_rw` isolates to its tenant through the view (tenant1=913k vs tenant2=1.9k). Owner
-  request path unaffected (KPIs verified). The app-wide `USE_RLS_ROLE` flip is now unblocked
-  (remaining: GUC-after-auth ordering + cross-tenant public-API-key lookup).
-- ❌ **Remaining (needs a decision / external service):** billing + metering (Stripe/Telr on
-  `tenants.plan`), ToS/Privacy/DPA, tenant export & delete-on-request, data residency, ingestion
-  dedup/freshness polish.
+## Track 1 — Close the loop: Measure / Outcome ❌ (headline)
+Goal: after a recommendation is accepted, **prove whether it worked** and auto-resolve when it does.
+- **Schema** (`database/migrations/034_finding_outcomes.sql`): add `outcome_status`
+  (`pending|improved|unchanged|worsened`), `metric_before`, `metric_after`, `measured_at` to
+  `findings` (single-row form; promote to a `finding_outcomes` child table only if we want
+  measurement history). RLS-scoped like the rest of `findings`.
+- **Worker** (`worker/src/index.js` + `rules.js`): add a second BullMQ job **`measure`** beside
+  `scan`. For findings with `action_accepted_at` set and not yet measured, re-evaluate **the same
+  rule's metric** for that entity over the current window, write before/after, and **auto-resolve**
+  (`status='resolved'`, `outcome_status='improved'`) once the metric clears the rule threshold.
+  Reuse the existing per-rule metric functions — no new metric math.
+- **API** (`backend/app/routes/findings.py`): expose `outcome_status` + before/after in list/summary.
+- **UI** (`frontend/src/app/insights/page.tsx`): "resolved — metric improved X → Y" on measured
+  findings; an **Outcomes** filter.
+- **Tests**: measure path — metric recovered → auto-resolve; unchanged → stays acknowledged with
+  `outcome_status='unchanged'`.
 
-## Deferred (needs external services / a decision)
+## Track 2 — Accuracy & security hardening ("tighten the screws") 🟡
+- **Flip `USE_RLS_ROLE=true` on the request path.** Role + DB enforcement is shipped and proven
+  (migration 026 `security_invoker`; `app_rw` isolates through `sales_fact_view`). Blocked only on
+  two follow-ups: **GUC-after-auth ordering** (bind `app.tenant_id` once, after auth) and
+  **cross-tenant public-API-key lookup**. Land both, then flip the flag.
+- **`worker_rw` stale-volume auth bug.** `029_worker_role.sql` sets the password only in its `CREATE`
+  branch; on a pre-existing role the `ELSE` path skips it, so a stale volume fails auth. Fix:
+  unconditionally `ALTER ROLE worker_rw PASSWORD …` (idempotent) so fresh **and** stale volumes work.
+- **`test_golden_numbers` timeout under load.** Passes in isolation; times out when the forecast
+  trainer + generator + parallel suite contend. Stabilize (raise the per-test/statement timeout or
+  gate the trainer during the suite) so the baseline is unconditionally green.
+- **Extend accuracy guards** to any new `outcome_*` / `sage_*` numeric fields (units≠AED, volume=int,
+  revenue=float) in `tests/test_accuracy_guards.py`.
+- **README/doc honesty pass** (the remediation's last tail): reconcile every claim with code —
+  synthetic data, units vs AED, what Sage can/can't do, what forecasting predicts, what's not built.
+
+## Track 3 — Activate Sage's local LLM (no paid API) ⏳
+Config + verification, not new code (the provider chain already picks it up):
+- Bring up the `ollama` service (compose profile `ai`), set `OLLAMA_URL`, pull a small model
+  (e.g. `llama3.2`).
+- Verify free-form questions now route through NL→SQL (not the rule-based fallback), the allow-list
+  guard (`services/nl2sql/guard.py`) still rejects injection/DDL/cross-tenant, tenant isolation holds
+  (`sage_ro` + `app.tenant_id`), and narration stays grounded in the returned rows.
+- Document the one-command activation here so it's reproducible.
+
+## Track 4 — Cleanup (real items only) ❌
+- Remove the 3 dead exports from `frontend/src/components/inventory/mockData.ts`
+  (`generateMockInventory`, `generateMockSummary`, `generateMockCategories`); keep `generateAlerts` +
+  `generateProcurementList` (still imported by `inventory/page.tsx`).
+- The consolidation into this single file (retiring `docs/IMPLEMENTATION_PLAN.md`) is the
+  doc-duplication cleanup.
+- **Not debt — leave as-is:** `lib/api.ts` (typed facade) vs `lib/apiClient.ts` (low-level) is correct
+  layering; `predictor.py` (operational) vs `forecasting/engine.py` (Lab/eval) serve different
+  purposes; SSE consumption is already centralized in `hooks/useEventStream.ts`. Don't re-flag these.
+
+## Track 5 — SaaS / commercial roadmap (near-term, free-tier first) 🟡
+Buildable now with **no** external service; billing stays gated to go-to-market.
+- **Tenant data export + delete-on-request** — GDPR-style, pure Postgres/app work on the existing
+  tenant scoping + RLS.
+- **Plan / metering scaffolding** — meter on `tenants.plan` + per-API-key usage (key infra exists);
+  meter now, charge later.
+- **Trust docs** — ToS / Privacy / DPA one-pagers next to the existing `SECURITY.md`.
+
+---
+
+## Deferred (needs a decision or an external service)
 - **Billing** — Stripe/Telr subscriptions + metering (maps onto `tenants.plan` + API-key metering).
-- **Payments / B2B AP** — partner for money movement; never build KYC/AML/licensing.
-- **Notifications** — WhatsApp/Slack/email (Twilio/Resend/Slack).
+- **Notifications** — WhatsApp/email/Slack (Twilio/Resend/Slack); the worker's webhook dispatcher
+  (`worker/src/notify.js`) is the drop-in point.
 - **E-signature** — DocuSign / Dropbox Sign.
 - **Enterprise infra** — Temporal/Camunda, WorkOS SSO/SAML/SCIM, PostHog+Sentry, Typesense/Meili,
   DuckDB/ClickHouse+dbt, Mapbox, embedded payments.
-- **FORCE-RLS request-path enablement** — role + DB enforcement shipped & proven; flip
-  `USE_RLS_ROLE=true` after the GUC-after-auth + cross-tenant public-API-key-lookup follow-ups
-  (these also unblock Phase 2's read-only NL→SQL execution role).
+- **Next agentic increment (deliberately slow).** Today is autonomy level 0 — the system never acts
+  on its own. The next step maps `action_type` → a *drafted* PO/alert via the existing procure-to-pay
+  + `approval_rules` layer (still human-approved). Gated behind Track 1 (you can't safely raise
+  autonomy until you can measure outcomes).
+- **Other federation engines** — MySQL/BigQuery/Snowflake/Mongo/REST adapters register but error
+  until their driver/service is wired (`services/federation/adapters/others.py`).
 
 ## Run / deploy notes
-- Dev: `docker compose up -d` (postgres :5432, redis :6379, backend :8000, frontend :3000).
-- **Rebuild after dependency or backend changes**: `docker compose up -d --build backend`.
-- Migrations auto-apply on boot (numbered SQL in `database/migrations/`, tracked in `schema_migrations`).
+- Dev: `docker compose up -d` (postgres :5432, redis :6379, backend :8000, frontend :3000, worker).
+- **Rebuild after dependency or backend changes**: `docker compose up -d --build backend` (and
+  `frontend` to serve new routes).
+- Migrations auto-apply on boot (numbered SQL in `database/migrations/`, tracked in
+  `schema_migrations`). Re-trigger `init.sql` with `docker compose down -v && up`.
+- Activate the LLM: `docker compose --profile ai up -d ollama`, set `OLLAMA_URL`, pull a model.
 - Demo logins (password `Demo@2026!`): `atharva@retaildemo.app` (super_admin),
   `krishna@retaildemo.app` (regional_manager), `yash@retaildemo.app` (store_manager).

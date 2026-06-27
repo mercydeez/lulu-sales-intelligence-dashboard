@@ -57,7 +57,7 @@ FastAPI (async SQLAlchemy 2 + asyncpg) + PostgreSQL 15 + Redis 7 + Next.js 14 Ap
 
 **Middleware order** (`main.py`, first added = outermost): SecurityHeaders → CSRF (Bearer-exempt) → BodySizeLimit → SessionInvalidation → RateLimit (Redis sliding window per IP) → RequestID → CORS.
 
-**Frontend:** every page under `src/app/*/page.tsx` is a large `'use client'` component. Auth state in `contexts/AuthContext.tsx` (tokens in localStorage, `withAuth` HOC, auto-refresh on 401). REST goes through `lib/api.ts` (in-memory TTL cache — not user-aware). SSE consumption is duplicated across ~6 files, mostly hardcoding `${API_URL}/stream/sales`.
+**Frontend:** every page under `src/app/*/page.tsx` is a large `'use client'` component. Auth state in `contexts/AuthContext.tsx` (tokens in localStorage, `withAuth` HOC, auto-refresh on 401). REST goes through `lib/api.ts` (a typed facade with in-memory TTL cache — not user-aware) over `lib/apiClient.ts` (low-level auth/refresh). SSE consumption is centralized in `hooks/useEventStream.ts` (ref-counted, one connection per endpoint) — no longer duplicated/hardcoded across the stream consumers.
 
 ## Known traps
 

@@ -188,7 +188,7 @@ This is the core of the app:
 - **Hardened middleware** — CSP (env-driven `connect-src`, `object-src 'none'`, prod `upgrade-insecure-requests`), HSTS, `X-Frame-Options`, `X-Content-Type-Options`; CORS with **enumerated** methods/headers (required once credentials are allowed); Redis sliding-window rate limiting with in-memory fallback; CSRF double-submit for non-Bearer requests; request body-size limit.
 - **Structured logging** — a per-request `request_id` (reusing an inbound `X-Request-ID`) is threaded through **every** log line via a contextvar + log filter; optional JSON log output.
 - **Fail-fast config** — in `production`/`staging`, startup raises on default secrets, short JWT keys, or default DB credentials.
-- **Hardening details** are recorded in [`docs/architecture/ADR.md`](docs/architecture/ADR.md) and the Phase 4 section of [`implementation.md`](implementation.md).
+- **Hardening details** are recorded in [`docs/architecture/ADR.md`](docs/architecture/ADR.md) (ADR-009) and the **Track 2** section of [`implementation.md`](implementation.md).
 
 ---
 
@@ -262,7 +262,7 @@ frontend/
 docs/                         indexed documentation (architecture, product, archive)
 docker-compose.yml            dev stack
 docker-compose.production.yml prod stack (adds NGINX)
-implementation.md             living execution log (phase-by-phase)
+implementation.md             single living forward roadmap (what's shipped + what's next)
 ```
 
 ---
@@ -274,7 +274,7 @@ implementation.md             living execution log (phase-by-phase)
 - [`docs/product/DEMO_SCRIPT.md`](docs/product/DEMO_SCRIPT.md) — a guided 8-minute walkthrough for reviewers.
 - [`docs/architecture/ADR.md`](docs/architecture/ADR.md) — architecture decision records (the *why* behind the design).
 - [`docs/product/PITCH.md`](docs/product/PITCH.md) — one-page pitch: problem, approach, and engineering tradeoffs.
-- [`implementation.md`](implementation.md) — phase-by-phase build log with commit hashes.
+- [`implementation.md`](implementation.md) — the single living forward roadmap (verified state + the remaining tracks).
 - [`docs/archive/GAP_ANALYSIS.md`](docs/archive/GAP_ANALYSIS.md) — the original honest audit that drove the roadmap.
 
 ---

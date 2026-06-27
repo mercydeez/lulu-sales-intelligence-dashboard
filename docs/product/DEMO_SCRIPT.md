@@ -85,7 +85,7 @@ Use the **globe toggle** (top bar) to switch to **Arabic** — the shell mirrors
 
 ## 7 · Close (20s)
 
-> "Everything you saw is in `implementation.md` as a phase-by-phase log with commit hashes, the design rationale is in `docs/architecture/ADR.md`, and the README's *Data & Honesty Notes* call out exactly what's synthetic. I'd rather under-claim and be trusted than demo smoke."
+> "What's shipped and what's next is laid out in `implementation.md` as a single forward roadmap, the design rationale is in `docs/architecture/ADR.md`, and the README's *Data & Honesty Notes* call out exactly what's synthetic. I'd rather under-claim and be trusted than demo smoke."
 
 ---
 
