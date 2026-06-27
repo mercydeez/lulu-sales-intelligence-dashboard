@@ -61,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (accessToken && storedUser) {
           // Validate token with backend
           const response = await fetch(`${API_URL}/api/auth/validate`, {
+            credentials: 'include',
             headers: {
               'Authorization': `Bearer ${accessToken}`
             }
@@ -111,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await fetch(`${API_URL}/api/auth/signup`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ seed_sample_data: true, ...data }),
       });
@@ -148,6 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials)
       });
@@ -179,6 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await fetch(`${API_URL}/api/auth/2fa/verify`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mfa_token: mfaToken, code }),
       });
@@ -198,15 +202,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async (): Promise<void> => {
     try {
+      // Always hit the endpoint so the httpOnly cookies get cleared + the token
+      // blacklisted, even in a cookie-only session where localStorage is empty.
       const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
-      if (accessToken) {
-        await fetch(`${API_URL}/api/auth/logout`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        });
-      }
+      await fetch(`${API_URL}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {},
+      });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
@@ -221,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await fetch(`${API_URL}/api/auth/refresh`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
         },

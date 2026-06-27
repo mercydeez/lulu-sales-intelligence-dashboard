@@ -7,8 +7,10 @@ mocked at the service boundary.
 """
 import pytest
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from fastapi import Response
 from jose import jwt
 
 from app.services.auth_service import (
@@ -202,3 +204,58 @@ class TestTokenTypeConfusion:
     def test_type_check_can_be_skipped(self):
         # expected_type=None preserves the legacy "any valid JWT" behaviour.
         assert decode_token(create_refresh_token(TOKEN_DATA), expected_type=None) is not None
+
+
+# =============================================================================
+# 6. httpOnly cookie auth (P1.3) — the cookie helpers set/clear secure auth
+#    cookies. Tokens are returned in the body (Bearer) AND set as httpOnly
+#    cookies so the browser need not keep them in XSS-exfiltratable localStorage.
+# =============================================================================
+
+def _set_cookie_headers(response: Response) -> list[str]:
+    return [v.decode() for k, v in response.raw_headers if k == b"set-cookie"]
+
+
+class TestCookieAuth:
+
+    def _tokens(self):
+        return SimpleNamespace(
+            access_token="acc.jwt.value",
+            refresh_token="ref.jwt.value",
+            expires_in=1800,
+        )
+
+    def test_set_auth_cookies_sets_both_httponly(self):
+        from app.routes.auth import set_auth_cookies, ACCESS_COOKIE, REFRESH_COOKIE
+        resp = Response()
+        set_auth_cookies(resp, self._tokens())
+        headers = _set_cookie_headers(resp)
+        joined = "\n".join(headers)
+        assert f"{ACCESS_COOKIE}=acc.jwt.value" in joined
+        assert f"{REFRESH_COOKIE}=ref.jwt.value" in joined
+        # Both cookies must be httpOnly + scoped to the whole site.
+        assert all("HttpOnly" in h for h in headers)
+        assert all("Path=/" in h for h in headers)
+
+    def test_dev_cookies_not_secure(self):
+        # Testing/dev env: allow http on localhost (no Secure flag).
+        from app.routes.auth import set_auth_cookies
+        resp = Response()
+        set_auth_cookies(resp, self._tokens())
+        assert all("Secure" not in h for h in _set_cookie_headers(resp))
+
+    def test_prod_cookies_are_secure(self, production_settings):
+        from app.routes import auth as auth_routes
+        resp = Response()
+        with patch.object(auth_routes, "get_settings", return_value=production_settings):
+            auth_routes.set_auth_cookies(resp, self._tokens())
+        assert all("Secure" in h for h in _set_cookie_headers(resp))
+
+    def test_clear_auth_cookies_expires_both(self):
+        from app.routes.auth import clear_auth_cookies, ACCESS_COOKIE, REFRESH_COOKIE
+        resp = Response()
+        clear_auth_cookies(resp)
+        joined = "\n".join(_set_cookie_headers(resp))
+        # delete_cookie emits an expiry in the past for each cookie.
+        assert ACCESS_COOKIE in joined and REFRESH_COOKIE in joined
+        assert "Max-Age=0" in joined or "01 Jan 1970" in joined

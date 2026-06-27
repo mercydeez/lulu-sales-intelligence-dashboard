@@ -18,6 +18,48 @@ security = HTTPBearer(auto_error=False)
 
 
 # =============================================================================
+# httpOnly COOKIE AUTH
+# -----------------------------------------------------------------------------
+# Tokens are returned in the JSON body (legacy Bearer flow, unchanged) AND set
+# as httpOnly cookies. The cookies let the browser authenticate without exposing
+# the token to JS — closing the "tokens in localStorage are XSS-exfiltratable"
+# gap. Cookies ignore port, so a cookie set by the API (:8000) is also sent to
+# the web app (:3000) on the same host. State-changing browser requests still
+# carry the Bearer header, so they stay CSRF-exempt (see CSRFMiddleware); a
+# cookie-only POST without the header is subject to double-submit CSRF.
+# =============================================================================
+
+ACCESS_COOKIE = "access_token"
+REFRESH_COOKIE = "refresh_token"
+_REFRESH_MAX_AGE = 7 * 24 * 60 * 60  # 7 days (matches REFRESH_TOKEN_EXPIRE_DAYS)
+
+
+def _cookie_kwargs() -> dict:
+    """Shared cookie security attributes, environment-aware."""
+    settings = get_settings()
+    is_prod = settings.environment.lower() in ("production", "prod", "staging")
+    return {
+        "httponly": True,
+        "secure": is_prod,           # require HTTPS in prod; allow http on localhost
+        "samesite": "lax",           # sent on top-level nav + same-site fetches
+        "path": "/",
+    }
+
+
+def set_auth_cookies(response: Response, tokens) -> None:
+    """Write access + refresh tokens as httpOnly cookies on the response."""
+    kw = _cookie_kwargs()
+    response.set_cookie(ACCESS_COOKIE, tokens.access_token, max_age=tokens.expires_in, **kw)
+    response.set_cookie(REFRESH_COOKIE, tokens.refresh_token, max_age=_REFRESH_MAX_AGE, **kw)
+
+
+def clear_auth_cookies(response: Response) -> None:
+    """Remove both auth cookies (logout)."""
+    response.delete_cookie(ACCESS_COOKIE, path="/")
+    response.delete_cookie(REFRESH_COOKIE, path="/")
+
+
+# =============================================================================
 # DEPENDENCY - Get Current User
 # =============================================================================
 
@@ -25,11 +67,16 @@ async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> dict:
-    """Dependency to get current authenticated user"""
-    if not credentials:
+    """Dependency to get current authenticated user.
+
+    Accepts the access token from the `Authorization: Bearer` header (API /
+    legacy clients) OR the httpOnly `access_token` cookie (browser / SSR).
+    """
+    token = credentials.credentials if credentials else request.cookies.get(ACCESS_COOKIE)
+    if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    token_data = decode_token(credentials.credentials)
+
+    token_data = decode_token(token)
     if not token_data:
         from app.services.security_events import record_event
         await record_event("token_invalid", request=request,
@@ -71,16 +118,18 @@ async def get_current_user(
 
 
 async def get_current_user_optional(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> Optional[dict]:
-    """Optional user authentication"""
-    if not credentials:
+    """Optional user authentication (Bearer header or httpOnly cookie)."""
+    token = credentials.credentials if credentials else request.cookies.get(ACCESS_COOKIE)
+    if not token:
         return None
-    
-    token_data = decode_token(credentials.credentials)
+
+    token_data = decode_token(token)
     if not token_data or token_data.exp < datetime.now(timezone.utc):
         return None
-    
+
     return await AuthService.get_user_by_id(token_data.user_id)
 
 
@@ -189,7 +238,7 @@ class TwoFactorVerifyRequest(BaseModel):
 # =============================================================================
 
 @router.post("/login")
-async def login(request: Request, login_data: LoginRequest):
+async def login(request: Request, response: Response, login_data: LoginRequest):
     """
     Authenticate user and return JWT tokens
     
@@ -230,6 +279,9 @@ async def login(request: Request, login_data: LoginRequest):
     # Create tokens
     tokens = await AuthService.create_tokens(user_data, login_data.remember_me)
 
+    # Also set httpOnly cookies (browser path) alongside the JSON body.
+    set_auth_cookies(response, tokens)
+
     logger.info(f"User logged in: {user_data['email']} (role: {user_data['role']})")
 
     return LoginResponse(
@@ -242,15 +294,27 @@ async def login(request: Request, login_data: LoginRequest):
 
 
 @router.post("/refresh", response_model=LoginResponse)
-async def refresh_token(refresh_data: RefreshRequest):
+async def refresh_token(
+    request: Request,
+    response: Response,
+    refresh_data: Optional[RefreshRequest] = None,
+):
     """
-    Refresh access token using refresh token
+    Refresh access token. The refresh token may come from the JSON body
+    (API clients) or the httpOnly `refresh_token` cookie (browser).
     """
-    tokens = await AuthService.refresh_access_token(refresh_data.refresh_token)
-    
+    token = (refresh_data.refresh_token if refresh_data else None) or request.cookies.get(REFRESH_COOKIE)
+    if not token:
+        raise HTTPException(status_code=401, detail="No refresh token provided")
+
+    tokens = await AuthService.refresh_access_token(token)
+
     if not tokens:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
-    
+
+    # Rotate the cookies too.
+    set_auth_cookies(response, tokens)
+
     return LoginResponse(
         access_token=tokens.access_token,
         refresh_token=tokens.refresh_token,
@@ -261,7 +325,7 @@ async def refresh_token(refresh_data: RefreshRequest):
 
 
 @router.post("/signup", response_model=LoginResponse, status_code=201)
-async def signup(request: Request, body: SignupRequest):
+async def signup(request: Request, response: Response, body: SignupRequest):
     """Self-serve signup (go-to-market onboarding): create an isolated tenant
     workspace + its owner account, optionally pre-loaded with sample data so the
     dashboard shows value immediately, and return tokens (auto-login). No billing
@@ -278,6 +342,7 @@ async def signup(request: Request, body: SignupRequest):
 
     user_data = await AuthService.get_user_by_id(user_id)
     tokens = await AuthService.create_tokens(user_data)
+    set_auth_cookies(response, tokens)
     logger.info(f"New tenant signup: {body.email} (tenant {user_data.get('tenant_id')})")
     from app.services.security_events import record_event
     await record_event("signup", request=request, tenant_id=user_data.get('tenant_id'),
@@ -345,22 +410,27 @@ async def onboarding_status(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/logout", response_model=MessageResponse)
-async def logout(request: Request, user: dict = Depends(get_current_user)):
+async def logout(request: Request, response: Response, user: dict = Depends(get_current_user)):
     """
     Logout current user and invalidate token
     """
     ip_address = request.client.host if request.client else None
-    
-    # Extract token from Authorization header to blacklist it
+
+    # Extract token from Authorization header or cookie to blacklist it
     token = None
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header.split(" ", 1)[1]
-    
+    if not token:
+        token = request.cookies.get(ACCESS_COOKIE)
+
     await AuthService.logout(user['id'], ip_address, token=token)
-    
+
+    # Clear the httpOnly cookies as well.
+    clear_auth_cookies(response)
+
     logger.info(f"User logged out: {user['email']}")
-    
+
     return MessageResponse(message="Logged out successfully")
 
 
@@ -542,7 +612,7 @@ async def disable_2fa(body: TwoFactorCodeRequest, request: Request,
 
 
 @router.post("/2fa/verify")
-async def verify_2fa(body: TwoFactorVerifyRequest, request: Request):
+async def verify_2fa(body: TwoFactorVerifyRequest, request: Request, response: Response):
     """Exchange a login 2FA challenge + TOTP code for real access/refresh tokens."""
     from app.services.auth_service import decode_mfa_challenge
     user_id = decode_mfa_challenge(body.mfa_token)
@@ -559,6 +629,7 @@ async def verify_2fa(body: TwoFactorVerifyRequest, request: Request):
     if not user_data or user_data.get('status') != 'active':
         raise HTTPException(status_code=401, detail="Account is not active")
     tokens = await AuthService.create_tokens(user_data)
+    set_auth_cookies(response, tokens)
     logger.info(f"2FA login completed: {user_data['email']}")
     return LoginResponse(
         access_token=tokens.access_token,

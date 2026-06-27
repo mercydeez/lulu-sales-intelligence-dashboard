@@ -349,10 +349,16 @@ class SessionInvalidationMiddleware(BaseHTTPMiddleware):
     """
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Only check authenticated endpoints
+        # Pull the access token from the Bearer header OR the httpOnly cookie —
+        # a logged-out cookie session must be rejected the same as a Bearer one.
         auth_header = request.headers.get("authorization", "")
+        token = None
         if auth_header.startswith("Bearer "):
             token = auth_header.split(" ", 1)[1]
+        else:
+            token = request.cookies.get("access_token")
+
+        if token:
             token_hash = hashlib.sha256(token.encode()).hexdigest()
 
             revoked = False

@@ -75,8 +75,8 @@ the `ELSE` (attributes-only) path and never set a password. Fix applied in-place
 | 6 | P1.2 grounded refusing guardrail prompt | ✅ done (`e92e49c`) |
 | 7 | P0.4 consolidate AI safety tests (`test_ai_rbac.py`, 10 tests) | ✅ done (`e92e49c`) |
 | 8 | P1.1 branding straggler (`ai_assistant.py`) | ✅ done (`e92e49c`) |
-| 9 | P1.3 httpOnly cookie auth + cookie blacklist | 🟡 next |
-| 10 | P1.4 README honesty pass | ⬜ |
+| 9 | P1.3 httpOnly cookie auth + cookie blacklist | ✅ done |
+| 10 | P1.4 README honesty pass | 🟡 next |
 | 11 | P2 verify intelligence loop; minimal measure/outcome gap | ⬜ |
 | 12 | P3 cleanup | ⬜ |
 
@@ -128,14 +128,20 @@ out-of-context refusal, grounded-numbers/says-unknown. **Test:** `pytest tests/t
 `tests/test_golden_numbers.py`, but source it honestly rather than as a literal claim; grep-sweep any
 residual `Lulu AI`/`Lulu Hypermarket`. **Accept:** no stale strings; claims sourced.
 
-### Step 9 (P1.3) — httpOnly cookie auth + cookie blacklist (port from `e5402e1`)
+### Step 9 (P1.3) — httpOnly cookie auth + cookie blacklist (port from `e5402e1`) ✅
 `routes/auth.py`: cookie helpers (`set/clear_auth_cookies`, `_cookie_kwargs`, `ACCESS_COOKIE`/
-`REFRESH_COOKIE`); make `get_current_user`/`_optional` accept Bearer **or** cookie **without dropping**
-b888b34's security-event logging, tenant-tamper rejection, `tenant_context` RLS binding; wire
-login/refresh/signup to set cookies, logout to clear. `middleware.py`: `SessionInvalidationMiddleware`
-also hash-checks the cookie token. Frontend `AuthContext.tsx` + fetch wrapper: `credentials:'include'`.
+`REFRESH_COOKIE`); `get_current_user`/`_optional` now accept Bearer **or** cookie **without dropping**
+b888b34's security-event logging, tenant-tamper rejection, `tenant_context` RLS binding (merged into the
+token-extraction line only); login/refresh/signup/2fa-verify set cookies, logout clears+blacklists the
+cookie token. `middleware.py`: `SessionInvalidationMiddleware` now hash-checks the cookie token too.
+Frontend `apiClient.ts` (authFetch + apiRequest + refresh) and `AuthContext.tsx`
+(login/signup/2fa/validate/logout/refresh): `credentials:'include'`; logout always hits the endpoint so
+cookies clear even in a cookie-only session.
 - **Accept:** login sets httpOnly cookies; cookie-only auth works; logout clears+blacklists; tenant
-  tamper still rejected. **Test:** `test_tokens.py`/`test_security.py` cookie cases.
+  tamper still rejected (unchanged code path). Browser state-changing requests still carry Bearer →
+  CSRF-exempt; cookie-only POSTs fall under double-submit CSRF.
+- **Test:** `test_tokens.py::TestCookieAuth` (4: httpOnly+path, dev-not-secure, prod-secure, clear
+  expires both) — green. `tsc --noEmit` clean.
 
 ### Step 10 (P1.4) — README honesty pass
 Align README to reality after fixes: synthetic data, units vs AED, what Sage can/can't do, what
