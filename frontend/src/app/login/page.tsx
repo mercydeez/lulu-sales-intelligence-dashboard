@@ -3,6 +3,7 @@
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { PRODUCT_NAME } from '@/lib/brand';
 import {
@@ -11,10 +12,18 @@ import {
 } from 'lucide-react';
 
 const DEMO_ACCOUNTS = [
-  { label: 'Super Admin', email: 'atharva@retaildemo.app', accent: 'from-coral-500 to-violet-500' },
-  { label: 'Regional Mgr', email: 'krishna@retaildemo.app', accent: 'from-violet-500 to-teal-400' },
-  { label: 'Store Mgr', email: 'yash@retaildemo.app', accent: 'from-amber-400 to-coral-500' },
+  { label: 'Super Admin', email: 'atharva@retaildemo.app', grad: 'sunset-gradient' },
+  { label: 'Regional Mgr', email: 'krishna@retaildemo.app', grad: 'grad-violet' },
+  { label: 'Store Mgr', email: 'yash@retaildemo.app', grad: 'grad-amber' },
 ];
+
+const FEATURES = [
+  { icon: Activity, text: 'Live sales stream updating every few seconds' },
+  { icon: TrendingUp, text: 'Seasonal demand forecasts with accuracy scoring' },
+  { icon: ShieldCheck, text: 'Role-based access scoped to your stores' },
+];
+
+const EASE = [0.22, 1, 0.36, 1] as const;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,12 +43,10 @@ export default function LoginPage() {
     e.preventDefault();
     setLocalError('');
     clearError();
-
     if (!email || !password) {
       setLocalError('Please enter both email and password');
       return;
     }
-
     const res = await login({ email, password, remember_me: rememberMe });
     if (res.ok) router.push('/');
     else if (res.requires2fa && res.mfaToken) setMfaToken(res.mfaToken);
@@ -79,52 +86,83 @@ export default function LoginPage() {
   };
 
   const displayError = error || localError;
+  const inputCls =
+    'w-full ps-12 pe-4 py-3.5 rounded-2xl bg-surface border border-line text-ink placeholder-ink-muted ' +
+    'shadow-sm focus:outline-none focus:ring-4 focus:ring-teal-500/15 focus:border-teal-500 transition-all';
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* ============================= BRAND PANEL ============================= */}
-      <div className="relative hidden lg:flex flex-col justify-between overflow-hidden sunset-gradient p-12 text-white">
-        {/* Decorative blobs */}
-        <div className="blob w-96 h-96 bg-amber-300/50 -top-20 -left-16 animate-blob" />
-        <div className="blob w-80 h-80 bg-teal-300/40 bottom-10 -right-10 animate-blob" style={{ animationDelay: '3s' }} />
-        <div className="blob w-72 h-72 bg-violet-400/40 top-1/2 left-1/3 animate-blob" style={{ animationDelay: '6s' }} />
+      <div className="relative hidden lg:flex flex-col justify-between overflow-hidden hero-mesh p-12 text-white">
+        {/* Animated floating orbs for depth/motion */}
+        {[
+          { c: 'rgba(45,212,191,0.45)', s: 380, x: '-12%', y: '-10%', d: 0 },
+          { c: 'rgba(139,92,246,0.40)', s: 320, x: '70%', y: '8%', d: 1.2 },
+          { c: 'rgba(251,191,36,0.30)', s: 300, x: '30%', y: '62%', d: 2.4 },
+        ].map((o, i) => (
+          <motion.div
+            key={i}
+            aria-hidden
+            className="pointer-events-none absolute rounded-full blur-3xl"
+            style={{ width: o.s, height: o.s, left: o.x, top: o.y, background: o.c }}
+            animate={{ y: [0, -22, 0], x: [0, 14, 0], scale: [1, 1.08, 1] }}
+            transition={{ duration: 9 + i * 1.5, repeat: Infinity, ease: 'easeInOut', delay: o.d }}
+          />
+        ))}
 
         {/* Brand */}
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-surface/20 backdrop-blur-sm ring-1 ring-white/30">
+        <motion.div
+          initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: EASE }}
+          className="relative z-10 flex items-center gap-3"
+        >
+          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-sm ring-1 ring-white/30">
             <ShoppingBag className="w-6 h-6" />
           </div>
           <span className="text-xl font-bold tracking-tight">{PRODUCT_NAME}</span>
-        </div>
+        </motion.div>
 
         {/* Hero copy */}
         <div className="relative z-10 max-w-md">
-          <div className="inline-flex items-center gap-2 rounded-full bg-surface/15 px-3 py-1 text-xs font-medium backdrop-blur-sm ring-1 ring-white/25 mb-5">
-            <Sparkles className="w-3.5 h-3.5" /> Real-time retail analytics
-          </div>
-          <h1 className="text-4xl font-bold leading-tight mb-4">
-            Every sale, every store, the moment it happens.
-          </h1>
-          <p className="text-white/85 text-lg leading-relaxed">
-            Live KPIs, demand forecasting, and inventory intelligence across the
-            Meridian Hypermarket UAE network — in one playful, powerful dashboard.
-          </p>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: EASE, delay: 0.05 }}
+          >
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur-sm ring-1 ring-white/25 mb-5">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/80" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+              </span>
+              Real-time retail analytics
+            </div>
+            <h1 className="text-4xl font-bold leading-tight mb-4">
+              Every sale, every store, the moment it happens.
+            </h1>
+            <p className="text-white/85 text-lg leading-relaxed">
+              Live KPIs, demand forecasting, and inventory intelligence across the
+              Meridian Hypermarket UAE network — in one immersive, powerful workspace.
+            </p>
+          </motion.div>
 
-          {/* Feature pills */}
-          <div className="mt-8 space-y-3">
-            {[
-              { icon: Activity, text: 'Live sales stream updating every few seconds' },
-              { icon: TrendingUp, text: 'Seasonal demand forecasts with accuracy scoring' },
-              { icon: ShieldCheck, text: 'Role-based access scoped to your stores' },
-            ].map(({ icon: Icon, text }) => (
-              <div key={text} className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-surface/15 backdrop-blur-sm ring-1 ring-white/25">
+          {/* Feature pills (staggered) */}
+          <motion.div
+            className="mt-8 space-y-3"
+            initial="hidden" animate="show"
+            variants={{ show: { transition: { staggerChildren: 0.1, delayChildren: 0.25 } } }}
+          >
+            {FEATURES.map(({ icon: Icon, text }) => (
+              <motion.div
+                key={text}
+                variants={{ hidden: { opacity: 0, x: -16 }, show: { opacity: 1, x: 0, transition: { ease: EASE } } }}
+                className="flex items-center gap-3"
+              >
+                <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/15 backdrop-blur-sm ring-1 ring-white/25">
                   <Icon className="w-4 h-4" />
                 </div>
                 <span className="text-white/90 text-sm">{text}</span>
-              </div>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         </div>
 
         <div className="relative z-10 text-white/70 text-xs">
@@ -134,13 +172,17 @@ export default function LoginPage() {
 
       {/* ============================= FORM PANEL ============================= */}
       <div className="flex items-center justify-center p-6 sm:p-12">
-        <div className="w-full max-w-md">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: EASE }}
+          className="w-full max-w-md"
+        >
           {/* Mobile brand */}
           <div className="lg:hidden text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-sunset">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-glow-teal">
               <ShoppingBag className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold gradient-text">{PRODUCT_NAME}</h1>
+            <h1 className="text-2xl font-bold text-ink">{PRODUCT_NAME}</h1>
             <p className="text-ink-muted text-sm">UAE Sales Analytics Dashboard</p>
           </div>
 
@@ -149,18 +191,24 @@ export default function LoginPage() {
             <p className="text-ink-soft">Sign in to your analytics workspace.</p>
           </div>
 
-          {/* Error Alert */}
+          {/* Error / info alerts */}
           {displayError && (
-            <div className="mb-6 p-4 rounded-2xl bg-coral-50 border border-coral-200 flex items-start gap-3 animate-fade-in">
+            <motion.div
+              initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 rounded-2xl bg-coral-50 border border-coral-200 flex items-start gap-3"
+            >
               <AlertCircle className="w-5 h-5 text-coral-600 flex-shrink-0 mt-0.5" />
               <p className="text-coral-700 text-sm">{displayError}</p>
-            </div>
+            </motion.div>
           )}
           {forgotMsg && (
-            <div className="mb-6 p-4 rounded-2xl bg-teal-50 border border-teal-200 flex items-start gap-3 animate-fade-in">
+            <motion.div
+              initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 rounded-2xl bg-teal-50 border border-teal-200 flex items-start gap-3"
+            >
               <ShieldCheck className="w-5 h-5 text-teal-600 flex-shrink-0 mt-0.5" />
               <p className="text-teal-700 text-sm">{forgotMsg}</p>
-            </div>
+            </motion.div>
           )}
 
           {mfaToken ? (
@@ -176,8 +224,8 @@ export default function LoginPage() {
                   Authentication code
                 </label>
                 <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <KeyRound className="w-5 h-5 text-ink-muted group-focus-within:text-coral-500 transition-colors" />
+                  <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none">
+                    <KeyRound className="w-5 h-5 text-ink-muted group-focus-within:text-teal-600 transition-colors" />
                   </div>
                   <input
                     id="code"
@@ -185,20 +233,14 @@ export default function LoginPage() {
                     autoFocus
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/[^0-9 ]/g, '').slice(0, 7))}
-                    className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-surface border border-coral-100 text-ink tracking-[0.4em] text-lg placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
+                    className={`${inputCls} tracking-[0.4em] text-lg`}
                     placeholder="123456"
                     autoComplete="one-time-code"
                     disabled={isLoading}
                   />
                 </div>
               </div>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="btn-sunset w-full py-3.5 px-4 rounded-2xl font-semibold flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isLoading ? (<><Loader2 className="w-5 h-5 animate-spin" /> Verifying...</>) : (<>Verify <ArrowRight className="w-5 h-5" /></>)}
-              </button>
+              <SubmitButton isLoading={isLoading} idle="Verify" busy="Verifying..." />
               <button
                 type="button"
                 onClick={() => { setMfaToken(null); setCode(''); setLocalError(''); clearError(); }}
@@ -208,114 +250,98 @@ export default function LoginPage() {
               </button>
             </form>
           ) : (
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Email */}
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-ink-soft mb-2">
-                Email Address
-              </label>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail className="w-5 h-5 text-ink-muted group-focus-within:text-coral-500 transition-colors" />
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Email */}
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-ink-soft mb-2">
+                  Email Address
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none">
+                    <Mail className="w-5 h-5 text-ink-muted group-focus-within:text-teal-600 transition-colors" />
+                  </div>
+                  <input
+                    id="email" type="email" value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className={inputCls}
+                    placeholder="your.email@retaildemo.app"
+                    autoComplete="email" disabled={isLoading}
+                  />
                 </div>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-surface border border-coral-100 text-ink placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
-                  placeholder="your.email@retaildemo.app"
-                  autoComplete="email"
-                  disabled={isLoading}
-                />
               </div>
-            </div>
 
-            {/* Password */}
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-ink-soft mb-2">
-                Password
-              </label>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className="w-5 h-5 text-ink-muted group-focus-within:text-coral-500 transition-colors" />
+              {/* Password */}
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-ink-soft mb-2">
+                  Password
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none">
+                    <Lock className="w-5 h-5 text-ink-muted group-focus-within:text-teal-600 transition-colors" />
+                  </div>
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={`${inputCls} pe-12`}
+                    placeholder="••••••••"
+                    autoComplete="current-password" disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 end-0 pe-4 flex items-center text-ink-muted hover:text-teal-600 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
                 </div>
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-12 py-3.5 rounded-2xl bg-surface border border-coral-100 text-ink placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  disabled={isLoading}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-ink-muted hover:text-coral-500 transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </div>
+
+              {/* Remember / Forgot */}
+              <div className="flex items-center justify-between">
+                <label className="flex items-center cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-line text-teal-600 focus:ring-teal-500/30 cursor-pointer accent-teal-600"
+                    disabled={isLoading}
+                  />
+                  <span className="ms-2 text-sm text-ink-soft">Remember me</span>
+                </label>
+                <button type="button" onClick={handleForgot} className="text-sm font-medium text-teal-700 hover:text-teal-800 transition-colors">
+                  Forgot password?
                 </button>
               </div>
-            </div>
 
-            {/* Remember / Forgot */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-coral-200 text-coral-500 focus:ring-coral-500/30 cursor-pointer accent-coral-500"
-                  disabled={isLoading}
-                />
-                <span className="ml-2 text-sm text-ink-soft">Remember me</span>
-              </label>
-              <button type="button" onClick={handleForgot} className="text-sm font-medium text-violet-600 hover:text-coral-500 transition-colors">
-                Forgot password?
-              </button>
-            </div>
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="btn-sunset w-full py-3.5 px-4 rounded-2xl font-semibold flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" /> Signing in...
-                </>
-              ) : (
-                <>
-                  Sign In <ArrowRight className="w-5 h-5" />
-                </>
-              )}
-            </button>
-          </form>
+              <SubmitButton isLoading={isLoading} idle="Sign In" busy="Signing in..." />
+            </form>
           )}
 
           {/* Demo accounts */}
           <div className="mt-8">
             <div className="flex items-center gap-3 mb-3">
-              <span className="h-px flex-1 bg-coral-100" />
+              <span className="h-px flex-1 bg-line" />
               <span className="text-xs font-medium text-ink-muted">Try a demo account</span>
-              <span className="h-px flex-1 bg-coral-100" />
+              <span className="h-px flex-1 bg-line" />
             </div>
             <div className="grid grid-cols-3 gap-2">
               {DEMO_ACCOUNTS.map((acc) => (
-                <button
+                <motion.button
                   key={acc.email}
                   type="button"
+                  whileHover={{ y: -3 }}
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ type: 'spring', stiffness: 320, damping: 24 }}
                   onClick={() => fillDemo(acc.email)}
                   disabled={isLoading}
-                  className="card-pop rounded-2xl border border-coral-100 bg-surface p-3 text-left hover:border-coral-300 disabled:opacity-60"
+                  className="rounded-2xl border border-line bg-surface p-3 text-start hover:border-teal-300 hover:shadow-card disabled:opacity-60"
                 >
-                  <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${acc.accent} mb-2`} />
+                  <div className={`w-7 h-7 rounded-lg ${acc.grad} mb-2`} />
                   <p className="text-xs font-semibold text-ink leading-tight">{acc.label}</p>
                   <p className="text-[10px] text-ink-muted truncate">{acc.email}</p>
-                </button>
+                </motion.button>
               ))}
             </div>
             <p className="mt-3 text-center text-xs text-ink-muted">
@@ -325,10 +351,30 @@ export default function LoginPage() {
 
           <p className="mt-8 text-center text-sm text-ink-soft">
             New here?{' '}
-            <Link href="/signup" className="font-medium gradient-text">Create your workspace</Link>
+            <Link href="/signup" className="font-semibold text-teal-700 hover:text-teal-800">Create your workspace</Link>
           </p>
-        </div>
+        </motion.div>
       </div>
     </div>
+  );
+}
+
+/** Primary CTA with brand gradient, hover lift, and a loading state. */
+function SubmitButton({ isLoading, idle, busy }: { isLoading: boolean; idle: string; busy: string }) {
+  return (
+    <motion.button
+      type="submit"
+      disabled={isLoading}
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.99 }}
+      transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+      className="sunset-gradient text-white w-full py-3.5 px-4 rounded-2xl font-semibold flex items-center justify-center gap-2 shadow-glow-teal disabled:opacity-60 disabled:cursor-not-allowed"
+    >
+      {isLoading ? (
+        <><Loader2 className="w-5 h-5 animate-spin" /> {busy}</>
+      ) : (
+        <>{idle} <ArrowRight className="w-5 h-5" /></>
+      )}
+    </motion.button>
   );
 }
