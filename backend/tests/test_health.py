@@ -93,3 +93,96 @@ async def test_health_response_fields(mock_db_and_redis):
         data = response.json()
         expected_fields = {"status", "database", "redis", "timestamp", "version", "environment"}
         assert expected_fields.issubset(set(data.keys()))
+
+
+# =============================================================================
+# Phase 3 — liveness / readiness / deep probes
+# =============================================================================
+
+def _healthy_engine_mock():
+    """An engine mock whose connect() yields a conn with a usable result."""
+    mock_conn = AsyncMock()
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+    result = MagicMock()
+    result.fetchone.return_value = (True, True)
+    result.scalar.return_value = None
+    mock_conn.execute = AsyncMock(return_value=result)
+    engine = MagicMock()
+    engine.connect.return_value = mock_conn
+    return engine
+
+
+async def _get(path):
+    from app.main import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.get(path)
+
+
+@pytest.mark.asyncio
+async def test_live_is_independent_of_dependencies():
+    """Liveness must not touch DB/Redis and always returns 200."""
+    resp = await _get("/health/live")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "alive"
+
+
+@pytest.mark.asyncio
+async def test_ready_200_when_all_healthy():
+    with patch("app.services.database.engine", _healthy_engine_mock()), \
+         patch("app.services.redis_client.get_redis", new_callable=AsyncMock) as gr, \
+         patch("app.services.migration_runner.pending_migrations",
+               new_callable=AsyncMock, return_value=[]):
+        gr.return_value = AsyncMock(ping=AsyncMock(return_value=True))
+        resp = await _get("/health/ready")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ready"
+    assert body["checks"]["database"] == "ok"
+    assert body["checks"]["migrations"] == "current"
+
+
+@pytest.mark.asyncio
+async def test_ready_503_when_db_down():
+    bad_engine = MagicMock()
+    bad_engine.connect.side_effect = RuntimeError("db down")
+    with patch("app.services.database.engine", bad_engine), \
+         patch("app.services.redis_client.get_redis", new_callable=AsyncMock) as gr, \
+         patch("app.services.migration_runner.pending_migrations",
+               new_callable=AsyncMock, return_value=[]):
+        gr.return_value = AsyncMock(ping=AsyncMock(return_value=True))
+        resp = await _get("/health/ready")
+    assert resp.status_code == 503
+    assert resp.json()["checks"]["database"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_ready_503_when_migrations_pending():
+    with patch("app.services.database.engine", _healthy_engine_mock()), \
+         patch("app.services.redis_client.get_redis", new_callable=AsyncMock) as gr, \
+         patch("app.services.migration_runner.pending_migrations",
+               new_callable=AsyncMock, return_value=["099_new.sql"]):
+        gr.return_value = AsyncMock(ping=AsyncMock(return_value=True))
+        resp = await _get("/health/ready")
+    assert resp.status_code == 503
+    assert resp.json()["checks"]["migrations"] == "pending:1"
+
+
+@pytest.mark.asyncio
+async def test_deep_reports_mode_and_leaks_no_secrets():
+    with patch("app.services.database.engine", _healthy_engine_mock()), \
+         patch("app.services.redis_client.get_redis", new_callable=AsyncMock) as gr, \
+         patch("app.services.migration_runner.pending_migrations",
+               new_callable=AsyncMock, return_value=[]):
+        gr.return_value = AsyncMock(ping=AsyncMock(return_value=True),
+                                    keys=AsyncMock(return_value=[]))
+        resp = await _get("/health/deep")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "mode" in body and "demo_mode" in body["mode"]
+    assert body["checks"]["database"] == "ok"
+    # No secret material anywhere in the payload.
+    blob = resp.text.lower()
+    for needle in ("secret", "password", "jwt", "salespass"):
+        assert needle not in blob

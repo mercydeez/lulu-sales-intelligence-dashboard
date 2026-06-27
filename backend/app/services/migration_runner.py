@@ -1,29 +1,59 @@
 import os
 import logging
+from typing import List, Optional
 from sqlalchemy import text
 from app.services.database import engine
 
 logger = logging.getLogger(__name__)
+
+
+def _find_migrations_dir() -> Optional[str]:
+    """Locate the migrations directory across dev/container layouts."""
+    candidates = [
+        "/app/database/migrations",
+        "./database/migrations",
+        "../database/migrations",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "database", "migrations"),
+    ]
+    for path in candidates:
+        if os.path.isdir(path):
+            return os.path.abspath(path)
+    return None
+
+
+def _list_migration_files(migrations_dir: str) -> List[str]:
+    return sorted(f for f in os.listdir(migrations_dir) if f.endswith(".sql"))
+
+
+async def pending_migrations() -> List[str]:
+    """Return migration filenames present on disk but not yet applied.
+
+    Empty list => schema is current. Used by readiness/deep health checks.
+    Raises on a DB connectivity error (caller decides how to surface it).
+    """
+    migrations_dir = _find_migrations_dir()
+    if not migrations_dir:
+        return []
+    files = _list_migration_files(migrations_dir)
+    if not files:
+        return []
+    async with engine.connect() as conn:
+        exists = await conn.execute(text(
+            "SELECT to_regclass('public.schema_migrations') IS NOT NULL"
+        ))
+        if not exists.scalar():
+            return files  # table absent => nothing applied yet
+        result = await conn.execute(text("SELECT version FROM schema_migrations"))
+        applied = {row[0] for row in result.fetchall()}
+    return [f for f in files if f not in applied]
+
 
 async def run_migrations():
     """
     Finds and applies all database migrations in order.
     Tracks applied migrations in schema_migrations table.
     """
-    # Candidate migration directories
-    candidates = [
-        "/app/database/migrations",
-        "./database/migrations",
-        "../database/migrations",
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "database", "migrations")
-    ]
-    
-    migrations_dir = None
-    for path in candidates:
-        if os.path.isdir(path):
-            migrations_dir = os.path.abspath(path)
-            break
-            
+    migrations_dir = _find_migrations_dir()
     if not migrations_dir:
         logger.warning("Migration directory not found in candidate paths. Skipping auto-migrations.")
         return

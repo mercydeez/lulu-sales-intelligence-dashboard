@@ -34,7 +34,7 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile.backend
     dockerContext: .
-    healthCheckPath: /health
+    healthCheckPath: /health/ready    # keep-warm pingers should use /health/live (no DB)
     envVars:
       - key: ENVIRONMENT
         value: production

@@ -381,3 +381,155 @@ async def health_check():
         "version": "1.0.0",
         "environment": settings.environment
     }
+
+
+# =============================================================================
+# Health / readiness probes (Phase 3)
+#   /health/live  — liveness: process up, NO external deps (cheap; keep-warm safe)
+#   /health/ready — readiness: DB + Redis + migrations current + config valid
+#   /health/deep  — detailed subsystem status (no secrets)
+# =============================================================================
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+@app.get("/health/live", tags=["Health"])
+async def health_live():
+    """Liveness — the process is running. No DB/Redis dependency by design, so an
+    orchestrator/keep-warm pinger can hit this cheaply without touching the DB."""
+    return {"status": "alive", "timestamp": _now()}
+
+
+@app.get("/health/ready", tags=["Health"])
+async def health_ready():
+    """Readiness — only 200 when the app can actually serve: DB + Redis reachable,
+    migrations current, and security config valid."""
+    from app.services.database import engine
+    from app.services.redis_client import get_redis
+    from app.services.migration_runner import pending_migrations
+    from sqlalchemy import text
+
+    checks: dict[str, str] = {}
+    ready = True
+
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception:
+        checks["database"] = "error"
+        ready = False
+
+    try:
+        redis = await get_redis()
+        await redis.ping()
+        checks["redis"] = "ok"
+    except Exception:
+        checks["redis"] = "error"
+        ready = False
+
+    try:
+        pending = await pending_migrations()
+        checks["migrations"] = "current" if not pending else f"pending:{len(pending)}"
+        if pending:
+            ready = False
+    except Exception:
+        checks["migrations"] = "unknown"
+        ready = False
+
+    try:
+        settings.validate_security()  # raises only on hard misconfig
+        checks["config"] = "ok"
+    except Exception:
+        checks["config"] = "invalid"
+        ready = False
+
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={"status": "ready" if ready else "not_ready", "checks": checks, "timestamp": _now()},
+    )
+
+
+@app.get("/health/deep", tags=["Health"])
+async def health_deep():
+    """Detailed subsystem status for operators. Never includes secrets."""
+    from app.services.database import engine
+    from app.services.redis_client import get_redis
+    from app.services.migration_runner import pending_migrations
+    from sqlalchemy import text
+
+    checks: dict[str, object] = {}
+    healthy = True
+
+    # Database
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception:
+        checks["database"] = "error"
+        healthy = False
+
+    # Redis (+ best-effort BullMQ queue presence)
+    try:
+        redis = await get_redis()
+        await redis.ping()
+        queue = "unknown"
+        try:
+            keys = await redis.keys("bull:*")
+            queue = f"keys:{len(keys)}"
+        except Exception:
+            pass
+        checks["redis"] = "ok"
+        checks["worker_queue"] = queue
+    except Exception:
+        checks["redis"] = "error"
+        checks["worker_queue"] = "unknown"
+        healthy = False
+
+    # Migrations
+    try:
+        pending = await pending_migrations()
+        checks["migrations"] = "current" if not pending else {"pending": pending}
+    except Exception:
+        checks["migrations"] = "unknown"
+
+    # Expected tables exist (security_events, findings)
+    try:
+        async with engine.connect() as conn:
+            res = await conn.execute(text(
+                "SELECT to_regclass('public.security_events') IS NOT NULL, "
+                "to_regclass('public.findings') IS NOT NULL"
+            ))
+            sec, find = res.fetchone()
+        checks["security_events_table"] = bool(sec)
+        checks["findings_table"] = bool(find)
+    except Exception:
+        checks["security_events_table"] = "unknown"
+        checks["findings_table"] = "unknown"
+
+    # Data freshness (latest generated sale)
+    try:
+        async with engine.connect() as conn:
+            res = await conn.execute(text("SELECT MAX(created_at) FROM sales_stream_raw"))
+            latest = res.scalar()
+        checks["latest_stream_sale"] = latest.isoformat() if latest else None
+    except Exception:
+        checks["latest_stream_sale"] = "unknown"
+
+    return {
+        "status": "healthy" if healthy else "degraded",
+        "timestamp": _now(),
+        "environment": settings.environment,
+        "version": "1.0.0",
+        "mode": {
+            "demo_mode": settings.demo_mode,
+            "live_generator_enabled": settings.live_generator_enabled,
+            "generator_running": bool(settings.demo_mode and settings.live_generator_enabled),
+            "use_rls_role": settings.use_rls_role,
+            "external_ai": settings.enable_external_ai,
+            "local_ai": settings.enable_local_ai,
+        },
+        "checks": checks,
+    }
