@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from functools import lru_cache
 from typing import Optional, List
 import contextvars
@@ -151,8 +151,99 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "%(asctime)s | %(levelname)-8s | %(name)s | req=%(request_id)s | %(message)s"
     log_json: bool = False  # emit one JSON object per line (structured logging)
-    
+
+    # =========================================================================
+    # PRODUCTION MODES & FEATURE FLAGS (fail-closed in prod/staging)
+    # -------------------------------------------------------------------------
+    # Operational + demo toggles are Optional[bool] = None meaning "auto":
+    # enabled in development/testing for convenience, disabled in
+    # production/staging for safety. Set the env var explicitly (true/false) to
+    # override. The model_validator below resolves None -> concrete bool, and
+    # validate_security() rejects unsafe combinations in production.
+    # =========================================================================
+
+    # Demo / sample data (SYNTHETIC — never real customer data; see
+    # docs/product/DEMO_VS_REAL_DATA.md).
+    demo_mode: Optional[bool] = None               # master switch for demo behavior
+    sample_data_enabled: Optional[bool] = None     # seed synthetic historical data
+    live_generator_enabled: Optional[bool] = None  # run the synthetic sale generator
+    allow_demo_users: Optional[bool] = None        # seed/permit demo logins
+
+    # One-shot / background work run from the API lifespan. In production these
+    # belong in dedicated processes (backend/app/commands/*), so in a real prod
+    # (demo_mode off) they resolve off and validate_security() rejects
+    # migrate/seed-on-startup outright.
+    run_migrations_on_startup: Optional[bool] = None
+    run_seed_on_startup: Optional[bool] = None
+    run_employee_seeder_on_startup: Optional[bool] = None
+    run_cache_warmer: Optional[bool] = None
+    run_forecast_trainer: Optional[bool] = None
+
+    # Feature flags
+    expose_api_docs: Optional[bool] = None         # /docs, /redoc, /openapi.json
+    enable_signup: Optional[bool] = None
+    enable_public_api: Optional[bool] = None
+    enable_external_ai: Optional[bool] = None       # 3rd-party LLM — OFF unless explicit
+    enable_local_ai: Optional[bool] = None          # local Ollama
+    enable_data_source_connectors: Optional[bool] = None
+    require_email_verification: Optional[bool] = None
+    require_mfa_for_admins: Optional[bool] = None
+
+    # Infra / least-privilege DB roles
+    worker_database_url: Optional[str] = None       # diagnostics worker (worker_role)
+    redis_self_hosted: bool = False                 # True => prod Redis MUST carry a password
+    allow_insecure_no_rls: bool = False             # dangerous override: prod without the RLS role
+
     model_config = {"env_file": ".env", "case_sensitive": False}
+
+    @model_validator(mode="after")
+    def _resolve_mode_defaults(self):
+        """Resolve Optional 'auto' flags to concrete bools based on environment.
+
+        Development/testing get convenience-on; production/staging get safe-off.
+        Explicitly-set env vars (non-None) are never overridden.
+        """
+        is_prod = self.environment.lower() in ("production", "prod", "staging")
+        dev_like = not is_prod
+
+        def auto(current: Optional[bool], dev_default: bool, prod_default: bool) -> bool:
+            if current is not None:
+                return current
+            return dev_default if dev_like else prod_default
+
+        # Demo behavior — convenient in dev, off in prod unless explicitly enabled.
+        self.demo_mode = auto(self.demo_mode, True, False)
+        self.sample_data_enabled = auto(self.sample_data_enabled, True, self.demo_mode)
+        self.live_generator_enabled = auto(self.live_generator_enabled, True, self.demo_mode)
+        self.allow_demo_users = auto(self.allow_demo_users, True, False)
+
+        # Startup work — on in dev for single-box convenience; in prod only under demo_mode.
+        self.run_migrations_on_startup = auto(self.run_migrations_on_startup, True, self.demo_mode)
+        self.run_seed_on_startup = auto(self.run_seed_on_startup, True, self.demo_mode)
+        self.run_employee_seeder_on_startup = auto(self.run_employee_seeder_on_startup, True, self.demo_mode)
+        self.run_cache_warmer = auto(self.run_cache_warmer, True, True)  # per-instance cache, safe
+        # Honor the pre-existing forecast_trainer_enabled toggle as the default.
+        self.run_forecast_trainer = auto(
+            self.run_forecast_trainer, self.forecast_trainer_enabled, self.forecast_trainer_enabled
+        )
+
+        # Feature flags.
+        self.expose_api_docs = auto(self.expose_api_docs, True, False)
+        self.enable_signup = auto(self.enable_signup, True, True)
+        self.enable_public_api = auto(self.enable_public_api, True, True)
+        # External AI is OFF by default everywhere — must be explicitly opted into.
+        self.enable_external_ai = self.enable_external_ai if self.enable_external_ai is not None else False
+        self.enable_local_ai = auto(self.enable_local_ai, True, True)
+        self.enable_data_source_connectors = auto(self.enable_data_source_connectors, True, False)
+        self.require_email_verification = auto(self.require_email_verification, False, True)
+        self.require_mfa_for_admins = auto(self.require_mfa_for_admins, False, False)
+        return self
+
+    @property
+    def api_docs_enabled(self) -> bool:
+        """Whether interactive API docs (/docs, /redoc, /openapi.json) are served."""
+        dev_like = self.environment.lower() not in ("production", "prod", "staging")
+        return bool(dev_like or self.expose_api_docs)
 
     @field_validator("database_url")
     @classmethod
@@ -218,6 +309,85 @@ class Settings(BaseSettings):
         if is_prod and "salespass" in self.database_url:
             msg = "CRITICAL: Database URL contains default credentials!"
             raise RuntimeError(msg)
+
+        # --- Wildcard CORS in production ---
+        if is_prod and "*" in self.cors_origins:
+            raise RuntimeError(
+                "CRITICAL: wildcard CORS origin is not allowed in production. "
+                "List explicit origins in CORS_ORIGINS."
+            )
+
+        # --- Demo users must be disabled in production ---
+        if is_prod and self.allow_demo_users:
+            raise RuntimeError(
+                "CRITICAL: ALLOW_DEMO_USERS must be false in production."
+            )
+
+        # --- Live synthetic generator requires demo mode (never in a real tenant) ---
+        if self.live_generator_enabled and not self.demo_mode:
+            msg = "LIVE_GENERATOR_ENABLED requires DEMO_MODE=true — it writes synthetic sales."
+            if is_prod:
+                raise RuntimeError(f"CRITICAL: {msg}")
+            issues.append(f"WARNING: {msg}")
+
+        # --- Sample data requires demo mode ---
+        if self.sample_data_enabled and not self.demo_mode:
+            if is_prod:
+                raise RuntimeError(
+                    "CRITICAL: SAMPLE_DATA_ENABLED requires DEMO_MODE=true in production."
+                )
+            issues.append("WARNING: SAMPLE_DATA_ENABLED set without DEMO_MODE — synthetic data may load.")
+
+        # --- Migrations/seed must not run from the API in real production ---
+        if is_prod and not self.demo_mode and self.run_migrations_on_startup:
+            raise RuntimeError(
+                "CRITICAL: RUN_MIGRATIONS_ON_STARTUP must be false in production — "
+                "run the dedicated migrate job instead."
+            )
+        if is_prod and not self.demo_mode and self.run_seed_on_startup:
+            raise RuntimeError(
+                "CRITICAL: RUN_SEED_ON_STARTUP must be false in production — "
+                "run the dedicated seed job instead."
+            )
+
+        # --- RLS role required in production (tenant isolation) ---
+        if is_prod and not self.use_rls_role and not self.allow_insecure_no_rls:
+            raise RuntimeError(
+                "CRITICAL: USE_RLS_ROLE must be true in production for Postgres-enforced "
+                "tenant isolation. Set ALLOW_INSECURE_NO_RLS=true only if you fully accept the risk."
+            )
+
+        # --- Self-hosted Redis must require a password ---
+        if is_prod and self.redis_self_hosted and "@" not in self.redis_url:
+            raise RuntimeError(
+                "CRITICAL: self-hosted Redis in production must require a password "
+                "(set REDIS_PASSWORD and include it in REDIS_URL)."
+            )
+
+        # --- Least-privilege DB role URLs must not use default/dev passwords ---
+        _weak = ("salespass", "changeme", "devpass", "_dev_pass")
+        for label, url in (
+            ("RLS_DATABASE_URL", self.rls_database_url),
+            ("SAGE_DATABASE_URL", self.sage_database_url),
+            ("WORKER_DATABASE_URL", self.worker_database_url),
+        ):
+            if is_prod and url and any(w in url for w in _weak):
+                raise RuntimeError(
+                    f"CRITICAL: {label} appears to use a default/development password."
+                )
+
+        # --- API docs exposure in production should be deliberate + protected ---
+        if is_prod and self.expose_api_docs:
+            issues.append(
+                "WARNING: API docs are exposed in production (EXPOSE_API_DOCS=true) — "
+                "ensure they are protected at the reverse proxy."
+            )
+
+        # --- External AI opt-in sanity ---
+        if is_prod and self.enable_external_ai and not self.openai_api_key:
+            issues.append(
+                "WARNING: ENABLE_EXTERNAL_AI is true but no external AI key is configured."
+            )
 
         return issues
 

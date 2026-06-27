@@ -33,7 +33,12 @@ def test_settings():
 
 @pytest.fixture
 def production_settings():
-    """Return a Settings instance simulating production."""
+    """Return a Settings instance simulating a SECURE production config.
+
+    Meets the tightened fail-closed bar: strong secrets, RLS role enabled with a
+    strong app_rw URL, managed Redis (not self-hosted), no demo flags. This is the
+    canonical 'good prod' config that validate_security() must accept.
+    """
     from app.config import Settings
     return Settings(
         environment="production",
@@ -42,6 +47,8 @@ def production_settings():
         secret_key="another-strong-production-secret-key-for-the-app-layer",
         database_url="postgresql+asyncpg://produser:str0ng_Pr0d_P@ss!@db.prod:5432/proddb",
         redis_url="redis://redis.prod:6379/0",
+        use_rls_role=True,
+        rls_database_url="postgresql+asyncpg://app_rw:str0ng_App_RW_P@ss!@db.prod:5432/proddb",
     )
 
 
