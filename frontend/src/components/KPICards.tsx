@@ -12,7 +12,7 @@ import {
   X
 } from 'lucide-react';
 import { formatCurrency, formatCurrencyCompact } from '@/lib/formatters';
-import { StatCard, LiveIndicator, AnimatedNumber, ErrorState } from '@/components/ui';
+import { StatCard, LiveIndicator, AnimatedNumber, ErrorState, Stagger } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface KPIData {
@@ -266,7 +266,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
       </div>
 
       {/* Main KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <Stagger className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Historical"
           tone="coral"
@@ -336,10 +336,10 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
             <AnimatedTooltip {...tooltipData.daily} onClose={() => setActiveTooltip(null)} />
           )}
         </StatCard>
-      </div>
+      </Stagger>
 
       {/* Secondary KPIs - Gradient Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <Stagger className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
           variant="gradient"
           tone="coral"
@@ -393,7 +393,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
             <AnimatedTooltip {...tooltipData.lastStream} onClose={() => setActiveTooltip(null)} />
           )}
         </StatCard>
-      </div>
+      </Stagger>
     </div>
   );
 }
