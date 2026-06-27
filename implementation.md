@@ -68,7 +68,7 @@ Goal: after a recommendation is accepted, **prove whether it worked** and auto-r
   one measured `improved` and **auto-resolved** (`resolved_by='system:measure'`, after=null). The
   API `measured=true` filter + `by_outcome` summary returned both correctly.
 
-## Track 2 — Accuracy & security hardening ("tighten the screws") 🟡 (mostly done)
+## Track 2 — Accuracy & security hardening ("tighten the screws") ✅ done
 - ✅ **`USE_RLS_ROLE` flipped ON by default & verified.** Both prerequisite follow-ups turned out to
   be already implemented in `services/database.py`: `resolve_request_tenant` binds the tenant GUC
   **before** the session opens (GUC-after-auth ordering) and looks up API keys on the **owner**
@@ -84,10 +84,12 @@ Goal: after a recommendation is accepted, **prove whether it worked** and auto-r
   (`GOLDEN_REQUEST_TIMEOUT`, default 30s) with a small backoff retry; health-probe timeout 3s→10s.
 - ✅ **Accuracy guards extended** — guard 6 in `tests/test_accuracy_guards.py` asserts the finding
   `metric_value/metric_before/metric_after` ratios are never currency/units-formatted.
-- 🟡 **README/doc honesty pass** (the remediation's last tail): reconcile every claim with code —
-  synthetic data, units vs AED, what Sage can/can't do, what forecasting predicts, what's not built.
-  (Note: the "Lulu store-name straggler" suspected earlier was a **stale volume**, not code — the
-  seed in `init.sql` is already "Meridian".)
+- ✅ **README/doc honesty pass** done: corrected the service count (5, + optional ollama), test
+  count (200+), added the RLS-by-default + Sage + Insights/measure-loop descriptions, and refreshed
+  the roadmap. (The "Lulu store-name straggler" suspected earlier was a **stale volume**, not code —
+  the seed in `init.sql` is already "Meridian".)
+
+**Track 2 is complete.** Remaining tracks: 3 (activate the local LLM), 5 (SaaS near-term).
 
 ## Track 3 — Activate Sage's local LLM (no paid API) ⏳
 Config + verification, not new code (the provider chain already picks it up):

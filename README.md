@@ -69,8 +69,9 @@ This project deliberately documents its own simplifications — read this before
 git clone https://github.com/mercydeez/lulu-sales-intelligence-dashboard.git
 cd lulu-sales-intelligence-dashboard
 
-docker compose up -d      # starts db, redis, backend, frontend
-docker compose ps         # all four should be "Up"; db/redis show "healthy"
+docker compose up -d      # starts db, redis, backend, frontend, and the diagnostics worker
+docker compose ps         # all five should be "Up"; db/redis show "healthy"
+                          # (an optional `ollama` service sits behind the `ai` profile, off by default)
 ```
 
 **Migrations apply themselves.** On startup the backend runs a migration runner that applies every `database/migrations/00*.sql` in order (tracked in a `schema_migrations` table), then a runtime employee seeder. `database/init.sql` also auto-runs the first time the Postgres volume is created (bulk-loads the CSV history and seeds demo users). No manual `psql` step is required.
@@ -133,7 +134,7 @@ Logging in as the regional/store users is the quickest way to see RBAC scoping i
         └─────────────────┘            └─────────────────┘
 ```
 
-NGINX is present only in `docker-compose.production.yml` (TLS termination / reverse proxy); the dev stack talks to the services directly.
+A separate **Node BullMQ diagnostics worker** shares the same Redis and writes explainable `findings` (detect/diagnose) plus their measured outcomes; the backend and frontend read them. NGINX is present only in `docker-compose.production.yml` (TLS termination / reverse proxy); the dev stack talks to the services directly.
 
 ---
 
@@ -176,7 +177,8 @@ This is the core of the app:
 - **Admin** — honest **read-only** console (the admin backend is GET-only): dashboard, users, stores, activity feed; super-admin gated.
 - **Reports** — single rich endpoint feeding KPIs + daily/category/store/item tables; **labelled in units** with a PDF export that states the no-price caveat.
 - **Monitoring** — live `/api/monitoring/*` health, system stats, and metrics with an auto-refresh toggle.
-- **AI assistant** — chat over live data with the local-first provider chain described above.
+- **AI assistant (Sage)** — grounded, RBAC-safe chat over live data with the local-first provider chain described above (NL→SQL on a least-privilege role, with a deterministic rule-based fallback that needs no LLM).
+- **Insights (diagnostics)** — a Node BullMQ worker runs deterministic rules over the live data to surface *what's going wrong* (revenue drops, category slumps, laggard stores, return spikes), each with evidence and a recommended action. When an operator accepts an action, a **measure** pass re-checks the metric and **auto-resolves** the finding once it recovers — closing the detect→diagnose→recommend→act→measure loop.
 - **Design & a11y** — a "Sunset Pop" design system, **EN/AR with RTL**, WCAG-AA-checked contrast, focus-visible keyboard rings, and `aria-live` on live regions.
 
 ---
@@ -185,6 +187,7 @@ This is the core of the app:
 
 - **JWT auth** — access + refresh with rotation; logout blacklists token hashes in Redis (checked by `SessionInvalidationMiddleware`, which fails open if Redis is down).
 - **RBAC** — region→store expansion; managers/admins are scoped server-side to their accessible stores. Note: the `admin`, `inventory`, `promotions`, `alerts`, `reports` routers enforce auth/roles; read/stream endpoints use optional auth or stream tickets.
+- **Multi-tenant isolation** — app-layer `tenant_id` scoping is primary, backed by Postgres **FORCE RLS**: the authenticated request path connects as a non-owner `app_rw` role with the tenant bound to a GUC before any query runs, so the database itself enforces isolation (on by default; `USE_RLS_ROLE=false` falls back to the owner connection). Two-tenant isolation is verified end-to-end.
 - **Hardened middleware** — CSP (env-driven `connect-src`, `object-src 'none'`, prod `upgrade-insecure-requests`), HSTS, `X-Frame-Options`, `X-Content-Type-Options`; CORS with **enumerated** methods/headers (required once credentials are allowed); Redis sliding-window rate limiting with in-memory fallback; CSRF double-submit for non-Bearer requests; request body-size limit.
 - **Structured logging** — a per-request `request_id` (reusing an inbound `X-Request-ID`) is threaded through **every** log line via a contextvar + log filter; optional JSON log output.
 - **Fail-fast config** — in `production`/`staging`, startup raises on default secrets, short JWT keys, or default DB credentials.
@@ -223,11 +226,12 @@ docker exec sales_backend python -m pytest tests/ -v --tb=short
 cd backend && pytest
 ```
 
-92 backend tests cover config, security validation, health, and middleware. **GitHub Actions** (`.github/workflows/ci.yml`) runs three jobs on push/PR to `main`:
+200+ backend tests cover config, security/RBAC, AI-RBAC & Sage guardrails, NL→SQL guard, accuracy guards, health, and middleware. **GitHub Actions** (`.github/workflows/ci.yml`) runs jobs on push/PR to `main`:
 
 1. **Backend** — install deps, verify imports, run the full `pytest tests/`.
 2. **Frontend** — `npx tsc --noEmit` (type check, enforced) + `npm run build`.
-3. **Docker** — `docker compose config -q` + build both images.
+3. **Docker** — `docker compose config -q` + build the images + the diagnostics worker's unit tests.
+4. **Smoke** — boot the full stack, poll `/health`, then run the golden-number + NL→SQL pipeline tests and a worker scan/measure pass against the live stack.
 
 Health check:
 ```bash
@@ -281,9 +285,9 @@ implementation.md             single living forward roadmap (what's shipped + wh
 
 ## Roadmap
 
-**Done:** real-time pipeline · RBAC + server-side scoping · derived revenue model · seasonal forecast + MAPE backtest · local-first AI chain · full UI redesign (8 screens) · EN/AR + RTL · WCAG-AA contrast · production hardening (CSP/CORS, structured logging, covering index, pagination, transaction-safe alert generation).
+**Done:** real-time pipeline · RBAC + server-side scoping · multi-tenancy with Postgres FORCE RLS on the request path · derived revenue model · seasonal + LightGBM forecasting with MAPE/WAPE backtest · Sage (grounded NL→SQL + deterministic fallback) · BullMQ diagnostics worker closing the detect→…→measure loop · local-first AI chain · full UI redesign · EN/AR + RTL · WCAG-AA contrast · production hardening (CSP/CORS, structured logging, covering index, pagination, transaction-safe alert generation).
 
-**Next:** ML forecasting (Prophet/LSTM) trained on the history · frontend component tests · self-hosted Arabic web font · richer admin write operations (needs new backend endpoints) · WebSocket upgrade from SSE.
+**Next:** activate the local LLM for free-form Sage answers (Ollama, config-only) · richer agentic increment (draft a PO/alert from an accepted action, still human-approved) · tenant data export & delete-on-request · frontend component tests · self-hosted Arabic web font · WebSocket upgrade from SSE.
 
 ---
 
