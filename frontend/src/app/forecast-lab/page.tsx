@@ -227,11 +227,11 @@ export default function ForecastLabPage() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="text-left text-ink-muted border-b border-line">
+                        <tr className="text-start text-ink-muted border-b border-line">
                           <th className="py-2 font-medium">Model</th>
                           <th className="py-2 font-medium">Tier</th>
-                          <th className="py-2 font-medium text-right">Accuracy</th>
-                          <th className="py-2 font-medium text-right">MAPE</th>
+                          <th className="py-2 font-medium text-end">Accuracy</th>
+                          <th className="py-2 font-medium text-end">MAPE</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -241,11 +241,11 @@ export default function ForecastLabPage() {
                           <tr key={m.model} className="border-b border-line/40">
                             <td className="py-2 text-ink">
                               {MODEL_LABEL[m.model] || m.model}
-                              {m.model === data.selected_model && <span className="ml-2 text-xs text-teal-700">● winner</span>}
+                              {m.model === data.selected_model && <span className="ms-2 text-xs text-teal-700">● winner</span>}
                             </td>
                             <td className="py-2 text-ink-muted uppercase text-xs">{m.tier}</td>
-                            <td className="py-2 text-right tabular-nums">{m.accuracy ?? '—'}%</td>
-                            <td className="py-2 text-right tabular-nums text-ink-muted">{m.mape ?? '—'}%</td>
+                            <td className="py-2 text-end tabular-nums">{m.accuracy ?? '—'}%</td>
+                            <td className="py-2 text-end tabular-nums text-ink-muted">{m.mape ?? '—'}%</td>
                           </tr>
                         ))}
                       </tbody>
@@ -467,7 +467,7 @@ export default function ForecastLabPage() {
                         <table className="text-xs border-separate" style={{ borderSpacing: 2 }}>
                           <thead>
                             <tr>
-                              <th className="text-left font-medium text-ink-muted px-2 sticky left-0 bg-surface">Category</th>
+                              <th className="text-start font-medium text-ink-muted px-2 sticky start-0 bg-surface">Category</th>
                               {stores.map(([sid, sname]) => (
                                 <th key={sid} className="font-medium text-ink-muted px-1 whitespace-nowrap" title={sname}>
                                   {sname.replace(/^Meridian Hypermarket\s+/i, '').slice(0, 10)}
@@ -478,10 +478,10 @@ export default function ForecastLabPage() {
                           <tbody>
                             {cats.map((cat) => (
                               <tr key={cat}>
-                                <td className="px-2 sticky left-0 bg-surface">
+                                <td className="px-2 sticky start-0 bg-surface">
                                   <button
                                     onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
-                                    className={`text-left hover:underline ${selectedCategory === cat ? 'text-primary-700 font-medium' : 'text-ink-soft'}`}
+                                    className={`text-start hover:underline ${selectedCategory === cat ? 'text-primary-700 font-medium' : 'text-ink-soft'}`}
                                   >
                                     {cat}
                                   </button>

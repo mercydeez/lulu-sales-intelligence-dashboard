@@ -18,7 +18,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         )}
         <div className="relative group">
           {icon && (
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-ink-muted group-focus-within:text-coral-500 transition-colors">
+            <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none text-ink-muted group-focus-within:text-teal-600 transition-colors">
               {icon}
             </div>
           )}
@@ -27,9 +27,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             id={id}
             className={cn(
               'w-full py-3 px-4 rounded-2xl bg-surface border text-ink placeholder-ink-muted shadow-sm transition-all',
-              'focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400',
-              icon && 'pl-12',
-              error ? 'border-rose-300' : 'border-coral-100',
+              'focus:outline-none focus:ring-4 focus:ring-teal-500/15 focus:border-teal-400',
+              icon && 'ps-12',
+              error ? 'border-rose-300' : 'border-line',
               className
             )}
             {...props}

@@ -13,9 +13,9 @@ export interface InventoryTableProps {
 export default function InventoryTable({ items, loading, canManageInventory, onAddToProcurement }: InventoryTableProps) {
   return (
     <Card variant="glass" padding="none" className="overflow-hidden">
-      <div className="p-4 border-b border-coral-100 flex items-center justify-between">
+      <div className="p-4 border-b border-line flex items-center justify-between">
         <h2 className="text-lg font-semibold text-ink flex items-center gap-2">
-          <Package className="w-5 h-5 text-coral-500" />
+          <Package className="w-5 h-5 text-teal-600" />
           Inventory Items
           <Badge variant="neutral" size="sm">{items.length} items</Badge>
         </h2>
@@ -26,10 +26,10 @@ export default function InventoryTable({ items, loading, canManageInventory, onA
           <TableRow>
             <Th>Item</Th>
             <Th>Store</Th>
-            <Th className="text-right">Qty</Th>
-            <Th className="text-right">Reorder Level</Th>
+            <Th className="text-end">Qty</Th>
+            <Th className="text-end">Reorder Level</Th>
             <Th className="text-center">Status</Th>
-            <Th className="text-right">Unit Cost</Th>
+            <Th className="text-end">Unit Cost</Th>
             <Th className="text-center">Actions</Th>
           </TableRow>
         </TableHead>
@@ -59,7 +59,7 @@ export default function InventoryTable({ items, loading, canManageInventory, onA
                     <span className="text-sm text-ink-soft">{item.store_name}</span>
                   </div>
                 </Td>
-                <Td className="text-right">
+                <Td className="text-end">
                   <span className={
                     item.quantity <= 0 ? 'font-medium text-rose-600' :
                     item.quantity <= item.reorder_level ? 'font-medium text-amber-600' :
@@ -68,11 +68,11 @@ export default function InventoryTable({ items, loading, canManageInventory, onA
                     {formatNumber(item.quantity)}
                   </span>
                 </Td>
-                <Td className="text-right text-ink-muted">{formatNumber(item.reorder_level)}</Td>
+                <Td className="text-end text-ink-muted">{formatNumber(item.reorder_level)}</Td>
                 <Td className="text-center">
                   <Badge variant={statusBadgeVariant[item.status]} size="sm">{statusLabels[item.status]}</Badge>
                 </Td>
-                <Td className="text-right text-ink">{formatCurrency(item.unit_cost)}</Td>
+                <Td className="text-end text-ink">{formatCurrency(item.unit_cost)}</Td>
                 <Td className="text-center">
                   {(item.status === 'out_of_stock' || item.status === 'low_stock') && canManageInventory && (
                     <Button size="sm" onClick={() => onAddToProcurement(item)}>Order</Button>

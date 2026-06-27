@@ -182,7 +182,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               <span className="relative z-10 flex items-center">{item.icon}</span>
               <span className="relative z-10 flex-1">{t(item.tKey)}</span>
               {showBadge && (
-                <span className="relative z-10 ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#e11d48] text-white text-[10px] font-bold">
+                <span className="relative z-10 ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-bold">
                   {criticalCount}
                 </span>
               )}
@@ -192,7 +192,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                 </span>
               )}
               {showThreats && (
-                <span className="relative z-10 ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#e11d48] text-white text-[10px] font-bold">
+                <span className="relative z-10 ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-bold">
                   {threatCount}
                 </span>
               )}
@@ -229,7 +229,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           <aside className="absolute inset-y-0 start-0 w-72 bg-surface shadow-2xl flex flex-col animate-slide-in">
             <button
               onClick={onClose}
-              className="absolute top-4 end-4 p-1.5 rounded-full text-ink-muted hover:text-ink hover:bg-coral-50 transition-colors"
+              className="absolute top-4 end-4 p-1.5 rounded-full text-ink-muted hover:text-ink hover:bg-surface-2 transition-colors"
             >
               <X className="w-4 h-4" />
             </button>

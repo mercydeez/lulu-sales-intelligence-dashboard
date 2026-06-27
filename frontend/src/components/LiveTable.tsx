@@ -205,22 +205,22 @@ export default function LiveTable() {
         <table className="min-w-full">
           <thead className="bg-coral-50">
             <tr>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-ink-muted uppercase tracking-wider">
+              <th className="px-6 py-4 text-start text-xs font-semibold text-ink-muted uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4" />
                   Timestamp
                 </div>
               </th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-ink-muted uppercase tracking-wider">
+              <th className="px-6 py-4 text-start text-xs font-semibold text-ink-muted uppercase tracking-wider">
                 Store
               </th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-ink-muted uppercase tracking-wider">
+              <th className="px-6 py-4 text-start text-xs font-semibold text-ink-muted uppercase tracking-wider">
                 Item
               </th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-ink-muted uppercase tracking-wider">
+              <th className="px-6 py-4 text-start text-xs font-semibold text-ink-muted uppercase tracking-wider">
                 Sales
               </th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-ink-muted uppercase tracking-wider">
+              <th className="px-6 py-4 text-start text-xs font-semibold text-ink-muted uppercase tracking-wider">
                 Status
               </th>
             </tr>

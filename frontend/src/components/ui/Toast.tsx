@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useRef, useState, ReactNode } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle, AlertTriangle, AlertCircle, Info, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
@@ -55,29 +56,40 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ show, dismiss }}>
       {children}
-      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 w-80 pointer-events-none">
-        {toasts.map((t) => {
-          const config = variantConfig[t.variant];
-          const Icon = config.icon;
-          return (
-            <div
-              key={t.id}
-              className={cn(
-                'pointer-events-auto rounded-xl border shadow-soft p-3 flex items-start gap-3 animate-fade-in',
-                config.classes
-              )}
-            >
-              <Icon className={cn('w-5 h-5 shrink-0 mt-0.5', config.iconClass)} />
-              <div className="flex-1 min-w-0">
-                {t.title && <p className="text-sm font-semibold">{t.title}</p>}
-                <p className="text-sm">{t.message}</p>
-              </div>
-              <button onClick={() => dismiss(t.id)} className="text-current/60 hover:text-current transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          );
-        })}
+      <div className="fixed top-4 end-4 z-[100] flex flex-col gap-2 w-80 pointer-events-none">
+        <AnimatePresence initial={false}>
+          {toasts.map((t) => {
+            const config = variantConfig[t.variant];
+            const Icon = config.icon;
+            return (
+              <motion.div
+                key={t.id}
+                layout
+                initial={{ opacity: 0, x: 40, scale: 0.96 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 40, scale: 0.96 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                className={cn(
+                  'pointer-events-auto rounded-xl border shadow-soft p-3 flex items-start gap-3',
+                  config.classes
+                )}
+              >
+                <Icon className={cn('w-5 h-5 shrink-0 mt-0.5', config.iconClass)} />
+                <div className="flex-1 min-w-0">
+                  {t.title && <p className="text-sm font-semibold">{t.title}</p>}
+                  <p className="text-sm">{t.message}</p>
+                </div>
+                <button
+                  onClick={() => dismiss(t.id)}
+                  aria-label="Dismiss"
+                  className="text-current/60 hover:text-current transition-colors active:scale-90"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
       </div>
     </ToastContext.Provider>
   );

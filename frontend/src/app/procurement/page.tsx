@@ -96,7 +96,7 @@ export default function ProcurementPage() {
         <PageHeader
           title="Procurement"
           description="Forecast-driven purchase orders — from reorder signal to approved order."
-          icon={<Truck className="w-6 h-6 text-coral-500" />}
+          icon={<Truck className="w-6 h-6" />}
           actions={
             <Button variant="primary" onClick={generate} disabled={generating}>
               {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
@@ -143,7 +143,7 @@ export default function ProcurementPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-ink-muted border-b border-line">
+                  <tr className="text-start text-ink-muted border-b border-line">
                     <th className="py-2 pe-4 font-medium">PO</th>
                     <th className="py-2 pe-4 font-medium">Supplier</th>
                     <th className="py-2 pe-4 font-medium">Status</th>
@@ -158,7 +158,7 @@ export default function ProcurementPage() {
                     return (
                       <tr key={po.id} className="border-b border-line/60">
                         <td className="py-2.5 pe-4 font-mono">
-                          <Link href={`/procurement/po/${po.id}`} className="text-coral-600 hover:underline">{po.po_number}</Link>
+                          <Link href={`/procurement/po/${po.id}`} className="text-teal-700 hover:underline">{po.po_number}</Link>
                         </td>
                         <td className="py-2.5 pe-4 text-ink">{po.supplier_name}</td>
                         <td className="py-2.5 pe-4">

@@ -5,7 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { ChartFrame } from '@/components/ui';
 import { fetchTopItems } from '@/lib/api';
 import { TopItemPoint } from '@/types';
-import { CHART, tooltipStyle, tooltipLabelStyle } from './chartTheme';
+import { CHART, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatCompact, formatCurrency, shortItemLabel } from './format';
 
 interface TopItemsPanelProps {

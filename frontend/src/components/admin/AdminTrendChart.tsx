@@ -2,10 +2,8 @@
 
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChartFrame } from '@/components/ui';
+import { CHART, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
 import { AdminDashboard } from './types';
-
-const CHART = { coral: '#ff6b5c', grid: 'rgba(30,27,46,0.08)', axis: '#8b8699' };
-const tooltipStyle = { backgroundColor: '#fff', border: '1px solid #f1d9d2', borderRadius: '12px', color: '#1e1b2e' };
 
 interface AdminTrendChartProps {
   dashboard: AdminDashboard | null;
@@ -31,15 +29,15 @@ export function AdminTrendChart({ dashboard, loading }: AdminTrendChartProps) {
         <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="adminTrend" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={CHART.coral} stopOpacity={0.35} />
-              <stop offset="95%" stopColor={CHART.coral} stopOpacity={0} />
+              <stop offset="5%" stopColor={CHART.teal} stopOpacity={0.35} />
+              <stop offset="95%" stopColor={CHART.teal} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
-          <XAxis dataKey="date" tickFormatter={fmtDate} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} minTickGap={24} />
-          <YAxis stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} />
-          <Tooltip contentStyle={tooltipStyle} labelFormatter={(l) => fmtDate(String(l))} />
-          <Area type="monotone" dataKey="sales" name="Units" stroke={CHART.coral} strokeWidth={2.5} fill="url(#adminTrend)" dot={false} />
+          <CartesianGrid {...gridProps} />
+          <XAxis dataKey="date" tickFormatter={fmtDate} {...axisProps} fontSize={12} minTickGap={24} />
+          <YAxis {...axisProps} fontSize={12} />
+          <Tooltip contentStyle={tooltipContent} labelStyle={tooltipLabelStyle} labelFormatter={(l) => fmtDate(String(l))} />
+          <Area type="monotone" dataKey="sales" name="Units" stroke={CHART.teal} strokeWidth={2.5} fill="url(#adminTrend)" dot={false} />
         </AreaChart>
       </ResponsiveContainer>
     </ChartFrame>

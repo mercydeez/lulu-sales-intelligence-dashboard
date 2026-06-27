@@ -3,7 +3,7 @@ import { cn } from '@/lib/cn';
 
 export function Table({ className, children, ...props }: HTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-coral-100">
+    <div className="overflow-x-auto rounded-2xl border border-line">
       <table className={cn('w-full text-sm', className)} {...props}>
         {children}
       </table>
@@ -11,9 +11,17 @@ export function Table({ className, children, ...props }: HTMLAttributes<HTMLTabl
   );
 }
 
-export function TableHead({ className, children, ...props }: HTMLAttributes<HTMLTableSectionElement>) {
+export interface TableHeadProps extends HTMLAttributes<HTMLTableSectionElement> {
+  /** Stick the header to the top of a scrolling container. */
+  sticky?: boolean;
+}
+
+export function TableHead({ className, children, sticky, ...props }: TableHeadProps) {
   return (
-    <thead className={cn('bg-coral-50/60', className)} {...props}>
+    <thead
+      className={cn('bg-surface-2/70', sticky && 'sticky top-0 z-10 backdrop-blur supports-[backdrop-filter]:bg-surface-2/80', className)}
+      {...props}
+    >
       {children}
     </thead>
   );
@@ -21,15 +29,23 @@ export function TableHead({ className, children, ...props }: HTMLAttributes<HTML
 
 export function TableBody({ className, children, ...props }: HTMLAttributes<HTMLTableSectionElement>) {
   return (
-    <tbody className={cn('divide-y divide-coral-100/70', className)} {...props}>
+    <tbody className={cn('divide-y divide-line', className)} {...props}>
       {children}
     </tbody>
   );
 }
 
-export function TableRow({ className, children, ...props }: HTMLAttributes<HTMLTableRowElement>) {
+export interface TableRowProps extends HTMLAttributes<HTMLTableRowElement> {
+  /** Subtle zebra tint for odd rows (token-based, RTL-safe). */
+  zebra?: boolean;
+}
+
+export function TableRow({ className, children, zebra, ...props }: TableRowProps) {
   return (
-    <tr className={cn('hover:bg-coral-50/40 transition-colors', className)} {...props}>
+    <tr
+      className={cn('transition-colors hover:bg-teal-50/40', zebra && 'even:bg-surface-2/40', className)}
+      {...props}
+    >
       {children}
     </tr>
   );
@@ -38,7 +54,7 @@ export function TableRow({ className, children, ...props }: HTMLAttributes<HTMLT
 export function Th({ className, children, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
-      className={cn('px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted', className)}
+      className={cn('px-4 py-3 text-start text-xs font-semibold uppercase tracking-wide text-ink-muted', className)}
       {...props}
     >
       {children}

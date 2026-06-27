@@ -44,7 +44,7 @@ function HealthCheckCard({ title, icon, status, rows }: { title: string; icon: R
     <Card variant="glass" padding="md">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className="p-2 rounded-xl bg-coral-100 text-coral-600">{icon}</div>
+          <div className="p-2 rounded-xl bg-teal-100 text-teal-700">{icon}</div>
           <h3 className="font-semibold text-ink">{title}</h3>
         </div>
         <StatusPill status={status} />
@@ -124,7 +124,7 @@ export function MetricsPanel({ metrics, loading }: { metrics: MetricsData | null
   return (
     <Card variant="glass" padding="md">
       <div className="flex items-center gap-2 mb-4">
-        <Clock className="w-5 h-5 text-coral-500" />
+        <Clock className="w-5 h-5 text-teal-600" />
         <div>
           <h3 className="text-lg font-semibold text-ink">Application Metrics</h3>
           <p className="text-sm text-ink-muted mt-0.5">Counters and request latency since last restart</p>
@@ -137,7 +137,7 @@ export function MetricsPanel({ metrics, loading }: { metrics: MetricsData | null
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {counters.map(([key, value]) => (
-            <div key={key} className="flex justify-between items-center p-3 rounded-2xl bg-coral-50/50">
+            <div key={key} className="flex justify-between items-center p-3 rounded-2xl bg-surface-2/60">
               <span className="text-sm text-ink-soft font-mono truncate">{key}</span>
               <span className="text-sm font-semibold text-ink">{value.toLocaleString()}</span>
             </div>

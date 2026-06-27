@@ -29,7 +29,7 @@ export default function TrendPanel({ stats, loading }: TrendPanelProps) {
               <div className="bg-amber-500 rounded-sm" style={{ width: `${(day.warning / maxAlerts) * 100}%` }} title={`${day.warning} warning`} />
               <div className="bg-violet-500 rounded-sm" style={{ width: `${(day.info / maxAlerts) * 100}%` }} title={`${day.info} info`} />
             </div>
-            <span className="text-xs text-ink-muted w-6 text-right shrink-0">{day.critical + day.warning + day.info}</span>
+            <span className="text-xs text-ink-muted w-6 text-end shrink-0">{day.critical + day.warning + day.info}</span>
           </div>
         ))}
         <div className="flex items-center justify-center gap-4 pt-2 text-xs text-ink-muted">

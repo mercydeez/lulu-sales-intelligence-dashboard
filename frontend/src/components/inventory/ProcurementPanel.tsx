@@ -24,7 +24,7 @@ export default function ProcurementPanel({
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-ink flex items-center gap-2">
-          <ShoppingCart className="w-6 h-6 text-coral-500" />
+          <ShoppingCart className="w-6 h-6 text-teal-600" />
           Procurement Orders
         </h2>
         <div className="flex items-center gap-2">
@@ -49,9 +49,9 @@ export default function ProcurementPanel({
                 <Th>Priority</Th>
                 <Th>Item</Th>
                 <Th>Store</Th>
-                <Th className="text-right">Current Stock</Th>
-                <Th className="text-right">Order Qty</Th>
-                <Th className="text-right">Est. Cost</Th>
+                <Th className="text-end">Current Stock</Th>
+                <Th className="text-end">Order Qty</Th>
+                <Th className="text-end">Est. Cost</Th>
                 <Th className="text-center">Status</Th>
                 {canApproveProcurement && <Th className="text-center">Actions</Th>}
               </TableRow>
@@ -65,13 +65,13 @@ export default function ProcurementPanel({
                     <p className="text-sm text-ink-muted">{proc.item.category}</p>
                   </Td>
                   <Td className="text-ink-soft">{proc.item.store_name}</Td>
-                  <Td className="text-right">
+                  <Td className="text-end">
                     <span className={proc.item.quantity <= 0 ? 'text-rose-600' : 'text-amber-600'}>
                       {proc.item.quantity}
                     </span>
                   </Td>
-                  <Td className="text-right font-medium text-ink">{formatNumber(proc.suggestedQuantity)}</Td>
-                  <Td className="text-right text-ink">{formatCurrency(proc.suggestedQuantity * proc.item.unit_cost)}</Td>
+                  <Td className="text-end font-medium text-ink">{formatNumber(proc.suggestedQuantity)}</Td>
+                  <Td className="text-end text-ink">{formatCurrency(proc.suggestedQuantity * proc.item.unit_cost)}</Td>
                   <Td className="text-center">
                     <Badge variant={procurementStatusBadgeVariant[proc.status]} size="sm">
                       {proc.status.charAt(0).toUpperCase() + proc.status.slice(1)}

@@ -6,6 +6,7 @@
  * procurement shortcuts.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { Search, CornerDownLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -83,13 +84,18 @@ export default function CommandPalette() {
     else if (e.key === 'Enter' && results[active]) { e.preventDefault(); run(results[active]); }
   };
 
-  if (!isAuthenticated || !open) return null;
+  if (!isAuthenticated) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] bg-black/30 backdrop-blur-sm"
-      onClick={() => setOpen(false)}>
-      <div className="w-full max-w-lg mx-4 rounded-2xl bg-surface border border-line shadow-card overflow-hidden"
-        onClick={(e) => e.stopPropagation()}>
+    <AnimatePresence>
+    {open && (
+    <motion.div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] bg-black/30 backdrop-blur-sm"
+      onClick={() => setOpen(false)}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+      <motion.div className="w-full max-w-lg mx-4 rounded-2xl bg-surface border border-line shadow-card overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.96, y: -12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97, y: -8 }} transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}>
         <div className="flex items-center gap-3 px-4 border-b border-line">
           <Search className="w-5 h-5 text-ink-muted shrink-0" />
           <input ref={inputRef} value={query} onChange={(e) => { setQuery(e.target.value); setActive(0); }}
@@ -102,14 +108,16 @@ export default function CommandPalette() {
             <p className="px-4 py-6 text-center text-sm text-ink-muted">No matches.</p>
           ) : results.map((c, i) => (
             <button key={c.href + c.label} onClick={() => run(c)} onMouseEnter={() => setActive(i)}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left ${i === active ? 'bg-surface-2' : ''}`}>
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-start transition-colors ${i === active ? 'bg-surface-2' : ''}`}>
               <span className="text-[10px] uppercase tracking-wide text-ink-muted w-12 shrink-0">{c.hint}</span>
               <span className="flex-1 text-ink">{c.label}</span>
               {i === active && <CornerDownLeft className="w-4 h-4 text-ink-muted" />}
             </button>
           ))}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+    )}
+    </AnimatePresence>
   );
 }

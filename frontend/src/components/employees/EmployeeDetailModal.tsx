@@ -14,7 +14,7 @@ export function EmployeeDetailModal({ employee, onClose }: EmployeeDetailModalPr
   return (
     <Modal open={!!employee} onClose={onClose} title="Employee Profile" size="lg">
       {employee && (
-        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pe-1">
           <EmployeeBioCard employee={employee} />
           <EmployeePerformanceChart
             employeeId={employee.id}

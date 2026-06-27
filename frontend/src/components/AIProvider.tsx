@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import ChatBot from './ChatBot';
 import AIToggleButton from './AIToggleButton';
 
@@ -24,11 +25,16 @@ export default function AIProvider({ children }: AIProviderProps) {
         onClick={() => setIsChatOpen(true)} 
       />
       
-      {/* ChatBot Panel */}
-      <ChatBot 
-        isOpen={isChatOpen} 
-        onToggle={() => setIsChatOpen(false)} 
-      />
+      {/* ChatBot Panel — AnimatePresence drives the slide in/out */}
+      <AnimatePresence>
+        {isChatOpen && (
+          <ChatBot
+            key="sage-chat"
+            isOpen={isChatOpen}
+            onToggle={() => setIsChatOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

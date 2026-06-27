@@ -3,9 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { FileText, Download, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, Button, Select, ErrorState, Card } from '@/components/ui';
+import { PageHeader, Button, Select, ErrorState, Card, Stagger, RevealItem } from '@/components/ui';
 import { fetchStores } from '@/lib/api';
-import { generatePDF } from '@/lib/pdfExport';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { Store } from '@/types';
 import {
@@ -55,6 +54,8 @@ export default function ReportsPage() {
     if (!report) return;
     setExporting(true);
     try {
+      // Lazy-load jsPDF only on export — keeps it out of the reports route bundle.
+      const { generatePDF } = await import('@/lib/pdfExport');
       await generatePDF({
         title: 'Sales & Performance Report',
         subtitle: `${PRODUCT_NAME} — figures are units (synthetic demand data)`,
@@ -134,20 +135,24 @@ export default function ReportsPage() {
             />
           </Card>
         ) : (
-          <>
-            <ReportKpiCards kpis={report?.kpis ?? null} loading={loading} />
+          <Stagger>
+            <RevealItem>
+              <ReportKpiCards kpis={report?.kpis ?? null} loading={loading} />
+            </RevealItem>
 
-            <div className="mb-6">
+            <RevealItem className="block my-6">
               <ReportTrendPanel data={report?.daily_sales ?? []} loading={loading} />
-            </div>
+            </RevealItem>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <RevealItem className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <ReportCategoryPanel data={report?.category_breakdown ?? []} loading={loading} />
               <ReportTopItemsPanel data={report?.top_items ?? []} loading={loading} />
-            </div>
+            </RevealItem>
 
-            <ReportStoreTable data={report?.store_performance ?? []} loading={loading} />
-          </>
+            <RevealItem>
+              <ReportStoreTable data={report?.store_performance ?? []} loading={loading} />
+            </RevealItem>
+          </Stagger>
         )}
       </div>
     </main>

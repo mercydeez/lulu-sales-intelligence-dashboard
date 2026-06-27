@@ -63,7 +63,7 @@ export default function HomeHero() {
       {user?.role === 'super_admin' && (
         <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { icon: MapPin, label: 'Regions', value: '3', tint: 'bg-coral-100 text-coral-600' },
+            { icon: MapPin, label: 'Regions', value: '3', tint: 'bg-blue-100 text-blue-600' },
             { icon: Store, label: 'Total Stores', value: '10', tint: 'bg-violet-100 text-violet-600' },
             { icon: Package, label: 'Products', value: '50', tint: 'bg-teal-100 text-teal-600' },
             { icon: Users, label: 'Users', value: '3', tint: 'bg-amber-100 text-amber-600' },

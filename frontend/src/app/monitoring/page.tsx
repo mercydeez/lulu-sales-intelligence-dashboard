@@ -60,7 +60,7 @@ export default function MonitoringPage() {
                 type="button"
                 onClick={() => setAutoRefresh((v) => !v)}
                 className={`px-3 py-2 rounded-2xl text-sm font-medium transition-colors ${
-                  autoRefresh ? 'bg-teal-100 text-teal-700' : 'bg-coral-50 text-ink-muted'
+                  autoRefresh ? 'bg-teal-100 text-teal-700' : 'bg-surface-2 text-ink-muted'
                 }`}
               >
                 Auto-refresh {autoRefresh ? 'on' : 'off'}

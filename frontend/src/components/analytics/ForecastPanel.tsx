@@ -8,7 +8,7 @@ import { Target } from 'lucide-react';
 import { Card, Select, Badge, Skeleton, EmptyState, StatCard } from '@/components/ui';
 import { fetchBacktest, fetchStores, fetchItems } from '@/lib/api';
 import { BacktestResult, Store, Item } from '@/types';
-import { CHART, tooltipStyle, tooltipLabelStyle } from './chartTheme';
+import { CHART, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatDateShort } from './format';
 
 interface ForecastPanelProps {

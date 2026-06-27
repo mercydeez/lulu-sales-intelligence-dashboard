@@ -60,7 +60,7 @@ export default function PrintablePOPage() {
             <h1 className="text-2xl font-bold">Purchase Order</h1>
             <p className="text-ink-muted mt-1">{po.po_number}</p>
           </div>
-          <div className="text-right">
+          <div className="text-end">
             <p className="text-lg font-bold gradient-text">{PRODUCT_NAME}</p>
             <p className="text-xs text-ink-muted">Procurement</p>
           </div>
@@ -71,7 +71,7 @@ export default function PrintablePOPage() {
             <p className="text-ink-muted">Supplier</p>
             <p className="font-medium">{po.supplier_name}</p>
           </div>
-          <div className="text-right">
+          <div className="text-end">
             <p className="text-ink-muted">Status</p>
             <p className="font-medium capitalize">{po.status.replace('_', ' ')}</p>
           </div>
@@ -79,7 +79,7 @@ export default function PrintablePOPage() {
             <p className="text-ink-muted">Created</p>
             <p className="font-medium">{fmtDate(po.created_at)}</p>
           </div>
-          <div className="text-right">
+          <div className="text-end">
             <p className="text-ink-muted">Approved</p>
             <p className="font-medium">{fmtDate(po.approved_at)}</p>
           </div>
@@ -87,7 +87,7 @@ export default function PrintablePOPage() {
 
         <table className="w-full text-sm mb-6">
           <thead>
-            <tr className="text-left border-b-2 border-line">
+            <tr className="text-start border-b-2 border-line">
               <th className="py-2 font-semibold">Item</th>
               <th className="py-2 font-semibold text-end">Qty</th>
               <th className="py-2 font-semibold text-end">Unit cost</th>

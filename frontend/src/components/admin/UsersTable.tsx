@@ -28,7 +28,7 @@ export function UsersTable({ users, loading, search, onSearchChange, onAddUser }
 
   return (
     <Card variant="glass" padding="none">
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-coral-100">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-line">
         <div>
           <h3 className="text-lg font-semibold text-ink">Users &amp; Access</h3>
           <p className="text-sm text-ink-muted mt-0.5">Platform accounts and their roles</p>

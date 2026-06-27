@@ -49,6 +49,34 @@ export function Reveal({
   );
 }
 
+/**
+ * Reveal-on-scroll — fades + rises the first time the element scrolls into view
+ * (once). Use for sections low on long pages, where an on-mount `Reveal` would
+ * animate before the user ever sees it. Honors reduced-motion via MotionConfig.
+ */
+export function ScrollReveal({
+  children,
+  delay = 0,
+  className,
+  ...props
+}: { children: ReactNode; delay?: number } & Omit<HTMLMotionProps<'div'>, 'ref'>) {
+  return (
+    <motion.div
+      initial="hidden"
+      whileInView="show"
+      viewport={{ once: true, margin: '0px 0px -10% 0px' }}
+      variants={{
+        hidden: { opacity: 0, y: 16 },
+        show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: EASE, delay } },
+      }}
+      className={className}
+      {...props}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 /** Wrap a group; children using `RevealItem` (or variants={fadeRise}) cascade in. */
 export function Stagger({
   children,

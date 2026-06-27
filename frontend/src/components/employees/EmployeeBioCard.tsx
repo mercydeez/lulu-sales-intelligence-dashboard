@@ -30,7 +30,7 @@ function Avatar({ employee, size }: { employee: Employee; size: number }) {
         </div>
       )}
       <span
-        className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${statusDot[employee.status] ?? 'bg-ink-muted'}`}
+        className={`absolute bottom-0 end-0 w-3 h-3 rounded-full border-2 border-white ${statusDot[employee.status] ?? 'bg-ink-muted'}`}
       />
     </div>
   );
@@ -102,8 +102,8 @@ export function EmployeeBioCard({ employee, performance, compact = false, onClic
         </div>
 
         {performance && (
-          <div className="grid grid-cols-4 gap-3 pt-4 border-t border-coral-100">
-            <Metric icon={<TrendingUp className="w-4 h-4 text-coral-500" />} value={formatCurrency(performance.sales_achieved)} label="Sales" />
+          <div className="grid grid-cols-4 gap-3 pt-4 border-t border-line">
+            <Metric icon={<TrendingUp className="w-4 h-4 text-teal-600" />} value={formatCurrency(performance.sales_achieved)} label="Sales" />
             <Metric icon={<Star className="w-4 h-4 text-amber-500" />} value={performance.customer_rating.toFixed(1)} label="Rating" />
             <Metric icon={<Clock className="w-4 h-4 text-teal-500" />} value={`${performance.attendance_percentage.toFixed(0)}%`} label="Attendance" />
             <Metric icon={<Award className="w-4 h-4 text-violet-500" />} value={formatTenure(employee.tenure_days)} label="Tenure" />

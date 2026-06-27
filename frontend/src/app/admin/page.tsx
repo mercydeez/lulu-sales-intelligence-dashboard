@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Shield, Users, Store, Activity, LayoutDashboard, RefreshCw, Lock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, Button, Tabs, Card, EmptyState } from '@/components/ui';
+import { PageHeader, Button, Tabs, Card, EmptyState, Reveal } from '@/components/ui';
 import {
   AdminDashboardCards,
   AdminTrendChart,
@@ -100,28 +100,34 @@ export default function AdminPage() {
         />
 
         {activeTab === 'overview' && (
-          <>
+          <Reveal key="tab-overview">
             <AdminDashboardCards dashboard={dashboard} loading={loading} />
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
               <AdminTrendChart dashboard={dashboard} loading={loading} />
               <ActivityFeed activities={activities} loading={loading} />
             </div>
-          </>
+          </Reveal>
         )}
 
         {activeTab === 'users' && (
-          <UsersTable
-            users={users}
-            loading={loading}
-            search={userSearch}
-            onSearchChange={setUserSearch}
-            onAddUser={() => setShowNewUser(true)}
-          />
+          <Reveal key="tab-users">
+            <UsersTable
+              users={users}
+              loading={loading}
+              search={userSearch}
+              onSearchChange={setUserSearch}
+              onAddUser={() => setShowNewUser(true)}
+            />
+          </Reveal>
         )}
 
-        {activeTab === 'stores' && <StoresTable stores={stores} loading={loading} />}
+        {activeTab === 'stores' && (
+          <Reveal key="tab-stores"><StoresTable stores={stores} loading={loading} /></Reveal>
+        )}
 
-        {activeTab === 'activity' && <ActivityFeed activities={activities} loading={loading} />}
+        {activeTab === 'activity' && (
+          <Reveal key="tab-activity"><ActivityFeed activities={activities} loading={loading} /></Reveal>
+        )}
       </div>
     </main>
   );

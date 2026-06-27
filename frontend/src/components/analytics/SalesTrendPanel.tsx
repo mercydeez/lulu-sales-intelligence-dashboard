@@ -8,7 +8,7 @@ import { TrendingUp } from 'lucide-react';
 import { Card, Badge, Skeleton, EmptyState } from '@/components/ui';
 import { fetchTrend } from '@/lib/api';
 import { TrendPoint } from '@/types';
-import { CHART, tooltipStyle, tooltipLabelStyle } from './chartTheme';
+import { CHART, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatCompact, formatCurrency, formatDateShort } from './format';
 
 interface SalesTrendPanelProps {
@@ -51,7 +51,7 @@ export function SalesTrendPanel({ days }: SalesTrendPanelProps) {
     <Card variant="glass" padding="md">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-coral-100 text-coral-600">
+          <div className="p-2 rounded-xl bg-teal-100 text-teal-700">
             <TrendingUp className="w-5 h-5" />
           </div>
           <div>
@@ -103,7 +103,7 @@ export function SalesTrendPanel({ days }: SalesTrendPanelProps) {
       </div>
 
       {!loading && !error && data.length > 0 && (
-        <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-coral-100">
+        <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-line">
           <div className="text-center">
             <div className="text-xl font-bold text-ink">{formatCurrency(totalHistorical)}</div>
             <div className="text-xs text-ink-muted">Total Historical</div>

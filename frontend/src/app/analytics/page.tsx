@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { BarChart3, LineChart, RefreshCw, Download, Activity } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, Tabs, Button, Select } from '@/components/ui';
+import { PageHeader, Tabs, Button, Select, Reveal, Stagger, RevealItem } from '@/components/ui';
 import {
   AnalyticsKpiCards,
   SalesTrendPanel,
@@ -18,7 +18,6 @@ import {
   formatCurrency,
 } from '@/components/analytics';
 import { fetchTrend, fetchCategoryBreakdown, clearCache } from '@/lib/api';
-import { generatePDF } from '@/lib/pdfExport';
 import { PRODUCT_NAME } from '@/lib/brand';
 
 type Tab = 'overview' | 'forecast';
@@ -60,7 +59,9 @@ export default function AnalyticsPage() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const [trend, categories] = await Promise.all([
+      // Lazy-load jsPDF only when the user actually exports — keeps it out of the route bundle.
+      const [{ generatePDF }, trend, categories] = await Promise.all([
+        import('@/lib/pdfExport'),
         fetchTrend(RANGE_DAYS[range], false),
         fetchCategoryBreakdown(),
       ]);
@@ -148,28 +149,32 @@ export default function AnalyticsPage() {
         />
 
         {activeTab === 'overview' ? (
-          <div key={`overview-${refreshKey}`}>
-            <AnalyticsKpiCards kpis={kpis} loading={kpisLoading} />
+          <Stagger key={`overview-${refreshKey}`}>
+            <RevealItem>
+              <AnalyticsKpiCards kpis={kpis} loading={kpisLoading} />
+            </RevealItem>
 
-            <div className="mb-6">
+            <RevealItem className="mb-6 mt-6">
               <SalesTrendPanel days={RANGE_DAYS[range]} />
-            </div>
+            </RevealItem>
 
-            <div className={`grid grid-cols-1 ${showStoreComparison ? 'lg:grid-cols-2' : ''} gap-6 mb-6`}>
+            <RevealItem className={`grid grid-cols-1 ${showStoreComparison ? 'lg:grid-cols-2' : ''} gap-6 mb-6`}>
               <CategoryDonut />
               {showStoreComparison && <StoreDistributionPanel />}
-            </div>
+            </RevealItem>
 
-            <div className="mb-6">
+            <RevealItem className="mb-6">
               <TopItemsPanel limit={10} />
-            </div>
+            </RevealItem>
 
-            <StorePerformanceTable />
-          </div>
+            <RevealItem>
+              <StorePerformanceTable />
+            </RevealItem>
+          </Stagger>
         ) : (
-          <div key={`forecast-${refreshKey}`}>
+          <Reveal key={`forecast-${refreshKey}`}>
             <ForecastPanel defaultStoreId={defaultStoreId} />
-          </div>
+          </Reveal>
         )}
       </div>
     </main>

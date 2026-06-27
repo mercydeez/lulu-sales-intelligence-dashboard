@@ -13,7 +13,7 @@ interface StoresTableProps {
 export function StoresTable({ stores, loading }: StoresTableProps) {
   return (
     <Card variant="glass" padding="none">
-      <div className="px-5 py-4 border-b border-coral-100">
+      <div className="px-5 py-4 border-b border-line">
         <h3 className="text-lg font-semibold text-ink">Stores</h3>
         <p className="text-sm text-ink-muted mt-0.5">Locations and trailing-30-day revenue</p>
       </div>
@@ -28,8 +28,8 @@ export function StoresTable({ stores, loading }: StoresTableProps) {
             <TableRow>
               <Th>Store</Th>
               <Th>Location</Th>
-              <Th className="text-right">Revenue (30d)</Th>
-              <Th className="text-right">Items Sold</Th>
+              <Th className="text-end">Revenue (30d)</Th>
+              <Th className="text-end">Items Sold</Th>
               <Th>Last Sale</Th>
               <Th className="text-center">Status</Th>
             </TableRow>
@@ -39,8 +39,8 @@ export function StoresTable({ stores, loading }: StoresTableProps) {
               <TableRow key={s.id}>
                 <Td className="font-medium">{s.name}</Td>
                 <Td className="text-ink-soft">{s.location}</Td>
-                <Td className="text-right font-semibold">{formatCurrency(s.total_revenue_30d)}</Td>
-                <Td className="text-right text-ink-soft">{formatNumber(s.items_sold)}</Td>
+                <Td className="text-end font-semibold">{formatCurrency(s.total_revenue_30d)}</Td>
+                <Td className="text-end text-ink-soft">{formatNumber(s.items_sold)}</Td>
                 <Td className="text-ink-soft">{formatRelative(s.last_sale_date)}</Td>
                 <Td className="text-center">
                   <Badge variant={s.status === 'active' ? 'success' : 'neutral'} size="sm">{s.status}</Badge>

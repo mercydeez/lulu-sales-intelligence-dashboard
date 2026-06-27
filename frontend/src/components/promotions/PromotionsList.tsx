@@ -42,7 +42,7 @@ export function PromotionsList({
 
   return (
     <Card variant="glass" padding="none">
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-coral-100">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-line">
         <Tabs items={TABS} value={activeTab} onChange={(id) => onTabChange(id as PromotionTab)} />
         <div className="w-full sm:w-64">
           <Input
@@ -65,9 +65,9 @@ export function PromotionsList({
           description={search ? 'Try a different search term.' : 'Nothing in this category yet.'}
         />
       ) : (
-        <div className="divide-y divide-coral-100/70">
+        <div className="divide-y divide-line">
           {filtered.map((promo) => (
-            <div key={`${promo.source ?? 'gen'}-${promo.id}`} className="p-4 hover:bg-coral-50/40 transition-colors">
+            <div key={`${promo.source ?? 'gen'}-${promo.id}`} className="p-4 hover:bg-surface-2/60 transition-colors">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 mb-1 flex-wrap">
@@ -93,8 +93,8 @@ export function PromotionsList({
                     </span>
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-lg font-bold text-coral-600">{formatCurrency(promo.total_discount_given)}</p>
+                <div className="text-end shrink-0">
+                  <p className="text-lg font-bold text-teal-700">{formatCurrency(promo.total_discount_given)}</p>
                   <p className="text-xs text-ink-muted">total discounts</p>
                 </div>
               </div>

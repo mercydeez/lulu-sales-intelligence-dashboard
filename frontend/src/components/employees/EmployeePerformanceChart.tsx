@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import { ChartFrame } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
+import { CHART, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
 import { PerformanceChartData } from './types';
 
 interface EmployeePerformanceChartProps {
@@ -17,12 +18,11 @@ interface EmployeePerformanceChartProps {
   title?: string;
 }
 
-const CHART = { coral: '#ff6b5c', teal: '#2dd4bf', violet: '#8b5cf6', amber: '#fbbf24', grid: 'rgba(30,27,46,0.08)', axis: '#8b8699' };
-const tooltipStyle = { backgroundColor: '#fff', border: '1px solid #f1d9d2', borderRadius: '12px', color: '#1e1b2e' };
-
+// Brand-aligned categorical accents (teal leads; coral stays reserved for
+// attention/returns and is intentionally not used here).
 const METRICS = [
-  { key: 'performance_score', label: 'Performance', color: CHART.coral },
-  { key: 'sales', label: 'Sales', color: CHART.teal },
+  { key: 'performance_score', label: 'Performance', color: CHART.teal },
+  { key: 'sales', label: 'Sales', color: CHART.emerald },
   { key: 'customer_rating', label: 'Rating', color: CHART.amber },
   { key: 'attendance', label: 'Attendance', color: CHART.violet },
 ] as const;
@@ -96,7 +96,7 @@ export function EmployeePerformanceChart({
             type="button"
             onClick={() => setMetric(m.key)}
             className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-              metric === m.key ? 'bg-coral-100 text-coral-600' : 'text-ink-muted hover:bg-coral-50'
+              metric === m.key ? 'bg-teal-100 text-teal-700' : 'text-ink-muted hover:bg-surface-2'
             }`}
           >
             {m.label}
@@ -113,23 +113,23 @@ export function EmployeePerformanceChart({
             <PolarGrid stroke={CHART.grid} />
             <PolarAngleAxis dataKey="metric" tick={{ fill: CHART.axis, fontSize: 12 }} />
             <PolarRadiusAxis domain={[0, 100]} tick={{ fill: CHART.axis, fontSize: 10 }} />
-            <Radar dataKey="value" stroke={CHART.coral} fill={CHART.coral} fillOpacity={0.4} />
-            <Tooltip contentStyle={tooltipStyle} />
+            <Radar dataKey="value" stroke={CHART.teal} fill={CHART.teal} fillOpacity={0.4} />
+            <Tooltip contentStyle={tooltipContent} labelStyle={tooltipLabelStyle} />
           </RadarChart>
         ) : chartType === 'bar' ? (
           <BarChart data={rows} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
-            <XAxis dataKey="name" stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} />
-            <YAxis stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} />
-            <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(255,107,92,0.06)' }} />
+            <CartesianGrid {...gridProps} />
+            <XAxis dataKey="name" {...axisProps} fontSize={12} />
+            <YAxis {...axisProps} fontSize={12} />
+            <Tooltip contentStyle={tooltipContent} labelStyle={tooltipLabelStyle} cursor={{ fill: 'rgba(15,118,110,0.06)' }} />
             <Bar dataKey={active.key} name={active.label} fill={active.color} radius={[6, 6, 0, 0]} maxBarSize={48} />
           </BarChart>
         ) : (
           <LineChart data={rows} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
-            <XAxis dataKey="name" stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} />
-            <YAxis stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} />
-            <Tooltip contentStyle={tooltipStyle} />
+            <CartesianGrid {...gridProps} />
+            <XAxis dataKey="name" {...axisProps} fontSize={12} />
+            <YAxis {...axisProps} fontSize={12} />
+            <Tooltip contentStyle={tooltipContent} labelStyle={tooltipLabelStyle} />
             <Line type="monotone" dataKey={active.key} name={active.label} stroke={active.color} strokeWidth={2.5} dot={{ fill: active.color, r: 3 }} />
           </LineChart>
         )}

@@ -61,7 +61,7 @@ export default function DevelopersPage() {
         <PageHeader
           title="Developer Portal"
           description="API keys, webhooks, a live playground, and an embeddable Sage widget for your tenant."
-          icon={<Code2 className="w-6 h-6 text-coral-500" />}
+          icon={<Code2 className="w-6 h-6" />}
           actions={
             <a href={`${API_BASE}/docs`} target="_blank" rel="noreferrer">
               <Button variant="secondary"><ExternalLink className="w-4 h-4" /> Swagger</Button>
@@ -88,7 +88,7 @@ export default function DevelopersPage() {
               key={t.id}
               onClick={() => setTab(t.id)}
               className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                tab === t.id ? 'border-coral-500 text-coral-600' : 'border-transparent text-ink-muted hover:text-ink'
+                tab === t.id ? 'border-teal-500 text-teal-700' : 'border-transparent text-ink-muted hover:text-ink'
               }`}
             >
               {t.icon}{t.label}
@@ -184,7 +184,7 @@ function KeysPanel({ keys, authFetch, reload, onSecret, onErr }:
       </div>
       {keys.length === 0 ? <p className="text-sm text-ink-muted">No API keys yet.</p> : (
         <table className="w-full text-sm">
-          <thead><tr className="text-left text-ink-muted border-b border-line">
+          <thead><tr className="text-start text-ink-muted border-b border-line">
             <th className="py-2 pe-4 font-medium">Prefix</th><th className="py-2 pe-4 font-medium">Name</th>
             <th className="py-2 pe-4 font-medium">Scopes</th><th className="py-2 pe-4 font-medium text-end">Requests</th>
             <th className="py-2 pe-4 font-medium">Last used</th><th className="py-2 font-medium text-end">Action</th></tr></thead>
@@ -376,7 +376,7 @@ function EmbedPanel({ liveKey, setLiveKey, onCopy }: { liveKey: string; setLiveK
   return (
     <div className="space-y-6">
       <Card padding="lg">
-        <div className="flex items-center gap-2 mb-2"><Sparkles className="w-5 h-5 text-coral-500" /><h3 className="text-base font-medium text-ink">Ask Sage (live)</h3></div>
+        <div className="flex items-center gap-2 mb-2"><Sparkles className="w-5 h-5 text-violet-500" /><h3 className="text-base font-medium text-ink">Ask Sage (live)</h3></div>
         <p className="text-sm text-ink-muted mb-4">Calls the public <code className="text-xs">/v1/ai/ask</code> endpoint with your key — exactly what the embedded widget does.</p>
         <KeyField liveKey={liveKey} setLiveKey={setLiveKey} />
         <div className="flex gap-2">

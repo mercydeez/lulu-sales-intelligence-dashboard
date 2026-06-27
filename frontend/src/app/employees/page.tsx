@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Users, UserPlus, RefreshCw, BarChart3, PieChart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, Button, Tabs } from '@/components/ui';
+import { PageHeader, Button, Tabs, Reveal } from '@/components/ui';
 import {
   EmployeeSummaryCards,
   RolePerformanceTable,
@@ -98,9 +98,9 @@ export default function EmployeesPage() {
         />
 
         {activeTab === 'overview' && (
-          <>
+          <Reveal key="tab-overview">
             <EmployeeSummaryCards summary={summary} loading={loading} />
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 my-6">
               <EmployeePerformanceChart chartType="line" title="Performance Trend" />
               <EmployeePerformanceChart chartType="bar" title="Monthly Comparison" />
             </div>
@@ -112,11 +112,11 @@ export default function EmployeesPage() {
                 setActiveTab('employees');
               }}
             />
-          </>
+          </Reveal>
         )}
 
         {activeTab === 'employees' && (
-          <>
+          <Reveal key="tab-employees">
             <EmployeeFilters
               search={search}
               onSearchChange={setSearch}
@@ -128,16 +128,16 @@ export default function EmployeesPage() {
               onViewModeChange={setViewMode}
             />
             <EmployeeListView employees={employees} loading={loading} viewMode={viewMode} onSelect={setSelected} />
-          </>
+          </Reveal>
         )}
 
         {activeTab === 'analytics' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Reveal key="tab-analytics" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <EmployeePerformanceChart chartType="radar" title="Performance Radar" />
             <RoleDistribution summary={summary} loading={loading} />
             <EmployeePerformanceChart role="sales_executive" chartType="line" title="Sales Executive Trend" />
             <EmployeePerformanceChart role="store_manager" chartType="bar" title="Store Manager Performance" />
-          </div>
+          </Reveal>
         )}
       </div>
 

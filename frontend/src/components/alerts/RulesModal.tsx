@@ -19,7 +19,7 @@ export default function RulesModal({ open, rules, onClose }: RulesModalProps) {
           {rules.map((rule) => (
             <div
               key={rule.id}
-              className={`p-4 rounded-2xl border ${rule.is_active ? 'border-teal-200 bg-teal-50/40' : 'border-coral-100 bg-coral-50/30'}`}
+              className={`p-4 rounded-2xl border ${rule.is_active ? 'border-teal-200 bg-teal-50/40' : 'border-line bg-surface-2/40'}`}
             >
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-medium text-ink">{rule.name}</h3>

@@ -5,7 +5,7 @@ import {
   Lightbulb, RefreshCw, CheckCircle2, Eye, AlertTriangle,
   TrendingUp, TrendingDown, Minus, Clock,
 } from 'lucide-react';
-import { PageHeader, Card, Badge, Button, Skeleton, EmptyState } from '@/components/ui';
+import { PageHeader, Card, Badge, Button, Skeleton, EmptyState, Stagger, RevealItem } from '@/components/ui';
 import {
   fetchFindings,
   fetchFindingsSummary,
@@ -181,11 +181,12 @@ export default function InsightsPage() {
           }
         />
       ) : (
-        <div className="space-y-3">
+        <Stagger className="space-y-3">
           {findings.map((f) => {
             const sev = SEVERITY_STYLES[f.severity];
             return (
-              <Card key={f.id} variant="glass" padding="md">
+              <RevealItem key={f.id}>
+              <Card variant="glass" padding="md">
                 <div className="flex items-start gap-4">
                   <div className={`mt-1 p-2 rounded-xl text-white ${sev.dot}`}>
                     <AlertTriangle className="w-4 h-4" />
@@ -248,9 +249,10 @@ export default function InsightsPage() {
                   )}
                 </div>
               </Card>
+              </RevealItem>
             );
           })}
-        </div>
+        </Stagger>
       )}
     </div>
   );

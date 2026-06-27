@@ -30,7 +30,7 @@ export default function OnboardingChecklist() {
   if (!data || data.complete) return null;
 
   return (
-    <Card padding="lg" className="mb-6 border border-coral-100">
+    <Card padding="lg" className="mb-6 border border-teal-100">
       <CardHeader>
         <CardTitle><span className="me-2">🚀</span>Get started</CardTitle>
         <span className="text-sm font-medium text-ink-muted">{data.progress_pct}% complete</span>

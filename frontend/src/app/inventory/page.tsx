@@ -5,7 +5,7 @@ import { Package, Bell, ShoppingCart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useEventStream } from '@/hooks/useEventStream';
-import { PageHeader, Tabs, LiveIndicator, Badge, ConnectionBanner, ErrorState, Card } from '@/components/ui';
+import { PageHeader, Tabs, LiveIndicator, Badge, ConnectionBanner, ErrorState, Card, Reveal } from '@/components/ui';
 import {
   InventoryFilters,
   InventorySummaryCards,
@@ -242,7 +242,7 @@ export default function InventoryPage() {
         <InventorySummaryCards summary={summary} stockSummary={stockSummary} pendingProcurement={pendingProcurement} />
 
         {activeTab === 'inventory' && (
-          <>
+          <Reveal key="tab-inventory">
             <InventoryFilters
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
@@ -262,28 +262,32 @@ export default function InventoryPage() {
               canManageInventory={canManageInventory}
               onAddToProcurement={addToProcurement}
             />
-          </>
+          </Reveal>
         )}
 
         {activeTab === 'alerts' && (
-          <AlertsPanel
-            alerts={alerts}
-            unacknowledgedAlerts={unacknowledgedAlerts}
-            canManageInventory={canManageInventory}
-            onAcknowledge={acknowledgeAlert}
-            onMarkAllRead={() => setAlerts(prev => prev.map(a => ({ ...a, acknowledged: true })))}
-            onCreateOrder={createOrderFromAlert}
-          />
+          <Reveal key="tab-alerts">
+            <AlertsPanel
+              alerts={alerts}
+              unacknowledgedAlerts={unacknowledgedAlerts}
+              canManageInventory={canManageInventory}
+              onAcknowledge={acknowledgeAlert}
+              onMarkAllRead={() => setAlerts(prev => prev.map(a => ({ ...a, acknowledged: true })))}
+              onCreateOrder={createOrderFromAlert}
+            />
+          </Reveal>
         )}
 
         {activeTab === 'procurement' && (
-          <ProcurementPanel
-            procurementList={procurementList}
-            pendingProcurement={pendingProcurement}
-            canApproveProcurement={canApproveProcurement}
-            onApprove={(id) => handleProcurementAction(id, 'approved')}
-            onReject={(id) => handleProcurementAction(id, 'rejected')}
-          />
+          <Reveal key="tab-procurement">
+            <ProcurementPanel
+              procurementList={procurementList}
+              pendingProcurement={pendingProcurement}
+              canApproveProcurement={canApproveProcurement}
+              onApprove={(id) => handleProcurementAction(id, 'approved')}
+              onReject={(id) => handleProcurementAction(id, 'rejected')}
+            />
+          </Reveal>
         )}
         </>
         )}

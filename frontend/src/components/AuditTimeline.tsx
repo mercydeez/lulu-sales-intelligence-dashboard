@@ -18,7 +18,7 @@ interface Event {
 }
 
 const ICON: Record<string, { icon: React.ReactNode; tone: string }> = {
-  'po.created': { icon: <FilePlus2 className="w-4 h-4" />, tone: 'text-coral-500' },
+  'po.created': { icon: <FilePlus2 className="w-4 h-4" />, tone: 'text-blue-500' },
   'po.approved': { icon: <CheckCircle2 className="w-4 h-4" />, tone: 'text-teal-500' },
   'po.sent': { icon: <Send className="w-4 h-4" />, tone: 'text-violet-500' },
   'po.received': { icon: <PackageCheck className="w-4 h-4" />, tone: 'text-teal-600' },

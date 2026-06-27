@@ -19,7 +19,7 @@ export function ActivePromotions({ promotions, loading }: ActivePromotionsProps)
   return (
     <section className="mb-8">
       <h2 className="text-xl font-semibold text-ink mb-4 flex items-center gap-2">
-        <TrendingUp className="w-5 h-5 text-coral-500" />
+        <TrendingUp className="w-5 h-5 text-teal-600" />
         Active Promotions
       </h2>
 
@@ -58,7 +58,7 @@ export function ActivePromotions({ promotions, loading }: ActivePromotionsProps)
                     <p className="text-white/60">Redemptions</p>
                     <p className="font-semibold">{formatNumber(promo.redemption_count)}</p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <p className="text-white/60">Ends in</p>
                     <p className="font-semibold">{daysRemaining(promo)} days</p>
                   </div>

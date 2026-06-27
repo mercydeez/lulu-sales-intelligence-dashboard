@@ -43,12 +43,12 @@ export function EmployeeFilters({
           <option value="inactive">Inactive</option>
           <option value="terminated">Terminated</option>
         </Select>
-        <div className="flex gap-1 p-1 rounded-2xl bg-coral-50/60">
+        <div className="flex gap-1 p-1 rounded-2xl bg-surface-2/70">
           <button
             type="button"
             onClick={() => onViewModeChange('grid')}
             aria-label="Grid view"
-            className={`p-2 rounded-xl transition-colors ${viewMode === 'grid' ? 'bg-surface text-coral-600 shadow-soft' : 'text-ink-muted hover:text-ink'}`}
+            className={`p-2 rounded-xl transition-colors ${viewMode === 'grid' ? 'bg-surface text-teal-700 shadow-soft' : 'text-ink-muted hover:text-ink'}`}
           >
             <LayoutGrid className="w-5 h-5" />
           </button>
@@ -56,7 +56,7 @@ export function EmployeeFilters({
             type="button"
             onClick={() => onViewModeChange('list')}
             aria-label="List view"
-            className={`p-2 rounded-xl transition-colors ${viewMode === 'list' ? 'bg-surface text-coral-600 shadow-soft' : 'text-ink-muted hover:text-ink'}`}
+            className={`p-2 rounded-xl transition-colors ${viewMode === 'list' ? 'bg-surface text-teal-700 shadow-soft' : 'text-ink-muted hover:text-ink'}`}
           >
             <List className="w-5 h-5" />
           </button>

@@ -244,7 +244,7 @@ export default function SecurityPage() {
                     </div>
                     <p className="text-sm text-ink-soft truncate">{e.detail}</p>
                   </div>
-                  <div className="text-right shrink-0">
+                  <div className="text-end shrink-0">
                     <div className="text-xs text-ink-muted">{timeAgo(e.occurred_at)}</div>
                     {e.ip_address && <div className="text-[11px] text-ink-muted font-mono">{e.ip_address}</div>}
                   </div>

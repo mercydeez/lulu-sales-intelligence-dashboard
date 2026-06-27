@@ -20,7 +20,7 @@ function scoreClass(score: number): string {
 export function RolePerformanceTable({ roles, loading, onSelectRole }: RolePerformanceTableProps) {
   return (
     <Card variant="glass" padding="none">
-      <div className="px-5 py-4 border-b border-coral-100">
+      <div className="px-5 py-4 border-b border-line">
         <h3 className="text-lg font-semibold text-ink">Performance by Role</h3>
         <p className="text-sm text-ink-muted mt-0.5">Aggregated metrics per role — click a row to filter</p>
       </div>
@@ -36,7 +36,7 @@ export function RolePerformanceTable({ roles, loading, onSelectRole }: RolePerfo
               <Th>Role</Th>
               <Th className="text-center">Employees</Th>
               <Th className="text-center">Avg Score</Th>
-              <Th className="text-right">Avg Sales</Th>
+              <Th className="text-end">Avg Sales</Th>
               <Th className="text-center">Rating</Th>
               <Th className="text-center">Attendance</Th>
             </TableRow>
@@ -51,7 +51,7 @@ export function RolePerformanceTable({ roles, loading, onSelectRole }: RolePerfo
                 <Td className={`text-center font-semibold ${scoreClass(role.avg_performance_score)}`}>
                   {role.avg_performance_score.toFixed(1)}%
                 </Td>
-                <Td className="text-right text-ink-soft">{formatCurrency(role.avg_sales)}</Td>
+                <Td className="text-end text-ink-soft">{formatCurrency(role.avg_sales)}</Td>
                 <Td className="text-center">
                   <span className="inline-flex items-center justify-center gap-1 text-ink-soft">
                     <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />

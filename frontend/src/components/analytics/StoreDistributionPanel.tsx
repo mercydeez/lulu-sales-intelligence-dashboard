@@ -5,7 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { ChartFrame } from '@/components/ui';
 import { fetchStoreDistribution } from '@/lib/api';
 import { StoreDistributionPoint } from '@/types';
-import { SUNSET_COLORS, CHART, tooltipStyle, tooltipLabelStyle } from './chartTheme';
+import { CATEGORICAL as SUNSET_COLORS, CHART, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatCompact, formatCurrency, shortStoreLabel } from './format';
 
 export function StoreDistributionPanel() {

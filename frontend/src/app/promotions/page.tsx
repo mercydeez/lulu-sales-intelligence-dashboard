@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Tag, Plus, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, Button } from '@/components/ui';
+import { PageHeader, Button, Stagger, RevealItem } from '@/components/ui';
 import {
   PromotionSummaryCards,
   ActivePromotions,
@@ -97,25 +97,31 @@ export default function PromotionsPage() {
           }
         />
 
-        <PromotionSummaryCards summary={summary} loading={loading} />
+        <Stagger className="space-y-6">
+          <RevealItem>
+            <PromotionSummaryCards summary={summary} loading={loading} />
+          </RevealItem>
 
-        <ActivePromotions promotions={activePromotions} loading={loading} />
+          <RevealItem>
+            <ActivePromotions promotions={activePromotions} loading={loading} />
+          </RevealItem>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1">
-            <CategoryPerformancePanel categories={categories} loading={loading} />
-          </div>
-          <div className="lg:col-span-2">
-            <PromotionsList
-              promotions={listPromotions}
-              loading={listLoading}
-              activeTab={selectedTab}
-              onTabChange={setSelectedTab}
-              search={search}
-              onSearchChange={setSearch}
-            />
-          </div>
-        </div>
+          <RevealItem className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1">
+              <CategoryPerformancePanel categories={categories} loading={loading} />
+            </div>
+            <div className="lg:col-span-2">
+              <PromotionsList
+                promotions={listPromotions}
+                loading={listLoading}
+                activeTab={selectedTab}
+                onTabChange={setSelectedTab}
+                search={search}
+                onSearchChange={setSearch}
+              />
+            </div>
+          </RevealItem>
+        </Stagger>
       </div>
 
       {canManagePromotions && (

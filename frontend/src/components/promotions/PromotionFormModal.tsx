@@ -131,7 +131,7 @@ export function PromotionFormModal({ open, onClose, onSuccess }: PromotionFormMo
 
   return (
     <Modal open={open} onClose={onClose} title="Create New Promotion" size="lg">
-      <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+      <div className="space-y-4 max-h-[65vh] overflow-y-auto pe-1">
         {error && (
           <div className="flex items-center gap-2 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-sm">
             <AlertCircle className="w-4 h-4 shrink-0" />
@@ -148,7 +148,7 @@ export function PromotionFormModal({ open, onClose, onSuccess }: PromotionFormMo
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
             placeholder="Describe the promotion offer..."
-            className="w-full py-3 px-4 rounded-2xl bg-surface border border-coral-100 text-ink placeholder-ink-muted shadow-sm transition-all focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400"
+            className="w-full py-3 px-4 rounded-2xl bg-surface border border-line text-ink placeholder-ink-muted shadow-sm transition-all focus:outline-none focus:ring-4 focus:ring-teal-500/15 focus:border-teal-400"
           />
         </div>
 
@@ -164,10 +164,10 @@ export function PromotionFormModal({ open, onClose, onSuccess }: PromotionFormMo
                   type="button"
                   onClick={() => setDiscountType(type.value)}
                   className={`p-3 rounded-2xl border-2 flex flex-col items-center gap-1.5 transition-all ${
-                    selected ? 'border-coral-400 bg-coral-50' : 'border-coral-100 hover:border-coral-200'
+                    selected ? 'border-teal-400 bg-teal-50' : 'border-line hover:border-teal-300'
                   }`}
                 >
-                  <Icon className={`w-5 h-5 ${selected ? 'text-coral-600' : 'text-ink-muted'}`} />
+                  <Icon className={`w-5 h-5 ${selected ? 'text-teal-700' : 'text-ink-muted'}`} />
                   <span className={`text-xs font-medium ${selected ? 'text-ink' : 'text-ink-muted'}`}>{type.label}</span>
                 </button>
               );
@@ -222,7 +222,7 @@ export function PromotionFormModal({ open, onClose, onSuccess }: PromotionFormMo
               onClick={() =>
                 setStoreIds(storeIds.length === selectableStores.length ? [] : selectableStores.map((s) => s.id))
               }
-              className="text-sm text-coral-600 hover:text-coral-700"
+              className="text-sm text-teal-700 hover:text-teal-800"
             >
               {storeIds.length === selectableStores.length ? 'Deselect all' : 'Select all'}
             </button>
@@ -234,10 +234,10 @@ export function PromotionFormModal({ open, onClose, onSuccess }: PromotionFormMo
                 <label
                   key={store.id}
                   className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer text-sm transition-all ${
-                    selected ? 'border-coral-400 bg-coral-50 text-ink' : 'border-coral-100 text-ink-muted hover:border-coral-200'
+                    selected ? 'border-teal-400 bg-teal-50 text-ink' : 'border-line text-ink-muted hover:border-teal-300'
                   }`}
                 >
-                  <input type="checkbox" checked={selected} onChange={() => toggleStore(store.id)} className="accent-coral-500" />
+                  <input type="checkbox" checked={selected} onChange={() => toggleStore(store.id)} className="accent-teal-600" />
                   <span className="truncate">{store.name}</span>
                 </label>
               );

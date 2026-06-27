@@ -33,6 +33,30 @@ export const SIGNAL = { up: '#0f8f73', down: '#c8451f', neutral: '#5f6660' } as 
 const GRID = '#eceae4';
 const AXIS_TEXT = '#5f6660';
 
+/**
+ * Brand-aligned named chart colors. Replaces the retired
+ * `components/analytics/chartTheme.ts` ("Sunset Pop") palette. Teal leads as the
+ * primary/brand hue; coral is reserved for attention/returns signals only.
+ */
+export const CHART = {
+  teal: CHART_SERIES[0],   // brand / primary series (sales, actual)
+  violet: CHART_SERIES[1], // forecast / predicted
+  amber: CHART_SERIES[2],  // secondary
+  coral: CHART_SERIES[3],  // attention / returns ONLY
+  blue: CHART_SERIES[4],
+  emerald: CHART_SERIES[5],
+  pink: CHART_SERIES[6],
+  slate: CHART_SERIES[7],
+  grid: GRID,
+  axis: AXIS_TEXT,
+} as const;
+
+/**
+ * Categorical fill cycle for donuts/bars. Brand-aligned alias of CHART_SERIES
+ * (the old `SUNSET_COLORS` name is gone — import this instead).
+ */
+export const CATEGORICAL = CHART_SERIES;
+
 /** CartesianGrid props — faint horizontal rules, no vertical clutter. */
 export const gridProps = {
   stroke: GRID,
@@ -62,6 +86,14 @@ export const tooltipStyle = {
   labelStyle: { color: '#1a1d21', fontWeight: 600, marginBottom: 4 },
   itemStyle: { color: '#4b5258' },
 } as const;
+
+/**
+ * Flat tooltip styles for charts that pass them individually
+ * (`contentStyle={tooltipContent} labelStyle={tooltipLabelStyle}`) rather than
+ * spreading `{...tooltipStyle}`. Same visual language, different call site.
+ */
+export const tooltipContent = tooltipStyle.contentStyle;
+export const tooltipLabelStyle = tooltipStyle.labelStyle;
 
 /**
  * Inject an SVG vertical gradient <defs> into an area/bar chart. Returns the id

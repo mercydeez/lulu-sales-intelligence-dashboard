@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage, Lang } from '@/contexts/LanguageContext';
-import { Card, PageHeader, Button } from '@/components/ui';
+import { Card, PageHeader, Button, Stagger, RevealItem } from '@/components/ui';
 import { Settings as SettingsIcon, Globe, User as UserIcon, LogOut, Check } from 'lucide-react';
 
 const LANGUAGES: { code: Lang; label: string; native: string }[] = [
@@ -31,10 +31,11 @@ export default function SettingsPage() {
           icon={<SettingsIcon className="w-5 h-5" />}
         />
 
+        <Stagger className="space-y-6">
         {/* Language */}
-        <Card padding="lg" className="mb-6">
+        <RevealItem><Card padding="lg">
           <div className="flex items-center gap-2 mb-4">
-            <Globe className="w-4 h-4 text-coral-500" />
+            <Globe className="w-4 h-4 text-teal-600" />
             <h3 className="text-sm font-semibold text-ink-soft uppercase tracking-wide">Language</h3>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -46,15 +47,15 @@ export default function SettingsPage() {
                   onClick={() => setLang(l.code)}
                   className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-start ${
                     active
-                      ? 'border-coral-300 bg-coral-50 text-ink'
-                      : 'border-coral-100 hover:bg-coral-50/60 text-ink-soft'
+                      ? 'border-teal-400 bg-teal-50 text-ink'
+                      : 'border-line hover:bg-surface-2/60 text-ink-soft'
                   }`}
                 >
                   <span>
                     <span className="block text-sm font-medium">{l.native}</span>
                     <span className="block text-xs text-ink-muted">{l.label}</span>
                   </span>
-                  {active && <Check className="w-4 h-4 text-coral-500" />}
+                  {active && <Check className="w-4 h-4 text-teal-600" />}
                 </button>
               );
             })}
@@ -62,10 +63,10 @@ export default function SettingsPage() {
           <p className="text-xs text-ink-muted mt-3">
             Arabic switches the interface to right-to-left. Data values remain in their source format.
           </p>
-        </Card>
+        </Card></RevealItem>
 
         {/* Account */}
-        <Card padding="lg">
+        <RevealItem><Card padding="lg">
           <h3 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-4">Account</h3>
           <div className="flex flex-wrap items-center gap-3">
             <Link href="/profile">
@@ -79,7 +80,8 @@ export default function SettingsPage() {
               Sign out
             </Button>
           </div>
-        </Card>
+        </Card></RevealItem>
+        </Stagger>
       </div>
     </main>
   );

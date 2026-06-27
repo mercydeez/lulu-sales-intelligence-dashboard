@@ -139,7 +139,7 @@ export default function ReturnsLiveFeed() {
             <p className="text-ink-muted text-xs">Real-time return tracking</p>
           </div>
         </div>
-        <div className="text-right">
+        <div className="text-end">
           <div className="text-xl font-bold text-rose-600">{stats?.today_count || 0}</div>
           <div className="text-xs text-ink-muted">Today&apos;s Returns</div>
         </div>
@@ -174,7 +174,7 @@ export default function ReturnsLiveFeed() {
           <span className="text-xs text-ink-muted">Live Updates</span>
         </div>
 
-        <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1 custom-scrollbar">
+        <div className="space-y-2 max-h-[280px] overflow-y-auto pe-1 custom-scrollbar">
           {liveReturns.length === 0 ? (
             <div className="text-center py-8 text-ink-muted">
               <RotateCcw className="w-8 h-8 mx-auto mb-2 text-coral-200" />
@@ -214,7 +214,7 @@ export default function ReturnsLiveFeed() {
                       </div>
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <div className="text-lg font-bold text-rose-600 flex items-center gap-1">
                       <TrendingDown className="w-4 h-4" />
                       {item.quantity}

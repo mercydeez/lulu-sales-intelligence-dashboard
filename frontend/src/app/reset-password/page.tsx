@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useState, FormEvent } from 'react';
+import { motion } from 'framer-motion';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Lock, Loader2, ShieldCheck, AlertCircle, ArrowRight } from 'lucide-react';
@@ -56,20 +57,20 @@ function ResetForm() {
       <h1 className="text-2xl font-bold text-ink">Set a new password</h1>
       <p className="text-sm text-ink-muted">Choose a strong password (12+ chars, upper/lower/number/symbol).</p>
       {error && (
-        <div className="p-3 rounded-xl bg-coral-50 border border-coral-200 flex items-start gap-2">
-          <AlertCircle className="w-5 h-5 text-coral-600 shrink-0 mt-0.5" /><p className="text-coral-700 text-sm">{error}</p>
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2">
+          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" /><p className="text-rose-700 text-sm">{error}</p>
         </div>
       )}
       {[['New password', pw, setPw], ['Confirm password', pw2, setPw2]].map(([label, val, set]) => (
         <div key={label as string} className="relative">
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+          <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none">
             <Lock className="w-5 h-5 text-ink-muted" />
           </div>
           <input
             type="password" value={val as string}
             onChange={(e) => (set as (s: string) => void)(e.target.value)}
             placeholder={label as string}
-            className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-surface border border-coral-100 text-ink shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400"
+            className="w-full ps-12 pe-4 py-3.5 rounded-2xl bg-surface border border-line text-ink shadow-sm focus:outline-none focus:ring-4 focus:ring-teal-500/15 focus:border-teal-400"
             disabled={busy}
           />
         </div>
@@ -83,13 +84,18 @@ function ResetForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface px-4">
-      <div className="w-full max-w-md bg-surface rounded-3xl shadow-xl p-8">
+    <div className="min-h-screen flex items-center justify-center hero-mesh px-4">
+      <motion.div
+        className="w-full max-w-md glass-strong rounded-3xl shadow-elevated p-8"
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      >
         <p className="text-xs font-medium text-ink-muted mb-6">{PRODUCT_NAME}</p>
         <Suspense fallback={<Loader2 className="w-6 h-6 animate-spin mx-auto" />}>
           <ResetForm />
         </Suspense>
-      </div>
+      </motion.div>
     </div>
   );
 }

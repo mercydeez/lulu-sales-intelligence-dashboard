@@ -5,7 +5,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recha
 import { ChartFrame } from '@/components/ui';
 import { fetchCategoryBreakdown } from '@/lib/api';
 import { CategoryBreakdownPoint } from '@/types';
-import { SUNSET_COLORS, tooltipStyle } from './chartTheme';
+import { CATEGORICAL as SUNSET_COLORS, tooltipContent as tooltipStyle } from '@/lib/chart';
 import { formatCurrency } from './format';
 
 export function CategoryDonut() {

@@ -83,7 +83,7 @@ export function NewUserModal({ open, onClose, onCreated }: NewUserModalProps) {
             <option key={r.value} value={r.value}>{r.label}</option>
           ))}
         </Select>
-        {error && <p className="text-sm text-coral-600">{error}</p>}
+        {error && <p className="text-sm text-rose-600">{error}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="primary" loading={submitting}>Create user</Button>

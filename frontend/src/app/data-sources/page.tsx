@@ -230,7 +230,7 @@ function SourceCard({
     .filter(Boolean).length;
 
   return (
-    <Card padding="lg" className={source.is_active ? 'ring-2 ring-coral-300' : ''}>
+    <Card padding="lg" className={source.is_active ? 'ring-2 ring-teal-300' : ''}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -374,7 +374,7 @@ function AddSourceModal({
 
   return (
     <Modal open={open} onClose={close} title="Connect a database" size="lg">
-      <div className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
+      <div className="space-y-5 max-h-[70vh] overflow-y-auto pe-1">
         <Input
           label="Display name"
           placeholder="e.g. Acme Retail — Production"
@@ -399,7 +399,7 @@ function AddSourceModal({
           Stored encrypted at rest. Use a read-only user scoped to the analytics table.
         </p>
 
-        <div className="border-t border-coral-100 pt-4">
+        <div className="border-t border-line pt-4">
           <h4 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-1">Column mapping</h4>
           <p className="text-xs text-ink-muted mb-4">
             Tell the dashboard which columns hold each value. <code>category</code> and <code>price</code> are optional.
@@ -457,7 +457,7 @@ function AddSourceModal({
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-2 mt-5 pt-4 border-t border-coral-100">
+      <div className="flex items-center justify-between gap-2 mt-5 pt-4 border-t border-line">
         <Button variant="ghost" size="sm" onClick={close}>Cancel</Button>
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={runTest} loading={testing} disabled={!canTest || testing}>

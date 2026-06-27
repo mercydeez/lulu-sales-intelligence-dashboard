@@ -64,7 +64,7 @@ function AnimatedTooltip({ title, description, details, tone, icon, onClose }: T
       <div className={`relative bg-surface rounded-xl p-4 mx-3 border ${toneClasses.border} shadow-2xl transform animate-scale-in`}>
         <button
           onClick={onClose}
-          className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-coral-50 hover:bg-coral-100 flex items-center justify-center transition-colors"
+          className="absolute -top-2 -end-2 w-6 h-6 rounded-full bg-surface-2 hover:bg-surface-3 flex items-center justify-center transition-colors"
         >
           <X className="w-3 h-3 text-ink-muted" />
         </button>
@@ -96,7 +96,7 @@ function InfoButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 rounded-full hover:bg-coral-50"
+      className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 rounded-full hover:bg-surface-2"
     >
       <Info className="w-3.5 h-3.5 text-ink-muted hover:text-ink transition-colors" />
     </button>
@@ -186,10 +186,13 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
     setMounted(true);
   }, []);
 
-  const loadKPIs = async () => {
+  const loadKPIs = async (attempt = 0) => {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      // The KPI query aggregates the full historical table; on a cold start
+      // (before the background cache-warmer runs) it can take a while, so give
+      // it a generous ceiling rather than failing the dashboard's hero metric.
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
 
       // No custom request headers here: a non-safelisted header like
       // Cache-Control forces a CORS preflight that must be allow-listed server
@@ -206,6 +209,13 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
       setError(null);
       setNextRefresh(refreshInterval / 1000);
     } catch (err) {
+      // Cold-start resilience: a slow/failed first attempt auto-retries once
+      // (the cache-warmer typically makes the second call instant) before we
+      // surface the error state.
+      if (attempt < 1) {
+        setTimeout(() => loadKPIs(attempt + 1), 2500);
+        return;
+      }
       if ((err as Error).name !== 'AbortError') {
         setError(err instanceof Error ? err.message : 'Error fetching KPIs');
       }
@@ -274,7 +284,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           value={<AnimatedNumber value={kpis.total_historical_records} />}
           footnote={`${kpis.data_range_start} → ${kpis.data_range_end}`}
         >
-          <button onClick={() => setActiveTooltip('historical')} className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-coral-50">
+          <button onClick={() => setActiveTooltip('historical')} className="absolute top-4 end-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-surface-2">
             <Info className="w-3.5 h-3.5 text-ink-muted hover:text-ink" />
           </button>
           {activeTooltip === 'historical' && (
@@ -289,8 +299,8 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           value={<AnimatedNumber value={kpis.total_streaming_records} flashOnChange />}
           footnote={`Last: ${formatTimeAgo(kpis.last_stream_timestamp)}`}
         >
-          <div className="absolute top-0 right-0 w-24 h-24 bg-teal-400/10 rounded-full blur-2xl" />
-          <div className="absolute top-4 right-4 flex items-center gap-1.5">
+          <div className="absolute top-0 end-0 w-24 h-24 bg-teal-400/10 rounded-full blur-2xl" />
+          <div className="absolute top-4 end-4 flex items-center gap-1.5">
             <InfoButton onClick={() => setActiveTooltip('live')} />
             <LiveIndicator tone="teal" size="sm" />
           </div>
@@ -307,7 +317,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           trend={getTrend(kpis.revenue_trend)}
           footnote={`Volume: ${new Intl.NumberFormat().format(kpis.total_sales_week)} units`}
         >
-          <button onClick={() => setActiveTooltip('weekly')} className="absolute top-4 right-10 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-coral-50">
+          <button onClick={() => setActiveTooltip('weekly')} className="absolute top-4 end-10 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-surface-2">
             <Info className="w-3.5 h-3.5 text-ink-muted hover:text-ink" />
           </button>
           {activeTooltip === 'weekly' && (
@@ -329,7 +339,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
             </>
           }
         >
-          <button onClick={() => setActiveTooltip('daily')} className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-coral-50">
+          <button onClick={() => setActiveTooltip('daily')} className="absolute top-4 end-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-surface-2">
             <Info className="w-3.5 h-3.5 text-ink-muted hover:text-ink" />
           </button>
           {activeTooltip === 'daily' && (
@@ -347,7 +357,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           value={<AnimatedNumber value={kpis.total_revenue_today} formatter={formatCurrency} />}
           footnote={`Volume: ${new Intl.NumberFormat().format(kpis.total_sales_today)} units`}
         >
-          <button onClick={() => setActiveTooltip('today')} className="absolute top-4 right-4 z-10 p-1 rounded-full hover:bg-surface/20">
+          <button onClick={() => setActiveTooltip('today')} className="absolute top-4 end-4 z-10 p-1 rounded-full hover:bg-surface/20">
             <Info className="w-3.5 h-3.5 text-white/80" />
           </button>
           {activeTooltip === 'today' && (
@@ -362,7 +372,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           value={<AnimatedNumber value={kpis.total_revenue_month} formatter={formatCurrencyCompact} />}
           footnote={`Volume: ${new Intl.NumberFormat().format(kpis.total_sales_month)} units`}
         >
-          <button onClick={() => setActiveTooltip('monthly')} className="absolute top-4 right-4 z-10 p-1 rounded-full hover:bg-surface/20">
+          <button onClick={() => setActiveTooltip('monthly')} className="absolute top-4 end-4 z-10 p-1 rounded-full hover:bg-surface/20">
             <Info className="w-3.5 h-3.5 text-white/80" />
           </button>
           {activeTooltip === 'monthly' && (
@@ -386,7 +396,7 @@ export default function KPICards({ refreshInterval = 30000 }: KPICardsProps) {
           }
           footnote={mounted ? formatTimeAgo(kpis.last_stream_timestamp) : '--'}
         >
-          <button onClick={() => setActiveTooltip('lastStream')} className="absolute top-4 right-4 z-10 p-1 rounded-full hover:bg-surface/20">
+          <button onClick={() => setActiveTooltip('lastStream')} className="absolute top-4 end-4 z-10 p-1 rounded-full hover:bg-surface/20">
             <Info className="w-3.5 h-3.5 text-white/80" />
           </button>
           {activeTooltip === 'lastStream' && (

@@ -17,6 +17,7 @@ import {
 import { StoreDistributionPanel, CategoryDonut, TopItemsPanel } from '@/components/analytics';
 import { HomeHero, AlertQuickLinks, FinancialOverview, AlertStats } from '@/components/home';
 import SecurityPostureCard from '@/components/home/SecurityPostureCard';
+import { Reveal, ScrollReveal, Stagger, RevealItem } from '@/components/ui';
 
 export default function Home() {
   const { hasRole, authFetch } = useAuth();
@@ -51,34 +52,38 @@ export default function Home() {
 
   return (
     <main className="min-h-screen p-4 md:p-8">
-      <HomeHero />
+      <Reveal>
+        <HomeHero />
+      </Reveal>
 
-      <div className="max-w-7xl mx-auto space-y-8">
-        <AlertQuickLinks stats={alertStats} />
+      <Stagger className="max-w-7xl mx-auto space-y-8">
+        <RevealItem>
+          <AlertQuickLinks stats={alertStats} />
+        </RevealItem>
 
-        <section>
+        <RevealItem>
           <OnboardingChecklist />
-        </section>
+        </RevealItem>
 
-        <section>
+        <RevealItem>
           <ActionCenter />
-        </section>
+        </RevealItem>
 
-        <section>
+        <RevealItem>
           <KPICards refreshInterval={30000} />
-        </section>
+        </RevealItem>
 
         {hasRole(['super_admin']) && (
-          <section>
+          <RevealItem>
             <SecurityPostureCard />
-          </section>
+          </RevealItem>
         )}
 
-        <section>
+        <RevealItem>
           <RevenueProjectionCard />
-        </section>
+        </RevealItem>
 
-        <section>
+        <RevealItem>
           <h2 className="text-2xl font-bold text-ink mb-6 flex items-center gap-3">
             <span className="w-1.5 h-8 sunset-gradient rounded-full"></span>
             {t('home.executiveInsights')}
@@ -116,18 +121,20 @@ export default function Home() {
           <div className="mt-6">
             <TopItemsPanel />
           </div>
-        </section>
+        </RevealItem>
 
-        <section>
+        <ScrollReveal>
           <h2 className="text-2xl font-bold text-ink mb-6 flex items-center gap-3">
             <span className="w-1.5 h-8 sunset-cool rounded-full"></span>
             {t('home.realTimeStream')}
           </h2>
           <LiveTable />
-        </section>
+        </ScrollReveal>
 
-        <FinancialOverview />
-      </div>
+        <ScrollReveal>
+          <FinancialOverview />
+        </ScrollReveal>
+      </Stagger>
     </main>
   );
 }

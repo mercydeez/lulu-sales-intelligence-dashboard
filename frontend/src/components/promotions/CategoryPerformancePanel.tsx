@@ -15,7 +15,7 @@ export function CategoryPerformancePanel({ categories, loading }: CategoryPerfor
 
   return (
     <Card variant="glass" padding="none">
-      <div className="px-5 py-4 border-b border-coral-100">
+      <div className="px-5 py-4 border-b border-line">
         <h2 className="text-lg font-semibold text-ink">Category Performance</h2>
         <p className="text-sm text-ink-muted mt-0.5">Revenue and momentum by category</p>
       </div>
@@ -27,11 +27,11 @@ export function CategoryPerformancePanel({ categories, loading }: CategoryPerfor
       ) : categories.length === 0 ? (
         <EmptyState title="No category data" description="Sales-derived category performance is unavailable." />
       ) : (
-        <div className="divide-y divide-coral-100/70">
+        <div className="divide-y divide-line">
           {categories.map((cat) => {
             const up = cat.growth_rate >= 0;
             return (
-              <div key={cat.category} className="p-4 hover:bg-coral-50/40 transition-colors">
+              <div key={cat.category} className="p-4 hover:bg-surface-2/60 transition-colors">
                 <div className="flex justify-between items-center mb-2">
                   <span className="font-medium text-ink">{cat.category}</span>
                   <span className={`flex items-center gap-1 text-sm font-medium ${up ? 'text-emerald-600' : 'text-rose-600'}`}>
@@ -43,7 +43,7 @@ export function CategoryPerformancePanel({ categories, loading }: CategoryPerfor
                   <span>{formatCurrency(cat.total_revenue)}</span>
                   <span>~{cat.avg_discount.toFixed(0)}% avg discount</span>
                 </div>
-                <div className="h-1.5 bg-coral-100 rounded-full overflow-hidden">
+                <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
                   <div
                     className="h-full sunset-warm rounded-full"
                     style={{ width: `${Math.min((cat.total_revenue / maxRevenue) * 100, 100)}%` }}

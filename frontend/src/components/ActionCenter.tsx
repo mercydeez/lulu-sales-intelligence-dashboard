@@ -54,9 +54,9 @@ export default function ActionCenter() {
   if (actions.length === 0) return null;
 
   return (
-    <Card padding="lg" className="mb-6 border border-coral-100">
+    <Card padding="lg" className="mb-6 border border-line">
       <div className="flex items-center gap-2 mb-3">
-        <Zap className="w-5 h-5 text-coral-500" />
+        <Zap className="w-5 h-5 text-teal-600" />
         <h3 className="text-base font-medium text-ink">Action Center</h3>
       </div>
       <div className="space-y-2">

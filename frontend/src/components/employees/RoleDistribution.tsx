@@ -28,7 +28,7 @@ export function RoleDistribution({ summary, loading }: RoleDistributionProps) {
                 <span className="text-ink-soft">{roleLabel(role)}</span>
                 <span className="text-ink font-medium">{count}</span>
               </div>
-              <div className="h-2 bg-coral-100 rounded-full overflow-hidden">
+              <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
                 <div className="h-full sunset-gradient rounded-full" style={{ width: `${(count / total) * 100}%` }} />
               </div>
             </div>

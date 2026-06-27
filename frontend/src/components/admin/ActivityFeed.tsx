@@ -13,8 +13,8 @@ interface ActivityFeedProps {
 export function ActivityFeed({ activities, loading }: ActivityFeedProps) {
   return (
     <Card variant="glass" padding="none">
-      <div className="px-5 py-4 border-b border-coral-100 flex items-center gap-2">
-        <Activity className="w-5 h-5 text-coral-500" />
+      <div className="px-5 py-4 border-b border-line flex items-center gap-2">
+        <Activity className="w-5 h-5 text-teal-600" />
         <div>
           <h3 className="text-lg font-semibold text-ink">Recent Activity</h3>
           <p className="text-sm text-ink-muted mt-0.5">Latest sales across the platform</p>
@@ -26,7 +26,7 @@ export function ActivityFeed({ activities, loading }: ActivityFeedProps) {
       ) : activities.length === 0 ? (
         <EmptyState icon={<Activity className="w-6 h-6" />} title="No recent activity" description="Activity will appear as sales flow in." />
       ) : (
-        <ul className="divide-y divide-coral-100/70">
+        <ul className="divide-y divide-line">
           {activities.map((a, i) => (
             <li key={`${a.timestamp ?? a.date ?? i}-${i}`} className="flex items-center gap-3 p-4">
               <div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-600 flex items-center justify-center shrink-0">

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Inbox, Check, X, CheckCheck, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, Card, Button, Badge } from '@/components/ui';
+import { PageHeader, Card, Button, Badge, Stagger, RevealItem } from '@/components/ui';
 
 interface PO {
   id: number; po_number: string; status: string; total_amount: number;
@@ -62,7 +62,7 @@ export default function ApprovalsPage() {
         <PageHeader
           title="Approval Inbox"
           description="Purchase orders awaiting your decision."
-          icon={<Inbox className="w-6 h-6 text-coral-500" />}
+          icon={<Inbox className="w-6 h-6" />}
           actions={pos.length > 0 ? (
             <Button variant="primary" onClick={approveAll}><CheckCheck className="w-4 h-4" /> Approve all</Button>
           ) : undefined}
@@ -85,12 +85,13 @@ export default function ApprovalsPage() {
             </div>
           </Card>
         ) : (
-          <div className="space-y-3">
+          <Stagger className="space-y-3">
             {pos.map((po) => (
-              <Card key={po.id} padding="md" className="flex items-center justify-between gap-4">
+              <RevealItem key={po.id}>
+              <Card padding="md" className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <Link href={`/procurement/po/${po.id}`} className="font-mono text-coral-600 hover:underline">{po.po_number}</Link>
+                    <Link href={`/procurement/po/${po.id}`} className="font-mono text-teal-700 hover:underline">{po.po_number}</Link>
                     {po.source === 'forecast_reorder' && <Badge variant="teal">📈 forecast</Badge>}
                   </div>
                   <p className="text-sm text-ink-muted mt-0.5 truncate">
@@ -109,8 +110,9 @@ export default function ApprovalsPage() {
                   </Button>
                 </div>
               </Card>
+              </RevealItem>
             ))}
-          </div>
+          </Stagger>
         )}
       </div>
     </main>

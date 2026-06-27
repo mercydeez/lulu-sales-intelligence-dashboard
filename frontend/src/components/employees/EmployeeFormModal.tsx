@@ -101,7 +101,7 @@ export function EmployeeFormModal({ open, onClose, onSuccess }: EmployeeFormModa
 
   return (
     <Modal open={open} onClose={onClose} title="Add New Employee" size="lg">
-      <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+      <div className="space-y-4 max-h-[65vh] overflow-y-auto pe-1">
         {error && (
           <div className="flex items-center gap-2 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-sm">
             <AlertCircle className="w-4 h-4 shrink-0" />

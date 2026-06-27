@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import { RotateCcw } from 'lucide-react';
 import { authFetch } from '@/contexts/AuthContext';
+import { CATEGORICAL as COLORS } from '@/lib/chart';
 
 interface ReturnCategoryData {
   category: string;
@@ -17,21 +18,6 @@ interface ReturnCategoryData {
   value: number;
   percentage: number;
 }
-
-const COLORS = [
-  '#ef4444', // red
-  '#f97316', // orange
-  '#f59e0b', // amber
-  '#eab308', // yellow
-  '#84cc16', // lime
-  '#22c55e', // green
-  '#14b8a6', // teal
-  '#06b6d4', // cyan
-  '#3b82f6', // blue
-  '#8b5cf6', // purple
-  '#ec4899', // pink
-  '#f43f5e', // rose
-];
 
 export default function ReturnsByCategoryChart() {
   const [data, setData] = useState<ReturnCategoryData[]>([]);
@@ -174,7 +160,7 @@ export default function ReturnsByCategoryChart() {
             <p className="text-ink-muted text-sm">Product category breakdown</p>
           </div>
         </div>
-        <div className="text-right">
+        <div className="text-end">
           <p className="text-2xl font-bold text-rose-600">{totalReturns}</p>
           <p className="text-ink-muted text-xs">Total Returns</p>
         </div>
@@ -228,7 +214,7 @@ export default function ReturnsByCategoryChart() {
         {data.slice(0, 8).map((item: ReturnCategoryData, index: number) => (
           <div
             key={item.category}
-            className="flex items-center gap-2 p-2 rounded-lg hover:bg-coral-50 transition-colors cursor-pointer"
+            className="flex items-center gap-2 p-2 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer"
             onMouseEnter={() => setActiveIndex(index)}
             onMouseLeave={() => setActiveIndex(null)}
           >

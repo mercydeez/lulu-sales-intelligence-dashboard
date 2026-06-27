@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/AuthContext';
-import { Card, Badge, PageHeader } from '@/components/ui';
+import { Card, Badge, PageHeader, Stagger, RevealItem } from '@/components/ui';
 import TwoFactorSettings from '@/components/settings/TwoFactorSettings';
 import { ROLE_DISPLAY_NAMES, UserRole } from '@/types/auth';
 import {
@@ -24,7 +24,7 @@ const roleBadge: Record<string, 'violet' | 'teal' | 'coral' | 'neutral'> = {
 function Field({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="p-2 rounded-lg bg-coral-50 text-coral-500 shrink-0">{icon}</div>
+      <div className="p-2 rounded-lg bg-teal-50 text-teal-600 shrink-0">{icon}</div>
       <div className="min-w-0">
         <p className="text-xs text-ink-muted">{label}</p>
         <p className="text-sm font-medium text-ink truncate">{value}</p>
@@ -55,8 +55,9 @@ export default function ProfilePage() {
           icon={<UserIcon className="w-5 h-5" />}
         />
 
+        <Stagger className="space-y-6">
         {/* Identity */}
-        <Card padding="lg" className="mb-6">
+        <RevealItem><Card padding="lg">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-2xl sunset-gradient flex items-center justify-center text-white text-xl font-bold shrink-0 shadow-sunset">
               {initials}
@@ -76,9 +77,9 @@ export default function ProfilePage() {
               </div>
             </div>
           </div>
-        </Card>
+        </Card></RevealItem>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <RevealItem className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Details */}
           <Card padding="lg">
             <h3 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-4">Account</h3>
@@ -116,28 +117,29 @@ export default function ProfilePage() {
               />
             </div>
           </Card>
-        </div>
+        </RevealItem>
 
         {/* Permissions */}
         {permissions.length > 0 && (
-          <Card padding="lg" className="mt-6">
+          <RevealItem><Card padding="lg">
             <h3 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-4">Permissions</h3>
             <div className="flex flex-wrap gap-2">
               {permissions.map((perm) => (
                 <span
                   key={perm}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-coral-50 text-ink-soft text-xs font-medium capitalize"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-2 text-ink-soft text-xs font-medium capitalize"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                   {perm}
                 </span>
               ))}
             </div>
-          </Card>
+          </Card></RevealItem>
         )}
 
         {/* Security: 2-step verification */}
-        <TwoFactorSettings />
+        <RevealItem><TwoFactorSettings /></RevealItem>
+        </Stagger>
       </div>
     </main>
   );

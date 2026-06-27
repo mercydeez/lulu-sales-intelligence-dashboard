@@ -17,7 +17,7 @@ export default function ProcurementModal({ open, item, quantity, onQuantityChang
 
   return (
     <Modal open={open} onClose={onCancel} title="Create Procurement Order">
-      <div className="flex items-center gap-2 mb-4 text-coral-500">
+      <div className="flex items-center gap-2 mb-4 text-teal-600">
         <ShoppingCart className="w-5 h-5" />
       </div>
 
@@ -51,7 +51,7 @@ export default function ProcurementModal({ open, item, quantity, onQuantityChang
 
         <div>
           <label className="block text-sm text-ink-muted mb-1">Estimated Cost</label>
-          <p className="text-xl font-bold text-coral-600">{formatCurrency(quantity * item.unit_cost)}</p>
+          <p className="text-xl font-bold text-teal-700">{formatCurrency(quantity * item.unit_cost)}</p>
         </div>
       </div>
 

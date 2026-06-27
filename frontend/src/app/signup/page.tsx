@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
+import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -96,7 +97,12 @@ export default function SignupPage() {
 
       {/* ============================= FORM PANEL ============================= */}
       <div className="flex items-center justify-center p-6 sm:p-12">
-        <div className="w-full max-w-md">
+        <motion.div
+          className="w-full max-w-md"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        >
           <div className="lg:hidden text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-sunset">
               <ShoppingBag className="w-8 h-8 text-white" />
@@ -110,9 +116,9 @@ export default function SignupPage() {
           </div>
 
           {displayError && (
-            <div className="mb-6 p-4 rounded-2xl bg-coral-50 border border-coral-200 flex items-start gap-3 animate-fade-in">
-              <AlertCircle className="w-5 h-5 text-coral-600 flex-shrink-0 mt-0.5" />
-              <p className="text-coral-700 text-sm">{displayError}</p>
+            <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 flex items-start gap-3 animate-fade-in">
+              <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
+              <p className="text-rose-700 text-sm">{displayError}</p>
             </div>
           )}
 
@@ -120,9 +126,9 @@ export default function SignupPage() {
             <div>
               <label htmlFor="company" className="block text-sm font-medium text-ink-soft mb-2">Company name</label>
               <div className="relative">
-                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
+                <Building2 className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
                 <input id="company" type="text" value={company} onChange={(e) => setCompany(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-coral-400 outline-none"
+                  className="w-full ps-11 pe-4 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-teal-400 outline-none"
                   placeholder="Acme Retail" autoComplete="organization" />
               </div>
             </div>
@@ -131,16 +137,16 @@ export default function SignupPage() {
               <div>
                 <label htmlFor="first" className="block text-sm font-medium text-ink-soft mb-2">First name</label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
+                  <User className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
                   <input id="first" type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)}
-                    className="w-full pl-11 pr-3 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-coral-400 outline-none"
+                    className="w-full ps-11 pe-3 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-teal-400 outline-none"
                     placeholder="Nadia" autoComplete="given-name" />
                 </div>
               </div>
               <div>
                 <label htmlFor="last" className="block text-sm font-medium text-ink-soft mb-2">Last name</label>
                 <input id="last" type="text" value={lastName} onChange={(e) => setLastName(e.target.value)}
-                  className="w-full px-3 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-coral-400 outline-none"
+                  className="w-full px-3 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-teal-400 outline-none"
                   placeholder="Al Mansouri" autoComplete="family-name" />
               </div>
             </div>
@@ -148,9 +154,9 @@ export default function SignupPage() {
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-ink-soft mb-2">Work email</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
+                <Mail className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
                 <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-coral-400 outline-none"
+                  className="w-full ps-11 pe-4 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-teal-400 outline-none"
                   placeholder="you@company.com" autoComplete="email" />
               </div>
             </div>
@@ -158,13 +164,13 @@ export default function SignupPage() {
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-ink-soft mb-2">Password</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
+                <Lock className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
                 <input id="password" type={showPassword ? 'text' : 'password'} value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-11 pr-11 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-coral-400 outline-none"
+                  className="w-full ps-11 pe-11 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-teal-400 outline-none"
                   placeholder="At least 12 characters" autoComplete="new-password" />
                 <button type="button" onClick={() => setShowPassword((s) => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink">
+                  className="absolute end-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink">
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
@@ -173,7 +179,7 @@ export default function SignupPage() {
 
             <label className="flex items-center gap-3 cursor-pointer select-none">
               <input type="checkbox" checked={seedSample} onChange={(e) => setSeedSample(e.target.checked)}
-                className="w-4 h-4 rounded border-line text-coral-500 focus:ring-coral-400" />
+                className="w-4 h-4 rounded border-line text-teal-600 focus:ring-teal-400" />
               <span className="text-sm text-ink-soft">Pre-load sample data so I can explore right away</span>
             </label>
 
@@ -189,7 +195,7 @@ export default function SignupPage() {
               Sign in <Sparkles className="w-3.5 h-3.5" />
             </Link>
           </p>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

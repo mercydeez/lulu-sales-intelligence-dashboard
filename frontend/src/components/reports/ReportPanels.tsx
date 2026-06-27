@@ -8,7 +8,7 @@ import { ShoppingCart, Receipt, Package, TrendingUp, Store } from 'lucide-react'
 import {
   Card, StatCard, ChartFrame, Table, TableHead, TableBody, TableRow, Th, Td, Badge, SkeletonText, EmptyState,
 } from '@/components/ui';
-import { SUNSET_COLORS, CHART, tooltipStyle, tooltipLabelStyle } from '@/components/analytics/chartTheme';
+import { CATEGORICAL as SUNSET_COLORS, CHART, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatCompact, formatDateShort, shortItemLabel } from '@/components/analytics/format';
 import { ReportKpis, ReportDailyPoint, ReportCategory, ReportStore, ReportTopItem } from './types';
 
@@ -35,8 +35,8 @@ export function ReportTrendPanel({ data, loading }: { data: ReportDailyPoint[]; 
         <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="reportUnits" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={CHART.coral} stopOpacity={0.35} />
-              <stop offset="95%" stopColor={CHART.coral} stopOpacity={0} />
+              <stop offset="5%" stopColor={CHART.teal} stopOpacity={0.35} />
+              <stop offset="95%" stopColor={CHART.teal} stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
@@ -44,8 +44,8 @@ export function ReportTrendPanel({ data, loading }: { data: ReportDailyPoint[]; 
           <YAxis stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
           <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} labelFormatter={(l) => formatDateShort(String(l))}
             formatter={(value: number, name: string) => [formatCompact(value), name === 'sales' ? 'Units' : 'Transactions']} />
-          <Area type="monotone" dataKey="sales" stroke={CHART.coral} strokeWidth={2.5} fill="url(#reportUnits)" dot={false} />
-          <Area type="monotone" dataKey="transactions" stroke={CHART.teal} strokeWidth={2} fillOpacity={0} dot={false} />
+          <Area type="monotone" dataKey="sales" stroke={CHART.teal} strokeWidth={2.5} fill="url(#reportUnits)" dot={false} />
+          <Area type="monotone" dataKey="transactions" stroke={CHART.violet} strokeWidth={2} fillOpacity={0} dot={false} />
         </AreaChart>
       </ResponsiveContainer>
     </ChartFrame>
@@ -76,7 +76,7 @@ export function ReportTopItemsPanel({ data, loading }: { data: ReportTopItem[]; 
           <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} horizontal={false} />
           <XAxis type="number" stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
           <YAxis type="category" dataKey="item_name" stroke={CHART.axis} fontSize={11} width={140} interval={0} tickFormatter={shortItemLabel} tickLine={false} axisLine={false} />
-          <Tooltip cursor={{ fill: 'rgba(45,212,191,0.06)' }} contentStyle={tooltipStyle} formatter={(value: number, _n: string, p: { payload?: ReportTopItem }) => [fmtUnits(value), p.payload?.category ?? 'Units']} />
+          <Tooltip cursor={{ fill: 'rgba(15,118,110,0.06)' }} contentStyle={tooltipStyle} formatter={(value: number, _n: string, p: { payload?: ReportTopItem }) => [fmtUnits(value), p.payload?.category ?? 'Units']} />
           <Bar dataKey="total_sales" fill={CHART.teal} radius={[0, 6, 6, 0]} maxBarSize={22} />
         </BarChart>
       </ResponsiveContainer>
@@ -87,7 +87,7 @@ export function ReportTopItemsPanel({ data, loading }: { data: ReportTopItem[]; 
 export function ReportStoreTable({ data, loading }: { data: ReportStore[]; loading: boolean }) {
   return (
     <Card variant="glass" padding="none">
-      <div className="px-5 py-4 border-b border-coral-100 flex items-center gap-2">
+      <div className="px-5 py-4 border-b border-line flex items-center gap-2">
         <Store className="w-5 h-5 text-violet-500" />
         <div>
           <h3 className="text-lg font-semibold text-ink">Store Performance</h3>
@@ -102,7 +102,7 @@ export function ReportStoreTable({ data, loading }: { data: ReportStore[]; loadi
         <Table>
           <TableHead>
             <TableRow>
-              <Th>#</Th><Th>Store</Th><Th>Location</Th><Th className="text-right">Units</Th><Th className="text-right">Transactions</Th>
+              <Th>#</Th><Th>Store</Th><Th>Location</Th><Th className="text-end">Units</Th><Th className="text-end">Transactions</Th>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -111,8 +111,8 @@ export function ReportStoreTable({ data, loading }: { data: ReportStore[]; loadi
                 <Td><span className="inline-flex w-7 h-7 items-center justify-center rounded-lg sunset-gradient text-white text-xs font-bold">{i + 1}</span></Td>
                 <Td className="font-medium">{s.store_name}</Td>
                 <Td className="text-ink-soft">{s.location}</Td>
-                <Td className="text-right font-semibold">{formatCompact(s.sales)}</Td>
-                <Td className="text-right text-ink-soft">{formatCompact(s.transactions)}</Td>
+                <Td className="text-end font-semibold">{formatCompact(s.sales)}</Td>
+                <Td className="text-end text-ink-soft">{formatCompact(s.transactions)}</Td>
               </TableRow>
             ))}
           </TableBody>

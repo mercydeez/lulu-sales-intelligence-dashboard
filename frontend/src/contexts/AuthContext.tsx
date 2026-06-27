@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { User, LoginCredentials, LoginResponse, AuthState, UserRole } from '@/types/auth';
 import { authFetch as clientAuthFetch, clearApiCache } from '@/lib/apiClient';
+import { Lock } from 'lucide-react';
 
 declare const process: { env: { NEXT_PUBLIC_API_URL?: string } };
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -329,8 +330,8 @@ export function withAuth<P extends object>(
 
     if (isLoading) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-900">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+        <div className="min-h-screen flex items-center justify-center bg-canvas">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500"></div>
         </div>
       );
     }
@@ -344,10 +345,13 @@ export function withAuth<P extends object>(
 
     if (requiredRoles && !hasRole(requiredRoles)) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-900">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-red-500 mb-2">Access Denied</h1>
-            <p className="text-slate-400">You don't have permission to access this page.</p>
+        <div className="min-h-screen flex items-center justify-center bg-canvas p-6">
+          <div className="text-center max-w-sm rounded-2xl border border-line bg-surface shadow-card p-8">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-coral-50">
+              <Lock className="h-6 w-6 text-coral-500" />
+            </div>
+            <h1 className="text-xl font-bold text-ink mb-1">Access Denied</h1>
+            <p className="text-ink-muted text-sm">You don&apos;t have permission to access this page.</p>
           </div>
         </div>
       );

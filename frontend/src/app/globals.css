@@ -137,16 +137,16 @@ html.light .text-slate-500 { color: #8b8699 !important; }
 html.light .on-sunset .text-white,
 html.light .on-sunset.text-white { color: #ffffff !important; }
 
-/* Warm light shimmer */
+/* Neutral skeleton shimmer (cohesive with the teal-brand surface palette) */
 html.light .shimmer {
-  background: linear-gradient(90deg, #fdf6f3 0%, #ffe9e4 50%, #fdf6f3 100%);
+  background: linear-gradient(90deg, #f1f1ec 0%, #e6e6e0 50%, #f1f1ec 100%);
   background-size: 200% 100%;
 }
 
-/* Warm light scrollbar */
-html.light *::-webkit-scrollbar-track { background: #fdf6f3; }
-html.light *::-webkit-scrollbar-thumb { background: #ffc7bd; }
-html.light *::-webkit-scrollbar-thumb:hover { background: #ff9d8e; }
+/* Neutral scrollbar with a soft teal-tinted thumb on hover */
+html.light *::-webkit-scrollbar-track { background: #f1f1ec; }
+html.light *::-webkit-scrollbar-thumb { background: #d4d4cc; }
+html.light *::-webkit-scrollbar-thumb:hover { background: #99c2bb; }
 
 /* Warm light row alternating */
 html.light .row-alternate:nth-child(even) {
