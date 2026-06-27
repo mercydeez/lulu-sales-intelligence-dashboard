@@ -50,3 +50,5 @@ export type { PageHeaderProps } from './PageHeader';
 
 export { Tabs } from './Tabs';
 export type { TabsProps, TabItem } from './Tabs';
+
+export { Reveal, Stagger, RevealItem, MotionCard, fadeRise, staggerContainer } from './motion';

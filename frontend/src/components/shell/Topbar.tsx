@@ -22,10 +22,7 @@ import {
   CheckCircle,
   ChevronRight,
   Menu,
-  Sun,
-  Moon,
 } from 'lucide-react';
-import { useTheme } from '@/contexts/ThemeContext';
 import { ROLE_DISPLAY_NAMES, User as AuthUser, UserRole } from '@/types/auth';
 
 interface NotificationItem {
@@ -78,7 +75,6 @@ export function Topbar({ onMenuClick }: TopbarProps) {
   const router = useRouter();
   const { user, isAuthenticated, logout, authFetch } = useAuth();
   const { lang, setLang } = useLanguage();
-  const { theme, toggle: toggleTheme } = useTheme();
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -249,15 +245,6 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
-            aria-label="Toggle theme"
-            className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-coral-50 transition-all"
-          >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
-
           <div className="relative" ref={notificationRef}>
             <button
               onClick={() => setNotificationOpen(!notificationOpen)}

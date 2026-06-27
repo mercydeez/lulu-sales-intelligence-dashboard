@@ -75,16 +75,28 @@ module.exports = {
         signal: { up: '#0f8f73', down: '#c8451f' },
         alert: { critical: '#dc2626', warn: '#d97706', info: '#2563eb' },
         live: '#16a34a',
+        // Categorical chart/series palette — distinct, AA-contrast hues, mirrored
+        // in globals.css (--series-*) and lib/chart.ts (CHART_SERIES).
+        series: {
+          1: '#0f766e', 2: '#6d49cf', 3: '#d97706', 4: '#c8451f',
+          5: '#2563eb', 6: '#0f8f73', 7: '#db2777', 8: '#475569',
+        },
       },
       boxShadow: {
-        // Calm, neutral elevation — borders do most of the work now.
+        // Layered, soft elevation for a more dimensional, immersive surface.
         sunset: '0 1px 2px rgba(20, 29, 33, 0.06)',
         soft: '0 4px 12px rgba(20, 29, 33, 0.10)',
+        card: '0 1px 2px rgba(20,29,33,0.04), 0 8px 24px -16px rgba(20,29,33,0.18)',
+        elevated: '0 2px 6px rgba(20,29,33,0.06), 0 24px 48px -24px rgba(20,29,33,0.30)',
+        'glow-teal': '0 0 0 1px rgba(15,118,110,0.18), 0 12px 32px -12px rgba(15,118,110,0.45)',
       },
       backgroundImage: {
-        // Tailwind utility companion to the plain `.sunset-gradient` class in
-        // globals.css — same stops, for components that need `bg-` composition.
-        'sunset-gradient': 'linear-gradient(135deg, #0f766e 0%, #0d7d68 100%)',
+        // Tailwind utility companions to the plain gradient classes in globals.css.
+        'sunset-gradient': 'linear-gradient(135deg, #0f766e 0%, #0d8b73 55%, #14a085 100%)',
+        'grad-violet': 'linear-gradient(135deg, #6d49cf 0%, #8b5cf6 100%)',
+        'grad-amber': 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)',
+        'grad-coral': 'linear-gradient(135deg, #c8451f 0%, #e0623a 100%)',
+        'grad-blue': 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
       },
     },
   },
