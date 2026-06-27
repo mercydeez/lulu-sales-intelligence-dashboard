@@ -111,8 +111,10 @@ async def init_db(max_retries: int = 30, retry_delay: float = 3.0):
 
 
 async def close_db():
-    """Close database connection"""
+    """Close database connections — owner engine and the RLS engine if it exists."""
     await engine.dispose()
+    if rls_engine is not None:
+        await rls_engine.dispose()
 
 
 async def resolve_request_tenant(request: Request) -> int:

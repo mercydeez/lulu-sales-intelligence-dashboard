@@ -42,6 +42,20 @@ services:
         value: "false"
       - key: LOG_JSON
         value: "true"
+      # This is a DEMO deploy: a single always-on box that seeds synthetic data
+      # and runs the live generator. DEMO_MODE makes that explicit and permits
+      # on-startup migrate/seed on this one box (see docs/production/ENVIRONMENT.md).
+      - key: DEMO_MODE
+        value: "true"
+      # Demo logins stay OFF (the demo uses its own seeded accounts). Never
+      # enable demo users on a real-tenant deploy.
+      - key: ALLOW_DEMO_USERS
+        value: "false"
+      # Free-tier managed Postgres has no app_rw role wired, so RLS runs in
+      # app-layer-only mode here. Acceptable for a single-tenant DEMO only — a
+      # real multi-tenant deploy MUST set USE_RLS_ROLE=true + RLS_DATABASE_URL.
+      - key: ALLOW_INSECURE_NO_RLS
+        value: "true"
       - key: DATABASE_URL
         fromDatabase:
           name: app-postgres

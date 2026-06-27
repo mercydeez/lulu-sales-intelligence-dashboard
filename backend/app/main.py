@@ -73,33 +73,45 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database connection tested")
 
-    # Seed base schema + historical data (portable; works on managed Postgres
-    # that can't run the docker-entrypoint init.sql). Idempotent.
-    try:
-        await run_seed()
-        logger.info("Database seed ensured")
-    except Exception as e:
-        logger.error(f"Failed to seed database: {e}")
-        raise e
+    # ── One-shot startup work — gated by flags. In production these run as
+    # dedicated jobs (app.commands.{seed,migrate}); the API does API only. ──
+    if settings.run_seed_on_startup:
+        # Seed loads SYNTHETIC demo data (idempotent). Only runs in dev or a
+        # DEMO_MODE box; validate_security() blocks it in real production.
+        try:
+            await run_seed()
+            logger.info("Database seed ensured (RUN_SEED_ON_STARTUP=true)")
+        except Exception as e:
+            logger.error(f"Failed to seed database: {e}")
+            raise e
+    else:
+        logger.info("Startup seed skipped (RUN_SEED_ON_STARTUP=false) — run `python -m app.commands.seed`")
 
-    try:
-        await run_migrations()
-        logger.info("Database migrations applied successfully")
-    except Exception as e:
-        logger.error(f"Failed to apply database migrations: {e}")
-        # In production, we might want to exit, but let's log it and raise to fail startup if critical.
-        raise e
+    if settings.run_migrations_on_startup:
+        try:
+            await run_migrations()
+            logger.info("Database migrations applied (RUN_MIGRATIONS_ON_STARTUP=true)")
+        except Exception as e:
+            logger.error(f"Failed to apply database migrations: {e}")
+            raise e
+    else:
+        logger.info(
+            "Startup migrations skipped (RUN_MIGRATIONS_ON_STARTUP=false) — "
+            "run the dedicated migrate job (`python -m app.commands.migrate`)"
+        )
 
-    
     await init_redis()
     logger.info("Redis initialized")
-    
-    # Initialize employee system (migration + seeding)
-    try:
-        await initialize_employee_system()
-        logger.info("Employee system initialized")
-    except Exception as e:
-        logger.warning(f"Employee system initialization skipped: {e}")
+
+    # Employee system (migration + seeding) — gated; non-fatal.
+    if settings.run_employee_seeder_on_startup:
+        try:
+            await initialize_employee_system()
+            logger.info("Employee system initialized")
+        except Exception as e:
+            logger.warning(f"Employee system initialization skipped: {e}")
+    else:
+        logger.info("Employee seeder skipped (RUN_EMPLOYEE_SEEDER_ON_STARTUP=false)")
 
     # Refresh per-category prices from the single price source (items.unit_price_aed)
     # so inventory/promotions/procurement never drift from the analytics revenue math.
@@ -111,35 +123,43 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Category cost refresh skipped: {e}")
 
-    # Start the data generator background task
-    generator = DataGenerator()
-    task = asyncio.create_task(generator.start())
-    logger.info("Data generator started")
+    # ── Background tasks — gated; only started tasks are tracked/cancelled. ──
+    started_tasks: list[tuple[str, asyncio.Task]] = []
 
-    # Start the cache warmer so the heavy dashboard queries are always hot
-    warmer_task = asyncio.create_task(run_cache_warmer())
-    logger.info("Cache warmer started")
+    # The synthetic generator writes fake sales — DEMO ONLY.
+    if settings.demo_mode and settings.live_generator_enabled:
+        generator = DataGenerator()
+        started_tasks.append(("data_generator", asyncio.create_task(generator.start())))
+        logger.info("Data generator started (DEMO_MODE + LIVE_GENERATOR_ENABLED)")
+    else:
+        logger.info("Data generator NOT started (demo/live-generator disabled)")
 
-    # Start the forecast trainer so Forecast Lab models are trained offline and
-    # served from cache (never trained on the request path)
-    trainer_task = asyncio.create_task(run_forecast_trainer())
-    logger.info("Forecast trainer started")
+    if settings.run_cache_warmer:
+        started_tasks.append(("cache_warmer", asyncio.create_task(run_cache_warmer())))
+        logger.info("Cache warmer started")
+    else:
+        logger.info("Cache warmer disabled (RUN_CACHE_WARMER=false)")
+
+    if settings.run_forecast_trainer:
+        started_tasks.append(("forecast_trainer", asyncio.create_task(run_forecast_trainer())))
+        logger.info("Forecast trainer started")
+    else:
+        logger.info("Forecast trainer disabled (RUN_FORECAST_TRAINER=false)")
 
     logger.info("Sales Dashboard API is ready!")
 
     yield
 
-    # Shutdown
+    # Shutdown — cancel only the tasks we actually started.
     logger.info("Shutting down Sales Dashboard API...")
-    task.cancel()
-    warmer_task.cancel()
-    trainer_task.cancel()
-    for t in (task, warmer_task, trainer_task):
+    for _name, t in started_tasks:
+        t.cancel()
+    for _name, t in started_tasks:
         try:
             await t
         except asyncio.CancelledError:
             pass
-    await close_db()
+    await close_db()  # disposes the owner engine AND the RLS engine if present
     await close_redis()
     try:
         from app.services.nl2sql.executor import dispose_sage_engine
@@ -151,7 +171,9 @@ async def lifespan(app: FastAPI):
 
 # Interactive API docs (/docs, /redoc, /openapi.json) expose the full API
 # surface, so they're disabled outside development to avoid info disclosure.
-_docs_enabled = settings.environment.lower() not in ("production", "prod", "staging")
+# In production they can be re-enabled deliberately via EXPOSE_API_DOCS=true
+# (and should then be protected at the reverse proxy — see config.api_docs_enabled).
+_docs_enabled = settings.api_docs_enabled
 app = FastAPI(
     title=f"{settings.product_name} API",
     description="Real-time sales streaming and analytics API",
