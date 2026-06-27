@@ -68,21 +68,26 @@ Goal: after a recommendation is accepted, **prove whether it worked** and auto-r
   one measured `improved` and **auto-resolved** (`resolved_by='system:measure'`, after=null). The
   API `measured=true` filter + `by_outcome` summary returned both correctly.
 
-## Track 2 — Accuracy & security hardening ("tighten the screws") 🟡
-- **Flip `USE_RLS_ROLE=true` on the request path.** Role + DB enforcement is shipped and proven
-  (migration 026 `security_invoker`; `app_rw` isolates through `sales_fact_view`). Blocked only on
-  two follow-ups: **GUC-after-auth ordering** (bind `app.tenant_id` once, after auth) and
-  **cross-tenant public-API-key lookup**. Land both, then flip the flag.
-- **`worker_rw` stale-volume auth bug.** `029_worker_role.sql` sets the password only in its `CREATE`
-  branch; on a pre-existing role the `ELSE` path skips it, so a stale volume fails auth. Fix:
-  unconditionally `ALTER ROLE worker_rw PASSWORD …` (idempotent) so fresh **and** stale volumes work.
-- **`test_golden_numbers` timeout under load.** Passes in isolation; times out when the forecast
-  trainer + generator + parallel suite contend. Stabilize (raise the per-test/statement timeout or
-  gate the trainer during the suite) so the baseline is unconditionally green.
-- **Extend accuracy guards** to any new `outcome_*` / `sage_*` numeric fields (units≠AED, volume=int,
-  revenue=float) in `tests/test_accuracy_guards.py`.
-- **README/doc honesty pass** (the remediation's last tail): reconcile every claim with code —
+## Track 2 — Accuracy & security hardening ("tighten the screws") 🟡 (mostly done)
+- ✅ **`USE_RLS_ROLE` flipped ON by default & verified.** Both prerequisite follow-ups turned out to
+  be already implemented in `services/database.py`: `resolve_request_tenant` binds the tenant GUC
+  **before** the session opens (GUC-after-auth ordering) and looks up API keys on the **owner**
+  session (cross-tenant key→tenant lookup not RLS-filtered). The dev compose default is now
+  `USE_RLS_ROLE=${...:-true}`. **Verified live:** two-tenant isolation (tenant 1 = 913k/10/50 vs
+  tenant 2 = 1920/2/8), reads (analytics/findings/inventory/promotions) 200, a write (acknowledge)
+  200, SSE stream-ticket 200, and `test_golden_numbers` 5/5 — all through the non-owner `app_rw`
+  path. Set `USE_RLS_ROLE=false` to fall back to the owner connection.
+- ✅ **`worker_rw` stale-volume auth bug fixed.** 029's `ELSE` branch now always asserts the login
+  password; migration `035_worker_role_password.sql` repairs already-migrated volumes (029 won't
+  re-run). Verified 035 applied and the worker still authenticates.
+- ✅ **`test_golden_numbers` stabilized under load.** Per-request timeout is now generous + overridable
+  (`GOLDEN_REQUEST_TIMEOUT`, default 30s) with a small backoff retry; health-probe timeout 3s→10s.
+- ✅ **Accuracy guards extended** — guard 6 in `tests/test_accuracy_guards.py` asserts the finding
+  `metric_value/metric_before/metric_after` ratios are never currency/units-formatted.
+- 🟡 **README/doc honesty pass** (the remediation's last tail): reconcile every claim with code —
   synthetic data, units vs AED, what Sage can/can't do, what forecasting predicts, what's not built.
+  (Note: the "Lulu store-name straggler" suspected earlier was a **stale volume**, not code — the
+  seed in `init.sql` is already "Meridian".)
 
 ## Track 3 — Activate Sage's local LLM (no paid API) ⏳
 Config + verification, not new code (the provider chain already picks it up):

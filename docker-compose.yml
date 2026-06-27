@@ -56,10 +56,13 @@ services:
       - no-new-privileges:true
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD:-salespass}@postgres:5432/${POSTGRES_DB:-salesdb}
-      # Defense-in-depth: set USE_RLS_ROLE=true to run the authenticated request
-      # path as the non-owner app_rw role so Postgres FORCE RLS enforces tenant
-      # isolation (migration 020). Off by default; app-layer scoping is primary.
-      - USE_RLS_ROLE=${USE_RLS_ROLE:-false}
+      # Defense-in-depth: the authenticated request path runs as the non-owner
+      # app_rw role so Postgres FORCE RLS enforces tenant isolation at the DB
+      # (migrations 020/026), with app-layer scoping still primary. ON by default
+      # now that the request-path tenant GUC binding (resolve_request_tenant) and
+      # owner-session API-key lookup are in place and two-tenant isolation is
+      # verified. Set USE_RLS_ROLE=false to fall back to the owner connection.
+      - USE_RLS_ROLE=${USE_RLS_ROLE:-true}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-sales_redis_dev_pass}@redis:6379
       - ENVIRONMENT=development
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-super-secret-change-in-production-2026}
