@@ -15,6 +15,7 @@ assert invariants and ratios rather than brittle exact sums.
 """
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
@@ -25,11 +26,33 @@ import pytest
 API = os.environ.get("SMOKE_API_URL", "http://127.0.0.1:8000").rstrip("/")
 LOGIN = {"email": "atharva@retaildemo.app", "password": "Demo@2026!"}
 
+# Per-request timeout (s). Generous + overridable because these tests can run while
+# the forecast trainer + live generator + a parallel suite all contend for the loop;
+# a transient slow response under that load is not a product defect. Pair with a
+# small retry (below) so a one-off timeout doesn't flake the whole suite.
+REQUEST_TIMEOUT = float(os.environ.get("GOLDEN_REQUEST_TIMEOUT", "30"))
+REQUEST_RETRIES = int(os.environ.get("GOLDEN_REQUEST_RETRIES", "3"))
+
 MIN_ITEM_PRICE_AED = 3.50
 MAX_ITEM_PRICE_AED = 68.00
 EXPECTED_HISTORICAL_ROWS = 913_000
 EXPECTED_STORES = 10
 EXPECTED_ITEMS = 50
+
+
+def _request(req: urllib.request.Request) -> dict:
+    """Open a request, retrying transient timeouts/connection resets with backoff so
+    a load spike doesn't fail an otherwise-correct assertion."""
+    last: Exception | None = None
+    for attempt in range(REQUEST_RETRIES):
+        try:
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as r:
+                return json.loads(r.read())
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last = e
+            if attempt < REQUEST_RETRIES - 1:
+                time.sleep(1.5 * (attempt + 1))
+    raise last  # exhausted retries
 
 
 def _post(path: str, body: dict, token: str | None = None) -> dict:
@@ -38,21 +61,19 @@ def _post(path: str, body: dict, token: str | None = None) -> dict:
     req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(req, timeout=10) as r:
-        return json.loads(r.read())
+    return _request(req)
 
 
 def _get(path: str, token: str | None = None) -> dict:
     req = urllib.request.Request(f"{API}{path}", method="GET")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(req, timeout=10) as r:
-        return json.loads(r.read())
+    return _request(req)
 
 
 def _api_up() -> bool:
     try:
-        with urllib.request.urlopen(f"{API}/health", timeout=3) as r:
+        with urllib.request.urlopen(f"{API}/health", timeout=10) as r:
             return r.status == 200
     except (urllib.error.URLError, OSError):
         return False

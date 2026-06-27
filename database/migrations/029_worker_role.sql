@@ -22,8 +22,12 @@ BEGIN
         -- Dev default password; OVERRIDE in production: ALTER ROLE worker_rw PASSWORD '...'
         CREATE ROLE worker_rw LOGIN PASSWORD 'worker_rw_dev_pass' BYPASSRLS;
     ELSE
-        -- Idempotent: ensure the attribute is present even if the role pre-existed.
-        ALTER ROLE worker_rw BYPASSRLS;
+        -- Idempotent: ensure attributes AND the login password are present even if the
+        -- role pre-existed. Setting the password only in the CREATE branch was a bug —
+        -- a role created on an earlier volume took this ELSE path and was left WITHOUT a
+        -- password, so the worker failed auth. Always (re)assert it. (Repaired on already
+        -- migrated volumes by 035.)
+        ALTER ROLE worker_rw LOGIN BYPASSRLS PASSWORD 'worker_rw_dev_pass';
     END IF;
 END $$;
 

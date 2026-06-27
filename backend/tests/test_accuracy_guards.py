@@ -114,3 +114,30 @@ def test_frontend_does_not_format_units_as_currency():
                 if re.search(rf"\b{uf}\b", arg):
                     offenders.append(f"{tsx.relative_to(FRONTEND_SRC)}: formatCurrency({arg})")
     assert not offenders, "formatCurrency() bound to a UNITS field:\n" + "\n".join(offenders)
+
+
+# --------------------------------------------------------------------------
+# Guard 6: the diagnostics finding metrics (metric_value / metric_before /
+# metric_after) are RATIOS (week-over-week change, return rate, growth) — neither
+# units nor AED. They must never be currency- or unit-formatted; they render as
+# percentages (fmtPct). Locks the measure-loop fields (migration 034) into the
+# "every number is the right kind of number" convention.
+# --------------------------------------------------------------------------
+@pytest.mark.skipif(not FRONTEND_SRC.exists(), reason="frontend tree not present")
+def test_finding_metric_fields_are_not_money_or_unit_formatted():
+    ratio_fields = ("metric_value", "metric_before", "metric_after")
+    offenders = []
+    for tsx in FRONTEND_SRC.rglob("*.tsx"):
+        text = _read(tsx)
+        for fn in ("formatCurrency", "formatNumber", "formatQuantity"):
+            for m in re.finditer(rf"{fn}\(([^)]*)\)", text):
+                arg = m.group(1)
+                for rf in ratio_fields:
+                    if re.search(rf"\b{rf}\b", arg):
+                        offenders.append(
+                            f"{tsx.relative_to(FRONTEND_SRC)}: {fn}({arg})"
+                        )
+    assert not offenders, (
+        "finding metric_* fields are ratios (show as %), not money/units:\n"
+        + "\n".join(offenders)
+    )
