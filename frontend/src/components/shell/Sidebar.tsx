@@ -2,6 +2,7 @@
 
 import { ReactNode, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -157,25 +158,41 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               key={item.href}
               href={item.href}
               onClick={onNavigate}
+              aria-current={active ? 'page' : undefined}
               className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
-                active ? 'bg-teal-50 text-teal-700' : 'text-ink-muted hover:text-ink hover:bg-surface-2'
+                'relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                active ? 'text-teal-700' : 'text-ink-muted hover:text-ink hover:bg-surface-2'
               )}
             >
-              {item.icon}
-              <span className="flex-1">{t(item.tKey)}</span>
+              {/* Animated active indicator — slides between items via shared layoutId. */}
+              {active && (
+                <motion.span
+                  layoutId="nav-active"
+                  className="absolute inset-0 rounded-xl bg-teal-50 ring-1 ring-teal-100"
+                  transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                />
+              )}
+              {active && (
+                <motion.span
+                  layoutId="nav-active-bar"
+                  className="absolute start-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-full bg-teal-600"
+                  transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                />
+              )}
+              <span className="relative z-10 flex items-center">{item.icon}</span>
+              <span className="relative z-10 flex-1">{t(item.tKey)}</span>
               {showBadge && (
-                <span className="ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#e11d48] text-white text-[10px] font-bold">
+                <span className="relative z-10 ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#e11d48] text-white text-[10px] font-bold">
                   {criticalCount}
                 </span>
               )}
               {showApprovals && (
-                <span className="ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-teal-500 text-white text-[10px] font-bold">
+                <span className="relative z-10 ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-teal-500 text-white text-[10px] font-bold">
                   {approvalCount}
                 </span>
               )}
               {showThreats && (
-                <span className="ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#e11d48] text-white text-[10px] font-bold">
+                <span className="relative z-10 ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#e11d48] text-white text-[10px] font-bold">
                   {threatCount}
                 </span>
               )}
