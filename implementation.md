@@ -110,6 +110,26 @@ Config + verification, not new code (the provider chain already picks it up):
   layering; `predictor.py` (operational) vs `forecasting/engine.py` (Lab/eval) serve different
   purposes; SSE consumption is already centralized in `hooks/useEventStream.ts`. Don't re-flag these.
 
+## Track 6 — UI overhaul: immersive, dynamic, color-coded 🟡 (foundation + key screens)
+Decision: polish **in-place** (no shadcn migration) + add **framer-motion**; **dark mode removed**;
+"rich but tasteful" motion; foundation-first then key screens.
+- ✅ **Foundation** — removed dark mode (ThemeContext/toggle/script/`html.dark`); immersive tinted-mesh
+  canvas + dimensional surfaces + `hero-mesh`/accent gradients + `--series-*` palette (globals.css);
+  Tailwind `series` scale + card/elevated/glow shadows + gradient images; framer-motion + shared
+  motion primitives (`components/ui/motion.tsx`: Reveal/Stagger/RevealItem/MotionCard) under
+  `MotionConfig reducedMotion="user"`; `lib/chart.ts` (Recharts theming: CHART_SERIES, axis/grid/
+  tooltip, `seriesColor()`); rebuilt `ChartFrame` (accent rule + motion).
+- ✅ **Login** — immersive `hero-mesh` panel with animated orbs + staggered reveal; brand-consistent
+  teal accents; animated demo tiles + CTA. All auth logic intact.
+- ✅ **App shell** — animated sliding active-nav indicator (shared `layoutId`) + accent bar.
+- ✅ **StatCard / KPIs** — motion hover-lift + entrance, tinted icon chips, and the gradient variant
+  now **tone-colored** (was always teal); KPI grids stagger in.
+- 🟡 **Remaining screens** — Analytics, Insights, Inventory next (apply `lib/chart.ts` theming to the
+  Recharts charts for full color-coding + motion), then the other ~18 routes. The shared primitives
+  already lift every screen that uses `StatCard`/`ChartFrame`/`Card`.
+- **Verify**: `npm run dev` in `frontend/` (compose serves a prebuilt bundle, so dev server shows
+  changes). `tsc --noEmit` + `next build` clean (26/26 pages).
+
 ## Track 5 — SaaS / commercial roadmap (near-term, free-tier first) 🟡
 Buildable now with **no** external service; billing stays gated to go-to-market.
 - **Tenant data export + delete-on-request** — GDPR-style, pure Postgres/app work on the existing
