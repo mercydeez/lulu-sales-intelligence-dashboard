@@ -278,6 +278,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         "/api/auth/2fa/verify",  # pre-auth 2FA step (no bearer yet)
         "/api/auth/forgot-password", "/api/auth/reset-password",  # pre-auth
         "/api/auth/verify-email",  # pre-auth (link from email)
+        "/api/auth/accept-invite",  # pre-auth (invite link from email)
         "/api/ai/chat/stream",  # Streaming endpoint
     }
     

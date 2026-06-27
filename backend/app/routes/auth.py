@@ -87,6 +87,14 @@ async def get_current_user(
     if token_data.exp < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Token has expired")
 
+    # Session revocation epoch: a password reset (or admin action) invalidates all
+    # access tokens issued before the cutoff. Reject anything older.
+    if token_data.iat is not None:
+        from app.services.auth_service import tokens_revoked_before
+        cutoff = await tokens_revoked_before(token_data.user_id)
+        if cutoff is not None and token_data.iat < cutoff:
+            raise HTTPException(status_code=401, detail="Session has been revoked")
+
     # Get fresh user data
     user = await AuthService.get_user_by_id(token_data.user_id)
     if not user:
@@ -265,6 +273,23 @@ async def login(request: Request, response: Response, login_data: LoginRequest):
         logger.warning(f"Login failed for {login_data.email}: {error}")
         raise HTTPException(status_code=401, detail=error)
 
+    # Enforce 2FA for privileged roles when REQUIRE_MFA_FOR_ADMINS is on. Enable
+    # this only after admins have enrolled (see docs/product/ACCOUNT_LIFECYCLE.md);
+    # toggling it off is the break-glass for initial enrollment.
+    _ADMIN_ROLES = {"super_admin", "admin", "owner"}
+    if get_settings().require_mfa_for_admins and not user_data.get("two_factor_enabled") \
+            and (user_data.get("role") or "").lower() in _ADMIN_ROLES:
+        from app.services.security_events import record_event
+        await record_event("mfa_required_admin", severity="medium", category="auth",
+                           request=request, actor_user_id=user_data["id"],
+                           actor_email=user_data["email"],
+                           detail=f"Admin {user_data['email']} blocked at login — 2FA required but not enabled")
+        raise HTTPException(
+            status_code=403,
+            detail="Two-factor authentication is required for administrator accounts. "
+                   "Contact an administrator to enroll 2FA before signing in.",
+        )
+
     # If the account has 2FA enabled, password alone is not enough: issue a
     # short-lived challenge and require a TOTP code at /2fa/verify.
     if user_data.get("two_factor_enabled"):
@@ -359,21 +384,75 @@ async def signup(request: Request, response: Response, body: SignupRequest):
 
 
 @router.post("/invite", status_code=201)
-async def invite(body: InviteRequest, current_user: dict = Depends(get_current_user)):
-    """Invite a teammate into the caller's tenant (admin only). Returns a
-    one-time temporary password the invitee must change on first login."""
+async def invite(body: InviteRequest, request: Request, current_user: dict = Depends(get_current_user)):
+    """Invite a teammate into the caller's tenant (admin only). Creates the user
+    and returns a single-use, expiring invite link (7 days) so the invitee sets
+    their own password. The temporary password is also returned for back-compat."""
     if current_user.get("role") not in ("super_admin", "admin"):
         raise HTTPException(status_code=403, detail="Admin role required to invite users")
     from app.services.tenant_provisioning import invite_user
 
+    tenant_id = current_user.get("tenant_id") or 1
     result, error = await invite_user(
-        tenant_id=current_user.get("tenant_id") or 1,
+        tenant_id=tenant_id,
         email=body.email, first_name=body.first_name,
         last_name=body.last_name, role=body.role,
     )
     if error:
         raise HTTPException(status_code=400, detail=error)
+
+    # Issue a single-use invite token bound to the new user + tenant + role.
+    import secrets as _secrets
+    from app.services.token_store import issue_token
+    invite_tok = _secrets.token_urlsafe(32)
+    await issue_token("invite", invite_tok, ttl_minutes=7 * 24 * 60,
+                      user_id=result["user_id"], tenant_id=tenant_id,
+                      email=body.email, role=body.role, invited_by=current_user.get("id"))
+    frontend = (get_settings().cors_origins.split(",")[0] or "http://localhost:3000").strip()
+    result["accept_link"] = f"{frontend}/accept-invite?token={invite_tok}"
+
+    from app.services.security_events import record_event
+    await record_event("user_invited", severity="low", category="audit", request=request,
+                       tenant_id=tenant_id, actor_user_id=current_user.get("id"),
+                       actor_email=current_user.get("email"),
+                       detail=f"Invited {body.email} as {body.role} into tenant {tenant_id}")
     return result
+
+
+class AcceptInviteRequest(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+@router.post("/accept-invite", response_model=MessageResponse)
+async def accept_invite(body: AcceptInviteRequest, request: Request):
+    """Consume a single-use invite token and set the invitee's password."""
+    from app.services.token_store import consume_token
+    from sqlalchemy import text
+    from app.services.database import async_session
+
+    claims = await consume_token("invite", body.token)
+    if not claims or not claims.get("user_id"):
+        raise HTTPException(status_code=400, detail="This invite link is invalid, already used, or has expired")
+
+    ok, msg = await AuthService.reset_password(claims["user_id"], body.new_password)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+
+    # Activate the account: clear the temp-password flag and mark the email verified
+    # (clicking the emailed invite proves control of the inbox).
+    async with async_session() as s:
+        await s.execute(text(
+            "UPDATE users SET must_change_password = FALSE, email_verified = TRUE WHERE id = :id"
+        ), {"id": claims["user_id"]})
+        await s.commit()
+
+    from app.services.security_events import record_event
+    await record_event("invite_accepted", severity="low", category="audit", request=request,
+                       tenant_id=claims.get("tenant_id"), actor_user_id=claims["user_id"],
+                       actor_email=claims.get("email"),
+                       detail=f"Invite accepted by {claims.get('email')}")
+    return MessageResponse(message="Invite accepted. You can now sign in.")
 
 
 @router.get("/onboarding")
@@ -492,6 +571,9 @@ async def forgot_password(body: ForgotPasswordRequest, request: Request):
     user_id = await AuthService.get_user_id_by_email(body.email)
     if user_id:
         token = create_password_reset_token(user_id)
+        # Record the token so it can be enforced single-use + expiring at the DB.
+        from app.services.token_store import issue_token
+        await issue_token("pwd_reset", token, ttl_minutes=30, user_id=user_id)
         frontend = (get_settings().cors_origins.split(",")[0] or "http://localhost:3000").strip()
         link = f"{frontend}/reset-password?token={token}"
         from app.services.security_notify import send_email
@@ -511,17 +593,25 @@ async def forgot_password(body: ForgotPasswordRequest, request: Request):
 
 @router.post("/reset-password", response_model=MessageResponse)
 async def reset_password(body: ResetPasswordRequest, request: Request):
-    """Validate the reset token and set a new password."""
-    from app.services.auth_service import decode_password_reset_token
+    """Validate the reset token (signature + single-use) and set a new password."""
+    from app.services.auth_service import decode_password_reset_token, revoke_user_sessions
+    from app.services.token_store import consume_token
+    # 1) JWT must be valid (signature/expiry/type).
     user_id = decode_password_reset_token(body.token)
     if not user_id:
         raise HTTPException(status_code=400, detail="Invalid or expired reset link")
+    # 2) Atomically consume the single-use record — replays/expired match nothing.
+    consumed = await consume_token("pwd_reset", body.token)
+    if not consumed:
+        raise HTTPException(status_code=400, detail="This reset link has already been used or has expired")
     ok, msg = await AuthService.reset_password(user_id, body.new_password)
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
+    # 3) Revoke all existing sessions so a stolen token can't outlive the reset.
+    await revoke_user_sessions(user_id)
     from app.services.security_events import record_event
     await record_event("password_changed", severity="medium", category="audit", request=request,
-                       actor_user_id=user_id, detail="Password changed via reset link")
+                       actor_user_id=user_id, detail="Password changed via reset link; sessions revoked")
     return MessageResponse(message=msg)
 
 
@@ -533,17 +623,23 @@ class VerifyEmailRequest(BaseModel):
     token: str
 
 
-def _verify_link(user_id: int) -> str:
+async def _verify_link(user_id: int) -> str:
     from app.services.auth_service import create_email_verify_token
+    from app.services.token_store import issue_token
+    token = create_email_verify_token(user_id)
+    # Single-use + expiring at the DB (3 days = 4320 minutes). Issuing a new link
+    # does not invalidate prior unused ones until they are consumed or expire.
+    await issue_token("email_verify", token, ttl_minutes=4320, user_id=user_id)
     frontend = (get_settings().cors_origins.split(",")[0] or "http://localhost:3000").strip()
-    return f"{frontend}/verify-email?token={create_email_verify_token(user_id)}"
+    return f"{frontend}/verify-email?token={token}"
 
 
 async def send_verification_email(user_id: int, email: str) -> None:
     from app.services.security_notify import send_email
+    link = await _verify_link(user_id)
     await send_email(
         email, f"Verify your {get_settings().product_name} email",
-        f"Welcome! Confirm your email to finish setting up your account:\n\n{_verify_link(user_id)}\n\n"
+        f"Welcome! Confirm your email to finish setting up your account:\n\n{link}\n\n"
         f"This link is valid for 3 days.",
     )
 
@@ -551,9 +647,13 @@ async def send_verification_email(user_id: int, email: str) -> None:
 @router.post("/verify-email", response_model=MessageResponse)
 async def verify_email(body: VerifyEmailRequest):
     from app.services.auth_service import decode_email_verify_token
+    from app.services.token_store import consume_token
     user_id = decode_email_verify_token(body.token)
     if not user_id:
         raise HTTPException(status_code=400, detail="Invalid or expired verification link")
+    # Single-use: a replayed link matches no row.
+    if not await consume_token("email_verify", body.token):
+        raise HTTPException(status_code=400, detail="This verification link has already been used or has expired")
     await AuthService.mark_email_verified(user_id)
     return MessageResponse(message="Email verified")
 

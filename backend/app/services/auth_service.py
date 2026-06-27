@@ -43,6 +43,7 @@ class TokenData(BaseModel):
     tenant_id: Optional[int] = None
     permissions: Dict[str, Any] = {}
     exp: datetime
+    iat: Optional[datetime] = None
 
 
 class Token(BaseModel):
@@ -140,10 +141,12 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
 # =============================================================================
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT access token"""
+    """Create JWT access token. Carries `iat` so a password reset can revoke all
+    access tokens issued before the reset (see revoke_user_sessions)."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire, "type": "access", "jti": secrets.token_hex(8)})
+    now = datetime.now(timezone.utc)
+    expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire, "iat": now, "type": "access", "jti": secrets.token_hex(8)})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -182,7 +185,8 @@ def decode_token(token: str, expected_type: Optional[str] = "access") -> Optiona
             role=payload.get("role"),
             tenant_id=payload.get("tenant_id"),
             permissions=payload.get("permissions", {}),
-            exp=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
+            exp=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc),
+            iat=datetime.fromtimestamp(payload["iat"], tz=timezone.utc) if payload.get("iat") else None,
         )
     except JWTError as e:
         logger.error(f"JWT decode error: {e}")
@@ -293,6 +297,45 @@ async def is_token_blacklisted(token: str) -> bool:
             f"{'allowing (fail-open)' if fail_open else 'REJECTING (fail-closed)'}"
         )
         return not fail_open
+
+
+# =============================================================================
+# PER-USER SESSION REVOCATION EPOCH (Redis-backed)
+# -----------------------------------------------------------------------------
+# We don't persist sessions (auth is stateless JWT + per-token blacklist), so to
+# revoke ALL of a user's outstanding access tokens at once (e.g. after a password
+# reset) we record a cutoff timestamp. Any access token whose `iat` predates the
+# cutoff is rejected by get_current_user.
+# =============================================================================
+
+def _revoke_key(user_id: int) -> str:
+    return f"auth:revoke_before:{user_id}"
+
+
+async def revoke_user_sessions(user_id: int) -> None:
+    """Invalidate every access token issued for this user up to now."""
+    try:
+        from app.services.redis_client import redis_client
+        if redis_client:
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+            # TTL slightly beyond the max access-token lifetime is enough.
+            await redis_client.set(_revoke_key(user_id), str(now_ts),
+                                   ex=max(ACCESS_TOKEN_EXPIRE_MINUTES * 60 * 2, 3600))
+    except Exception as e:
+        logger.warning(f"Failed to set session revocation epoch for user {user_id}: {e}")
+
+
+async def tokens_revoked_before(user_id: int) -> Optional[datetime]:
+    """Return the revocation cutoff for a user, or None if none is set."""
+    try:
+        from app.services.redis_client import redis_client
+        if redis_client:
+            raw = await redis_client.get(_revoke_key(user_id))
+            if raw:
+                return datetime.fromtimestamp(int(raw), tz=timezone.utc)
+    except Exception as e:
+        logger.warning(f"Failed to read session revocation epoch for user {user_id}: {e}")
+    return None
 
 
 # =============================================================================
