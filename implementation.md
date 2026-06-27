@@ -40,13 +40,12 @@ The post-recovery remediation is complete; these are proven against the running 
 | Diagnostics loop: detect→diagnose→recommend→accept | ✅ | worker `scan` job, 5 rules, `findings` + `recommended_action`/`action_type`, human-gated `accept-action` |
 | Forecasting + Forecast Lab | ✅ | classical/LightGBM + optional deep tier; MAPE/WAPE backtest vs seasonal-naive |
 
-**Loop status:** `measure` — the previously-missing stage — is now **built** (Track 1): the worker
-re-evaluates accepted findings and auto-resolves when the metric recovers. Live end-to-end
-verification is pending a Docker run.
+**Loop status:** `measure` — the previously-missing stage — is **done and verified live** (Track 1):
+the worker re-evaluates accepted findings and auto-resolves when the metric recovers.
 
 ---
 
-## Track 1 — Close the loop: Measure / Outcome ✅ built (live verify pending)
+## Track 1 — Close the loop: Measure / Outcome ✅ done (verified live)
 Goal: after a recommendation is accepted, **prove whether it worked** and auto-resolve when it does.
 - ✅ **Schema** (`database/migrations/034_finding_outcomes.sql`): `outcome_status`
   (`pending|improved|unchanged|worsened`), `metric_before`, `metric_after`, `measured_at` on
@@ -64,9 +63,10 @@ Goal: after a recommendation is accepted, **prove whether it worked** and auto-r
   block ("Resolved — metric recovered (X → Y)" / worsened / not-yet-recovered).
 - ✅ **Tests**: `worker/src/measure.test.js` (6, zero-dep `node --test`) covers the classification
   matrix; `measure:once` added to CI smoke + worker unit tests to the build job.
-- ⏳ **Live verify (needs Docker up):** migration 034 auto-applies on boot; accept an action, run
-  `docker compose run --rm worker npm run measure:once`, confirm the finding auto-resolves with
-  recorded before/after and shows under the Outcomes filter.
+- ✅ **Verified live (2026-06-27):** migration 034 auto-applied on boot; a still-firing accepted
+  finding measured `unchanged` (stayed acknowledged, before=after), while a recovered (non-firing)
+  one measured `improved` and **auto-resolved** (`resolved_by='system:measure'`, after=null). The
+  API `measured=true` filter + `by_outcome` summary returned both correctly.
 
 ## Track 2 — Accuracy & security hardening ("tighten the screws") 🟡
 - **Flip `USE_RLS_ROLE=true` on the request path.** Role + DB enforcement is shipped and proven
