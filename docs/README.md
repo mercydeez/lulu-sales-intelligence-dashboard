@@ -19,7 +19,15 @@ The documentation is organized by how you should use it, not by when it was writ
 ### `PUBLIC_API.md`
 - [`PUBLIC_API.md`](PUBLIC_API.md) - per-tenant public REST API + embeddable AI assistant (B4/B5): auth, endpoints, isolation.
 
+### `production/` — operations & deployment hardening
+The production-readiness program (turning the MVP into a deployable, recoverable, tenant-isolated pilot). Start with the audit, then the gap analysis.
+- [`production/BASELINE_AUDIT.md`](production/BASELINE_AUDIT.md) - current-state facts: what is production-grade, MVP-only, demo-only, or risky.
+- [`production/PRODUCTION_GAP_ANALYSIS.md`](production/PRODUCTION_GAP_ANALYSIS.md) - recommendations mapped to hardening phases.
+- [`production/RISK_REGISTER.md`](production/RISK_REGISTER.md) - top 30 risks ranked by severity, with mitigations.
+- [`production/READINESS_CHECKLIST.md`](production/READINESS_CHECKLIST.md) - the GO/NO-GO checklist.
+
 ### `product/`
+- [`product/DEMO_VS_REAL_DATA.md`](product/DEMO_VS_REAL_DATA.md) - **honesty contract**: demo/sample vs real vs derived-AED vs raw-unit data.
 - [`product/DEMO_SCRIPT.md`](product/DEMO_SCRIPT.md) - guided demo flow with talking points.
 - [`product/PITCH.md`](product/PITCH.md) - short pitch covering the problem, solution, and quality signals.
 - [`product/PRODUCT_STRATEGY.md`](product/PRODUCT_STRATEGY.md) - positioning and feature strategy for the retail operations MVP.
