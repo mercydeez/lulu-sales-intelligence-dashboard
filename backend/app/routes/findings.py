@@ -25,6 +25,8 @@ async def list_findings(
     status: Optional[str] = Query(None, pattern="^(open|acknowledged|resolved)$"),
     severity: Optional[str] = Query(None, pattern="^(low|medium|high|critical)$"),
     category: Optional[str] = None,
+    outcome: Optional[str] = Query(None, pattern="^(pending|improved|unchanged|worsened)$"),
+    measured: Optional[bool] = Query(None, description="true = only findings with a recorded outcome"),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
@@ -39,10 +41,17 @@ async def list_findings(
         where.append("severity = :severity"); params["severity"] = severity
     if category:
         where.append("category = :category"); params["category"] = category
+    if outcome:
+        where.append("outcome_status = :outcome"); params["outcome"] = outcome
+    if measured is True:
+        where.append("measured_at IS NOT NULL")
+    elif measured is False:
+        where.append("measured_at IS NULL")
     sql = (
         "SELECT id, rule, category, severity, title, detail, evidence, entity_type, "
         "entity_id, entity_name, metric_value, status, recommended_action, action_type, "
-        "action_accepted_at, action_accepted_by, detected_at, updated_at, resolved_at "
+        "action_accepted_at, action_accepted_by, outcome_status, metric_before, metric_after, "
+        "measured_at, detected_at, updated_at, resolved_at "
         f"FROM findings WHERE {' AND '.join(where)} "
         "ORDER BY (status='open') DESC, "
         "CASE severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END DESC, "
@@ -71,7 +80,18 @@ async def findings_summary(
         by_status[r["status"]] = by_status.get(r["status"], 0) + r["n"]
         if r["status"] == "open":
             open_count += r["n"]
-    return {"open": open_count, "by_severity": by_severity, "by_status": by_status}
+    # Outcome counts for accepted findings (the measure loop) — drives the Outcomes view.
+    orows = (await db.execute(text(
+        "SELECT outcome_status, COUNT(*) AS n FROM findings "
+        "WHERE tenant_id = :tid AND action_accepted_at IS NOT NULL GROUP BY outcome_status"
+    ), {"tid": tenant_id})).mappings().all()
+    by_outcome = {r["outcome_status"]: r["n"] for r in orows}
+    return {
+        "open": open_count,
+        "by_severity": by_severity,
+        "by_status": by_status,
+        "by_outcome": by_outcome,
+    }
 
 
 async def _set_status(db: AsyncSession, tenant_id: int, finding_id: int, status: str, user: dict):

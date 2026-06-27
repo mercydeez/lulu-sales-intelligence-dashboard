@@ -115,7 +115,8 @@ export async function fetchTopItems(limit: number = 10): Promise<{ data: TopItem
 // DIAGNOSTICS / FINDINGS (A3) — live ops data, never cached.
 // ============================================================================
 export async function fetchFindings(params?: {
-  status?: string; severity?: string; category?: string; limit?: number;
+  status?: string; severity?: string; category?: string; outcome?: string;
+  measured?: boolean; limit?: number;
 }): Promise<{ data: Finding[]; count: number }> {
   return apiRequest('/api/findings', { params: params as Record<string, unknown> });
 }

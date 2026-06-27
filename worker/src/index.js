@@ -5,10 +5,14 @@ import { Queue, Worker } from "bullmq";
 import IORedis from "ioredis";
 
 import { runScan } from "./scan.js";
+import { runMeasure } from "./measure.js";
 import { pool } from "./db.js";
 
 const QUEUE_NAME = "diagnostics";
 const SCAN_EVERY_MS = Number(process.env.DIAGNOSTICS_INTERVAL_MS || 5 * 60 * 1000); // 5 min
+// Outcome measurement of accepted findings. Slower cadence than scan — recovery
+// plays out over days, not minutes.
+const MEASURE_EVERY_MS = Number(process.env.MEASURE_INTERVAL_MS || 60 * 60 * 1000); // 1 hr
 
 // BullMQ requires maxRetriesPerRequest=null on its connection.
 const connection = new IORedis(process.env.REDIS_URL || "redis://redis:6379", {
@@ -21,7 +25,7 @@ const worker = new Worker(
   QUEUE_NAME,
   async (job) => {
     console.log(`[worker] processing ${job.name}`);
-    return runScan();
+    return job.name === "measure" ? runMeasure() : runScan();
   },
   { connection, concurrency: 1 }
 );
@@ -47,7 +51,21 @@ async function bootstrap() {
       removeOnFail: 20,
     }
   );
-  console.log(`[worker] diagnostics worker up; scanning every ${SCAN_EVERY_MS / 1000}s`);
+  // Schedule the recurring outcome measurement of accepted findings.
+  await queue.add(
+    "measure",
+    {},
+    {
+      repeat: { every: MEASURE_EVERY_MS },
+      jobId: "diagnostics-measure",
+      removeOnComplete: 20,
+      removeOnFail: 20,
+    }
+  );
+  console.log(
+    `[worker] diagnostics worker up; scanning every ${SCAN_EVERY_MS / 1000}s, ` +
+      `measuring outcomes every ${MEASURE_EVERY_MS / 1000}s`
+  );
 }
 
 async function shutdown() {

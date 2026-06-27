@@ -98,6 +98,7 @@ export interface TopItemPoint {
 // Diagnostics findings (A3) — written by the BullMQ worker, read by the Insights panel.
 export type FindingSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type FindingStatus = 'open' | 'acknowledged' | 'resolved';
+export type FindingOutcome = 'pending' | 'improved' | 'unchanged' | 'worsened';
 
 export interface Finding {
   id: number;
@@ -116,6 +117,10 @@ export interface Finding {
   action_type: string;
   action_accepted_at: string | null;
   action_accepted_by: string | null;
+  outcome_status: FindingOutcome;
+  metric_before: number | null;
+  metric_after: number | null;
+  measured_at: string | null;
   detected_at: string;
   updated_at: string;
   resolved_at: string | null;
@@ -125,6 +130,7 @@ export interface FindingsSummary {
   open: number;
   by_severity: Partial<Record<FindingSeverity, number>>;
   by_status: Partial<Record<FindingStatus, number>>;
+  by_outcome: Partial<Record<FindingOutcome, number>>;
 }
 
 export interface StreamEvent {

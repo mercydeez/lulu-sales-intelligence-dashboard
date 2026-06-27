@@ -1,7 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Lightbulb, RefreshCw, CheckCircle2, Eye, AlertTriangle } from 'lucide-react';
+import {
+  Lightbulb, RefreshCw, CheckCircle2, Eye, AlertTriangle,
+  TrendingUp, TrendingDown, Minus, Clock,
+} from 'lucide-react';
 import { PageHeader, Card, Badge, Button, Skeleton, EmptyState } from '@/components/ui';
 import {
   fetchFindings,
@@ -10,7 +13,7 @@ import {
   resolveFinding,
   acceptFindingAction,
 } from '@/lib/api';
-import { Finding, FindingsSummary, FindingSeverity, FindingStatus } from '@/types';
+import { Finding, FindingsSummary, FindingSeverity, FindingStatus, FindingOutcome } from '@/types';
 
 const SEVERITY_STYLES: Record<FindingSeverity, { badge: 'danger' | 'warning' | 'coral' | 'neutral'; dot: string }> = {
   critical: { badge: 'danger', dot: 'bg-rose-600' },
@@ -19,24 +22,73 @@ const SEVERITY_STYLES: Record<FindingSeverity, { badge: 'danger' | 'warning' | '
   low: { badge: 'neutral', dot: 'bg-slate-400' },
 };
 
-const STATUS_FILTERS: { label: string; value: FindingStatus | '' }[] = [
+// 'outcomes' is a pseudo-filter: accepted findings the measure loop has evaluated.
+type FilterValue = FindingStatus | '' | 'outcomes';
+const STATUS_FILTERS: { label: string; value: FilterValue }[] = [
   { label: 'Open', value: 'open' },
   { label: 'Acknowledged', value: 'acknowledged' },
   { label: 'Resolved', value: 'resolved' },
+  { label: 'Outcomes', value: 'outcomes' },
   { label: 'All', value: '' },
 ];
+
+const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`;
+
+// Presentation for the measure-loop outcome of an accepted finding.
+const OUTCOME_STYLES: Record<
+  FindingOutcome,
+  { label: string; cls: string; icon: typeof TrendingUp }
+> = {
+  improved: { label: 'Resolved — metric recovered after the action', cls: 'bg-emerald-50 text-emerald-700', icon: CheckCircle2 },
+  unchanged: { label: 'Not yet recovered since accepted', cls: 'bg-amber-50 text-amber-700', icon: Minus },
+  worsened: { label: 'Worsened since the action was accepted', cls: 'bg-rose-50 text-rose-700', icon: TrendingDown },
+  pending: { label: 'Awaiting outcome measurement', cls: 'bg-slate-50 text-ink-muted', icon: Clock },
+};
+
+function OutcomeBlock({ f }: { f: Finding }) {
+  if (!f.action_accepted_at) return null;
+  const o = OUTCOME_STYLES[f.outcome_status] ?? OUTCOME_STYLES.pending;
+  const Icon = o.icon;
+  const before = f.metric_before;
+  const after = f.metric_after;
+  const delta =
+    before != null && after != null
+      ? ` (${fmtPct(before)} → ${fmtPct(after)})`
+      : before != null && f.outcome_status === 'improved'
+      ? ` (was ${fmtPct(before)})`
+      : '';
+  return (
+    <div className={`mt-2 flex items-start gap-2 rounded-lg px-3 py-2 ${o.cls}`}>
+      <Icon className="w-4 h-4 mt-0.5 shrink-0" />
+      <div className="text-sm">
+        <span className="font-medium">{o.label}</span>{delta}
+        {f.measured_at && (
+          <span className="ms-1 text-xs opacity-75">
+            · measured {new Date(f.measured_at).toLocaleDateString()}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function InsightsPage() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [summary, setSummary] = useState<FindingsSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState<FindingStatus | ''>('open');
+  const [status, setStatus] = useState<FilterValue>('open');
   const [busyId, setBusyId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
+      const findingsParams =
+        status === 'outcomes'
+          ? { measured: true, limit: 100 }
+          : status
+          ? { status, limit: 100 }
+          : { limit: 100 };
       const [f, s] = await Promise.all([
-        fetchFindings(status ? { status, limit: 100 } : { limit: 100 }),
+        fetchFindings(findingsParams),
         fetchFindingsSummary(),
       ]);
       setFindings(f.data);
@@ -123,6 +175,8 @@ export default function InsightsPage() {
           description={
             status === 'open'
               ? 'Nothing needs attention right now. The diagnostics worker scans every few minutes.'
+              : status === 'outcomes'
+              ? 'No accepted actions have been measured yet. Accept a recommended action, and the worker will track whether the metric recovers.'
               : 'No findings match this filter.'
           }
         />
@@ -157,6 +211,7 @@ export default function InsightsPage() {
                         </div>
                       </div>
                     )}
+                    <OutcomeBlock f={f} />
                     {f.entity_name && (
                       <p className="text-xs text-ink-muted mt-1">
                         {f.entity_type}: {f.entity_name} ·{' '}

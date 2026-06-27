@@ -40,27 +40,33 @@ The post-recovery remediation is complete; these are proven against the running 
 | Diagnostics loop: detect→diagnose→recommend→accept | ✅ | worker `scan` job, 5 rules, `findings` + `recommended_action`/`action_type`, human-gated `accept-action` |
 | Forecasting + Forecast Lab | ✅ | classical/LightGBM + optional deep tier; MAPE/WAPE backtest vs seasonal-naive |
 
-**Loop status:** `measure` is the **only missing stage** — accepting an action records the human
-decision but nothing checks whether the metric recovered. That's Track 1 below.
+**Loop status:** `measure` — the previously-missing stage — is now **built** (Track 1): the worker
+re-evaluates accepted findings and auto-resolves when the metric recovers. Live end-to-end
+verification is pending a Docker run.
 
 ---
 
-## Track 1 — Close the loop: Measure / Outcome ❌ (headline)
+## Track 1 — Close the loop: Measure / Outcome ✅ built (live verify pending)
 Goal: after a recommendation is accepted, **prove whether it worked** and auto-resolve when it does.
-- **Schema** (`database/migrations/034_finding_outcomes.sql`): add `outcome_status`
-  (`pending|improved|unchanged|worsened`), `metric_before`, `metric_after`, `measured_at` to
-  `findings` (single-row form; promote to a `finding_outcomes` child table only if we want
-  measurement history). RLS-scoped like the rest of `findings`.
-- **Worker** (`worker/src/index.js` + `rules.js`): add a second BullMQ job **`measure`** beside
-  `scan`. For findings with `action_accepted_at` set and not yet measured, re-evaluate **the same
-  rule's metric** for that entity over the current window, write before/after, and **auto-resolve**
-  (`status='resolved'`, `outcome_status='improved'`) once the metric clears the rule threshold.
-  Reuse the existing per-rule metric functions — no new metric math.
-- **API** (`backend/app/routes/findings.py`): expose `outcome_status` + before/after in list/summary.
-- **UI** (`frontend/src/app/insights/page.tsx`): "resolved — metric improved X → Y" on measured
-  findings; an **Outcomes** filter.
-- **Tests**: measure path — metric recovered → auto-resolve; unchanged → stays acknowledged with
-  `outcome_status='unchanged'`.
+- ✅ **Schema** (`database/migrations/034_finding_outcomes.sql`): `outcome_status`
+  (`pending|improved|unchanged|worsened`), `metric_before`, `metric_after`, `measured_at` on
+  `findings`, + a partial index on the accepted-and-open access path. Covered by `worker_rw`'s
+  existing UPDATE grant (029).
+- ✅ **Worker** — second BullMQ job **`measure`** (`worker/src/measure.js`, wired in `index.js`,
+  hourly via `MEASURE_INTERVAL_MS`). For each accepted, not-yet-resolved finding it re-runs the
+  rules over the current window and compares by `(rule, entity)` (week-stamp-independent): rule no
+  longer fires → `improved` → **auto-resolve** (`resolved_by='system:measure'`); still firing →
+  `worsened`/`unchanged` from the rule's own current metric. Pure decision logic isolated in
+  `outcome.js` (no new metric math — reuses the rule outputs).
+- ✅ **API** (`backend/app/routes/findings.py`): list exposes `outcome_status` + `metric_before/after`
+  + `measured_at`, with `outcome=` and `measured=` filters; summary adds `by_outcome`.
+- ✅ **UI** (`frontend/src/app/insights/page.tsx`): an **Outcomes** filter + a per-finding outcome
+  block ("Resolved — metric recovered (X → Y)" / worsened / not-yet-recovered).
+- ✅ **Tests**: `worker/src/measure.test.js` (6, zero-dep `node --test`) covers the classification
+  matrix; `measure:once` added to CI smoke + worker unit tests to the build job.
+- ⏳ **Live verify (needs Docker up):** migration 034 auto-applies on boot; accept an action, run
+  `docker compose run --rm worker npm run measure:once`, confirm the finding auto-resolves with
+  recorded before/after and shows under the Outcomes filter.
 
 ## Track 2 — Accuracy & security hardening ("tighten the screws") 🟡
 - **Flip `USE_RLS_ROLE=true` on the request path.** Role + DB enforcement is shipped and proven
