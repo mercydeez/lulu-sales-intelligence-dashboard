@@ -148,61 +148,71 @@ async def create_source(name: str, source_type: str, connection: Optional[str],
     return _row_public(row)
 
 
-async def record_test_result(source_id: int, ok: bool, message: str) -> None:
+async def record_test_result(source_id: int, ok: bool, message: str, tenant_id: int = 1) -> None:
     async with async_session() as s:
         await s.execute(text(
             "UPDATE data_sources SET status = :st, last_tested_at = :ts, "
-            "last_error = :err, updated_at = now() WHERE id = :id"
+            "last_error = :err, updated_at = now() WHERE id = :id AND tenant_id = :tid"
         ), {
             "st": "ok" if ok else "error",
             "ts": datetime.now(timezone.utc),
             "err": None if ok else message,
             "id": source_id,
+            "tid": tenant_id,
         })
         await s.commit()
 
 
-async def set_active(source_id: int) -> bool:
-    """Activate one source (deactivates the rest). Returns False if id unknown."""
+async def set_active(source_id: int, tenant_id: int = 1) -> bool:
+    """Activate one source within a tenant (deactivates that tenant's others).
+    Returns False if the id is unknown OR belongs to another tenant."""
     async with async_session() as s:
-        exists = (await s.execute(text("SELECT 1 FROM data_sources WHERE id = :id"),
-                                  {"id": source_id})).fetchone()
+        exists = (await s.execute(
+            text("SELECT 1 FROM data_sources WHERE id = :id AND tenant_id = :tid"),
+            {"id": source_id, "tid": tenant_id})).fetchone()
         if not exists:
             return False
-        # Two statements (one transaction): clear the current active row first so
-        # there is never a moment with two active rows — a single
-        # `is_active = (id = :id)` update can violate the one-active partial unique
-        # index depending on row-update order.
-        await s.execute(text("UPDATE data_sources SET is_active = false WHERE is_active"))
+        # Two statements (one transaction), scoped to THIS tenant: clear the
+        # tenant's active row first so there is never a moment with two active
+        # rows — the per-tenant partial unique index (migration 037) forbids it.
         await s.execute(text(
-            "UPDATE data_sources SET is_active = true, updated_at = now() WHERE id = :id"
-        ), {"id": source_id})
+            "UPDATE data_sources SET is_active = false WHERE is_active AND tenant_id = :tid"
+        ), {"tid": tenant_id})
+        await s.execute(text(
+            "UPDATE data_sources SET is_active = true, updated_at = now() "
+            "WHERE id = :id AND tenant_id = :tid"
+        ), {"id": source_id, "tid": tenant_id})
         await s.commit()
     return True
 
 
-async def delete_source(source_id: int) -> tuple[bool, str]:
+async def delete_source(source_id: int, tenant_id: int = 1) -> tuple[bool, str]:
     async with async_session() as s:
         row = (await s.execute(text(
-            "SELECT type, is_active FROM data_sources WHERE id = :id"), {"id": source_id})).fetchone()
+            "SELECT type, is_active FROM data_sources WHERE id = :id AND tenant_id = :tid"),
+            {"id": source_id, "tid": tenant_id})).fetchone()
         if not row:
             return False, "Not found"
         if row.type == "builtin":
             return False, "The built-in source cannot be deleted"
         if row.is_active:
             return False, "Deactivate the source before deleting it"
-        await s.execute(text("DELETE FROM data_sources WHERE id = :id"), {"id": source_id})
+        await s.execute(text(
+            "DELETE FROM data_sources WHERE id = :id AND tenant_id = :tid"),
+            {"id": source_id, "tid": tenant_id})
         await s.commit()
     return True, "Deleted"
 
 
-async def get_source_with_connection(source_id: int) -> Optional[dict]:
-    """Internal: a single source incl. its decrypted connection (for adapters)."""
+async def get_source_with_connection(source_id: int, tenant_id: int = 1) -> Optional[dict]:
+    """Internal: a single source incl. its decrypted connection (for adapters).
+    Tenant-scoped: never returns another tenant's source."""
     async with async_session() as s:
         row = (await s.execute(text(
             "SELECT id, name, type, mapping, is_active, status, last_tested_at, "
-            "last_error, connection_enc, created_at FROM data_sources WHERE id = :id"
-        ), {"id": source_id})).fetchone()
+            "last_error, connection_enc, created_at FROM data_sources "
+            "WHERE id = :id AND tenant_id = :tid"
+        ), {"id": source_id, "tid": tenant_id})).fetchone()
     if not row:
         return None
     out = _row_public(row)
@@ -210,13 +220,14 @@ async def get_source_with_connection(source_id: int) -> Optional[dict]:
     return out
 
 
-async def get_active_source() -> Optional[dict]:
-    """Internal: the active source incl. decrypted connection (for adapters)."""
+async def get_active_source(tenant_id: int = 1) -> Optional[dict]:
+    """Internal: a tenant's active source incl. decrypted connection (for adapters)."""
     async with async_session() as s:
         row = (await s.execute(text(
             "SELECT id, name, type, mapping, is_active, status, last_tested_at, "
-            "last_error, connection_enc, created_at FROM data_sources WHERE is_active LIMIT 1"
-        ))).fetchone()
+            "last_error, connection_enc, created_at FROM data_sources "
+            "WHERE is_active AND tenant_id = :tid LIMIT 1"
+        ), {"tid": tenant_id})).fetchone()
     if not row:
         return None
     out = _row_public(row)

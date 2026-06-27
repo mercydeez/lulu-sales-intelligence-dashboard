@@ -29,9 +29,20 @@ def source_cache_tag(source: dict) -> str:
     return "builtin" if source.get("type") == "builtin" else f"src{source['id']}"
 
 
-async def active_external_source() -> Optional[dict]:
-    """The active source if it's an external (non-built-in) one, else None."""
-    src = await get_active_source()
+async def active_external_source(tenant_id: Optional[int] = None) -> Optional[dict]:
+    """The active source if it's an external (non-built-in) one, else None.
+
+    Tenant-scoped: resolves the active source for the request's tenant (from
+    tenant_context when not passed explicitly) so one tenant never reads another's
+    configured source.
+    """
+    if tenant_id is None:
+        try:
+            from app.services.database import tenant_context
+            tenant_id = tenant_context.get() or 1
+        except Exception:
+            tenant_id = 1
+    src = await get_active_source(tenant_id=tenant_id)
     if src and src.get("type") and src["type"] != "builtin" and src.get("connection"):
         return src
     return None
