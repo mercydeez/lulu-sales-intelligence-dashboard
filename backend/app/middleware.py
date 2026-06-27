@@ -37,9 +37,16 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
         # Skip verbose logging for performance - only log errors
         start_time = time.time()
+        try:
+            from app.services.metrics import get_metrics
+            get_metrics().start_request(request_id)
+        except Exception:
+            pass
 
+        status_code = 500
         try:
             response = await call_next(request)
+            status_code = response.status_code
             process_time = time.time() - start_time
 
             # Add minimal headers
@@ -56,6 +63,11 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             logger.error(f"ERROR: {request.method} {request.url.path} - {str(e)}")
             raise
         finally:
+            try:
+                from app.services.metrics import get_metrics
+                get_metrics().end_request(request_id, request.method, request.url.path, status_code)
+            except Exception:
+                pass
             request_id_ctx.reset(token)
 
 

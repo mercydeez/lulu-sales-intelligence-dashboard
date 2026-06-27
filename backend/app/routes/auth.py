@@ -122,6 +122,14 @@ async def get_current_user(
     except Exception:
         pass
 
+    # Surface tenant/user ids in structured logs (numeric ids only — no secrets).
+    try:
+        from app.config import log_tenant_ctx, log_user_ctx
+        log_tenant_ctx.set(str(user.get('tenant_id') or '-'))
+        log_user_ctx.set(str(user.get('id') or '-'))
+    except Exception:
+        pass
+
     return user
 
 

@@ -16,6 +16,11 @@ request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
     "request_id", default="-"
 )
 
+# Request-scoped tenant/user, set by get_current_user, surfaced in structured logs
+# for correlation. Never include secrets — only the numeric ids.
+log_tenant_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("log_tenant", default="-")
+log_user_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("log_user", default="-")
+
 
 # Known weak/default secrets that must not be used in production
 _INSECURE_SECRETS = {
@@ -422,6 +427,13 @@ class JsonLogFormatter(logging.Formatter):
             "request_id": getattr(record, "request_id", "-"),
             "message": record.getMessage(),
         }
+        # Correlation context (numeric ids only — never secrets), when present.
+        tenant = log_tenant_ctx.get()
+        user = log_user_ctx.get()
+        if tenant and tenant != "-":
+            payload["tenant_id"] = tenant
+        if user and user != "-":
+            payload["user_id"] = user
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
         return json.dumps(payload, default=str)
