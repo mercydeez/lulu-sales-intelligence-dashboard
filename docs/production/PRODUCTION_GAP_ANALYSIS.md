@@ -33,7 +33,7 @@ Each gap lists: **Gap → Why it matters → Target state → Phase**.
 | Invites are temp-passwords | Weaker than single-use token flow | invite-token family (expiry, used_at, tenant, role, invited_by) | 5 |
 | No session list/revoke | Users can't revoke a stolen session | list + revoke one/all + reuse detection | 5 |
 | Admin MFA not enforced | High-priv accounts optional 2FA | `REQUIRE_MFA_FOR_ADMINS` enforcement | 5 |
-| API keys never expire | Long-lived credential risk | `expires_at` + expiry check (small carve-out) | 8* |
+| ~~API keys never expire~~ **(done)** | Long-lived credential risk | `expires_at` (migration 038) + expiry check in `authenticate`/`tenant_for_key`; optional `expires_in_days` at mint | 8* |
 
 ## D. AI safety
 

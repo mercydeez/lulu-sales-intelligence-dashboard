@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from sqlalchemy import text
@@ -43,12 +43,20 @@ async def create_key(
     name: str,
     scopes: Optional[List[str]] = None,
     created_by: Optional[int] = None,
+    expires_in_days: Optional[int] = None,
 ) -> Dict:
-    """Create a key for a tenant and return it including the one-time plaintext."""
+    """Create a key for a tenant and return it including the one-time plaintext.
+
+    expires_in_days: optional finite lifetime (1..3650). None => never expires,
+    preserving the historical default."""
     minted = generate_key()
+    expires_at = None
+    if expires_in_days is not None:
+        days = max(1, min(int(expires_in_days), 3650))
+        expires_at = datetime.now(timezone.utc) + timedelta(days=days)
     row = (await db.execute(text("""
-        INSERT INTO tenant_api_keys (tenant_id, name, key_prefix, key_hash, scopes, created_by)
-        VALUES (:tenant_id, :name, :prefix, :hash, :scopes, :created_by)
+        INSERT INTO tenant_api_keys (tenant_id, name, key_prefix, key_hash, scopes, created_by, expires_at)
+        VALUES (:tenant_id, :name, :prefix, :hash, :scopes, :created_by, :expires_at)
         RETURNING id, created_at
     """), {
         "tenant_id": tenant_id,
@@ -57,6 +65,7 @@ async def create_key(
         "hash": minted["key_hash"],
         "scopes": scopes or ["read"],
         "created_by": created_by,
+        "expires_at": expires_at,
     })).fetchone()
     await db.commit()
     return {
@@ -65,6 +74,7 @@ async def create_key(
         "key_prefix": minted["key_prefix"],
         "api_key": minted["full_key"],   # shown ONCE — never retrievable again
         "scopes": scopes or ["read"],
+        "expires_at": expires_at.isoformat() if expires_at else None,
         "created_at": row.created_at.isoformat() if row.created_at else None,
     }
 
@@ -72,11 +82,12 @@ async def create_key(
 async def list_keys(db: AsyncSession, tenant_id: int) -> List[Dict]:
     rows = (await db.execute(text("""
         SELECT id, name, key_prefix, scopes, last_used_at, request_count,
-               revoked_at, created_at
+               revoked_at, expires_at, created_at
         FROM tenant_api_keys
         WHERE tenant_id = :tenant_id
         ORDER BY created_at DESC
     """), {"tenant_id": tenant_id})).fetchall()
+    now = datetime.now(timezone.utc)
     return [{
         "id": r.id,
         "name": r.name,
@@ -85,6 +96,8 @@ async def list_keys(db: AsyncSession, tenant_id: int) -> List[Dict]:
         "last_used_at": r.last_used_at.isoformat() if r.last_used_at else None,
         "request_count": int(r.request_count or 0),
         "revoked": r.revoked_at is not None,
+        "expires_at": r.expires_at.isoformat() if r.expires_at else None,
+        "expired": bool(r.expires_at is not None and r.expires_at <= now),
         "created_at": r.created_at.isoformat() if r.created_at else None,
     } for r in rows]
 
@@ -115,6 +128,7 @@ async def tenant_for_key(db: AsyncSession, full_key: str) -> Optional[int]:
         FROM tenant_api_keys k
         JOIN tenants t ON t.id = k.tenant_id
         WHERE k.key_hash = :hash AND k.revoked_at IS NULL AND t.status = 'active'
+          AND (k.expires_at IS NULL OR k.expires_at > CURRENT_TIMESTAMP)
     """), {"hash": hash_key(full_key)})).fetchone()
     return row.tenant_id if row else None
 
@@ -129,6 +143,7 @@ async def authenticate(db: AsyncSession, full_key: str) -> Optional[Dict]:
         FROM tenant_api_keys k
         JOIN tenants t ON t.id = k.tenant_id
         WHERE k.key_hash = :hash AND k.revoked_at IS NULL
+          AND (k.expires_at IS NULL OR k.expires_at > CURRENT_TIMESTAMP)
     """), {"hash": hash_key(full_key)})).fetchone()
     if not row or row.tenant_status != "active":
         return None

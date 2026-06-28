@@ -18,6 +18,8 @@ router = APIRouter()
 class CreateKeyRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     scopes: Optional[List[str]] = None
+    # Optional finite lifetime (1..3650 days). Omit for a non-expiring key.
+    expires_in_days: Optional[int] = Field(None, ge=1, le=3650)
 
 
 def _require_admin(user: dict) -> None:
@@ -38,12 +40,14 @@ async def create_api_key(
     bad = [s for s in scopes if s not in allowed_scopes]
     if bad:
         raise HTTPException(status_code=400, detail=f"Unknown scopes: {bad}")
-    created = await keys.create_key(db, tenant_id, body.name, scopes, created_by=user.get("id"))
+    created = await keys.create_key(db, tenant_id, body.name, scopes, created_by=user.get("id"),
+                                    expires_in_days=body.expires_in_days)
     from app.services.security_events import record_event
     await record_event("api_key_created", tenant_id=tenant_id, actor_user_id=user.get("id"),
                        actor_email=user.get("email"),
                        detail=f"API key '{body.name}' created (scopes: {', '.join(scopes)})",
-                       evidence={"key_prefix": created.get("key_prefix"), "scopes": scopes})
+                       evidence={"key_prefix": created.get("key_prefix"), "scopes": scopes,
+                                 "expires_at": created.get("expires_at")})
     return created
 
 

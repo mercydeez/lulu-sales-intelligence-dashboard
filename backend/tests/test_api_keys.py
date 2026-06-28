@@ -66,3 +66,25 @@ def test_key_management_requires_auth():
     client = TestClient(app)
     resp = client.get("/api/api-keys")
     assert resp.status_code in (401, 403)
+
+
+def test_create_key_request_expiry_bounds():
+    # Phase 8* carve-out: optional finite lifetime, validated 1..3650 days.
+    import pytest
+    from pydantic import ValidationError
+    from app.routes.api_keys import CreateKeyRequest
+
+    assert CreateKeyRequest(name="k").expires_in_days is None        # default never-expire
+    assert CreateKeyRequest(name="k", expires_in_days=90).expires_in_days == 90
+    for bad in (0, -1, 3651):
+        with pytest.raises(ValidationError):
+            CreateKeyRequest(name="k", expires_in_days=bad)
+
+
+def test_authenticate_sql_enforces_expiry():
+    # The live auth path must filter expired keys exactly like revoked ones.
+    # We assert the guard clause is present in the query text (DB-free).
+    import inspect
+    src = inspect.getsource(keys.authenticate) + inspect.getsource(keys.tenant_for_key)
+    assert "expires_at IS NULL OR" in src
+    assert "expires_at > CURRENT_TIMESTAMP" in src
