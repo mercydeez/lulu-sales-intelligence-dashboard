@@ -78,11 +78,11 @@
 - [x] No false compliance / POS / scale claims (drafts explicitly disclaim)
 
 ## CI/CD (Phase 13)
-- [ ] CI runs full backend pytest + config/security/isolation/AI suites
-- [ ] CI runs FE typecheck + build (+ tests/Playwright if configured)
-- [ ] CI validates both compose files
-- [ ] CI runs fresh-DB + existing-DB migration
-- [ ] CI runs backup/restore syntax + dependency/image scan
+- [x] CI runs full backend pytest + config/security/isolation/AI suites (`backend` job: `pytest tests/`)
+- [x] CI runs FE typecheck + build + component tests (`frontend` job: tsc, `npm test`, build; Playwright smoke in `smoke` job)
+- [x] CI validates both compose files (`docker` job: dev + production `config -q`)
+- [x] CI runs fresh-DB + existing-DB migration (`migrations` job: apply + idempotent re-apply)
+- [x] CI runs backup/restore syntax + dependency/image scan (`docker` bash -n; `security-scan` pip-audit/npm/Trivy)
 
 ## Final gate (Phase 14)
 - [ ] Full gate battery run with recorded output
