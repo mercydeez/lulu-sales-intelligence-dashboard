@@ -65,11 +65,11 @@
 - [ ] Demo/sample data labelled in UI
 
 ## AI safety (Phase 11)
-- [ ] External AI off by default in production
-- [ ] Public API returns no raw SQL in production
-- [ ] AI answers carry an evidence block + demo-data disclosure
-- [ ] AI actions require human approval
-- [ ] Cross-tenant / injection / write-SQL prompts rejected (tests pass)
+- [x] External AI off by default in production (`ENABLE_EXTERNAL_AI=false`)
+- [x] Public API returns no raw SQL in production (`_expose_sql()`)
+- [x] AI answers carry an evidence block + demo-data disclosure (`_ai_evidence()`)
+- [x] AI actions require human approval (assistant is read-only by construction)
+- [x] Cross-tenant / injection / write-SQL prompts rejected (`test_nl2sql_guard.py`, `test_ai_safety.py`)
 
 ## Trust & legal (Phase 12)
 - [ ] Tenant export scoped; cross-tenant download blocked

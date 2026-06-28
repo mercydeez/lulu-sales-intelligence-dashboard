@@ -15,7 +15,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.database import get_db, tenant_context
 from app.services import api_key_service as keys
-from app.config import logger
+from app.config import logger, get_settings
+
+
+def _ai_evidence(tenant_id: int, row_count: int, grounded: bool) -> dict:
+    """Non-sensitive provenance for an AI answer. Never includes raw SQL."""
+    s = get_settings()
+    return {
+        "tenant_scope": tenant_id,
+        "rows_examined": row_count,
+        "confidence": "high" if grounded and row_count else ("medium" if grounded else "low"),
+        "data_disclosure": (
+            "Sample/synthetic demo data — not real customer data"
+            if s.demo_mode else "This tenant's own data"
+        ),
+    }
+
+
+def _expose_sql() -> bool:
+    """Raw generated SQL is exposed only in development — never in prod/staging
+    (schema/info disclosure on a public, API-key surface)."""
+    return get_settings().environment.lower() not in ("production", "prod", "staging")
 
 router = APIRouter()
 
@@ -172,14 +192,23 @@ async def public_ai_ask(
     if is_multipart(question):
         multi = await answer_multipart(question, tenant_id, role="consumer")
         if multi.ok:
-            return {"question": question, "answer": multi.answer, "tenant_id": tenant_id, "source": "sage2"}
+            return {"question": question, "answer": multi.answer, "tenant_id": tenant_id,
+                    "source": "sage2",
+                    "evidence": _ai_evidence(tenant_id, 0, grounded=True)}
 
     # Single-part → Sage NL→SQL (grounded, tenant-scoped). Falls through when no LLM
     # is configured or the query is rejected — same contract as the dashboard chat.
     sage = await sage_answer_question(question, tenant_id)
     if sage.ok:
-        return {"question": question, "answer": sage.answer, "tenant_id": tenant_id,
-                "source": "sage", "sql": sage.sql}
+        resp = {
+            "question": question, "answer": sage.answer, "tenant_id": tenant_id,
+            "source": "sage",
+            "evidence": _ai_evidence(tenant_id, len(sage.rows or []), grounded=True),
+        }
+        # Raw SQL is debugging detail — dev only, never on the public prod surface.
+        if _expose_sql():
+            resp["sql"] = sage.sql
+        return resp
 
     intents = detect_intent(question).get("intents", [])
     horizon = max(7, min(body.horizon, 60))
@@ -204,4 +233,6 @@ async def public_ai_ask(
         "answer": answer,
         "tenant_id": tenant_id,
         "intents": intents,
+        "source": "deterministic",
+        "evidence": _ai_evidence(tenant_id, 0, grounded=False),
     }
