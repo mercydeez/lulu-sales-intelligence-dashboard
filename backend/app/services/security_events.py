@@ -36,10 +36,13 @@ _SEVERITY: Dict[str, str] = {
     "api_key_revoked": "medium",
     "password_changed": "low",
     "signup": "info",
+    "tenant_data_exported": "medium",
+    "data_request_filed": "low",
 }
 
 # Sensitive-but-legitimate actions go in the "audit" lane; everything else is a "threat".
-_AUDIT_TYPES = {"api_key_created", "api_key_revoked", "password_changed", "signup"}
+_AUDIT_TYPES = {"api_key_created", "api_key_revoked", "password_changed", "signup",
+                "tenant_data_exported", "data_request_filed"}
 
 
 def client_ip(request) -> Optional[str]:

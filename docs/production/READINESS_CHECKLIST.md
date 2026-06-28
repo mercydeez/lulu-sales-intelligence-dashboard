@@ -72,10 +72,10 @@
 - [x] Cross-tenant / injection / write-SQL prompts rejected (`test_nl2sql_guard.py`, `test_ai_safety.py`)
 
 ## Trust & legal (Phase 12)
-- [ ] Tenant export scoped; cross-tenant download blocked
-- [ ] Delete-on-request workflow + audit
-- [ ] Legal drafts present, marked "draft — legal review required"
-- [ ] No false compliance / POS / scale claims
+- [x] Tenant export scoped; cross-tenant download blocked (`/api/data-rights/export`, tenant_id from auth)
+- [x] Delete-on-request workflow + audit (migration 039 `data_requests`, human-approved per `DATA_DELETION.md`)
+- [x] Legal drafts present, marked "draft — legal review required" (`docs/legal/`)
+- [x] No false compliance / POS / scale claims (drafts explicitly disclaim)
 
 ## CI/CD (Phase 13)
 - [ ] CI runs full backend pytest + config/security/isolation/AI suites

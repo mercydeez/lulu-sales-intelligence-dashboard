@@ -28,6 +28,7 @@ from app.routes import public_api, api_keys, webhooks, procurement
 from app.routes import findings as findings_routes
 from app.routes import security as security_routes
 from app.routes import search as search_routes
+from app.routes import data_rights as data_rights_routes
 from app.middleware import (
     RequestIDMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware,
     BodySizeLimitMiddleware, CSRFMiddleware, SessionInvalidationMiddleware
@@ -320,6 +321,7 @@ app.include_router(findings_routes.router, prefix="/api/findings", tags=["Diagno
 app.include_router(security_routes.router, prefix="/api/security", tags=["Security"])
 app.include_router(search_routes.router, prefix="/api/search", tags=["Search"])
 app.include_router(public_api.router, prefix="/api/public", tags=["Public API"])
+app.include_router(data_rights_routes.router, prefix="/api/data-rights", tags=["Data Rights"])
 
 # Also mount /api/latest from stream router
 @app.get("/api/latest", tags=["Stream"])
