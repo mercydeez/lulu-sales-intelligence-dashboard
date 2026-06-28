@@ -85,7 +85,7 @@
 - [x] CI runs backup/restore syntax + dependency/image scan (`docker` bash -n; `security-scan` pip-audit/npm/Trivy)
 
 ## Final gate (Phase 14)
-- [ ] Full gate battery run with recorded output
-- [ ] `FINAL_RELEASE_REPORT.md`, `GO_NO_GO_DECISION.md`, `KNOWN_LIMITATIONS.md`, `MANUAL_CHECKS_REQUIRED.md`, `POST_LAUNCH_MONITORING.md` written
-- [ ] Honest GO / CONDITIONAL-GO / NO-GO recorded with blockers
-- [ ] README remains honest about synthetic data
+- [x] Full gate battery run with recorded output (`FINAL_RELEASE_REPORT.md`)
+- [x] `FINAL_RELEASE_REPORT.md`, `GO_NO_GO_DECISION.md`, `KNOWN_LIMITATIONS.md`, `MANUAL_CHECKS_REQUIRED.md`, `POST_LAUNCH_MONITORING.md` written
+- [x] Honest GO / CONDITIONAL-GO / NO-GO recorded with blockers (**CONDITIONAL GO**)
+- [x] README remains honest about synthetic data
