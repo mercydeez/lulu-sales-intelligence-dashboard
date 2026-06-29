@@ -142,7 +142,7 @@ export function ForecastPanel({ defaultStoreId = 1 }: ForecastPanelProps) {
                   labelFormatter={(label) => formatDateShort(String(label))}
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Line type="monotone" dataKey="actual" name="Actual" stroke={CHART.coral} strokeWidth={2.5} dot={false} />
+                <Line type="monotone" dataKey="actual" name="Actual" stroke={CHART.teal} strokeWidth={2.5} dot={false} />
                 <Line type="monotone" dataKey="predicted" name="Predicted" stroke={CHART.violet} strokeWidth={2.5} strokeDasharray="5 5" dot={false} />
                 <Line type="monotone" dataKey="baseline" name="Baseline" stroke={CHART.axis} strokeWidth={1.5} strokeDasharray="2 4" dot={false} />
               </ComposedChart>

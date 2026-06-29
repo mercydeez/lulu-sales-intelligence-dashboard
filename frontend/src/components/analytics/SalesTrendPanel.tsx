@@ -60,7 +60,7 @@ export function SalesTrendPanel({ days }: SalesTrendPanelProps) {
           </div>
         </div>
         <div className="hidden sm:flex items-center gap-2">
-          <Badge variant="coral" size="sm">Historical</Badge>
+          <Badge variant="teal" size="sm">Historical</Badge>
           <Badge variant="violet" size="sm">Forecast</Badge>
         </div>
       </div>
@@ -75,8 +75,8 @@ export function SalesTrendPanel({ days }: SalesTrendPanelProps) {
             <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="trendSales" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={CHART.coral} stopOpacity={0.35} />
-                  <stop offset="95%" stopColor={CHART.coral} stopOpacity={0} />
+                  <stop offset="5%" stopColor={CHART.teal} stopOpacity={0.35} />
+                  <stop offset="95%" stopColor={CHART.teal} stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="trendForecast" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={CHART.violet} stopOpacity={0.3} />
@@ -95,7 +95,7 @@ export function SalesTrendPanel({ days }: SalesTrendPanelProps) {
               {transitionDate && (
                 <ReferenceLine x={transitionDate} stroke={CHART.violet} strokeDasharray="5 5" label={{ value: 'Forecast →', fill: CHART.violet, fontSize: 11, position: 'top' }} />
               )}
-              <Area type="monotone" dataKey="sales" stroke={CHART.coral} strokeWidth={2.5} fill="url(#trendSales)" connectNulls={false} dot={false} />
+              <Area type="monotone" dataKey="sales" stroke={CHART.teal} strokeWidth={2.5} fill="url(#trendSales)" connectNulls={false} dot={false} />
               <Area type="monotone" dataKey="forecast" stroke={CHART.violet} strokeWidth={2.5} strokeDasharray="5 5" fill="url(#trendForecast)" connectNulls={false} dot={false} />
             </AreaChart>
           </ResponsiveContainer>

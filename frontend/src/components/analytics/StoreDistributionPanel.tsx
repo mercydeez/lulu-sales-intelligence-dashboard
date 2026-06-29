@@ -5,7 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { ChartFrame } from '@/components/ui';
 import { fetchStoreDistribution } from '@/lib/api';
 import { StoreDistributionPoint } from '@/types';
-import { CATEGORICAL as SUNSET_COLORS, CHART, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
+import { CATEGORICAL, CHART, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatCompact, formatCurrency, shortStoreLabel } from './format';
 
 export function StoreDistributionPanel() {
@@ -51,7 +51,7 @@ export function StoreDistributionPanel() {
           />
           <Bar dataKey="total_revenue" radius={[0, 6, 6, 0]} maxBarSize={26}>
             {data.map((entry, index) => (
-              <Cell key={entry.store_id} fill={SUNSET_COLORS[index % SUNSET_COLORS.length]} />
+              <Cell key={entry.store_id} fill={CATEGORICAL[index % CATEGORICAL.length]} />
             ))}
           </Bar>
         </BarChart>

@@ -5,7 +5,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recha
 import { ChartFrame } from '@/components/ui';
 import { fetchCategoryBreakdown } from '@/lib/api';
 import { CategoryBreakdownPoint } from '@/types';
-import { CATEGORICAL as SUNSET_COLORS, tooltipContent as tooltipStyle } from '@/lib/chart';
+import { CATEGORICAL, tooltipContent as tooltipStyle } from '@/lib/chart';
 import { formatCurrency } from './format';
 
 export function CategoryDonut() {
@@ -51,7 +51,7 @@ export function CategoryDonut() {
             nameKey="category"
           >
             {data.map((entry, index) => (
-              <Cell key={entry.category} fill={SUNSET_COLORS[index % SUNSET_COLORS.length]} />
+              <Cell key={entry.category} fill={CATEGORICAL[index % CATEGORICAL.length]} />
             ))}
           </Pie>
           <Tooltip
