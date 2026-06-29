@@ -91,14 +91,31 @@ Goal: after a recommendation is accepted, **prove whether it worked** and auto-r
 
 **Track 2 is complete.** Remaining tracks: 3 (activate the local LLM), 5 (SaaS near-term).
 
-## Track 3 — Activate Sage's local LLM (no paid API) ⏳
-Config + verification, not new code (the provider chain already picks it up):
-- Bring up the `ollama` service (compose profile `ai`), set `OLLAMA_URL`, pull a small model
-  (e.g. `llama3.2`).
-- Verify free-form questions now route through NL→SQL (not the rule-based fallback), the allow-list
-  guard (`services/nl2sql/guard.py`) still rejects injection/DDL/cross-tenant, tenant isolation holds
-  (`sage_ro` + `app.tenant_id`), and narration stays grounded in the returned rows.
-- Document the one-command activation here so it's reproducible.
+## Track 3 — Activate Sage's local LLM (no paid API) ✅ done (verified live)
+Config + verification, not new code (the provider chain already picks it up). **One-command
+activation** (verified 2026-06-29):
+```bash
+docker compose --profile ai up -d ollama          # start the local LLM service
+docker exec sales_ollama ollama pull llama3.2     # ~2 GB, one time
+echo 'OLLAMA_URL=http://ollama:11434' >> .env      # provider chain needs URL + enable_local_ai (default true)
+docker compose up -d backend                       # recreate so the env is picked up
+```
+- ✅ **Provider chain active**: `get_provider_chain()` → `['ollama']` once `OLLAMA_URL` is set.
+- ✅ **NL→SQL grounds for real**: "top 3 stores by units sold" → `nl2sql ok=True, 3 rows`,
+  `grounded: True`, `confidence 1.0`, critic pass, SQL attached as evidence — correct store-scoped
+  answer (was the rule-based fallback before).
+- ✅ **Guard holds with the LLM live** (`services/nl2sql/guard.py`, tested directly): rejects DDL
+  (`DROP`), DML (`DELETE/UPDATE/INSERT`), stacked-statement injection, non-allow-listed relations
+  (even `users`/`sales_fact_view` — only the `sage_*` semantic views are queryable), and `pg_`
+  catalog access.
+- ✅ **Defense in depth**: `sage_ro` is provably read-only (a `DELETE` as `sage_ro` → *permission
+  denied*); data intact after adversarial prompts; **RBAC store scope holds** — a store_manager
+  (Al Barsha only) asking for "every store, all locations" got back only Al Barsha.
+- ⚠️ **Known limitation (honest):** `llama3.2:3b` produces valid text-to-SQL **inconsistently** —
+  schema-heavy queries can emit an invalid column/join and fall back. The deterministic responder
+  (now revenue-accurate, Phase 1) is the safety net and is always correctly tenant/store-scoped. A
+  larger local model (or the optional external provider) improves the grounded-hit rate; the floor
+  is safe either way.
 
 ## Track 4 — Cleanup (real items only) ❌
 - Remove the 3 dead exports from `frontend/src/components/inventory/mockData.ts`
