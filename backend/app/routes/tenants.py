@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.services.database import async_session
+from app.services.plan_limits import usage_for_tenant
 from app.routes.auth import get_current_user
 from app.config import logger
 
@@ -68,6 +69,20 @@ async def update_branding(
             "logo_url": row.logo_url,
             "accent_color": row.accent_color,
         }
+
+
+@router.get("/usage")
+async def tenant_usage(current_user: dict = Depends(get_current_user)):
+    """Plan + metered usage for the caller's OWN tenant (Track 5 metering).
+
+    Admin-scoped and tenant-bound — you only ever see your own tenant's usage.
+    Read-only and advisory: `any_over_quota` flags a tenant that has exceeded its
+    plan, but nothing is blocked or charged here (billing is the deferred step)."""
+    if current_user.get("role") not in ("super_admin", "admin"):
+        raise HTTPException(status_code=403, detail="Admin role required")
+    tenant_id = current_user.get("tenant_id") or 1
+    async with async_session() as session:
+        return await usage_for_tenant(session, tenant_id)
 
 
 def _slugify(value: str) -> str:

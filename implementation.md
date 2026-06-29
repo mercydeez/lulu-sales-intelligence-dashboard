@@ -117,10 +117,10 @@ docker compose up -d backend                       # recreate so the env is pick
   larger local model (or the optional external provider) improves the grounded-hit rate; the floor
   is safe either way.
 
-## Track 4 — Cleanup (real items only) ❌
-- Remove the 3 dead exports from `frontend/src/components/inventory/mockData.ts`
-  (`generateMockInventory`, `generateMockSummary`, `generateMockCategories`); keep `generateAlerts` +
-  `generateProcurementList` (still imported by `inventory/page.tsx`).
+## Track 4 — Cleanup (real items only) ✅ done
+- ✅ The 3 dead exports were already removed from `frontend/src/components/inventory/mockData.ts`;
+  the file now exports only `generateAlerts` + `generateProcurementList` (both still imported by
+  `inventory/page.tsx`). Verified: no `generateMock*` references remain anywhere in `frontend/src`.
 - The consolidation into this single file (retiring `docs/IMPLEMENTATION_PLAN.md`) is the
   doc-duplication cleanup.
 - **Not debt — leave as-is:** `lib/api.ts` (typed facade) vs `lib/apiClient.ts` (low-level) is correct
@@ -147,13 +147,19 @@ Decision: polish **in-place** (no shadcn migration) + add **framer-motion**; **d
 - **Verify**: `npm run dev` in `frontend/` (compose serves a prebuilt bundle, so dev server shows
   changes). `tsc --noEmit` + `next build` clean (26/26 pages).
 
-## Track 5 — SaaS / commercial roadmap (near-term, free-tier first) 🟡
+## Track 5 — SaaS / commercial roadmap (near-term, free-tier first) ✅ done
 Buildable now with **no** external service; billing stays gated to go-to-market.
-- **Tenant data export + delete-on-request** — GDPR-style, pure Postgres/app work on the existing
-  tenant scoping + RLS.
-- **Plan / metering scaffolding** — meter on `tenants.plan` + per-API-key usage (key infra exists);
-  meter now, charge later.
-- **Trust docs** — ToS / Privacy / DPA one-pagers next to the existing `SECURITY.md`.
+- ✅ **Tenant data export + delete-on-request** — GDPR-style, pure Postgres/app work on the existing
+  tenant scoping + RLS (shipped as Phase 12: `/api/data-rights/*`, migration 039 `data_requests`).
+- ✅ **Plan / metering scaffolding** — `services/plan_limits.py` defines per-plan quotas (free/starter/
+  growth/enterprise; `None` = unlimited) and `usage_for_tenant()` meters API requests / active keys /
+  users against them. `GET /api/tenants/usage` (admin, tenant-scoped, read-only, advisory `over_quota`
+  — meter now, charge later) surfaces it; the **Developer Portal → Overview** renders a "Plan & usage"
+  card. Verified live (tenant 1 = enterprise/unlimited, users=3) + `tests/test_plan_limits.py` (7).
+  Honest limitation: the request meter is a **lifetime** total; rolling-month windowing (a usage-events
+  table) is the later enhancement, called out in the response (`window: "lifetime"`).
+- ✅ **Trust docs** — ToS / Privacy / DPA drafts live in `docs/legal/` (marked "draft — legal review
+  required"); legal sign-off is a `MANUAL_CHECKS_REQUIRED.md` blocker, not an engineering gap.
 
 ---
 

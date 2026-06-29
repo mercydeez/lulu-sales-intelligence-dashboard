@@ -37,6 +37,7 @@ export default function DevelopersPage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [hooks, setHooks] = useState<Hook[]>([]);
+  const [usage, setUsage] = useState<PlanUsage | null>(null);
   const [secret, setSecret] = useState<{ label: string; value: string } | null>(null);
   const [msg, setMsg] = useState('');
   // The most recently created key, kept in memory so the playground/embed can use
@@ -45,9 +46,12 @@ export default function DevelopersPage() {
 
   const load = useCallback(async () => {
     try {
-      const [k, w] = await Promise.all([authFetch('/api/api-keys'), authFetch('/api/webhooks')]);
+      const [k, w, u] = await Promise.all([
+        authFetch('/api/api-keys'), authFetch('/api/webhooks'), authFetch('/api/tenants/usage'),
+      ]);
       if (k.ok) setKeys((await k.json()).keys ?? []);
       if (w.ok) setHooks((await w.json()).webhooks ?? []);
+      if (u.ok) setUsage(await u.json());
     } catch { /* ignore */ }
   }, [authFetch]);
   useEffect(() => { load(); }, [load]);
@@ -96,7 +100,7 @@ export default function DevelopersPage() {
           ))}
         </div>
 
-        {tab === 'overview' && <Overview keys={keys} hooks={hooks} />}
+        {tab === 'overview' && <Overview keys={keys} hooks={hooks} usage={usage} />}
         {tab === 'keys' && (
           <KeysPanel keys={keys} authFetch={authFetch} reload={load}
             onSecret={(v) => { setSecret({ label: 'API key (shown once)', value: v }); setLiveKey(v); }} onErr={flash} />
@@ -114,7 +118,7 @@ export default function DevelopersPage() {
 }
 
 // ---------------------------------------------------------------------------
-function Overview({ keys, hooks }: { keys: ApiKey[]; hooks: Hook[] }) {
+function Overview({ keys, hooks, usage }: { keys: ApiKey[]; hooks: Hook[]; usage: PlanUsage | null }) {
   const totalReq = keys.reduce((s, k) => s + (k.request_count || 0), 0);
   const activeKeys = keys.filter((k) => !k.revoked).length;
   const activeHooks = hooks.filter((h) => h.active).length;
@@ -127,6 +131,7 @@ function Overview({ keys, hooks }: { keys: ApiKey[]; hooks: Hook[] }) {
         <StatCard label="Webhooks" value={String(activeHooks)} tone="coral" />
         <StatCard label="Public endpoints" value={String(PUBLIC_ENDPOINTS.length)} tone="amber" />
       </div>
+      {usage && <PlanUsageCard usage={usage} />}
       <Card padding="lg">
         <h3 className="text-base font-medium text-ink mb-4">Requests by key</h3>
         {keys.length === 0 ? <p className="text-sm text-ink-muted">No API keys yet — create one under the API Keys tab.</p> : (
@@ -144,6 +149,59 @@ function Overview({ keys, hooks }: { keys: ApiKey[]; hooks: Hook[] }) {
         )}
       </Card>
     </div>
+  );
+}
+
+// --- Plan & usage metering (Track 5) ---------------------------------------
+type Meter = { used: number; limit: number | null; remaining: number | null; over_quota: boolean; pct: number };
+type PlanUsage = {
+  plan: string;
+  window: string;
+  any_over_quota: boolean;
+  usage: { api_requests: Meter; api_keys: Meter; users: Meter };
+};
+
+const METER_LABELS: { key: keyof PlanUsage['usage']; label: string }[] = [
+  { key: 'api_requests', label: 'API requests' },
+  { key: 'api_keys', label: 'API keys' },
+  { key: 'users', label: 'Users' },
+];
+
+function PlanUsageCard({ usage }: { usage: PlanUsage }) {
+  return (
+    <Card padding="lg">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-medium text-ink">Plan &amp; usage</h3>
+        <Badge variant={usage.any_over_quota ? 'coral' : 'teal'}>
+          {usage.plan.charAt(0).toUpperCase() + usage.plan.slice(1)} plan
+        </Badge>
+      </div>
+      <div className="space-y-4">
+        {METER_LABELS.map(({ key, label }) => {
+          const m = usage.usage[key];
+          const unlimited = m.limit === null;
+          const pct = unlimited ? 0 : Math.min(100, m.pct);
+          const bar = m.over_quota ? 'bg-coral-500' : pct > 80 ? 'bg-amber-500' : 'bg-teal-500';
+          return (
+            <div key={key}>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-ink">{label}</span>
+                <span className="text-ink-soft">
+                  {m.used.toLocaleString()}{unlimited ? ' · unlimited' : ` / ${m.limit!.toLocaleString()}`}
+                </span>
+              </div>
+              <div className="h-2.5 rounded-full bg-ink/5 overflow-hidden">
+                <div className={`h-full rounded-full ${bar}`} style={{ width: unlimited ? '100%' : `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-4 text-xs text-ink-muted">
+        Metering only — usage is shown so plan limits are visible; nothing is billed.
+        Counts are {usage.window} totals.
+      </p>
+    </Card>
   );
 }
 
