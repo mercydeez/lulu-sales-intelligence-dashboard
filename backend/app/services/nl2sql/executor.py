@@ -99,6 +99,12 @@ async def execute_sage_sql(sql: str, tenant_id: int,
                 {"sids": _store_ids_guc(allowed_stores)},
             )
             result = await conn.execute(text(sql))
+            # Guard allows only SELECT/WITH, which return rows. Defensively, if a
+            # statement yields no result set, degrade to zero rows instead of letting
+            # SQLAlchemy's ResourceClosedError ("does not return rows") leak into the
+            # trace — the caller then narrates "no data" rather than an internal error.
+            if not result.returns_rows:
+                return []
             rows = [{k: _coerce(v) for k, v in m.items()} for m in result.mappings().all()]
             # SELECT-only; nothing to commit. Let the context manager close/rollback.
             return rows

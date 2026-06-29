@@ -56,7 +56,11 @@ def route_after_intent(state: AgentState) -> str:
     """Clarify when ambiguous; read back complex multi-part plans; else execute."""
     clarity = float(state.get("clarity_score", 1.0))
     rounds = int(state.get("clarification_round", 0))
-    if clarity < _CLARITY_THRESHOLD and rounds < _MAX_CLARIFY_ROUNDS:
+    # `<=`: a borderline score that lands exactly on the threshold (the live LLM
+    # commonly returns 0.5 for a bare "sales"-type ask) must still clarify — when
+    # in doubt, ask rather than guess. A strict `<` let the boundary value slip
+    # through to SQL once a real LLM replaced the 0.35-floor heuristic.
+    if clarity <= _CLARITY_THRESHOLD and rounds < _MAX_CLARIFY_ROUNDS:
         return "clarification"
     if state.get("route") == "hybrid" and not state.get("readback_confirmed"):
         return "readback"
