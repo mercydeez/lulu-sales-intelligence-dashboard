@@ -80,6 +80,12 @@ services:
       # Sage's least-privilege read role (migration 023). Defaults to deriving
       # sage_ro creds from DATABASE_URL; override in prod.
       - SAGE_DATABASE_URL=${SAGE_DATABASE_URL:-}
+      # Sage v3 multi-agent graph (LangGraph): router → intent/clarity →
+      # clarification/readback → executor → critic → cross-validate → arbiter →
+      # completeness → finaliser, with confidence + agent trace surfaced to the UI.
+      # ON for this demo; roll back instantly with USE_SAGE_V3=false (the proven
+      # Sage v2 path then serves).
+      - USE_SAGE_V3=${USE_SAGE_V3:-true}
     ports:
       - "8000:8000"
     depends_on:

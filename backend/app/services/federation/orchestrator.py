@@ -33,11 +33,12 @@ class FederatedResult:
     reason: str = ""
 
 
-async def _run_on_sources(adapters: List[SourceAdapter], sql: str, tenant_id: int) -> List[SourceResult]:
+async def _run_on_sources(adapters: List[SourceAdapter], sql: str, tenant_id: int,
+                          allowed_stores: Optional[List[int]] = None) -> List[SourceResult]:
     results: List[SourceResult] = []
     for a in adapters:
         try:
-            rows = await a.run_canonical(sql, tenant_id)
+            rows = await a.run_canonical(sql, tenant_id, allowed_stores)
             results.append(SourceResult(a.descriptor.id, a.descriptor.name, True, rows))
         except Exception as e:
             logger.info(f"Federation: source {a.descriptor.id} failed: {e}")
@@ -101,8 +102,13 @@ async def federated_answer(
     role: str,
     source_ids: Optional[List[str]] = None,
     providers=None,
+    allowed_stores: Optional[List[int]] = None,
 ) -> FederatedResult:
-    """Answer `question` across every source `role` may query. Never raises."""
+    """Answer `question` across every source `role` may query. Never raises.
+
+    `allowed_stores` is the caller's accessible-store RBAC scope; it is enforced
+    on the internal Postgres source via the app.allowed_store_ids GUC (migration
+    040). Empty/None => super_admin / all stores in the tenant."""
     providers = providers if providers is not None else get_provider_chain()
     adapters, build_errors = await catalog.resolve_adapters(role, source_ids)
     if not adapters:
@@ -124,7 +130,7 @@ async def federated_answer(
     except SqlGuardError as e:
         return FederatedResult(ok=False, sql=sql, reason=f"guard: {e}")
 
-    results = await _run_on_sources(adapters, safe_sql, tenant_id)
+    results = await _run_on_sources(adapters, safe_sql, tenant_id, allowed_stores)
     if not any(r.ok for r in results):
         return FederatedResult(ok=False, sql=safe_sql, sources=results, reason="all sources errored")
 

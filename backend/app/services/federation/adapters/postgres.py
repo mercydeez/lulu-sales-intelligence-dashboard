@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
-from typing import List
+from typing import List, Optional
 
 from app.config import logger
 from app.services.data_sources import _plain_dsn, _safe_identifier
@@ -33,8 +33,9 @@ def _coerce(v):
 class InternalPostgresAdapter(SourceAdapter):
     """The app DB — delegates to the existing sage_ro read-only executor."""
 
-    async def run_canonical(self, canonical_sql: str, tenant_id: int) -> List[dict]:
-        return await execute_sage_sql(canonical_sql, tenant_id)
+    async def run_canonical(self, canonical_sql: str, tenant_id: int,
+                            allowed_stores: Optional[List[int]] = None) -> List[dict]:
+        return await execute_sage_sql(canonical_sql, tenant_id, allowed_stores)
 
 
 def build_canonical_ctes(mapping: dict) -> str:
@@ -102,7 +103,10 @@ class ExternalPostgresAdapter(SourceAdapter):
         self._mapping = mapping
         self._timeout_ms = timeout_ms
 
-    async def run_canonical(self, canonical_sql: str, tenant_id: int) -> List[dict]:
+    async def run_canonical(self, canonical_sql: str, tenant_id: int,
+                            allowed_stores: Optional[List[int]] = None) -> List[dict]:
+        # allowed_stores ignored: a foreign source's synthesized sage_sales has no
+        # internal store_id to scope by (see SourceAdapter.run_canonical).
         import asyncpg
         ctes = build_canonical_ctes(self._mapping)
         # canonical_sql is the guard's `SELECT * FROM (<inner>) sage_result LIMIT n`;

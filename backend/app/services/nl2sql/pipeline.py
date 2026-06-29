@@ -77,8 +77,13 @@ async def answer_question(
     question: str,
     tenant_id: int,
     providers: Optional[List[LLMProvider]] = None,
+    allowed_stores: Optional[List[int]] = None,
 ) -> SageResult:
-    """Run the full NL->SQL->narrate pipeline. Never raises; returns SageResult."""
+    """Run the full NL->SQL->narrate pipeline. Never raises; returns SageResult.
+
+    `allowed_stores` is the caller's accessible-store RBAC scope (empty/None =>
+    super_admin / all stores in the tenant). It is DB-enforced via the
+    app.allowed_store_ids GUC (migration 040) — see execute_sage_sql."""
     settings = get_settings()
     if not settings.sage_enabled:
         return SageResult(ok=False, reason="sage disabled")
@@ -99,7 +104,7 @@ async def answer_question(
         return SageResult(ok=False, sql=sql, reason=f"guard: {e}")
 
     try:
-        rows = await execute_sage_sql(safe_sql, tenant_id)
+        rows = await execute_sage_sql(safe_sql, tenant_id, allowed_stores)
     except SageExecutionError as e:
         logger.info(f"Sage execution failed: {e}")
         return SageResult(ok=False, sql=safe_sql, reason=f"exec: {e}")

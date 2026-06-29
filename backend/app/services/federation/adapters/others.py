@@ -23,7 +23,7 @@ Implementation notes per engine:
 """
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from ..base import SourceAdapter, SourceDescriptor
 
@@ -47,7 +47,8 @@ class ScaffoldedAdapter(SourceAdapter):
         self._mapping = mapping
         self._timeout_ms = timeout_ms
 
-    async def run_canonical(self, canonical_sql: str, tenant_id: int) -> List[dict]:
+    async def run_canonical(self, canonical_sql: str, tenant_id: int,
+                            allowed_stores: Optional[List[int]] = None) -> List[dict]:
         hint = _ENABLE_HINTS.get(self.descriptor.engine, "implement run_canonical")
         raise NotImplementedError(
             f"{self.descriptor.engine} adapter is scaffolded (not enabled in this build) — {hint}"

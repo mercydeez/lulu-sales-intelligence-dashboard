@@ -21,6 +21,16 @@ scikit-learn==1.5.2
 torch==2.2.2
 httpx==0.26.0
 sse-starlette==2.0.0
+# Sage v3 multi-agent graph (Phase 0). Pinned to the 0.1.x line on purpose: it
+# depends on langchain-core 0.2.x, which keeps pydantic at the pinned 2.5.3 —
+# the 0.2.x/langchain-core-0.3 line would force a pydantic 2.13 upgrade across
+# the whole stack. langgraph only activates when USE_SAGE_V3=true.
+langgraph==0.1.19
+langgraph-checkpoint==1.0.12
+langchain-core==0.2.43
+# (optional) langfuse tracing is env-gated and added in Phase 5 to avoid pulling
+# heavier deps before they're needed:
+# langfuse==2.*
 python-multipart==0.0.9
 # Authentication
 python-jose[cryptography]==3.3.0

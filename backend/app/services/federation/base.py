@@ -50,8 +50,14 @@ class SourceAdapter(ABC):
         self.descriptor = descriptor
 
     @abstractmethod
-    async def run_canonical(self, canonical_sql: str, tenant_id: int) -> List[dict]:
+    async def run_canonical(self, canonical_sql: str, tenant_id: int,
+                            allowed_stores: Optional[List[int]] = None) -> List[dict]:
         """Execute guard-approved canonical SQL and return rows as dicts.
         Raise on failure so the orchestrator records a per-source error and
-        continues with the other sources."""
+        continues with the other sources.
+
+        `allowed_stores` is the caller's accessible-store RBAC scope. The internal
+        Postgres source enforces it (via the app.allowed_store_ids GUC); external
+        sources synthesize their own sage_sales (store_id NULL) and have no
+        internal store identity to scope by, so they accept and ignore it."""
         raise NotImplementedError

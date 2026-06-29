@@ -7,9 +7,12 @@ from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
 from typing import Optional, List
+import asyncio
 import json
 import uuid
 import base64
+
+from app.config import get_settings
 
 from app.services.ai_assistant import (
     stream_chat_response,
@@ -112,6 +115,30 @@ async def chat(request: ChatRequest, current_user: dict = Depends(require_ai_cha
     role = current_user.get('role') or 'store_manager'
     scoped_session = _scoped_session(current_user, session_id)
 
+    # Sage v3 (multi-agent graph) — gated; falls back to the v2 path when off.
+    if get_settings().use_sage_v3:
+        from app.services.sage3.runtime import answer_sage3, sage3_meta
+        if request.stream:
+            async def generate_v3():
+                state = await answer_sage3(scoped_session, request.message, tenant_id, role, allowed_stores)
+                answer = state.get("final_answer", "") or ""
+                words = answer.split(" ")
+                for i, word in enumerate(words):
+                    yield {
+                        "event": "message",
+                        "data": json.dumps({"content": word + (" " if i < len(words) - 1 else ""),
+                                            "session_id": session_id})
+                    }
+                    await asyncio.sleep(0.01)
+                yield {
+                    "event": "done",
+                    "data": json.dumps({"session_id": session_id, "intent": intent, **sage3_meta(state)})
+                }
+            return EventSourceResponse(generate_v3())
+        state = await answer_sage3(scoped_session, request.message, tenant_id, role, allowed_stores)
+        return ChatResponse(response=state.get("final_answer", ""), session_id=session_id,
+                            intent={**(intent or {}), **sage3_meta(state)})
+
     if request.stream:
         # Return streaming response
         async def generate():
@@ -153,23 +180,40 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(require
     role = current_user.get('role') or 'store_manager'
     scoped_session = _scoped_session(current_user, session_id)
 
+    use_v3 = get_settings().use_sage_v3
+
     async def generate():
         yield {
             "event": "start",
             "data": json.dumps({"session_id": session_id})
         }
 
+        if use_v3:
+            from app.services.sage3.runtime import answer_sage3, sage3_meta
+            state = await answer_sage3(scoped_session, request.message, tenant_id, role, allowed_stores)
+            answer = state.get("final_answer", "") or ""
+            words = answer.split(" ")
+            for i, word in enumerate(words):
+                yield {"event": "chunk",
+                       "data": json.dumps({"content": word + (" " if i < len(words) - 1 else "")})}
+                await asyncio.sleep(0.01)
+            yield {
+                "event": "done",
+                "data": json.dumps({"session_id": session_id, "intent": intent, **sage3_meta(state)})
+            }
+            return
+
         async for chunk in stream_chat_response(scoped_session, request.message, tenant_id, role, allowed_stores):
             yield {
                 "event": "chunk",
                 "data": json.dumps({"content": chunk})
             }
-        
+
         yield {
             "event": "done",
             "data": json.dumps({"session_id": session_id, "intent": intent})
         }
-    
+
     return EventSourceResponse(generate())
 
 
@@ -306,11 +350,16 @@ async def voice_chat(
         }
     
     # 2. Get AI response (RBAC: scoped to the caller's stores + session bound to user)
-    assistant_text = await get_chat_response(
-        _scoped_session(current_user, session_id), user_text,
-        current_user.get('tenant_id') or 1, current_user.get('role') or 'store_manager',
-        get_accessible_store_ids(current_user),
-    )
+    _vt = current_user.get('tenant_id') or 1
+    _vr = current_user.get('role') or 'store_manager'
+    _vs = get_accessible_store_ids(current_user)
+    if get_settings().use_sage_v3:
+        from app.services.sage3.runtime import get_sage3_chat
+        assistant_text = await get_sage3_chat(
+            _scoped_session(current_user, session_id), user_text, _vt, _vr, _vs)
+    else:
+        assistant_text = await get_chat_response(
+            _scoped_session(current_user, session_id), user_text, _vt, _vr, _vs)
     
     # 3. Synthesize response
     synthesis = await synthesize_speech(assistant_text, voice=voice)

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -59,9 +59,26 @@ def _coerce(value: Any) -> Any:
     return value
 
 
-async def execute_sage_sql(sql: str, tenant_id: int) -> list[dict]:
-    """Execute guard-approved SQL as sage_ro, scoped to `tenant_id`. Returns rows
-    as dicts. Raises SageExecutionError on any failure (so the caller falls back)."""
+def _store_ids_guc(allowed_stores: Optional[List[int]]) -> str:
+    """Render allowed_stores as a Postgres int-array literal for the
+    app.allowed_store_ids GUC. Empty/None => '' which the view helper reads as
+    'no restriction' (super_admin / every store in the tenant)."""
+    if not allowed_stores:
+        return ""
+    ids = ",".join(str(int(s)) for s in allowed_stores)
+    return "{" + ids + "}"
+
+
+async def execute_sage_sql(sql: str, tenant_id: int,
+                           allowed_stores: Optional[List[int]] = None) -> list[dict]:
+    """Execute guard-approved SQL as sage_ro, scoped to `tenant_id` AND the
+    caller's `allowed_stores`. Returns rows as dicts. Raises SageExecutionError on
+    any failure (so the caller falls back).
+
+    Store scoping is DB-enforced: the app.allowed_store_ids GUC drives the store
+    filter baked into sage_sales / sage_stores (migration 040). An empty/None
+    allowed_stores means no store restriction (super_admin), matching the
+    app-layer get_accessible_store_ids convention."""
     engine = get_sage_engine()
     try:
         async with engine.connect() as conn:
@@ -74,6 +91,12 @@ async def execute_sage_sql(sql: str, tenant_id: int) -> list[dict]:
             await conn.execute(
                 text("SELECT set_config('app.tenant_id', :tid, false)"),
                 {"tid": str(int(tenant_id))},
+            )
+            # Store-level RBAC GUC (migration 040). Always set it (to '' when
+            # unrestricted) so a value can never leak across NullPool connections.
+            await conn.execute(
+                text("SELECT set_config('app.allowed_store_ids', :sids, false)"),
+                {"sids": _store_ids_guc(allowed_stores)},
             )
             result = await conn.execute(text(sql))
             rows = [{k: _coerce(v) for k, v in m.items()} for m in result.mappings().all()]

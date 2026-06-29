@@ -106,6 +106,18 @@ class Settings(BaseSettings):
     sage_query_timeout_ms: int = 5000   # statement_timeout for generated SQL
     sage_max_rows: int = 200            # hard LIMIT injected/clamped by the guard
 
+    # Sage v3 — multi-agent LangGraph chatbot (router → intent → executor →
+    # synthesiser → validation → finaliser). OFF by default: the proven Sage v2
+    # path stays the default so v3 can be A/B'd and rolled back via this flag
+    # alone. When false, routes/ai.py never imports LangGraph. See
+    # docs/SAGE_V3_AGENT_INTEGRATION.md and services/sage3/.
+    use_sage_v3: bool = False
+    # Optional Langfuse tracing for the v3 graph (Phase 5). No-op until both keys
+    # are set, so the stack runs with zero external services by default.
+    langfuse_public_key: Optional[str] = None
+    langfuse_secret_key: Optional[str] = None
+    langfuse_host: Optional[str] = None  # e.g. https://cloud.langfuse.com
+
     # Sage v2 external API sources (S4) — JSON map of third-party data feeds the
     # decompose-route-recompose engine can call for a sub-question, e.g. weather /
     # FX / market prices. Empty by default (no-op). Shape:

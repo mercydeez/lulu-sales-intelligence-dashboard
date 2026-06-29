@@ -89,13 +89,14 @@ def _recompose(parts: List[SubAnswer]) -> str:
     return "\n".join(lines)
 
 
-async def _run_sql(label: str, sql: str, tenant_id: int) -> SubAnswer:
+async def _run_sql(label: str, sql: str, tenant_id: int,
+                   allowed_stores: Optional[List[int]] = None) -> SubAnswer:
     try:
         safe = validate_sql(sql, MAX_ROWS)
     except SqlGuardError as e:
         return SubAnswer(label, False, sql=sql, error=f"guard: {e}")
     try:
-        rows = await execute_sage_sql(safe, tenant_id)
+        rows = await execute_sage_sql(safe, tenant_id, allowed_stores)
         return SubAnswer(label, True, rows=rows, sql=safe)
     except SageExecutionError as e:
         return SubAnswer(label, False, sql=safe, error=str(e))
@@ -110,7 +111,8 @@ async def _run_doc(label: str, query: str, question: str, tenant_id: int, provid
     return SubAnswer(label, True, rows=[{"answer": rag.answer}], source=src)
 
 
-async def _deterministic(question: str, tenant_id: int, providers=None) -> List[SubAnswer]:
+async def _deterministic(question: str, tenant_id: int, providers=None,
+                         allowed_stores: Optional[List[int]] = None) -> List[SubAnswer]:
     zone = I.extract_zone(question)
     parts: List[SubAnswer] = []
     for intent in I.match_intents(question):
@@ -120,7 +122,7 @@ async def _deterministic(question: str, tenant_id: int, providers=None) -> List[
         if intent.kind == "document":
             parts.append(await _run_doc(label, intent.doc_query, question, tenant_id, providers))
         else:
-            parts.append(await _run_sql(label, intent.build_sql(zone), tenant_id))
+            parts.append(await _run_sql(label, intent.build_sql(zone), tenant_id, allowed_stores))
 
     # External API sources (S4) — only present when configured; otherwise no-op.
     from .api_source import match_api_sources, call_source
@@ -134,7 +136,8 @@ async def _deterministic(question: str, tenant_id: int, providers=None) -> List[
     return parts
 
 
-async def _llm(question: str, tenant_id: int, providers) -> List[SubAnswer]:
+async def _llm(question: str, tenant_id: int, providers,
+               allowed_stores: Optional[List[int]] = None) -> List[SubAnswer]:
     """LLM decompose → per-sub NL→SQL (guarded). Empty list signals 'fall back'."""
     subs = await llm_decompose(question, providers)
     if not subs:
@@ -145,7 +148,7 @@ async def _llm(question: str, tenant_id: int, providers) -> List[SubAnswer]:
         if not sql:
             parts.append(SubAnswer(sub, False, error="no SQL generated"))
             continue
-        parts.append(await _run_sql(sub, sql, tenant_id))
+        parts.append(await _run_sql(sub, sql, tenant_id, allowed_stores))
     return parts
 
 
@@ -160,20 +163,25 @@ def is_multipart(question: str) -> bool:
 
 
 async def answer_multipart(question: str, tenant_id: int, role: str = "admin",
-                           providers=None) -> MultiPartResult:
-    """Decompose → answer each sub → recompose. Never raises."""
+                           providers=None,
+                           allowed_stores: Optional[List[int]] = None) -> MultiPartResult:
+    """Decompose → answer each sub → recompose. Never raises.
+
+    `allowed_stores` is the caller's accessible-store RBAC scope, threaded to
+    every guarded sub-query and DB-enforced via the app.allowed_store_ids GUC
+    (migration 040). Empty/None => super_admin / all stores in the tenant."""
     providers = providers if providers is not None else get_provider_chain()
 
     parts: List[SubAnswer] = []
     used_llm = False
     if providers:
         try:
-            parts = await _llm(question, tenant_id, providers)
+            parts = await _llm(question, tenant_id, providers, allowed_stores)
             used_llm = bool(parts)
         except LLMError:
             parts = []
     if not parts:
-        parts = await _deterministic(question, tenant_id, providers)
+        parts = await _deterministic(question, tenant_id, providers, allowed_stores)
 
     if not parts:
         return MultiPartResult(ok=False, reason="no recognized sub-questions")

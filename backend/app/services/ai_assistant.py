@@ -3,6 +3,7 @@ AI Assistant Service - Enhanced with Real-Time Data Integration
 Handles chatbot conversations with actual database queries and intelligent responses
 """
 import asyncio
+import re
 from typing import Optional, List, Dict, AsyncGenerator
 from datetime import datetime, date, timedelta
 from pydantic import BaseModel
@@ -144,13 +145,37 @@ async def get_real_time_kpis(tenant_id: int = 1, allowed_stores: Optional[List[i
             .where(and_(T, Sale.is_streaming == False))
         )
         historical_count = hist_result.scalar() or 0
-        
+
+        # Derived AED revenue = SUM(units * unit_price_aed). Mirrors the reference
+        # implementation in routes/kpis.py exactly (join items, same tenant/store
+        # scope) so the assistant's VALUE metric matches the dashboard's. Convention:
+        # VOLUME in units, VALUE in AED — never mixed on one axis.
+        async def _revenue_since(start_date=None, on_date=None) -> float:
+            conds = [T]
+            if on_date is not None:
+                conds.append(Sale.date == on_date)
+            if start_date is not None:
+                conds.append(Sale.date >= start_date)
+            r = await session.execute(
+                select(func.coalesce(func.sum(Sale.sales * Item.unit_price_aed), 0))
+                .select_from(Sale).join(Item, Sale.item_id == Item.id)
+                .where(and_(*conds))
+            )
+            return float(r.scalar() or 0)
+
+        revenue_today = await _revenue_since(on_date=today)
+        revenue_week = await _revenue_since(start_date=week_ago)
+        revenue_month = await _revenue_since(start_date=month_ago)
+
         return {
             'total_sales_today': total_sales_today,
             'total_returns_today': total_returns_today,
             'net_sales_today': total_sales_today - total_returns_today,
             'total_sales_week': total_sales_week,
             'total_sales_month': total_sales_month,
+            'revenue_today': revenue_today,
+            'revenue_week': revenue_week,
+            'revenue_month': revenue_month,
             'transactions_today': transactions_today,
             'streaming_records': streaming_count,
             'historical_records': historical_count,
@@ -562,14 +587,25 @@ Care, Household, Snacks, Rice & Grains, Vegetables, Frozen, Condiments, Deli,
 Meat & Poultry, and Seafood."""
 
 
+def _kw_present(text: str, keyword: str) -> bool:
+    """Whole-word(/phrase) keyword match — avoids substring false positives like
+    'hi' in 'this', 'top' in 'laptop', 'return' in 'return on investment', or
+    'loss' in 'glossary'. Word-char lookarounds also work for multi-word phrases
+    and apostrophes (e.g. "what's happening")."""
+    return re.search(r'(?<!\w)' + re.escape(keyword) + r'(?!\w)', text) is not None
+
+
 def detect_intent(message: str) -> Dict:
-    """Detect user intent from message"""
+    """Detect user intent from message (whole-word matched to prevent mis-routing)."""
     message_lower = message.lower()
-    
+
     # CRITICAL: Check for returns query FIRST - it has priority!
-    # Returns keywords - check these first as they're specific
+    # Returns keywords - check these first as they're specific. "return on
+    # investment" / "no loss" won't false-match thanks to whole-word matching.
     return_keywords = ["return", "returns", "returned", "refund", "refunds", "refunded", "negative", "loss", "losses"]
-    is_returns_query = any(kw in message_lower for kw in return_keywords)
+    # "return on investment" / ROI is a financial metric, not a product return.
+    _roi_context = any(_kw_present(message_lower, k) for k in ("roi", "investment"))
+    is_returns_query = (not _roi_context) and any(_kw_present(message_lower, kw) for kw in return_keywords)
     
     # If it's a returns query, return ONLY returns_query intent to avoid confusion
     if is_returns_query:
@@ -829,9 +865,26 @@ This store is performing well in the network!"""
                 response += f"{i}. **{item['name']}** ({item['category']}): {item['total_sales']:,} units\n"
             return response
         
-        # Sales query
+        # Sales query — answer in AED when the user asked for revenue/value,
+        # otherwise in units (volume). Convention: VOLUME=units, VALUE=AED, never
+        # mixed on one axis (see routes/kpis.py). Revenue is derived, not stored.
         if "sales_query" in intents:
-            return f"""📊 **Sales Overview:**
+            wants_revenue = bool(re.search(
+                r"\b(revenue|aed|dirham|earnings|income|turnover|sales value|how much money|worth)\b",
+                message, re.I))
+            if wants_revenue:
+                return f"""💰 **Revenue Overview (AED):**
+
+**Today ({datetime.now().strftime('%B %d, %Y')}):**
+• Revenue: **AED {kpis['revenue_today']:,.0f}**
+• Transactions: **{kpis['transactions_today']:,}**
+
+**Period Totals:**
+• This Week: **AED {kpis['revenue_week']:,.0f}**
+• This Month: **AED {kpis['revenue_month']:,.0f}**
+
+_Revenue is derived as units sold × unit price (AED), matching the dashboard KPIs._"""
+            return f"""📊 **Sales Overview (volume, in units):**
 
 **Today ({datetime.now().strftime('%B %d, %Y')}):**
 • Total Sales: **{kpis['total_sales_today']:,}** units
@@ -843,9 +896,7 @@ This store is performing well in the network!"""
 • This Week: **{kpis['total_sales_week']:,}** units
 • This Month: **{kpis['total_sales_month']:,}** units
 
-**Database:**
-• Historical Records: {kpis['historical_records']:,}
-• Live Streaming: {kpis['streaming_records']:,}"""
+_Tip: ask "revenue today" for AED values._"""
         
         # Recent activity
         if "recent_activity" in intents:

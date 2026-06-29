@@ -17,7 +17,14 @@ import {
   Minimize2,
   Maximize2,
   Sparkles,
-  Lock
+  Lock,
+  ChevronDown,
+  ChevronRight,
+  ShieldCheck,
+  Brain,
+  FileText,
+  CheckCircle2,
+  Database
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PRODUCT_NAME, CHATBOT_NAME } from '@/lib/brand';
@@ -66,17 +73,163 @@ declare global {
   }
 }
 
+// Sage v3 multi-agent metadata, delivered on the SSE 'done' event.
+interface TraceEntry {
+  node: string;
+  summary: string;
+  confidence?: number | null;
+}
+interface Evidence {
+  kind: string;
+  sql?: string;
+  citation?: string;
+  label?: string;
+  source?: string;
+  row_count?: number;
+}
+interface ChatMeta {
+  engine?: string;
+  route?: string;
+  confidence?: number | null;
+  grounded?: boolean;
+  needs_clarification?: boolean;
+  needs_readback?: boolean;
+  readback_text?: string | null;
+  clarification_question?: string | null;
+  trace?: TraceEntry[];
+  evidence?: Evidence[];
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
   isStreaming?: boolean;
+  meta?: ChatMeta;
 }
 
 interface ChatBotProps {
   isOpen: boolean;
   onToggle: () => void;
+}
+
+// Human labels for the agent-trace "thinking" view.
+const NODE_LABELS: Record<string, string> = {
+  router: 'Routed the question',
+  intent: 'Read intent + clarity',
+  clarification: 'Asked to clarify',
+  readback: 'Confirmed the plan',
+  planner: 'Planned sub-questions',
+  sql_agent: 'Queried the database',
+  rag_agent: 'Searched documents',
+  hybrid_executor: 'Answered each part',
+  synthesiser: 'Composed the answer',
+  critic: 'Critiqued the draft',
+  cross_validator: 'Cross-checked figures',
+  arbiter: 'Reconciled verdicts',
+  completeness: 'Checked completeness',
+  finaliser: 'Finalised',
+};
+
+function confidenceStyle(c?: number | null) {
+  if (c == null) return { label: '—', cls: 'bg-surface-3 text-ink-muted' };
+  const pct = `${Math.round(c * 100)}%`;
+  if (c >= 0.7) return { label: pct, cls: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' };
+  if (c >= 0.5) return { label: pct, cls: 'bg-amber-500/15 text-amber-400 border border-amber-500/30' };
+  return { label: pct, cls: 'bg-rose-500/15 text-rose-400 border border-rose-500/30' };
+}
+
+// Confidence badge + collapsible agent trace + citations + readback confirm.
+function MessageMeta({ meta, onConfirm }: { meta: ChatMeta; onConfirm: () => void }) {
+  const [showTrace, setShowTrace] = useState(false);
+  const [showSql, setShowSql] = useState(false);
+  const conf = confidenceStyle(meta.confidence);
+  const sqlEvidence = (meta.evidence || []).filter((e) => e.kind === 'sql' && e.sql);
+  const docEvidence = (meta.evidence || []).filter((e) => e.kind === 'doc' && e.citation);
+  const srcEvidence = (meta.evidence || []).filter((e) => e.kind === 'source');
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      {/* Badges row */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${conf.cls}`}>
+          <ShieldCheck className="w-3 h-3" /> Confidence {conf.label}
+        </span>
+        {meta.grounded && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-violet-500/15 text-violet-300 border border-violet-500/30">
+            <Database className="w-3 h-3" /> Grounded
+          </span>
+        )}
+        {meta.route && (
+          <span className="px-2 py-0.5 rounded-full text-[11px] bg-surface-3 text-ink-muted capitalize">{meta.route}</span>
+        )}
+      </div>
+
+      {/* Readback confirm */}
+      {meta.needs_readback && (
+        <button
+          onClick={onConfirm}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" /> Confirm &amp; run
+        </button>
+      )}
+
+      {/* Citations */}
+      {(docEvidence.length > 0 || srcEvidence.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {docEvidence.map((e, i) => (
+            <span key={`d${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-sky-500/15 text-sky-300 border border-sky-500/30">
+              <FileText className="w-3 h-3" /> {e.citation}
+            </span>
+          ))}
+          {srcEvidence.map((e, i) => (
+            <span key={`s${i}`} className="px-2 py-0.5 rounded text-[11px] bg-sky-500/15 text-sky-300 border border-sky-500/30">
+              {e.source || e.label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* SQL (collapsible) */}
+      {sqlEvidence.length > 0 && (
+        <div>
+          <button onClick={() => setShowSql((v) => !v)} className="inline-flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink transition-colors">
+            {showSql ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            <Database className="w-3 h-3" /> {showSql ? 'Hide' : 'Show'} SQL ({sqlEvidence.length})
+          </button>
+          {showSql && (
+            <div className="mt-1 space-y-1">
+              {sqlEvidence.map((e, i) => (
+                <pre key={i} className="text-[10px] bg-surface-3/70 text-ink-muted p-2 rounded overflow-x-auto whitespace-pre-wrap">{e.sql}</pre>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Agent trace (collapsible "thinking") */}
+      {meta.trace && meta.trace.length > 0 && (
+        <div>
+          <button onClick={() => setShowTrace((v) => !v)} className="inline-flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink transition-colors">
+            {showTrace ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            <Brain className="w-3 h-3" /> {showTrace ? 'Hide' : 'Show'} reasoning ({meta.trace.length} steps)
+          </button>
+          {showTrace && (
+            <ol className="mt-1 space-y-1 border-s border-line ps-3">
+              {meta.trace.map((t, i) => (
+                <li key={i} className="text-[11px] text-ink-muted">
+                  <span className="text-ink/80 font-medium">{NODE_LABELS[t.node] || t.node}</span>
+                  <span className="text-ink-muted"> — {t.summary}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
@@ -185,10 +338,16 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                 const data = JSON.parse(line.slice(6));
                 if (data.content) {
                   fullResponse += data.content;
-                  setMessages(prev => prev.map(m => 
-                    m.id === assistantId 
+                  setMessages(prev => prev.map(m =>
+                    m.id === assistantId
                       ? { ...m, content: fullResponse }
                       : m
+                  ));
+                } else if (data.engine === 'sage_v3') {
+                  // Sage v3 'done' meta: confidence, agent trace, citations, dialogue flags.
+                  const meta = data as ChatMeta;
+                  setMessages(prev => prev.map(m =>
+                    m.id === assistantId ? { ...m, meta } : m
                   ));
                 }
               } catch (e) {
@@ -618,7 +777,12 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                       <span className="inline-block w-2 h-4 bg-violet-400 animate-pulse ms-1" />
                     )}
                   </div>
-                  
+
+                  {/* Sage v3: confidence badge, agent trace, citations, readback confirm */}
+                  {message.role === 'assistant' && !message.isStreaming && message.meta && (
+                    <MessageMeta meta={message.meta} onConfirm={() => sendMessage('yes')} />
+                  )}
+
                   {message.role !== 'system' && (
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-xs text-ink-muted">

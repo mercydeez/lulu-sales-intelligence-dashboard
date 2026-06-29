@@ -47,6 +47,17 @@ def clean_overrides():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def force_v2_path(monkeypatch):
+    """These tests assert the legacy v2 chat contract (route -> get_chat_response
+    with the right RBAC scope). That path must keep working when USE_SAGE_V3 is off
+    (backward-compat invariant). The v3 graph has its own RBAC suite in
+    tests/test_sage3_rbac.py, so pin the flag off here regardless of the env default
+    (the demo compose ships USE_SAGE_V3=true)."""
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "use_sage_v3", False)
+
+
 async def _ask(user, message="show me all stores performance"):
     """POST a non-streaming chat as `user`, capturing the scope passed to the service."""
     app.dependency_overrides[get_current_user] = lambda: user
