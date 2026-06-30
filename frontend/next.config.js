@@ -32,6 +32,9 @@ const nextConfig = {
   output: 'standalone',
   swcMinify: true,
   async headers() {
+    // Skip strict security headers in dev — nosniff blocks Next.js CSS chunks
+    // served as scripts, and missing unsafe-eval breaks HMR.
+    if (process.env.NODE_ENV !== 'production') return [];
     return [{ source: '/:path*', headers: SECURITY_HEADERS }];
   },
   // Reduce chunk size issues
