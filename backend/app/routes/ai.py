@@ -65,6 +65,27 @@ def _scoped_session(user: dict, session_id: str) -> str:
     return f"u{user.get('id')}:{session_id}"
 
 
+async def _meter_sage_message(tenant_id: int, intent) -> None:
+    """Soft-enforce the billing-period Sage quota then meter the message (Phase 3).
+    Raises 429 ONLY when ENFORCE_USAGE_QUOTAS is on and the plan is over limit;
+    otherwise best-effort — never breaks the chat on a metering error."""
+    from app.services.usage_metering import record_usage, check_quota
+    from app.services.database import async_session
+    try:
+        async with async_session() as _s:
+            allowed, _ = await check_quota(_s, tenant_id, "sage_message")
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="Monthly Sage message limit reached for your plan. Upgrade to continue.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    await record_usage(tenant_id, "sage_message",
+                       metadata={"intent": str(intent) if intent is not None else None})
+
+
 # Request/Response Models
 class ChatRequest(BaseModel):
     message: str
@@ -114,6 +135,11 @@ async def chat(request: ChatRequest, current_user: dict = Depends(require_ai_cha
     tenant_id = current_user.get('tenant_id') or 1
     role = current_user.get('role') or 'store_manager'
     scoped_session = _scoped_session(current_user, session_id)
+
+    # Usage metering (Phase 3): soft-enforce the billing-period Sage quota, then
+    # meter this message. Best-effort — a metering failure never blocks the chat;
+    # a hard 429 only fires when ENFORCE_USAGE_QUOTAS is on AND the plan is over.
+    await _meter_sage_message(tenant_id, intent)
 
     # Sage v3 (multi-agent graph) — gated; falls back to the v2 path when off.
     if get_settings().use_sage_v3:
@@ -179,6 +205,9 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(require
     tenant_id = current_user.get('tenant_id') or 1
     role = current_user.get('role') or 'store_manager'
     scoped_session = _scoped_session(current_user, session_id)
+
+    # Usage metering (Phase 3) — soft-enforce + meter before the stream opens.
+    await _meter_sage_message(tenant_id, intent)
 
     use_v3 = get_settings().use_sage_v3
 

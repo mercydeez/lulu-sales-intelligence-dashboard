@@ -38,6 +38,7 @@ export default function DevelopersPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [hooks, setHooks] = useState<Hook[]>([]);
   const [usage, setUsage] = useState<PlanUsage | null>(null);
+  const [periodUsage, setPeriodUsage] = useState<PeriodUsage | null>(null);
   const [secret, setSecret] = useState<{ label: string; value: string } | null>(null);
   const [msg, setMsg] = useState('');
   // The most recently created key, kept in memory so the playground/embed can use
@@ -46,12 +47,14 @@ export default function DevelopersPage() {
 
   const load = useCallback(async () => {
     try {
-      const [k, w, u] = await Promise.all([
+      const [k, w, u, p] = await Promise.all([
         authFetch('/api/api-keys'), authFetch('/api/webhooks'), authFetch('/api/tenants/usage'),
+        authFetch('/api/tenants/usage/period'),
       ]);
       if (k.ok) setKeys((await k.json()).keys ?? []);
       if (w.ok) setHooks((await w.json()).webhooks ?? []);
       if (u.ok) setUsage(await u.json());
+      if (p.ok) setPeriodUsage(await p.json());
     } catch { /* ignore */ }
   }, [authFetch]);
   useEffect(() => { load(); }, [load]);
@@ -100,7 +103,7 @@ export default function DevelopersPage() {
           ))}
         </div>
 
-        {tab === 'overview' && <Overview keys={keys} hooks={hooks} usage={usage} />}
+        {tab === 'overview' && <Overview keys={keys} hooks={hooks} usage={usage} periodUsage={periodUsage} />}
         {tab === 'keys' && (
           <KeysPanel keys={keys} authFetch={authFetch} reload={load}
             onSecret={(v) => { setSecret({ label: 'API key (shown once)', value: v }); setLiveKey(v); }} onErr={flash} />
@@ -118,7 +121,7 @@ export default function DevelopersPage() {
 }
 
 // ---------------------------------------------------------------------------
-function Overview({ keys, hooks, usage }: { keys: ApiKey[]; hooks: Hook[]; usage: PlanUsage | null }) {
+function Overview({ keys, hooks, usage, periodUsage }: { keys: ApiKey[]; hooks: Hook[]; usage: PlanUsage | null; periodUsage: PeriodUsage | null }) {
   const totalReq = keys.reduce((s, k) => s + (k.request_count || 0), 0);
   const activeKeys = keys.filter((k) => !k.revoked).length;
   const activeHooks = hooks.filter((h) => h.active).length;
@@ -132,6 +135,7 @@ function Overview({ keys, hooks, usage }: { keys: ApiKey[]; hooks: Hook[]; usage
         <StatCard label="Public endpoints" value={String(PUBLIC_ENDPOINTS.length)} tone="amber" />
       </div>
       {usage && <PlanUsageCard usage={usage} />}
+      {periodUsage && <BillingPeriodCard usage={periodUsage} />}
       <Card padding="lg">
         <h3 className="text-base font-medium text-ink mb-4">Requests by key</h3>
         {keys.length === 0 ? <p className="text-sm text-ink-muted">No API keys yet — create one under the API Keys tab.</p> : (
@@ -205,6 +209,60 @@ function PlanUsageCard({ usage }: { usage: PlanUsage }) {
   );
 }
 
+// --- Billing-period usage metering (Phase 3) -------------------------------
+type PeriodUsage = {
+  plan: string;
+  window: string;
+  enforced: boolean;
+  any_over_quota: boolean;
+  usage: { sage_messages: Meter; forecast_jobs: Meter; exports: Meter; imports: Meter; api_requests: Meter };
+};
+
+const PERIOD_LABELS: { key: keyof PeriodUsage['usage']; label: string }[] = [
+  { key: 'sage_messages', label: 'Sage messages' },
+  { key: 'forecast_jobs', label: 'Forecast jobs' },
+  { key: 'exports', label: 'Exports' },
+  { key: 'imports', label: 'Imports' },
+  { key: 'api_requests', label: 'API requests' },
+];
+
+function BillingPeriodCard({ usage }: { usage: PeriodUsage }) {
+  return (
+    <Card padding="lg">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-medium text-ink">This billing period</h3>
+        <Badge variant={usage.any_over_quota ? 'coral' : 'teal'}>{usage.window}</Badge>
+      </div>
+      <div className="space-y-4">
+        {PERIOD_LABELS.map(({ key, label }) => {
+          const m = usage.usage[key];
+          const unlimited = m.limit === null;
+          const pct = unlimited ? 0 : Math.min(100, m.pct);
+          const bar = m.over_quota ? 'bg-coral-500' : pct > 80 ? 'bg-amber-500' : 'bg-teal-500';
+          return (
+            <div key={key}>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-ink">{label}</span>
+                <span className="text-ink-soft">
+                  {m.used.toLocaleString()}{unlimited ? ' · unlimited' : ` / ${m.limit!.toLocaleString()}`}
+                </span>
+              </div>
+              <div className="h-2.5 rounded-full bg-ink/5 overflow-hidden">
+                <div className={`h-full rounded-full ${bar}`} style={{ width: unlimited ? '100%' : `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-4 text-xs text-ink-muted">
+        Calendar month (Asia/Dubai). {usage.enforced
+          ? 'Quotas are enforced — over-limit actions are blocked.'
+          : 'Metering only — nothing is blocked or billed yet.'}
+      </p>
+    </Card>
+  );
+}
+
 // ---------------------------------------------------------------------------
 type AuthFetch = ReturnType<typeof useAuth>['authFetch'];
 
@@ -268,6 +326,13 @@ function WebhooksPanel({ hooks, authFetch, reload, onSecret, onMsg }:
   const [url, setUrl] = useState('');
   const [expanded, setExpanded] = useState<number | null>(null);
   const [deliveries, setDeliveries] = useState<Record<number, Delivery[]>>({});
+  const [catalog, setCatalog] = useState<{ event: string; description: string }[]>([]);
+  useEffect(() => {
+    let active = true;
+    authFetch('/api/webhooks/events').then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (active && d) setCatalog(d.events ?? []); }).catch(() => {});
+    return () => { active = false; };
+  }, [authFetch]);
 
   const create = async () => {
     if (!url.trim()) return;
@@ -304,7 +369,7 @@ function WebhooksPanel({ hooks, authFetch, reload, onSecret, onMsg }:
         <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-endpoint.com/hook" className="flex-1" />
         <Button variant="primary" size="sm" onClick={create}><Plus className="w-4 h-4" /> Add webhook</Button>
       </div>
-      {hooks.length === 0 ? <p className="text-sm text-ink-muted">No webhooks yet. They fire signed POSTs on PO lifecycle, goods receipt, and match exceptions.</p> : (
+      {hooks.length === 0 ? <p className="text-sm text-ink-muted">No webhooks yet. They fire signed POSTs on findings, action drafts, imports, billing, and procurement events — see the catalog below.</p> : (
         <div className="space-y-2">
           {hooks.map((h) => (
             <div key={h.id} className="rounded-lg border border-line/60">
@@ -333,6 +398,21 @@ function WebhooksPanel({ hooks, authFetch, reload, onSecret, onMsg }:
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {catalog.length > 0 && (
+        <div className="mt-6 border-t border-line/60 pt-4">
+          <p className="text-xs font-medium text-ink-soft uppercase tracking-wide mb-2">Available events</p>
+          <p className="text-xs text-ink-muted mb-3">Subscribe to any of these (or all). Deliveries are HMAC-signed (X-Webhook-Signature).</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            {catalog.map((e) => (
+              <div key={e.event} className="text-xs">
+                <code className="text-teal-700">{e.event}</code>
+                <span className="text-ink-muted"> — {e.description}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </Card>

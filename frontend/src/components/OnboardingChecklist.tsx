@@ -6,11 +6,12 @@
  * clutters an established workspace.
  */
 import { useEffect, useState } from 'react';
-import { Card, CardHeader, CardTitle } from '@/components/ui';
+import Link from 'next/link';
+import { Card, CardHeader, CardTitle, Button } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckCircle2, Circle } from 'lucide-react';
+import { CheckCircle2, Circle, ArrowRight } from 'lucide-react';
 
-interface Step { key: string; label: string; done: boolean; }
+interface Step { key: string; label: string; done: boolean; href?: string | null; }
 interface Onboarding { steps: Step[]; progress_pct: number; complete: boolean; }
 
 export default function OnboardingChecklist() {
@@ -29,11 +30,16 @@ export default function OnboardingChecklist() {
   // Hide entirely once complete (or until loaded) — never clutter the dashboard.
   if (!data || data.complete) return null;
 
+  // The first not-done step is the one we actively nudge with a CTA.
+  const nextStep = data.steps.find((s) => !s.done);
+
   return (
     <Card padding="lg" className="mb-6 border border-teal-100">
       <CardHeader>
         <CardTitle><span className="me-2">🚀</span>Get started</CardTitle>
-        <span className="text-sm font-medium text-ink-muted">{data.progress_pct}% complete</span>
+        <Link href="/welcome" className="text-sm font-medium text-teal-700 hover:text-teal-600">
+          {data.progress_pct}% complete →
+        </Link>
       </CardHeader>
 
       <div className="h-2 w-full rounded-full bg-ink/5 mb-4 overflow-hidden">
@@ -47,7 +53,12 @@ export default function OnboardingChecklist() {
             {s.done
               ? <CheckCircle2 className="w-5 h-5 text-teal-500 flex-shrink-0" />
               : <Circle className="w-5 h-5 text-ink-muted flex-shrink-0" />}
-            <span className={s.done ? 'text-ink-muted line-through' : 'text-ink'}>{s.label}</span>
+            <span className={`flex-1 ${s.done ? 'text-ink-muted line-through' : 'text-ink'}`}>{s.label}</span>
+            {!s.done && s.href && s.key === nextStep?.key && (
+              <Link href={s.href}>
+                <Button variant="secondary" size="sm">Start <ArrowRight className="w-4 h-4 ms-1" /></Button>
+              </Link>
+            )}
           </li>
         ))}
       </ul>

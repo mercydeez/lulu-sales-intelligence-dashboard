@@ -31,12 +31,26 @@ interface NotificationItem {
   title: string;
   message: string;
   type: 'critical' | 'warning' | 'info' | 'success';
-  category: 'inventory' | 'sales' | 'system' | 'promotion';
+  category: string;
   time: string;
   read: boolean;
   // True for DB-backed alerts (from /api/alerts/recent) — read-state is persisted
   // server-side. Live SSE alerts are ephemeral demo events and stay client-only.
   persistent?: boolean;
+  // 'notification' = the commercial/finding feed (/api/notifications); 'alert' =
+  // operational inventory alerts. rawId is the real DB id for the read-state call.
+  source?: 'alert' | 'notification';
+  rawId?: number;
+  link?: string;
+}
+
+// Client id-space: offset notification ids so they never collide with alert ids.
+const NOTIF_ID_OFFSET = 1_000_000_000;
+
+function sevToType(sev: string): NotificationItem['type'] {
+  if (sev === 'critical' || sev === 'high') return 'critical';
+  if (sev === 'medium') return 'warning';
+  return 'info';
 }
 
 const notificationConfig = {
@@ -137,7 +151,38 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       }
     };
 
+    // Commercial / finding notifications (Phase 7) — merged into the same bell.
+    const fetchCommercialNotifications = async () => {
+      try {
+        const res = await authFetch('/api/notifications?limit=15');
+        if (!res.ok) return;
+        const data = await res.json();
+        const items: NotificationItem[] = (data.notifications || []).map((n: any) => ({
+          id: n.id + NOTIF_ID_OFFSET,
+          rawId: n.id,
+          source: 'notification' as const,
+          title: n.title,
+          message: n.body || '',
+          type: sevToType(n.severity),
+          category: n.type || 'system',
+          time: n.created_at ? new Date(n.created_at).toLocaleString() : 'Recently',
+          read: !!n.read_at,
+          link: n.link,
+          persistent: true,
+        }));
+        setNotifications(prev => {
+          const merged = [...prev, ...items];
+          const unique = merged.filter((n, i, arr) => arr.findIndex(x => x.id === n.id) === i);
+          // Unread first, then most recent; cap the list.
+          return unique.sort((a, b) => Number(a.read) - Number(b.read)).slice(0, 20);
+        });
+      } catch (error) {
+        console.error('Failed to fetch notifications:', error);
+      }
+    };
+
     fetchInitialNotifications();
+    fetchCommercialNotifications();
   }, [isAuthenticated, authFetch]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -159,7 +204,10 @@ export function Topbar({ onMenuClick }: TopbarProps) {
   // Persist read-state for DB-backed alerts (best-effort) so it survives refresh;
   // live SSE demo alerts have no server row, so they stay client-only.
   const acknowledge = (n: NotificationItem) => {
-    if (n.persistent && !n.read) {
+    if (n.read) return;
+    if (n.source === 'notification' && n.rawId != null) {
+      authFetch(`/api/notifications/${n.rawId}/read`, { method: 'POST' }).catch(() => {});
+    } else if (n.persistent) {
       authFetch(`/api/alerts/${n.id}/acknowledge`, { method: 'POST' }).catch(() => {});
     }
   };
@@ -174,7 +222,11 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 
   const markAllAsRead = () => {
     setNotifications(prev => {
-      prev.forEach(acknowledge);
+      // Notifications have a bulk endpoint; alerts are acked individually.
+      if (prev.some(n => n.source === 'notification' && !n.read)) {
+        authFetch('/api/notifications/read-all', { method: 'POST' }).catch(() => {});
+      }
+      prev.filter(n => n.source !== 'notification').forEach(acknowledge);
       return prev.map(n => ({ ...n, read: true }));
     });
   };
@@ -186,7 +238,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
   const openNotification = (n: NotificationItem) => {
     markAsRead(n.id);
     setNotificationOpen(false);
-    router.push(CATEGORY_ROUTE[n.category] || '/alerts');
+    router.push(n.link || CATEGORY_ROUTE[n.category] || '/alerts');
   };
 
   const handleLogout = async () => {

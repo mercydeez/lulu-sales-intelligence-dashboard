@@ -163,6 +163,177 @@ Buildable now with **no** external service; billing stays gated to go-to-market.
 
 ---
 
+## Track 7 — UAE commercial control plane (in progress)
+Taking Retail IQ from "deployment-ready MVP + SaaS scaffolding" to a UAE/GCC-ready
+commercial SaaS. Phases are additive and tenant-scoped; VAT/TRN/legal content is data
+modelling only and stays marked **"Draft — requires review by a qualified UAE legal/tax
+professional before production/customer use."**
+- ✅ **Phase 1 — UAE tenant legal/billing profile.** `tenant_billing_profile` (migration
+  `041`, one row per tenant, RLS + `current_tenant_id()` like the rest of the schema):
+  legal name (EN/AR), trading name, **TRN**, trade licence, **emirate** (7-emirate enum),
+  **mainland/free-zone**, VAT-registered, registered/billing address, **AED + Asia/Dubai +
+  language** defaults, industry/store/SKU/procurement-type, billing & finance contacts.
+  Server-side validation in `services/uae_profile.py` (TRN=15 digits, emirate/jurisdiction/
+  currency/email enums) shared by the API and tests. API: `GET`/`PUT /api/tenants/billing-profile`
+  (admin-scoped, tenant-bound, partial upsert). UI: `/settings/company` (admin-only, loading/
+  error/permission states) + a link card on `/settings`. Demo tenant 1 seeded with a UAE profile.
+  **Tests:** `tests/test_tenant_profile.py` — 11 pure-validation tests pass locally; 2
+  route-registration/auth tests need the container deps (`sse_starlette`) per the known local
+  env-drift trap. `py_compile` clean.
+- ✅ **Phase 2 — tenant lifecycle + platform-admin ops.** Migration `042`: `tenants.status`
+  constrained to 9 lifecycle states (trial→…→deleted) + `status_reason/changed_at/changed_by`;
+  `tenant_status_events` (append-only transition audit) and `tenant_admin_notes` (operator
+  support notes). These are operator tables — cross-tenant, super-admin-gated, intentionally NOT
+  under tenant RLS (consistent with `tenants` itself). State machine + access-gating in
+  `services/tenant_lifecycle.py` (allowed-transition graph; `BLOCKED_STATES` = suspended/cancelled/
+  deleted). **Enforcement:** `get_current_user` blocks blocked-status tenants (403); super-admins
+  bypass; **fails open** on lookup error so a DB hiccup never locks everyone out. API (super-admin):
+  `PATCH /api/tenants/{id}/status`, `GET .../status-events`, `GET`/`POST .../notes`. UI:
+  `/admin/tenants` operator console (status transitions + reason, history, notes) linked from
+  `/admin`. **Tests:** `tests/test_tenant_lifecycle.py` 10/10 pass; `py_compile` clean.
+- ✅ **Phase 3 — billing-period usage metering + soft quotas.** Migration `043`: append-only
+  `usage_events` (tenant-scoped + RLS). `services/usage_metering.py`: billing period = **calendar
+  month in Asia/Dubai** (`current_period`, pure), `record_usage` (best-effort, never raises —
+  metering can't break a request), `usage_summary` (per-dimension meters), `check_quota` (soft).
+  Metered dims: sage_messages / forecast_jobs / exports / imports / api_requests, with separate
+  `USAGE_LIMITS` per plan (enterprise = unlimited). **Enforcement is OFF by default**
+  (`ENFORCE_USAGE_QUOTAS=false`) so the demo/MVP/tests are unaffected — flip it on to return 429
+  over-limit. Wired (best-effort): Sage `/chat` + `/chat/stream` (`sage_message`), data export
+  (`export`). API: `GET /api/tenants/usage/period` (kept the old lifetime `/usage` endpoint intact
+  to avoid regressing the dev portal + `test_plan_limits`). UI: "This billing period" card on the
+  Developer Portal overview. **Tests:** `tests/test_usage_metering.py` 8/8 pass (period math incl.
+  Dec→Jan rollover, plan table, enforcement flag); `py_compile` clean.
+- ✅ **Phase 4 — manual UAE billing + VAT invoices.** Migration `044`: `subscriptions`, `invoices`
+  (VAT-aware: supplier/customer TRN snapshot, `subtotal_aed`/`vat_rate`/`vat_amount_aed`/`total_aed`,
+  PO number, payment terms/instructions, **e-invoicing readiness fields**), `invoice_lines` — all
+  RLS-scoped (lines via parent). `services/billing.py`: provider abstraction (manual / bank_transfer
+  / purchase_order usable now; stripe/telr/paytabs/network/checkout **gated until configured**),
+  pure VAT math (line VAT-exclusive @ 5%, totals reconcile line-by-line, fils rounding), invoice
+  numbering, plan prices (AED; enterprise = custom). API `/api/billing`: `GET providers`,
+  `GET subscription`, `GET/POST invoices`, `GET invoices/{id}`, `POST .../issue`, `POST .../mark-paid`
+  (tenant-admin reads own; super-admin issues + records manual/bank-transfer payment). UI:
+  `/settings/billing` (subscription + invoices + VAT breakdown modal) linked from `/settings`. All
+  VAT/invoice surfaces carry the **legal-draft** note. **Tests:** `tests/test_billing.py` 10/10.
+  Deferred to P1: invoice PDF, real gateway/e-invoicing integration, operator issue-invoice UI form.
+
+### Partial items completed to final (P1)
+- ✅ **Phase 5 — E-invoicing submission lifecycle.** Built on 044's e_invoice_* fields:
+  `services/einvoicing.py` (provider-abstracted; built-in 'mock' clearing house auto-accepts a
+  well-formed issued invoice; ZATCA/UAE-FTA gateways gated until configured). `POST /api/billing/
+  invoices/{id}/einvoice/submit` (super-admin) + e-invoice status badge & submit button in the
+  billing invoice modal. Audited (`invoice_einvoiced`). Tests `test_einvoicing.py` 8/8. Draft —
+  UAE e-invoicing accreditation required.
+- ✅ **Phase 6 — Unified audit log.** `security_events` (category='audit') is the canonical log;
+  wired new audit events (`tenant_status_changed`, `billing_profile_updated`, `invoice_created/
+  issued/paid/einvoiced`, field names only — never values). New `GET /api/security/events/export`
+  (CSV/JSON, RLS-scoped, PDPL evidence). New `/audit` admin UI (filters + export) + nav entry.
+- ✅ **Phase 7 — In-app notifications + preferences.** Migration `045`: `notifications` (user_id
+  NULL = tenant-wide) + `notification_preferences`, RLS; worker_rw grant so the BullMQ worker
+  posts finding notifications (`worker/src/notify.js`). `services/notifications.py` (best-effort,
+  never breaks an action; email is a logged stub). `/api/notifications` (list/unread-count/read/
+  read-all/preferences). Wired emits: invoice issued + lifecycle change → tenant admins; critical
+  findings → tenant-wide. The Topbar bell now merges these with operational alerts; preferences
+  card on `/settings`. Tests `test_notifications.py`.
+- ✅ **Phase 8 — Arabic/i18n/RTL for the new surfaces.** New nav/title keys (EN+AR) for company/
+  billing/audit/tenant-console/notifications; `t()` wired into the new page titles. Audited the new
+  screens — all RTL-safe (logical `text-start`/`ms-auto`/`start-0`; no hard left/right/pl/pr/ml/mr).
+  Full per-string Arabic translation of every screen remains the app-wide ongoing effort (the repo's
+  i18n was always an EN/AR + RTL shell, not full i18n).
+
+### Agentic increment — autonomy level 1 (shipped)
+- ✅ **Action drafting.** Extends the loop: detect → … → accept → **draft (system)** → **approve
+  (human)** → execute (human). Migration `046` `action_drafts` (RLS). Deterministic mapper
+  `services/action_drafting.py` (`build_draft`, **no LLM** — every word derivable): `review_supplier`
+  → supplier email, `review_pricing` → markdown proposal, `promote` → promotion proposal,
+  `investigate` → review task. API `/api/action-drafts` (`POST /from-finding/{id}`, list, get,
+  `approve`, `reject`). **Approval records a human decision and NEVER sends/executes anything** —
+  execution stays manual (autonomy L1, not L2). Audited (`action_drafted`/`action_draft_approved`/
+  `_rejected`) + notifies. UI: `/action-drafts` review page (artifact + approve/reject) + nav entry +
+  "Draft action" button on Insights findings. Tests `test_action_drafting.py` 8/8. (PO replenishment
+  drafting already exists separately in procurement via `approval_rules`.)
+
+### Demo → pilot unlock (the real-data path)
+- ✅ **CSV import wizard (#1).** Migration `047` `import_jobs` (RLS, import history). Pure
+  parse/map/validate core `services/csv_import.py` (no I/O — unit-tested): types `stores`, `items`,
+  `sales`, `inventory`; per-field validators **enforce units-vs-AED** (a unit count can't validate as
+  money; AED rejects junk/negatives; dates normalise to ISO). API `/api/imports` (`types`, `analyze`,
+  `validate`, `commit`, history) — operator-gated, tenant-scoped, commit in one transaction, **audited
+  (`data_imported`) + metered (`import` usage) + notifies**; sales/inventory resolve store/item by name
+  (unresolved rows skipped + reported). UI: `/imports` wizard (upload → auto-map columns → validate
+  preview → commit) + nav. Tests `test_csv_import.py` 11/11.
+- ✅ **ROI / AED calculator (#2).** `services/roi.py` — **only honest, derivable numbers** from real
+  inventory + sales: inventory value at retail, dead-stock AED (+count, no sale in 60d), estimated
+  stockout opportunity-loss AED (projected, flagged estimate), days-of-supply; cost-dependent metrics
+  (cash-at-cost, GMROI) are **null with a `needs: cost` flag when no cost data — never fabricated**.
+  Pure `build_summary` unit-tested. API `GET /api/roi/summary`. UI: `/value` screen (headline AED =
+  dead-stock + projected stockout loss; metric grid; empty-state → import) + nav. Tests `test_roi.py` 7/7.
+  This is the pair that converts the stack from demo to pilot-ready: a retailer imports their data and
+  sees their own AED number.
+- ✅ **Pilot-in-a-box (#3).** A self-contained pilot sales can run without engineering. (a) Migration
+  `048` enriches the **demo tenant** inventory (unit cost → cash-at-cost + GMROI, realistic last-sale
+  dates, deterministic stockouts + dead-stock tail) so `/value` shows a complete AED story out of the
+  box — clearly **demo** data, not a real-customer claim. (b) Downloadable **UAE sample CSVs**
+  (`GET /api/imports/sample/{type}` + "Download sample" in the wizard) so a prospect can try the full
+  import flow before their own data. (c) An honest **security/PDPL one-pager** (`docs/product/
+  SECURITY_ONE_PAGER.md`) + in-app **`/trust`** page (tenant isolation, RBAC, audit+export, data
+  rights, what-we-never-do) linking to the live Audit + data-rights features — for a buyer's security
+  review. All legal wording draft-marked. Tests extended (`test_csv_import.py` samples parse).
+- ✅ **Shareable CFO ROI artifact.** `GET /api/roi/report?fmt=html|csv` — a finance-team-ready
+  inventory-value report. Pure builders `build_report_html` / `build_report_csv` in `services/roi.py`:
+  branded, self-contained, **browser-printable HTML** (→ PDF, no PDF dependency) + CSV, carrying the
+  company legal name, the headline AED, and a **methodology column** (every number's derivation) so a
+  CFO can reconstruct it; cost-dependent metrics print "needs cost data", never fabricated; draft
+  disclaimer. "Report"/"CSV" download buttons on `/value`. Tests `test_roi.py` 10/10.
+- ✅ **Outcome-based pricing (measure-loop capstone).** Fee = base + a share of **operator-confirmed**
+  realised value, with a savings guarantee that **waives the variable portion** if savings < N× base —
+  "you only pay on savings we both agree happened." Migration `049` `outcome_pricing_plans` +
+  `value_realizations` (RLS). `services/outcome_pricing.py`: pure `build_statement` (non-circular
+  fee/guarantee math, unit-tested); lazy realization creation from `findings.outcome_status='improved'`
+  (no fabricated values — operator confirms each AED amount); period statement. API
+  `/api/outcome-pricing` (plan get/put, realizations list/confirm/dismiss, statement, **generate draft
+  VAT invoice** via the Phase-4 billing layer). UI `/outcome-pricing` (statement, plan config, confirm
+  realised value, value-to-fee ratio) + settings link. Audited. Tests `test_outcome_pricing.py` 7/7.
+  This is the pricing wedge the measure loop uniquely enables — no competitor captures "did it work?"
+  per recommendation, so none can credibly price on proven outcomes.
+  - ✅ **Per-finding value suggestion (honest).** `valuation_context` grounds each pending realization
+    with the entity's **real** 30-day / daily revenue and a **conservative suggested figure**
+    (entity daily revenue × a 3-day recovery window, method shown). The platform never fabricates an
+    attribution — the suggestion pre-fills the input as a starting estimate the operator confirms or
+    edits (system proposes, human disposes). Pure `suggest_from_daily` tested.
+
+### Activation, team, UAE intelligence & GTM (autonomous round 2)
+- ✅ **Guided onboarding / activation.** `/api/auth/onboarding` extended to 5 steps with deep-link
+  hrefs (company profile → import → see value → invite team); existing dashboard `OnboardingChecklist`
+  now shows a CTA per step + links to a new full-screen `/welcome` page. Drives time-to-first-value.
+- ✅ **Team management.** `routes/team.py` (`GET /api/team`, `/seats`, `PATCH {id}/role`, `{id}/status`)
+  — tenant-scoped, can't change/disable self, roles stay within the `user_role` enum. UI `/settings/team`
+  (invite via existing `/api/auth/invite`, role dropdown, enable/disable, seat usage vs plan). Audited.
+- ✅ **VAT invoice print/PDF.** `build_invoice_html` (pure) + `GET /api/billing/invoices/{id}/print` —
+  browser-printable UAE Tax Invoice (both TRNs, VAT breakdown, payment instructions); "Print / PDF" in
+  the billing modal. `test_billing.py` 11/11.
+- ✅ **UAE retail intelligence.** `services/uae_intelligence.py`: real UAE retail **calendar** (Ramadan/
+  Eid/DSF/back-to-school/National Day — lunar dates flagged approximate), **emirate performance**,
+  **branch-transfer suggestions** (overstock→stockout, human-approved), **dead-stock by emirate** — all
+  from real data. API `/api/uae-intelligence/*`, UI `/uae-insights` + nav. `test_uae_intelligence.py` 6/6.
+  Verified live: emirate revenue split + 15 transfer suggestions.
+- ✅ **CSV import: suppliers type** added (defer PO import + row-tagged rollback — they need a schema
+  change on every target table). `test_csv_import.py` 12/12.
+- ✅ **Commercial pricing + operator metrics + GTM doc.** `plans_catalog` + `GET /api/billing/plans`,
+  `/pricing` page (AED plans, outcome-pricing CTA). `GET /api/tenants/metrics` (super-admin: tenants by
+  status/plan, users, **estimated MRR**) surfaced on `/admin/tenants`. `docs/product/GTM_30_60_90.md`.
+- **Verified:** frontend `next build` clean (40/40 pages); all new endpoints 200 live.
+
+### Developer platform maturity (autonomous round 3)
+- ✅ **Webhook event catalog + real emits.** Published `EVENT_CATALOG` (15 events) in
+  `webhook_service.py` + `GET /api/webhooks/events`, surfaced in the Developer Portal → Webhooks
+  ("Available events", with the HMAC-signature note). Wired real signed emits via the existing
+  `dispatch_event_background`: `billing.invoice.created` (invoice issued), `import.completed` (CSV
+  commit), `action.drafted` (action draft created) — alongside the existing procurement emits.
+  Idempotency keys intentionally deferred: the public API has no critical state-changing writes (only
+  the Sage query), so there's nothing to make idempotent yet. `next build` clean (40/40).
+
+---
+
 ## Deferred (needs a decision or an external service)
 - **Billing** — Stripe/Telr subscriptions + metering (maps onto `tenants.plan` + API-key metering).
 - **Notifications** — WhatsApp/email/Slack (Twilio/Resend/Slack); the worker's webhook dispatcher
@@ -170,10 +341,10 @@ Buildable now with **no** external service; billing stays gated to go-to-market.
 - **E-signature** — DocuSign / Dropbox Sign.
 - **Enterprise infra** — Temporal/Camunda, WorkOS SSO/SAML/SCIM, PostHog+Sentry, Typesense/Meili,
   DuckDB/ClickHouse+dbt, Mapbox, embedded payments.
-- **Next agentic increment (deliberately slow).** Today is autonomy level 0 — the system never acts
-  on its own. The next step maps `action_type` → a *drafted* PO/alert via the existing procure-to-pay
-  + `approval_rules` layer (still human-approved). Gated behind Track 1 (you can't safely raise
-  autonomy until you can measure outcomes).
+- **Agentic autonomy.** Level 1 (system **drafts**, human approves) shipped — see "Action drafting"
+  above. Level 2 (system **executes** an approved low-risk action, e.g. auto-send an approved
+  supplier email or auto-place a PO under the `approval_rules` threshold) remains deferred — it needs
+  an execution adapter + a tighter outcome-measurement guardrail before autonomy is raised.
 - **Other federation engines** — MySQL/BigQuery/Snowflake/Mongo/REST adapters register but error
   until their driver/service is wired (`services/federation/adapters/others.py`).
 

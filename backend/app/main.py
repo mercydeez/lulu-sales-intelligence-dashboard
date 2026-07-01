@@ -24,6 +24,14 @@ from app.routes import ai as ai_routes
 from app.routes import inventory, promotions, alerts, admin, reports, monitoring, employees
 from app.routes import data_sources
 from app.routes import tenants
+from app.routes import billing as billing_routes
+from app.routes import notifications as notifications_routes
+from app.routes import action_drafts as action_drafts_routes
+from app.routes import imports as imports_routes
+from app.routes import roi as roi_routes
+from app.routes import outcome_pricing as outcome_pricing_routes
+from app.routes import team as team_routes
+from app.routes import uae_intelligence as uae_intelligence_routes
 from app.routes import public_api, api_keys, webhooks, procurement
 from app.routes import findings as findings_routes
 from app.routes import security as security_routes
@@ -314,6 +322,14 @@ app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitorin
 app.include_router(employees.router, prefix="/api/employees", tags=["Employees"])
 app.include_router(data_sources.router, prefix="/api/data-sources", tags=["Data Sources"])
 app.include_router(tenants.router, prefix="/api/tenants", tags=["Tenants"])
+app.include_router(billing_routes.router, prefix="/api/billing", tags=["Billing"])
+app.include_router(notifications_routes.router, prefix="/api/notifications", tags=["Notifications"])
+app.include_router(action_drafts_routes.router, prefix="/api/action-drafts", tags=["Action Drafts"])
+app.include_router(imports_routes.router, prefix="/api/imports", tags=["Imports"])
+app.include_router(roi_routes.router, prefix="/api/roi", tags=["ROI"])
+app.include_router(outcome_pricing_routes.router, prefix="/api/outcome-pricing", tags=["Outcome Pricing"])
+app.include_router(team_routes.router, prefix="/api/team", tags=["Team"])
+app.include_router(uae_intelligence_routes.router, prefix="/api/uae-intelligence", tags=["UAE Intelligence"])
 app.include_router(api_keys.router, prefix="/api/api-keys", tags=["API Keys"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 app.include_router(procurement.router, prefix="/api/procurement", tags=["Procurement"])

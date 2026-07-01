@@ -10,7 +10,11 @@ every endpoint is automatically scoped to the caller's tenant; an explicit
   GET  /api/security/kpi      — compact posture tile for the main dashboard
 The live feed is the SSE endpoint /stream/security (routes/stream.py).
 """
+import csv
+import io
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -117,6 +121,52 @@ async def security_events(
         f"FROM security_events WHERE {' AND '.join(where)} "
         "ORDER BY occurred_at DESC LIMIT :limit"), p)).mappings().all()
     return {"data": [dict(r) for r in rows], "count": len(rows)}
+
+
+@router.get("/events/export")
+async def export_events(
+    category: Optional[str] = None,
+    severity: Optional[str] = None,
+    event_type: Optional[str] = None,
+    hours: int = Query(720, ge=1, le=8760),
+    fmt: str = Query("csv", pattern="^(csv|json)$"),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export the tenant's audit/security events as CSV or JSON (compliance/PDPL
+    evidence). Tenant-scoped under RLS; defaults to the audit lane window of 30 days.
+    Sensitive values are never logged into these events, so the export is safe."""
+    _require_admin(user)
+    where = ["tenant_id = :tid", "occurred_at >= now() - make_interval(hours => :hours)"]
+    p: dict = {"tid": _tenant(user), "hours": hours}
+    if category in ("threat", "audit"):
+        where.append("category = :cat"); p["cat"] = category
+    if severity in ("critical", "high", "medium", "low", "info"):
+        where.append("severity = :severity"); p["severity"] = severity
+    if event_type:
+        where.append("event_type = :etype"); p["etype"] = event_type
+    rows = (await db.execute(text(
+        "SELECT occurred_at, event_type, severity, category, actor_email, "
+        "ip_address, method, path, detail, evidence "
+        f"FROM security_events WHERE {' AND '.join(where)} "
+        "ORDER BY occurred_at DESC LIMIT 10000"), p)).mappings().all()
+
+    label = category or "events"
+    if fmt == "json":
+        body = json.dumps([{**dict(r), "occurred_at": r["occurred_at"].isoformat()}
+                           for r in rows], default=str, indent=2)
+        return StreamingResponse(iter([body]), media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="audit-{label}.json"'})
+
+    buf = io.StringIO()
+    cols = ["occurred_at", "event_type", "severity", "category", "actor_email",
+            "ip_address", "method", "path", "detail"]
+    w = csv.writer(buf)
+    w.writerow(cols)
+    for r in rows:
+        w.writerow([r["occurred_at"].isoformat()] + [r[c] for c in cols[1:]])
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="audit-{label}.csv"'})
 
 
 @router.get("/kpi")

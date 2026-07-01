@@ -122,6 +122,25 @@ async def get_current_user(
     except Exception:
         pass
 
+    # Tenant lifecycle gate (Phase 2): a suspended/cancelled/deleted tenant is
+    # blocked from product/API. Super-admins bypass so operators can still manage
+    # the tenant (e.g. reactivate it). Fails OPEN on lookup error — never lock
+    # everyone out because of a transient DB hiccup.
+    if user.get('role') != 'super_admin':
+        try:
+            from app.services.database import async_session
+            from app.services.tenant_lifecycle import get_tenant_status, is_access_allowed
+            async with async_session() as _s:
+                _status = await get_tenant_status(_s, user.get('tenant_id') or 1)
+            if not is_access_allowed(_status):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Tenant access is {_status}. Contact support.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
     # Surface tenant/user ids in structured logs (numeric ids only — no secrets).
     try:
         from app.config import log_tenant_ctx, log_user_ctx
@@ -478,18 +497,32 @@ async def onboarding_status(current_user: dict = Depends(get_current_user)):
             text("SELECT COUNT(*) FROM users WHERE tenant_id = :t"), {"t": tenant_id})).scalar() or 0
         sales = (await session.execute(
             text("SELECT COUNT(*) FROM sales_fact_view WHERE tenant_id = :t"), {"t": tenant_id})).scalar() or 0
+        # Company profile counts as set once a legal name + emirate exist.
+        profile_done = bool((await session.execute(text(
+            "SELECT 1 FROM tenant_billing_profile WHERE tenant_id = :t "
+            "AND legal_name IS NOT NULL AND emirate IS NOT NULL"), {"t": tenant_id})).fetchone())
+        # The value screen has something to show once inventory exists.
+        inventory = (await session.execute(text(
+            "SELECT COUNT(*) FROM inventory i JOIN items it ON it.id=i.item_id "
+            "WHERE it.tenant_id = :t"), {"t": tenant_id})).scalar() or 0
 
-    has_data = sales > 0
+    has_data = sales > 0 or inventory > 0
     has_team = users > 1
     steps = [
-        {"key": "create_account", "label": "Create your workspace", "done": True},
-        {"key": "load_data", "label": "Load sales data", "done": has_data},
-        {"key": "invite_team", "label": "Invite a teammate", "done": has_team},
+        {"key": "create_account", "label": "Create your workspace", "done": True, "href": None},
+        {"key": "company_profile", "label": "Set up your UAE company profile",
+         "done": profile_done, "href": "/settings/company"},
+        {"key": "load_data", "label": "Import your sales & inventory",
+         "done": has_data, "href": "/imports"},
+        {"key": "review_value", "label": "See your value in AED",
+         "done": has_data and inventory > 0, "href": "/value"},
+        {"key": "invite_team", "label": "Invite a teammate",
+         "done": has_team, "href": "/settings/team"},
     ]
     done = sum(1 for s in steps if s["done"])
     return {
         "tenant_id": tenant_id,
-        "stores": stores, "users": users, "sales_records": sales,
+        "stores": stores, "users": users, "sales_records": sales, "inventory_records": inventory,
         "steps": steps,
         "progress_pct": round(done / len(steps) * 100),
         "complete": done == len(steps),

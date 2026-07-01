@@ -50,6 +50,28 @@ def _subscribed(events: List[str], event: str) -> bool:
     return "*" in events or event in events
 
 
+# Published catalog of the events a tenant can subscribe to (Workstream J). Keep in
+# sync with the dispatch_event_background call sites across the app + worker.
+EVENT_CATALOG: List[Dict] = [
+    {"event": "finding.created", "description": "A diagnostics finding was detected."},
+    {"event": "finding.resolved", "description": "A finding was resolved (manually or by the measure loop)."},
+    {"event": "action.accepted", "description": "An operator accepted a finding's recommended action."},
+    {"event": "action.drafted", "description": "A human-approvable action draft was generated."},
+    {"event": "outcome.improved", "description": "An accepted recommendation's metric recovered."},
+    {"event": "outcome.worsened", "description": "An accepted recommendation's metric got worse."},
+    {"event": "forecast.completed", "description": "A forecast/backtest run finished."},
+    {"event": "import.completed", "description": "A CSV import finished (rows written)."},
+    {"event": "import.failed", "description": "A CSV import failed; no rows were written."},
+    {"event": "stockout.risk", "description": "An item is at/near stockout."},
+    {"event": "purchase_order.created", "description": "A purchase order was created."},
+    {"event": "purchase_order.approved", "description": "A purchase order was approved."},
+    {"event": "billing.invoice.created", "description": "A VAT invoice was issued."},
+    {"event": "billing.payment_failed", "description": "A payment attempt failed."},
+    {"event": "webhook.test", "description": "A test event you triggered from the dev portal."},
+]
+CATALOG_EVENTS = {e["event"] for e in EVENT_CATALOG}
+
+
 # ---------------------------------------------------------------------------
 # CRUD
 # ---------------------------------------------------------------------------

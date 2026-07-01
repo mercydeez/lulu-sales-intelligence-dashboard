@@ -47,6 +47,9 @@ async def export_my_tenant(
                        actor_user_id=user.get("id"), actor_email=user.get("email"),
                        detail=f"Tenant {tenant_id} data export generated",
                        evidence={"tables": list(data.get("tables", {}).keys())})
+    # Usage metering (Phase 3): count this export against the billing-period quota.
+    from app.services.usage_metering import record_usage
+    await record_usage(tenant_id, "export", metadata={"kind": "data_rights"})
     # Force a download with a stable filename.
     return JSONResponse(content=data, headers={
         "Content-Disposition": f'attachment; filename="tenant-{tenant_id}-export.json"'

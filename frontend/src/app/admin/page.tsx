@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, Users, Store, Activity, LayoutDashboard, RefreshCw, Lock } from 'lucide-react';
+import Link from 'next/link';
+import { Shield, Users, Store, Activity, LayoutDashboard, RefreshCw, Lock, Building2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Button, Tabs, Card, EmptyState, Reveal } from '@/components/ui';
 import {
@@ -81,9 +82,17 @@ export default function AdminPage() {
           description="Platform overview, accounts, and store directory"
           icon={<Shield className="w-5 h-5" />}
           actions={
-            <Button variant="secondary" size="md" onClick={fetchData} aria-label="Refresh">
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Link href="/admin/tenants">
+                <Button variant="secondary" size="md">
+                  <Building2 className="w-4 h-4" />
+                  Tenants
+                </Button>
+              </Link>
+              <Button variant="secondary" size="md" onClick={fetchData} aria-label="Refresh">
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           }
         />
 

@@ -32,6 +32,15 @@ def _validate_url(url: str) -> None:
         raise HTTPException(status_code=400, detail="Webhook URL must be http(s)")
 
 
+@router.get("/events")
+async def event_catalog(current_user: dict = Depends(get_current_user)):
+    """The catalog of events a tenant can subscribe a webhook to. Subscribe to
+    specific events, or use ['*'] for all."""
+    _require_admin(current_user)
+    return {"events": wh.EVENT_CATALOG,
+            "note": "Deliveries are signed (X-Webhook-Signature: sha256=<hmac>). Verify with your secret."}
+
+
 @router.post("")
 async def create_webhook(
     body: WebhookCreate,

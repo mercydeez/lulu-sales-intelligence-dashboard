@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Lightbulb, RefreshCw, CheckCircle2, Eye, AlertTriangle,
-  TrendingUp, TrendingDown, Minus, Clock,
+  TrendingUp, TrendingDown, Minus, Clock, Wand2,
 } from 'lucide-react';
-import { PageHeader, Card, Badge, Button, Skeleton, EmptyState, Stagger, RevealItem } from '@/components/ui';
+import { PageHeader, Card, Badge, Button, Skeleton, EmptyState, Stagger, RevealItem, useToast } from '@/components/ui';
+import { apiPost, ApiError } from '@/lib/apiClient';
 import {
   fetchFindings,
   fetchFindingsSummary,
@@ -78,6 +79,7 @@ export default function InsightsPage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<FilterValue>('open');
   const [busyId, setBusyId] = useState<number | null>(null);
+  const { show } = useToast();
 
   const load = useCallback(async () => {
     try {
@@ -114,6 +116,20 @@ export default function InsightsPage() {
       else if (action === 'resolve') await resolveFinding(id);
       else await acceptFindingAction(id);
       await load();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Autonomy level 1: draft a human-approvable action from the finding. Never executes.
+  const draftAction = async (id: number) => {
+    setBusyId(id);
+    try {
+      const d = await apiPost<{ draft_type: string }>(`/api/action-drafts/from-finding/${id}`, {});
+      show(`Drafted a ${d.draft_type.replace('_', ' ')} — review it in Action Drafts`,
+           { variant: 'success' });
+    } catch (e) {
+      show(e instanceof ApiError ? e.message : 'Could not draft action', { variant: 'error' });
     } finally {
       setBusyId(null);
     }
@@ -229,6 +245,15 @@ export default function InsightsPage() {
                           title="Accept the recommended action (records your decision)"
                         >
                           <Lightbulb className="w-4 h-4 me-1.5" /> Accept action
+                        </Button>
+                      )}
+                      {f.recommended_action && (
+                        <Button
+                          variant="secondary" size="sm" disabled={busyId === f.id}
+                          onClick={() => draftAction(f.id)}
+                          title="Draft a concrete, human-approvable action (never auto-executed)"
+                        >
+                          <Wand2 className="w-4 h-4 me-1.5" /> Draft action
                         </Button>
                       )}
                       {f.status === 'open' && (
