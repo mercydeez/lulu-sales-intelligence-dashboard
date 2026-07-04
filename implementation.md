@@ -334,6 +334,55 @@ professional before production/customer use."**
 
 ---
 
+## 12-Month Blueprint execution (see `docs/EXECUTION_BLUEPRINT_12M.md`)
+The audit-derived Q1→Q4 plan. Tracked here as items land.
+
+### E3-1 — Daily Executive Briefing ✅ done (product surface)
+The audit's "single highest-leverage feature" — the executive retention hook. Assembly of
+existing data into one morning screen; no new ML, no fabrication.
+- ✅ **Service** `services/briefing.py`: pure `build_briefing(raw)` (analyst-style narrative +
+  WoW math + decision/leak assembly + win precedence) — unit-tested without a DB, mirroring
+  `roi.py`; async `generate_briefing(db, tenant_id, allowed)` composes KPIs (week-over-week
+  revenue/units), open findings ("why"), reorder risks + actionable findings ("decide today"),
+  a measure-loop recovery else a growth "win", the UAE calendar + 14-day forecast, and the
+  dead-stock+stockout **AED cost of inaction**. Tenant + accessible-store scoped.
+- ✅ **API** `routes/briefing.py` → `/api/briefing`: `GET /` (JSON) + `GET /print` (self-contained
+  emailable/printable one-pager, the same content you'd email a CEO). Registered in `main.py`.
+- ✅ **UI** `/briefing` (`app/briefing/page.tsx`): **AI-first premium redesign** — a `hero-mesh`
+  "Sage, your AI Chief of Staff" brief that types out a client-composed verdict (mood-aware: strong/
+  steady/soft/attention), one **focal decision** ("What needs you") with a Sage recommendation +
+  primary CTA, an editorial numbers strip (big tabular AED + trend), a tight "why it's moving" list,
+  a forward-looking "on your radar" (season + cost-of-waiting), and a quiet win close. Orchestrated
+  reveal + typewriter respect `prefers-reduced-motion`; premium "Sage is reading your stores" loading
+  state; Sage-voiced empty state. All narrative composed **client-side from the existing API** (no
+  backend change). Deep-links to Insights/Procurement/Value; "Email brief" download. Nav entry
+  (Sunrise icon, under Dashboard) + i18n `nav.briefing` (EN/AR); auto-appears in the command palette.
+  `tsc --noEmit` + `next build` clean (41/41 pages).
+- ✅ **Tests** `tests/test_briefing.py` (10): WoW %/trend, decision merge+ranking, leak math, win
+  precedence, empty-state, printable HTML. `tsc --noEmit` clean.
+- **Deferred (ops, per the "product over infra" directive):** the 07:00 Asia/Dubai scheduled email
+  send + unsubscribe. `/api/briefing/print` is the ready email body; only the scheduler/SMTP wiring
+  (a non-blocking ops task) remains.
+
+### E0-1 — Automated backups + rehearsed restore ✅ done
+Closes the audit's "no automated backup/restore test exists — disqualifying" gap and Risk #8.
+- ✅ **Automated backups**: prod `backup` sidecar (both compose files; dev via `--profile backup`) —
+  daily `pg_dump -Fc` at `BACKUP_AT_UTC` + on-start dump, each **self-verified**, writing a
+  `latest.json` manifest (size/sha256/verified) for monitoring, pruned to `RETENTION_DAYS`.
+  `scripts/backup-scheduler.sh` is a dependency-free busybox-`sh` loop (no cron daemon).
+- ✅ **Offsite-capable**: `BACKUP_S3_URL` (+ `AWS_*`) offloads to object storage (aws-cli/rclone);
+  documented managed-snapshot alternative for Render/RDS. A backup on the DB's own host isn't DR.
+- ✅ **Dead-man's-switch**: `BACKUP_HEARTBEAT_URL` pinged only on a **verified** success (E0-2 hook).
+- ✅ **Rehearsed restore**: `scripts/drill-restore.sh` — **non-destructive** (restores into a scratch
+  DB, never the source), validates **every public table's row count** + a probe checksum, measures
+  RTO and fails if over `RTO_BUDGET_SECONDS`. **Runs in CI on every push** (`backup-restore-drill`
+  job, self-seeded, exact pg15 tools) — continuous proof, not a one-off.
+- ✅ **Docs**: `docs/runbooks/BACKUP_AND_RESTORE.md` (schedule/retention/offsite/monitoring/drill +
+  RPO/RTO targets), cross-linked `RESTORE_FROM_BACKUP.md`, DEPLOY.md section, README/CLAUDE.md
+  commands; READINESS_CHECKLIST Phase 4 boxes checked; RISK_REGISTER #8 → MITIGATED.
+- **Residual (per-deploy ops, not code):** set `BACKUP_S3_URL`/managed snapshots on the live deploy;
+  run + log the first quarterly live drill against the real pilot DB.
+
 ## Deferred (needs a decision or an external service)
 - **Billing** — Stripe/Telr subscriptions + metering (maps onto `tenants.plan` + API-key metering).
 - **Notifications** — WhatsApp/email/Slack (Twilio/Resend/Slack); the worker's webhook dispatcher

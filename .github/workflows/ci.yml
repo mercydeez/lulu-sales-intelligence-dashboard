@@ -112,9 +112,12 @@ jobs:
 
       - name: Backup/restore scripts parse (bash -n)
         run: |
-          for s in scripts/backup-postgres.sh scripts/restore-postgres.sh scripts/verify-backup.sh; do
+          for s in scripts/backup-postgres.sh scripts/restore-postgres.sh scripts/verify-backup.sh \
+                   scripts/drill-restore.sh scripts/backup-scheduler.sh; do
             echo "checking $s"; bash -n "$s"
           done
+          # The scheduler must also run under POSIX sh (busybox in the sidecar).
+          sh -n scripts/backup-scheduler.sh
 
       - name: Build backend image
         run: docker build -t app-backend-test ./backend
@@ -223,6 +226,44 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  # =========================================================================
+  # Backup / restore drill (blueprint E0-1) — proves the DR path on every push.
+  # Takes a real pg_dump, verifies it, restores into a scratch DB, and asserts
+  # every table's row count + a content checksum match. This is the automated
+  # "rehearsed restore" the audit flagged as missing.
+  # =========================================================================
+  backup-restore-drill:
+    name: Backup/Restore Drill
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: salesuser
+          POSTGRES_PASSWORD: salespass
+          POSTGRES_DB: salesdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U salesuser -d salesdb"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run the restore drill (self-seeded probe data, exact-version pg tools)
+        # Use postgres:15-alpine so pg_dump/pg_restore exactly match the server.
+        # --network host lets the container reach the `postgres` service on localhost.
+        run: |
+          docker run --rm --network host --entrypoint /bin/sh \
+            -e PGHOST=localhost -e PGPORT=5432 -e PGUSER=salesuser -e PGPASSWORD=salespass \
+            -e SOURCE_DB=salesdb -e SCRATCH_DB=retailiq_drill -e MAINT_DB=postgres \
+            -e DRILL_SELF_SEED=1 -e BACKUP_DIR=/tmp/backups -e RTO_BUDGET_SECONDS=600 \
+            -v "$PWD/scripts:/scripts:ro" \
+            postgres:15-alpine /scripts/drill-restore.sh
 
   # =========================================================================
   # Security — dependency + image vulnerability scanning (supply chain, A06)

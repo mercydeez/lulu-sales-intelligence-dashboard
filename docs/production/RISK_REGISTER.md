@@ -13,7 +13,7 @@ Legend — Sev: 🔴 Critical / 🟠 High / 🟡 Medium / 🟢 Low. Status: OPEN
 | 5 | Seed runs from every API replica | 🟠 | High (multi-replica) | Duplicate/competing seeds | Idempotent seed | P2 | OPEN |
 | 6 | Production accepts unsafe config (no fail-closed flags) | 🟠 | Medium | Demo users / docs / wildcard CORS in prod | Partial (`validate_security`) | P1 | OPEN |
 | 7 | Redis unauthenticated in prod compose | 🟠 | Medium | Token blacklist + cache tampering | Internal network only | P2 | OPEN |
-| 8 | No backup/restore → unrecoverable data loss | 🟠 | Medium | Total data loss on disk/DB failure | Managed-DB snapshots (if any) | P4 | OPEN |
+| 8 | No backup/restore → unrecoverable data loss | 🟢 | Low (residual) | Total data loss on disk/DB failure | **Automated nightly backups (verified) + CI-enforced restore drill (E0-1)**; residual = configure offsite `BACKUP_S3_URL`/snapshots + quarterly live drill per deploy | P4 | MITIGATED |
 | 9 | No readiness probe → traffic before deps ready | 🟠 | High | 5xx storms on deploy/restart | Basic `/health` | P3 | OPEN |
 | 10 | External AI could exfiltrate tenant data unflagged | 🟠 | Low–Med | Tenant data to 3rd-party LLM | Local-first + fallback | P11 | OPEN |
 | 11 | Public API could surface raw SQL | 🟠 | Low | Schema disclosure | SELECT-only guard | P11 | OPEN |

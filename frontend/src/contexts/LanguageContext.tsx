@@ -11,6 +11,7 @@ type Dict = Record<string, string>;
 // Data/values stay untranslated; this is an EN/AR + RTL shell pass, not full i18n.
 const en: Dict = {
   'nav.dashboard': 'Dashboard',
+  'nav.briefing': 'Briefing',
   'nav.inventory': 'Inventory',
   'nav.promotions': 'Promotions',
   'nav.procurement': 'Procurement',
@@ -62,6 +63,7 @@ const en: Dict = {
 
 const ar: Dict = {
   'nav.dashboard': 'لوحة القيادة',
+  'nav.briefing': 'الموجز اليومي',
   'nav.inventory': 'المخزون',
   'nav.promotions': 'العروض',
   'nav.procurement': 'المشتريات',

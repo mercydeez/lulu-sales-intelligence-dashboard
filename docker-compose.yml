@@ -150,6 +150,39 @@ services:
       - sales_network
     restart: unless-stopped
 
+  # Automated backups (blueprint E0-1) — opt-in locally with `--profile backup`
+  # so the default `docker compose up` stays lean. In production this runs by
+  # default (docker-compose.production.yml). Exercise the whole path locally:
+  #   docker compose --profile backup up backup          # nightly loop + on-start dump
+  #   docker compose --profile backup run --rm backup \
+  #     /bin/sh -c "SOURCE_DB=salesdb DRILL_SELF_SEED=0 sh /scripts/drill-restore.sh"
+  backup:
+    image: postgres:15-alpine
+    container_name: ${PROJECT_PREFIX:-sales}_backup
+    profiles: ["backup"]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-salesuser}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-salespass}
+      PGDATABASE: ${POSTGRES_DB:-salesdb}
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_AT_UTC: ${BACKUP_AT_UTC:-02:00}
+      BACKUP_ON_START: ${BACKUP_ON_START:-1}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec /bin/sh /scripts/backup-scheduler.sh"]
+    volumes:
+      - ./scripts:/scripts:ro
+      - postgres_backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sales_network
+
   # Local LLM for Sage (and the AI assistant). Behind the "ai" profile so the
   # default `docker compose up` stays lean — start it with `--profile ai`.
   # No paid key: pull a model once with `docker exec sales_ollama ollama pull llama3.2`.
@@ -168,6 +201,7 @@ volumes:
   postgres_data:
   redis_data:
   ollama_models:
+  postgres_backups:
 
 networks:
   sales_network:

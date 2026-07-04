@@ -34,6 +34,7 @@ import {
   UploadCloud,
   TrendingUp,
   MapPin,
+  Sunrise,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -48,6 +49,7 @@ interface NavItem {
 
 export const navItems: NavItem[] = [
   { label: 'Dashboard', tKey: 'nav.dashboard', href: '/', icon: <LayoutDashboard className="w-5 h-5" /> },
+  { label: 'Briefing', tKey: 'nav.briefing', href: '/briefing', icon: <Sunrise className="w-5 h-5" /> },
   { label: 'Inventory', tKey: 'nav.inventory', href: '/inventory', icon: <Package className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Promotions', tKey: 'nav.promotions', href: '/promotions', icon: <Tag className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Procurement', tKey: 'nav.procurement', href: '/procurement', icon: <Truck className="w-5 h-5" />, permission: 'can_manage_inventory' },

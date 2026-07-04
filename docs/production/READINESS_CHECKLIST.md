@@ -30,11 +30,15 @@
 - [ ] `/health` remains backward-compatible
 - [ ] Compose + `render.yaml` use `/health/ready`
 
-## Backup & recovery (Phase 4)
-- [ ] `backup-postgres.sh`, `restore-postgres.sh`, `verify-backup.sh` parse (`bash -n`)
-- [ ] Restore refuses accidental prod restore without explicit confirm
-- [ ] RPO/RTO documented for pilot
-- [ ] Rollback + DR runbooks exist
+## Backup & recovery (Phase 4 + blueprint E0-1)
+- [x] `backup-postgres.sh`, `restore-postgres.sh`, `verify-backup.sh`, `drill-restore.sh`, `backup-scheduler.sh` parse (`bash -n` + `sh -n`)
+- [x] Restore refuses accidental prod restore without explicit confirm
+- [x] RPO/RTO documented for pilot (`docs/runbooks/BACKUP_AND_RESTORE.md`)
+- [x] Rollback + DR runbooks exist (`BACKUP_AND_RESTORE.md`, `RESTORE_FROM_BACKUP.md`)
+- [x] **Automated** nightly backups wired (prod `backup` sidecar: verify + manifest + prune + offsite-capable)
+- [x] **Restore drill runs in CI on every push** (`backup-restore-drill`: real backup→restore→row-count+checksum)
+- [ ] Offsite `BACKUP_S3_URL` (or managed-DB snapshots) configured on the live deploy — per-deploy op
+- [ ] Quarterly drill against the real pilot DB logged in the runbook — per-pilot op
 
 ## Auth lifecycle (Phase 5)
 - [ ] Reset tokens hashed, single-use, expiring; reset revokes sessions
@@ -83,6 +87,7 @@
 - [x] CI validates both compose files (`docker` job: dev + production `config -q`)
 - [x] CI runs fresh-DB + existing-DB migration (`migrations` job: apply + idempotent re-apply)
 - [x] CI runs backup/restore syntax + dependency/image scan (`docker` bash -n; `security-scan` pip-audit/npm/Trivy)
+- [x] CI runs a live backup→restore **drill** with row-count + checksum validation (`backup-restore-drill` job)
 
 ## Final gate (Phase 14)
 - [x] Full gate battery run with recorded output (`FINAL_RELEASE_REPORT.md`)

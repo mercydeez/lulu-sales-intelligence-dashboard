@@ -33,6 +33,14 @@ cd frontend; npm install --legacy-peer-deps
 npm run dev
 npm run build
 npx tsc --noEmit        # CI currently runs this with `|| true` — type errors exist silently
+
+# Backups & DR (blueprint E0-1) — prod runs the `backup` sidecar automatically.
+# Dev exercise / on-demand:
+docker compose --profile backup up backup                 # nightly loop + on-start dump
+docker compose --profile backup run --rm backup /bin/sh /scripts/backup-postgres.sh   # one-off dump
+docker compose --profile backup run --rm backup /bin/sh /scripts/drill-restore.sh     # non-destructive restore drill
+# The rehearsed restore runs in CI on every push (`backup-restore-drill`).
+# Runbooks: docs/runbooks/BACKUP_AND_RESTORE.md, RESTORE_FROM_BACKUP.md
 ```
 
 Demo logins (password `Demo@2026!`): `atharva@retaildemo.app` (super_admin), `krishna@retaildemo.app` (regional_manager, Dubai only), `yash@retaildemo.app` (store_manager, Al Barsha only).

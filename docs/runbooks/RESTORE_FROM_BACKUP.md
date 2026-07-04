@@ -3,6 +3,11 @@
 **Destructive.** Restoring overwrites the target database. Use only after data loss
 or unrecoverable corruption, when forward fixes and image rollback are not enough.
 
+> Backups, retention, offsite, and the **non-destructive** rehearsed-restore *drill* live in
+> [`BACKUP_AND_RESTORE.md`](BACKUP_AND_RESTORE.md). To rehearse without risk, run the drill
+> (`scripts/drill-restore.sh`) — it restores into a scratch DB and validates row counts. This
+> runbook is only for a real, overwriting recovery.
+
 ## 0. Before you start
 - Take a **fresh backup of the current (broken) state** for forensics:
   `./scripts/backup-postgres.sh` → keep it separately.

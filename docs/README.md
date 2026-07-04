@@ -6,6 +6,8 @@ The documentation is organized by how you should use it, not by when it was writ
 
 - [`../README.md`](../README.md) - setup, architecture, working features, and the current source of truth.
 - [`../implementation.md`](../implementation.md) - the single living implementation plan & tracker (what's shipped + what's next).
+- [`EXECUTION_BLUEPRINT_12M.md`](EXECUTION_BLUEPRINT_12M.md) - the audit-derived **12-month execution plan** (epics, milestones, GTM, hiring, investor gates). E0-1 (backups + rehearsed restore) is done.
+- [`runbooks/`](runbooks/) - incident + operations runbooks. Start with [`runbooks/BACKUP_AND_RESTORE.md`](runbooks/BACKUP_AND_RESTORE.md) for disaster recovery.
 - [`FRONTEND_OVERHAUL_PLAN.md`](FRONTEND_OVERHAUL_PLAN.md) - **contributor playbook**: phase-by-phase guide to take the frontend from basic → Awwwards-level (start here for UI work).
 - [`architecture/ADR.md`](architecture/ADR.md) - the important engineering decisions and tradeoffs.
 - [`product/DEMO_SCRIPT.md`](product/DEMO_SCRIPT.md) - the fastest way to walk someone through the project.

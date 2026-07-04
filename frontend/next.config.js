@@ -32,7 +32,14 @@ const nextConfig = {
   output: 'standalone',
   swcMinify: true,
   async headers() {
-    return [{ source: '/:path*', headers: SECURITY_HEADERS }];
+    // In development, drop the CSP: its strict `connect-src` blocks Next's HMR
+    // websocket (ws://localhost:3000), which breaks client hydration locally.
+    // Production keeps the full CSP. (Mirrors the backend's dev CSP skip.)
+    const isDev = process.env.NODE_ENV !== 'production';
+    const headers = isDev
+      ? SECURITY_HEADERS.filter((h) => h.key !== 'Content-Security-Policy')
+      : SECURITY_HEADERS;
+    return [{ source: '/:path*', headers }];
   },
   // Reduce chunk size issues
   experimental: {

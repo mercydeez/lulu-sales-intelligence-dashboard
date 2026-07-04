@@ -59,6 +59,23 @@ assistant uses the built-in rule-based responder (still answers from live data).
 
 ---
 
+## Backups & disaster recovery (blueprint E0-1)
+
+Do not host a real tenant without this. Full detail:
+[`docs/runbooks/BACKUP_AND_RESTORE.md`](docs/runbooks/BACKUP_AND_RESTORE.md).
+
+- **Self-hosted (docker compose):** the production stack runs an always-on `backup` sidecar —
+  daily `pg_dump` at `BACKUP_AT_UTC` (default 02:00 UTC) + an immediate backup on boot, each
+  self-verified, pruned to `BACKUP_RETENTION_DAYS`. Set `BACKUP_S3_URL` (+ `AWS_*`) for an
+  **offsite** copy — a backup on the DB's own host is not disaster recovery.
+- **Render (managed Postgres):** enable the provider's automated daily snapshots — that is your
+  offsite tier. Use `scripts/backup-postgres.sh` from any box with DB access for on-demand dumps.
+- **Restore is proven, not assumed:** `scripts/drill-restore.sh` restores into a scratch DB and
+  checks row counts + a checksum; CI runs it on every push (`backup-restore-drill`). Rehearse
+  against the real pilot DB quarterly and log it in the runbook.
+- **Real recovery** (overwrites the DB): follow
+  [`docs/runbooks/RESTORE_FROM_BACKUP.md`](docs/runbooks/RESTORE_FROM_BACKUP.md).
+
 ## Demo logins (password `Demo@2026!`)
 | Email | Role | Scope |
 |---|---|---|
@@ -67,7 +84,8 @@ assistant uses the built-in rule-based responder (still answers from live data).
 | `yash@retaildemo.app` | store_manager | Al Barsha (1 store) |
 
 ## Gotchas
-- **Free Postgres expires ~90 days** after creation — back up / recreate before then.
+- **Free Postgres expires ~90 days** after creation — take a dump
+  (`scripts/backup-postgres.sh`) and recreate before then; see Backups & DR above.
 - **First deploy is slow** (~1–2 min) while the seeder loads the CSV; subsequent boots skip it.
 - Local dev is unchanged: `docker compose up -d` still works (the backend seeds
   the local DB the same way; no Postgres entrypoint needed).
