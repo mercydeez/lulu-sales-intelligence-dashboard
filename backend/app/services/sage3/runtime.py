@@ -50,7 +50,10 @@ async def answer_sage3(
 ) -> AgentState:
     """Run the v3 graph once (resolving any pending dialogue), persist the turn,
     and return the terminal state (final_answer + confidence + trace + evidence)."""
-    context = get_or_create_context(session_id)
+    # role threads the persona into the stored system message (role_experience);
+    # the v3 graph builds its own prompts, so a persona-aware graph prompt is a
+    # later, separate hook.
+    context = get_or_create_context(session_id, role)
     pending = getattr(context, "pending", None)
 
     effective_query = message

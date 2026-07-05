@@ -337,6 +337,44 @@ professional before production/customer use."**
 ## 12-Month Blueprint execution (see `docs/EXECUTION_BLUEPRINT_12M.md`)
 The audit-derived Q1→Q4 plan. Tracked here as items land.
 
+### Role Experience Engine — Wave 1 ✅ done (verified live)
+The infrastructure from `docs/product/ROLE_EXPERIENCE_BLUEPRINT.md`: every role gets a different
+homepage, navigation, Sage persona, KPI set, and decision scope from **configuration**, not
+duplicated pages. One engine, many experiences. Wave 1 covers the roles that exist in RBAC today
+(`store_manager`, `regional_manager`) + a `_default` that preserves current behavior for everyone
+else. Roles needing data we don't have (HR attendance, Loss Prevention POS grain) are intentionally
+absent.
+- ✅ **Config-as-data** `services/role_experience.py`: one `_CONFIGS` record per role (persona pack,
+  homepage `zones`, KPI descriptors → existing endpoints, nav manifest → existing routes, decision
+  scope, notification defaults). `resolve_config` deep-copies; unknown roles degrade to `_default`.
+  **No role-specific code paths anywhere else.** Adding a role = adding a config here.
+- ✅ **API** `GET /api/experience` returns the caller's resolved config (server-driven UI).
+- ✅ **Decision scope** (chain/region/store) threaded through the decision center: `scope_decisions`
+  filters region/store users to their own stores (chain-wide findings excluded); a store manager's
+  triage collapses the regional lane into "store" (they're the on-the-ground owner). Wired into
+  `/api/decisions`, `/triage`, `/summary` via `decision_scope_for(role)`.
+- ✅ **Sage persona** injected: `get_system_prompt(role)` appends the role's persona fragment
+  (Store Coach / Regional Coach) — voice/focus only, explicitly subordinate to the grounding &
+  honesty rules; threaded through `get_or_create_context(session_id, role)` on v2 + v3 paths.
+- ✅ **Frontend engine** (no new dashboards): `contexts/ExperienceContext` (fetches config, fails
+  open to default); `app/today/page.tsx` — a **generic zone renderer** (`ZONE_REGISTRY`: verdict /
+  kpis / decisions / approvals / stock) with **zero role-specific code**; `Sidebar` renders the nav
+  manifest (icon-name registry) or falls back to the full built-in sidebar when `nav === null`;
+  `ClientLayout` redirects to the config `home`; `ChatBot` header shows the persona title. i18n
+  EN/AR for the new nav keys.
+- ✅ **Tests** `tests/test_role_experience.py` (14): distinct configs per role, unknown→default,
+  copies-not-references, KPI descriptors reference valid sources/formats, nav references existing
+  routes only, persona present but grounding wins, and the scope filter (chain sees all / store sees
+  only its store & no chain-wide / region sees its stores / store triage has no regional lane).
+  42 backend tests green; `tsc --noEmit` clean.
+- ✅ **Verified live (2026-07-05):** one `/api/experience` → three experiences. **Store Manager
+  (yash):** `/today` = Sage **Store Coach**, store-scoped verdict (AED 274k = Al Barsha alone),
+  KPIs Sold-today/Revenue-today/Stockouts-now/Decisions-waiting, decisions all Al Barsha, 4-item nav
+  (Today·My Work·My Store·Alerts). **Regional Manager (krishna):** the *same page* = **Regional
+  Coach**, region-scoped verdict (AED 1.01M = 3 Dubai stores), KPIs incl. Trend + At-stake, 5-item
+  nav (+Approvals, My Stores). **super_admin:** `_default`, full sidebar, `/` home — unchanged.
+  Decision triage entities confirmed scoped: yash→Al Barsha only, krishna→Dubai stores, atharva→all.
+
 ### E3-1 — Daily Executive Briefing ✅ done (product surface)
 The audit's "single highest-leverage feature" — the executive retention hook. Assembly of
 existing data into one morning screen; no new ML, no fabrication.
@@ -363,6 +401,62 @@ existing data into one morning screen; no new ML, no fabrication.
 - **Deferred (ops, per the "product over infra" directive):** the 07:00 Asia/Dubai scheduled email
   send + unsubscribe. `/api/briefing/print` is the ready email body; only the scheduler/SMTP wiring
   (a non-blocking ops task) remains.
+
+### E3-2 — AI Decision Center ✅ done (verified live)
+An **inbox of decisions**, not a dashboard: every card carries the problem, business impact (AED),
+evidence, confidence, recommended action, and expected outcome — money-ranked, Sage-voiced.
+- ✅ **Service** `services/decision_center.py`: pure builders (`estimate_impact`, `confidence`,
+  `expected_outcome`, `evidence_facts`, `build_decision`, `build_reorder_decision`, `sort_decisions`)
+  — **everything derived from the finding's own evidence** (worker `rules.js` payloads): revenue rules
+  → weekly AED gap; returns rules → units (returns carry no price — AED never fabricated); laggard →
+  no figure, basis says why. Confidence is deterministic + explainable (window completeness,
+  deviation-vs-threshold ratio, scale floor — factors listed, score is their sum). Composer merges
+  open findings + forecast reorder risks (best-effort), sorted money-first.
+- ✅ **API** `routes/decisions.py` → `/api/decisions` (`?state=pending|decided`) + `/summary`
+  (nav badge: pending count + AED/week at stake). **Read-only by design** — approve/dismiss/draft
+  reuse the tested `findings` (`accept-action`, `resolve`) and `action-drafts` endpoints, so the
+  measure loop keeps proving outcomes unchanged.
+- ✅ **UI** `/decisions` (`app/decisions/page.tsx`): executive inbox — Sage header ("N decisions
+  ready · ~AED X/week at stake"), Needs-decision/Decided tabs, severity-accented cards with evidence
+  chips, confidence pill, "Sage recommends + expected outcome" block, expandable "Why this
+  confidence & impact" (factors + impact basis), **Approve / Draft the action / Dismiss** (reorder
+  cards deep-link to Procurement). Top-12-by-money with "Show all N". **Decided tab shows the measure
+  loop**: "Measuring…" → "Worked — metric recovered" / "No change yet" / "Worsened", with approver +
+  date. Nav entry (Scale icon, badge = pending count) + i18n EN/AR.
+- ✅ **Tests** `tests/test_decision_center.py` (13, pure): honest-derivation contract (AED only where
+  derivable, units for returns, laggard claims nothing), confidence determinism/monotonicity,
+  money-first sorting (AED-less critical sorts after any AED), summary sums only derivable AED.
+- ✅ **Verified live (2026-07-05):** 55 pending decisions ranked AED 131,295 → … per week at stake
+  (total ~AED 1.6M/week); approved "Seafood revenue down 88.8%" in the UI → moved to Decided with
+  "Measuring…" + approver/date; `tsc --noEmit` clean; 23 pure tests green.
+
+#### E3-2b — COO triage / delegation redesign ✅ done (verified live)
+Reframed the inbox from "55 equal cards" to **the 3 that need an executive + the rest routed**, cutting
+what a COO must read to ~3.
+- ✅ **Triage engine** (`services/decision_center.py`, pure + tested): `strategic_score` (AED/units
+  weighted by scope — chain-wide > store of equal money, so a category slump outranks one store's
+  drop) picks the **top-3 executive** calls; `route_owner` sends the rest to **regional managers**
+  (store performance, grouped by region via `_region_map` stores→regions), **store managers** (larger
+  replenishment), or **Sage automation** (small POs ≤ `AUTO_PO_MAX_UNITS` + recurring supplier
+  audits). Extra chain-wide issues fold into "N more to review", not a delegation lane. Each routed
+  decision carries a plain-language `routing_reason`. **Bug fixed:** `build_decision` was dropping
+  `entity_id`, so region grouping silently fell back to "Unassigned" — now carried through.
+- ✅ **API** `GET /api/decisions/triage` → `{executive:{decisions[3], more}, lanes:[regional|store|
+  automate], total, routed_count, at_stake_aed_per_week}`.
+- ✅ **UI** `/decisions` rebuilt: a `hero-mesh` **triage banner** ("Sage read N · 3 need your decision
+  · M routed"), a **"Decide now — your 3 calls"** section (full cards), and collapsible **delegation
+  lanes** (regional shows region chips + per-region groups; automate is violet with an "enable
+  automation / see drafts" note). Cards keep full explainability + Approve / Draft / Dismiss.
+- ✅ **Tests** `test_decision_center.py` extended to 20 (from 13): exec picks exactly 3, scope
+  weighting, owner routing (reorder threshold, high-return → automate, store → regional), regional
+  grouping by region, "more chain-wide" fold, honest AED totals.
+- ✅ **Demo volume reset** (`docker compose down -v && up`) → the seed now shows **Meridian**
+  hypermarket names (was a stale "Lulu Hypermarket" volume). **Honest note:** the fresh Kaggle seed is
+  smooth week-over-week (store revenue −0.5%…+3.1%), so the diagnostics loop currently yields only
+  stockout/reorder decisions (exec + store lanes); the executive-category / regional / automate lanes
+  populate once real week-over-week findings accumulate — the routing for all owner types is proven
+  by the unit tests. Verified live: banner "10 → 3 + 7", "Store managers · 7" lane with per-card
+  routing reasons, Meridian names throughout.
 
 ### E0-1 — Automated backups + rehearsed restore ✅ done
 Closes the audit's "no automated backup/restore test exists — disqualifying" gap and Risk #8.

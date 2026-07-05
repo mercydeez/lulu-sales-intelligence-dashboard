@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useExperience } from '@/contexts/ExperienceContext';
 import { cn } from '@/lib/cn';
 import { PRODUCT_NAME } from '@/lib/brand';
 import {
@@ -35,6 +36,7 @@ import {
   TrendingUp,
   MapPin,
   Sunrise,
+  Scale,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -50,6 +52,7 @@ interface NavItem {
 export const navItems: NavItem[] = [
   { label: 'Dashboard', tKey: 'nav.dashboard', href: '/', icon: <LayoutDashboard className="w-5 h-5" /> },
   { label: 'Briefing', tKey: 'nav.briefing', href: '/briefing', icon: <Sunrise className="w-5 h-5" /> },
+  { label: 'Decisions', tKey: 'nav.decisions', href: '/decisions', icon: <Scale className="w-5 h-5" /> },
   { label: 'Inventory', tKey: 'nav.inventory', href: '/inventory', icon: <Package className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Promotions', tKey: 'nav.promotions', href: '/promotions', icon: <Tag className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Procurement', tKey: 'nav.procurement', href: '/procurement', icon: <Truck className="w-5 h-5" />, permission: 'can_manage_inventory' },
@@ -72,6 +75,22 @@ export const navItems: NavItem[] = [
   { label: 'Monitoring', tKey: 'nav.monitoring', href: '/monitoring', icon: <Activity className="w-5 h-5" />, permission: 'is_admin' },
 ];
 
+// Role Experience Engine (Wave 1): the server nav manifest names icons as
+// strings — resolve them here. Unknown icon names degrade to LayoutDashboard.
+const NAV_ICONS: Record<string, ReactNode> = {
+  Sunrise: <Sunrise className="w-5 h-5" />,
+  Scale: <Scale className="w-5 h-5" />,
+  Store: <Store className="w-5 h-5" />,
+  Bell: <Bell className="w-5 h-5" />,
+  Inbox: <Inbox className="w-5 h-5" />,
+  BarChart3: <BarChart3 className="w-5 h-5" />,
+  Package: <Package className="w-5 h-5" />,
+  Lightbulb: <Lightbulb className="w-5 h-5" />,
+  TrendingUp: <TrendingUp className="w-5 h-5" />,
+  FileText: <FileText className="w-5 h-5" />,
+  LayoutDashboard: <LayoutDashboard className="w-5 h-5" />,
+};
+
 export interface SidebarProps {
   mobileOpen: boolean;
   onClose: () => void;
@@ -81,6 +100,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { hasRole, hasPermission, authFetch, isAuthenticated } = useAuth();
   const { t } = useLanguage();
+  const { config } = useExperience();
 
   // Live critical-alert count for the Alerts nav badge (same source the
   // dashboard uses for its alert tiles — /api/inventory/summary).
@@ -121,6 +141,24 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     return () => { active = false; clearInterval(id); };
   }, [isAuthenticated, authFetch, hasRole]);
 
+  // Live count of pending Sage decisions for the Decision Center nav badge.
+  const [decisionCount, setDecisionCount] = useState(0);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await authFetch('/api/decisions/summary');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (active) setDecisionCount(data.pending ?? 0);
+      } catch {
+        // leave badge hidden on failure
+      }
+    })();
+    return () => { active = false; };
+  }, [isAuthenticated, authFetch, pathname]);
+
   // Live count of POs awaiting approval for the Approvals nav badge.
   const [approvalCount, setApprovalCount] = useState(0);
   useEffect(() => {
@@ -145,7 +183,17 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     return true;
   };
 
-  const filteredNavItems = navItems.filter(canAccessItem);
+  // Role Experience Engine: when the server config carries a nav manifest,
+  // render THAT (jobs-based, role-curated). nav === null → full built-in
+  // sidebar, exactly today's behavior.
+  const filteredNavItems: NavItem[] = config?.nav
+    ? config.nav.map((m) => ({
+        label: m.label,
+        tKey: m.tKey,
+        href: m.href,
+        icon: NAV_ICONS[m.icon] ?? NAV_ICONS.LayoutDashboard,
+      }))
+    : navItems.filter(canAccessItem);
 
   return (
     <div className="flex flex-col h-full">
@@ -165,6 +213,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           const showBadge = item.href === '/alerts' && criticalCount > 0;
           const showApprovals = item.href === '/approvals' && approvalCount > 0;
           const showThreats = item.href === '/security' && threatCount > 0;
+          const showDecisions = item.href === '/decisions' && decisionCount > 0;
           return (
             <Link
               key={item.href}
@@ -201,6 +250,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               {showApprovals && (
                 <span className="relative z-10 ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-teal-500 text-white text-[10px] font-bold">
                   {approvalCount}
+                </span>
+              )}
+              {showDecisions && (
+                <span className="relative z-10 ms-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-teal-600 text-white text-[10px] font-bold">
+                  {decisionCount}
                 </span>
               )}
               {showThreats && (

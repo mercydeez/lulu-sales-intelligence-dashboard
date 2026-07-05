@@ -30,6 +30,8 @@ from app.routes import action_drafts as action_drafts_routes
 from app.routes import imports as imports_routes
 from app.routes import roi as roi_routes
 from app.routes import briefing as briefing_routes
+from app.routes import decisions as decisions_routes
+from app.routes import experience as experience_routes
 from app.routes import outcome_pricing as outcome_pricing_routes
 from app.routes import team as team_routes
 from app.routes import uae_intelligence as uae_intelligence_routes
@@ -329,6 +331,8 @@ app.include_router(action_drafts_routes.router, prefix="/api/action-drafts", tag
 app.include_router(imports_routes.router, prefix="/api/imports", tags=["Imports"])
 app.include_router(roi_routes.router, prefix="/api/roi", tags=["ROI"])
 app.include_router(briefing_routes.router, prefix="/api/briefing", tags=["Briefing"])
+app.include_router(decisions_routes.router, prefix="/api/decisions", tags=["Decisions"])
+app.include_router(experience_routes.router, prefix="/api/experience", tags=["Experience"])
 app.include_router(outcome_pricing_routes.router, prefix="/api/outcome-pricing", tags=["Outcome Pricing"])
 app.include_router(team_routes.router, prefix="/api/team", tags=["Team"])
 app.include_router(uae_intelligence_routes.router, prefix="/api/uae-intelligence", tags=["UAE Intelligence"])

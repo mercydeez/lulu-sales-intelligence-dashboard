@@ -3,6 +3,7 @@ import { Manrope, IBM_Plex_Mono } from 'next/font/google';
 import './globals.css';
 import AIProvider from '@/components/AIProvider';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { ExperienceProvider } from '@/contexts/ExperienceContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { ToastProvider } from '@/components/ui/Toast';
 import ClientLayout from '@/components/ClientLayout';
@@ -79,6 +80,7 @@ export default function RootLayout({
         <div className="min-h-screen">
           <LanguageProvider>
             <AuthProvider>
+              <ExperienceProvider>
               <ToastProvider>
                 <AIProvider>
                   <ClientLayout>
@@ -86,6 +88,7 @@ export default function RootLayout({
                   </ClientLayout>
                 </AIProvider>
               </ToastProvider>
+              </ExperienceProvider>
             </AuthProvider>
           </LanguageProvider>
         </div>

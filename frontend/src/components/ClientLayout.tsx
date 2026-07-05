@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useExperience } from '@/contexts/ExperienceContext';
 import { AppShell } from '@/components/shell';
 
 // Pages that don't require authentication
@@ -12,7 +13,8 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { isAuthenticated, isLoading } = useAuth();
-  
+  const { config } = useExperience();
+
   // Match a public path exactly or as a path segment — NOT as a bare prefix, or
   // '/dev' would swallow '/developers' and bounce authed users to the dashboard.
   const isPublicPath = publicPaths.some(
@@ -25,11 +27,19 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
         // Redirect to login if not authenticated and not on public page
         router.push('/login');
       } else if (isAuthenticated && isPublicPath) {
-        // Redirect to dashboard if authenticated and on login page
-        router.push('/');
+        // Redirect to the role's home (Role Experience Engine) — '/' by default
+        router.push(config?.home && config.home !== '/' ? config.home : '/');
       }
     }
-  }, [isAuthenticated, isLoading, isPublicPath, pathname, router]);
+  }, [isAuthenticated, isLoading, isPublicPath, pathname, router, config?.home]);
+
+  // Role home: wave-1 roles live on /today; send them there from the generic
+  // dashboard root once their config arrives. Other roles keep '/' unchanged.
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && pathname === '/' && config?.home && config.home !== '/') {
+      router.replace(config.home);
+    }
+  }, [isLoading, isAuthenticated, pathname, config?.home, router]);
 
   // Show loading while checking auth
   if (isLoading) {

@@ -27,6 +27,7 @@ import {
   Database
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useExperience } from '@/contexts/ExperienceContext';
 import { PRODUCT_NAME, CHATBOT_NAME } from '@/lib/brand';
 
 // Web Speech API types
@@ -234,6 +235,8 @@ function MessageMeta({ meta, onConfirm }: { meta: ChatMeta; onConfirm: () => voi
 
 export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
   const { user, hasPermission, hasRole, authFetch } = useAuth();
+  const { config: experience } = useExperience();
+  const personaTitle = experience?.persona?.title ?? 'Sales Assistant';
   
   // Permission checks - super_admin and regional_manager get full access
   // store_manager gets chat only, analyst gets restricted access
@@ -689,7 +692,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
             </div>
             <div>
               <h2 className="text-white font-semibold">{CHATBOT_NAME}</h2>
-              <p className="text-white/70 text-xs">Sales Assistant</p>
+              <p className="text-white/70 text-xs">{personaTitle}</p>
             </div>
           </div>
         )}

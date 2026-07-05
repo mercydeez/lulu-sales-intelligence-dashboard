@@ -29,6 +29,7 @@ The production-readiness program (turning the MVP into a deployable, recoverable
 - [`production/READINESS_CHECKLIST.md`](production/READINESS_CHECKLIST.md) - the GO/NO-GO checklist.
 
 ### `product/`
+- [`product/ROLE_EXPERIENCE_BLUEPRINT.md`](product/ROLE_EXPERIENCE_BLUEPRINT.md) - **the UX north star**: AI-first, role-based product experience design — 20 role playbooks (mission, homepage, Sage persona, decisions, KPIs, notifications, device), the decision-ownership AED ladder, collaboration workflows, and the one-engine/many-configs architecture.
 - [`product/DEMO_VS_REAL_DATA.md`](product/DEMO_VS_REAL_DATA.md) - **honesty contract**: demo/sample vs real vs derived-AED vs raw-unit data.
 - [`product/DEMO_SCRIPT.md`](product/DEMO_SCRIPT.md) - guided demo flow with talking points.
 - [`product/PITCH.md`](product/PITCH.md) - short pitch covering the problem, solution, and quality signals.
