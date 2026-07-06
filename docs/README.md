@@ -13,6 +13,15 @@ The documentation is organized by how you should use it, not by when it was writ
 - [`product/DEMO_SCRIPT.md`](product/DEMO_SCRIPT.md) - the fastest way to walk someone through the project.
 - [`product/PITCH.md`](product/PITCH.md) - the one-page narrative for recruiters, interviewers, or stakeholders.
 
+## Team & parallel development
+
+For the three-developer engineering organization (root-level docs):
+- [`../TEAM_OWNERSHIP.md`](../TEAM_OWNERSHIP.md) - module ownership (bounded-context), shared-file rules, and the parallel workstreams.
+- [`../PROJECT_STRUCTURE.md`](../PROJECT_STRUCTURE.md) - architecture, subsystem map, dependency graph, ownership overlay.
+- [`../GIT_WORKFLOW.md`](../GIT_WORKFLOW.md) - trunk-based branching, PRs, reviews, migration numbering, conflict resolution.
+- [`../CONTRIBUTING.md`](../CONTRIBUTING.md) - run/test/build commands, traps, and how to extend without touching hub files.
+- [`../.github/CODEOWNERS`](../.github/CODEOWNERS) - machine-enforced path→reviewer routing.
+
 ## Current docs
 
 ### `architecture/`

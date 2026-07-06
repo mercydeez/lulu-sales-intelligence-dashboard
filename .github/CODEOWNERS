@@ -1,0 +1,64 @@
+# CODEOWNERS — path → auto-requested reviewer. See TEAM_OWNERSHIP.md for rationale.
+#
+# ⚠️  PLACEHOLDER HANDLES — replace @atharva / @krishna / @yash with the three real
+#     GitHub usernames before enabling branch protection. GitHub requires real
+#     handles (or @org/team) for auto-review requests to fire.
+#
+# Rule: the LAST matching pattern wins. Broad layer defaults come first; the AI/
+# Experience vertical overrides them afterward (bounded-context beats layer).
+
+# ── Repo-wide fallback ──────────────────────────────────────────────────────
+*                                             @atharva @krishna @yash
+
+# ── Backend / DB / CI — Krishna (layer default) ─────────────────────────────
+/backend/                                     @krishna
+/database/                                    @krishna
+/.github/workflows/                           @krishna
+/docker-compose.yml                           @krishna
+/docker-compose.production.yml                @krishna
+
+# ── Frontend — Yash (layer default) ─────────────────────────────────────────
+/frontend/                                    @yash
+
+# ── Atharva — AI / Experience vertical inside the backend (override Krishna) ─
+/backend/app/services/ai_assistant.py         @atharva
+/backend/app/services/llm/                     @atharva
+/backend/app/services/nl2sql/                  @atharva
+/backend/app/services/sage2/                    @atharva
+/backend/app/services/sage3/                    @atharva
+/backend/app/services/rag/                      @atharva
+/backend/app/services/federation/              @atharva
+/backend/app/services/voice_service.py         @atharva
+/backend/app/services/decision_center.py       @atharva
+/backend/app/services/action_drafting.py       @atharva
+/backend/app/services/briefing.py              @atharva
+/backend/app/services/role_experience.py       @atharva
+/backend/app/services/roi.py                   @atharva
+/backend/app/routes/ai.py                      @atharva
+/backend/app/routes/decisions.py               @atharva
+/backend/app/routes/briefing.py                @atharva
+/backend/app/routes/experience.py              @atharva
+/backend/app/routes/findings.py                @atharva
+/backend/app/routes/search.py                  @atharva
+/backend/app/routes/roi.py                     @atharva
+/worker/                                       @atharva
+
+# ── Atharva — AI pages/components inside the frontend (override Yash) ────────
+/frontend/src/app/decisions/                   @atharva
+/frontend/src/app/briefing/                    @atharva
+/frontend/src/app/today/                       @atharva
+/frontend/src/app/action-drafts/               @atharva
+/frontend/src/app/insights/                    @atharva
+/frontend/src/app/forecast-lab/                @atharva
+/frontend/src/app/value/                       @atharva
+/frontend/src/components/ChatBot.tsx           @atharva
+/frontend/src/components/AIProvider.tsx        @atharva
+/frontend/src/components/AIToggleButton.tsx    @atharva
+/frontend/src/components/CommandPalette.tsx    @atharva
+
+# ── Governance docs — all three review ──────────────────────────────────────
+/TEAM_OWNERSHIP.md                             @atharva @krishna @yash
+/GIT_WORKFLOW.md                               @atharva @krishna @yash
+/PROJECT_STRUCTURE.md                          @atharva @krishna @yash
+/CONTRIBUTING.md                               @atharva @krishna @yash
+/.github/CODEOWNERS                            @atharva @krishna @yash

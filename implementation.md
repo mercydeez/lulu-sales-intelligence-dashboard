@@ -337,6 +337,25 @@ professional before production/customer use."**
 ## 12-Month Blueprint execution (see `docs/EXECUTION_BLUEPRINT_12M.md`)
 The audit-derived Q1→Q4 plan. Tracked here as items land.
 
+### Engineering ownership & parallel-development workflow ✅ done (verified)
+Organized the repo for three developers (Atharva/Krishna/Yash) to work in parallel with near-zero
+merge conflicts. **No product features** — refactors, docs, and repo structure only.
+- ✅ **Killed the two worst merge-conflict hubs (behavior-identical refactors).** Backend router
+  registration moved out of `main.py` (42 imports + 35 `include_router` lines) into
+  `backend/app/routes/registry.py` — adding an endpoint is now a one-line append there. Frontend
+  `navItems`/`NAV_ICONS`/`NavItem` moved out of the 200-line `Sidebar.tsx` into
+  `frontend/src/config/nav.tsx` (CommandPalette repointed too) — adding a page is a one-line append.
+  Verified: app imports (35 routers, 244 routes), `tsc` clean, backend router-adjacent suites green.
+- ✅ **Bounded-context ownership** (not by page): Atharva = AI/Sage/Decision/Briefing/Role-Experience
+  vertical (spans backend + frontend + `worker/`); Krishna = all other backend + DB + auth + infra;
+  Yash = all other frontend + design system. Rule: *bounded-context beats layer where they overlap*.
+- ✅ **Governance docs authored from scratch:** `TEAM_OWNERSHIP.md`, `PROJECT_STRUCTURE.md`
+  (subsystem map + dependency graph), `GIT_WORKFLOW.md` (trunk-based), `CONTRIBUTING.md`,
+  `.github/CODEOWNERS` (placeholder handles — swap in real GitHub usernames), and a PR template.
+  Pointers added to `CLAUDE.md`/`AGENTS.md`/`docs/README.md`.
+- ➡️ **Team rollout (not executed here):** PR `prototype-evolution-accuracy-bullmq → main`, enable
+  branch protection, replace CODEOWNERS placeholder handles.
+
 ### Store-manager workflow friction fixes — S1 blockers ✅ done (verified live)
 From the first-time Store-Manager UX audit. Root causes were **dropped context between steps** and
 **numbers that disagree or aren't scoped to me**. Fixed the roots so workflows are continuous; no new

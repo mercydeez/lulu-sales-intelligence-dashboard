@@ -8,6 +8,8 @@ Paths below are relative to the repository root.
 
 Start with `docs/README.md` for the organized documentation index. If you need the original audit and planning context, read `docs/archive/GAP_ANALYSIS.md` before assuming older claims are still current.
 
+**Team & parallel-development governance** (three devs — Atharva/Krishna/Yash): `TEAM_OWNERSHIP.md` (who owns which modules — bounded-context, with a shared-file rules table), `PROJECT_STRUCTURE.md` (subsystem map + dependency graph + ownership overlay), `GIT_WORKFLOW.md` (trunk-based branching/PRs), `CONTRIBUTING.md` (run/test/build + how to extend without touching hubs), `.github/CODEOWNERS` (path→reviewer). **Two conflict hubs were refactored out:** add a backend endpoint via `backend/app/routes/registry.py` (not `main.py`); add a frontend page via `frontend/src/config/nav.tsx` (not `Sidebar.tsx`).
+
 ## Commands
 
 ```powershell
