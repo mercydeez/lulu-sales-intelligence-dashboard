@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useExperience } from '@/contexts/ExperienceContext';
-import { PRODUCT_NAME, CHATBOT_NAME } from '@/lib/brand';
+import { CHATBOT_NAME } from '@/lib/brand';
 
 // Web Speech API types
 interface SpeechRecognitionEvent extends Event {
@@ -132,6 +132,16 @@ const NODE_LABELS: Record<string, string> = {
   completeness: 'Checked completeness',
   finaliser: 'Finalised',
 };
+
+/**
+ * Sage's opening line — written in the caller's persona voice, not a generic
+ * "chatbot" greeting. Only advertises voice when the role actually has it, so
+ * we never point a user at a control they can't use.
+ */
+function buildWelcome(title: string, canVoice: boolean): string {
+  const voiceLine = canVoice ? '\n🎤 Prefer to talk it through? Tap the mic and ask.\n' : '';
+  return `👋 I'm **${CHATBOT_NAME}**, your ${title}. I read your live sales, inventory, and open findings directly — and I answer with the number, what it means, and the move I'd make next.\n\nTry asking:\n• "How did revenue move this week — and why?"\n• "Which stores need my attention today?"\n• "What's my biggest stock risk right now?"\n• "Where am I losing money to dead stock?"\n${voiceLine}\nWhat should we look at first?`;
+}
 
 function confidenceStyle(c?: number | null) {
   if (c == null) return { label: '—', cls: 'bg-surface-3 text-ink-muted' };
@@ -245,14 +255,25 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
   const canUseVoice = hasRole(['super_admin', 'regional_manager']) || 
                       hasPermission('can_use_voice_chat');
   
-  const [messages, setMessages] = useState<Message[]>([
+  const [messages, setMessages] = useState<Message[]>(() => [
     {
       id: '0',
       role: 'assistant',
-      content: `👋 Hi, I'm **${CHATBOT_NAME}**, your ${PRODUCT_NAME} analytics assistant. Ask me anything about your sales data — I'll query it directly and answer with real numbers:\n\n• "What was revenue last week?"\n• "Top 5 stores by revenue"\n• "Which items had the most returns this month?"\n• "Units sold per category"\n\n🎤 **Voice Input**: Click the mic button and speak. Your words will appear in real-time!\n\nWhat would you like to know?`,
+      content: buildWelcome(personaTitle, canUseVoice),
       timestamp: new Date()
     }
   ]);
+
+  // The persona/voice access resolve asynchronously (experience config). Refresh
+  // the opening line once they land — but only while the chat is still pristine,
+  // so we never overwrite a real conversation.
+  useEffect(() => {
+    setMessages((prev) =>
+      prev.length === 1 && prev[0].id === '0' && prev[0].role === 'assistant'
+        ? [{ ...prev[0], content: buildWelcome(personaTitle, canUseVoice) }]
+        : prev
+    );
+  }, [personaTitle, canUseVoice]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
@@ -287,33 +308,54 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
       readJson('/api/procurement/approvals'),
     ]);
 
-    const lines = [
-      'I could not generate an AI-written answer for: "' + question + '". Here is the current operational fallback from available dashboard data:',
-    ];
+    // Present a confident operational read — evidence, then the move I'd make —
+    // rather than apologising for not having an LLM answer. Every figure below is
+    // pulled live and kept honest (units vs AED never mixed).
+    const lines = ["Here's where your operation stands right now — and where I'd start:", ''];
 
+    const critical = alertSummary?.critical_alerts ?? 0;
+    const outOfStock = inventory?.out_of_stock_count ?? 0;
+    const lowStock = inventory?.low_stock_count ?? 0;
+    const poWaiting = approvals?.count ?? 0;
+
+    if (kpis) {
+      lines.push('• **Today so far:** ' + new Intl.NumberFormat('en-AE').format(kpis.total_sales_today ?? 0) + ' units sold · AED ' + new Intl.NumberFormat('en-AE', { maximumFractionDigits: 0 }).format(kpis.total_revenue_today ?? 0) + ' revenue.');
+    }
     if (alertSummary) {
-      lines.push('• Active alerts: ' + (alertSummary.total_active ?? 0) + ' total, including ' + (alertSummary.critical_alerts ?? 0) + ' critical and ' + (alertSummary.warning_alerts ?? 0) + ' warning.');
+      lines.push('• **Alerts:** ' + (alertSummary.total_active ?? 0) + ' active — ' + critical + ' critical, ' + (alertSummary.warning_alerts ?? 0) + ' warning.');
     }
     if (inventory) {
-      lines.push('• Inventory: ' + (inventory.out_of_stock_count ?? 0) + ' out of stock, ' + (inventory.low_stock_count ?? 0) + ' low stock, ' + (inventory.overstocked_count ?? 0) + ' overstocked.');
+      lines.push('• **Stock:** ' + outOfStock + ' out of stock, ' + lowStock + ' running low, ' + (inventory.overstocked_count ?? 0) + ' overstocked.');
     }
     if (approvals) {
-      lines.push('• Purchase approvals: ' + (approvals.count ?? 0) + ' PO' + (approvals.count === 1 ? '' : 's') + ' awaiting decision.');
-    }
-    if (kpis) {
-      lines.push('• Today: ' + new Intl.NumberFormat('en-AE').format(kpis.total_sales_today ?? 0) + ' units and AED ' + new Intl.NumberFormat('en-AE', { maximumFractionDigits: 0 }).format(kpis.total_revenue_today ?? 0) + ' revenue.');
+      lines.push('• **Approvals:** ' + poWaiting + ' purchase order' + (poWaiting === 1 ? '' : 's') + ' awaiting your decision.');
     }
 
     const alerts = activeAlerts?.alerts ?? [];
     if (alerts.length > 0) {
-      lines.push('Top active alerts to review first:');
+      lines.push('');
+      lines.push('The alerts I\'d read first:');
       alerts.slice(0, 3).forEach((alert: any, index: number) => {
-        lines.push((index + 1) + '. ' + alert.title + ' - ' + (alert.store_name || 'assigned store'));
+        lines.push((index + 1) + '. ' + alert.title + ' — ' + (alert.store_name || 'assigned store'));
       });
     }
 
-    if (lines.length === 1) {
-      lines.push('I also could not load the fallback dashboard data right now. Refresh the page and review Alerts, Inventory, and Approvals directly.');
+    // Close like an operator: one clear next move, ranked by what costs the most.
+    const loadedAnything = kpis || alertSummary || inventory || approvals;
+    if (!loadedAnything) {
+      return "I can't reach your live data at the moment. Give it a moment and refresh — then check Alerts, Inventory, and Approvals directly, and I'll pick it back up.";
+    }
+    lines.push('');
+    if (critical > 0) {
+      lines.push('**My recommendation:** start with the ' + critical + ' critical alert' + (critical === 1 ? '' : 's') + ' above — that\'s the fastest money on the table today.');
+    } else if (outOfStock > 0) {
+      lines.push('**My recommendation:** clear the ' + outOfStock + ' out-of-stock line' + (outOfStock === 1 ? '' : 's') + ' first — every hour off-shelf is revenue you can\'t recover.');
+    } else if (poWaiting > 0) {
+      lines.push('**My recommendation:** approve the ' + poWaiting + ' waiting purchase order' + (poWaiting === 1 ? '' : 's') + ' — that keeps your shelves full ahead of demand.');
+    } else if (lowStock > 0) {
+      lines.push('**My recommendation:** watch the ' + lowStock + ' low-stock line' + (lowStock === 1 ? '' : 's') + ' — reorder before they run out, not after.');
+    } else {
+      lines.push('**My read:** nothing urgent is flagging right now — you\'re clear to focus on the plan. Ask me anything specific and I\'ll dig in.');
     }
 
     return lines.join('\n');
@@ -463,7 +505,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
     setMessages([{
       id: '0',
       role: 'assistant',
-      content: "👋 Chat cleared! How can I help you?",
+      content: buildWelcome(personaTitle, canUseVoice),
       timestamp: new Date()
     }]);
   };

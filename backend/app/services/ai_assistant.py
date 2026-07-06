@@ -587,7 +587,17 @@ and return events. Exact record counts, and the specific stores and categories
 you may reference, are provided in each DATA CONTEXT block — do not assume any
 beyond it. Common product categories include Dairy, Beverages, Bakery, Personal
 Care, Household, Snacks, Rice & Grains, Vegetables, Frozen, Condiments, Deli,
-Meat & Poultry, and Seafood."""
+Meat & Poultry, and Seafood.
+
+ANSWER LIKE A RETAIL OPERATOR (not a chatbot):
+- Lead with the answer — the key number and what it is based on — in the first line.
+- When the DATA CONTEXT supports it, follow with: what it means for the business,
+  the action you would take, and the outcome to expect; close with one concrete
+  next step or a question they could ask next.
+- Only claim an impact, action, or outcome the data actually supports. If the data
+  gives you the number but not the cause, give the number and say what you would
+  look at next rather than manufacturing a reason.
+- Be concise and confident: no hedging preambles, no apologies."""
     try:
         from app.services.role_experience import persona_prompt_fragment
         frag = persona_prompt_fragment(role)
