@@ -351,10 +351,10 @@ merge conflicts. **No product features** — refactors, docs, and repo structure
   Yash = all other frontend + design system. Rule: *bounded-context beats layer where they overlap*.
 - ✅ **Governance docs authored from scratch:** `TEAM_OWNERSHIP.md`, `PROJECT_STRUCTURE.md`
   (subsystem map + dependency graph), `GIT_WORKFLOW.md` (trunk-based), `CONTRIBUTING.md`,
-  `.github/CODEOWNERS` (placeholder handles — swap in real GitHub usernames), and a PR template.
-  Pointers added to `CLAUDE.md`/`AGENTS.md`/`docs/README.md`.
-- ➡️ **Team rollout (not executed here):** PR `prototype-evolution-accuracy-bullmq → main`, enable
-  branch protection, replace CODEOWNERS placeholder handles.
+  `.github/CODEOWNERS` (real handles: Atharva=@mercydeez, Krishna=@krish2105, Yash=@Yashpetkar7),
+  and a PR template. Pointers added to `CLAUDE.md`/`AGENTS.md`/`docs/README.md`.
+- ➡️ **Team rollout (not executed here):** add the three owners as repo collaborators, PR
+  `prototype-evolution-accuracy-bullmq → main`, enable branch protection on `main`.
 
 ### Store-manager workflow friction fixes — S1 blockers ✅ done (verified live)
 From the first-time Store-Manager UX audit. Root causes were **dropped context between steps** and
