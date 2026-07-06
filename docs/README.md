@@ -16,6 +16,7 @@ The documentation is organized by how you should use it, not by when it was writ
 ## Team & parallel development
 
 For the three-developer engineering organization (root-level docs):
+- [`../DEVELOPMENT_CONTRACT.md`](../DEVELOPMENT_CONTRACT.md) - the operating agreement: engineering principles, AI-coding rules, module boundaries, and product philosophy above the ownership map.
 - [`../TEAM_OWNERSHIP.md`](../TEAM_OWNERSHIP.md) - module ownership (bounded-context), shared-file rules, and the parallel workstreams.
 - [`../PROJECT_STRUCTURE.md`](../PROJECT_STRUCTURE.md) - architecture, subsystem map, dependency graph, ownership overlay.
 - [`../GIT_WORKFLOW.md`](../GIT_WORKFLOW.md) - trunk-based branching, PRs, reviews, migration numbering, conflict resolution.

@@ -7,6 +7,10 @@ and architectural module**, not by page.
 > **Machine-enforced companion:** `.github/CODEOWNERS` maps these paths to GitHub
 > reviewers so the right owner is auto-requested on every PR. This document is the
 > human-readable rationale; CODEOWNERS is the source of truth for review routing.
+>
+> **Operating agreement above this map:** `DEVELOPMENT_CONTRACT.md` is the team handbook —
+> engineering principles, AI-coding rules, module boundaries, and product philosophy that
+> sit above the ownership map here (see also `GIT_WORKFLOW.md` and `PROJECT_STRUCTURE.md`).
 
 ## Ownership principles
 

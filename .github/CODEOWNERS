@@ -58,6 +58,7 @@
 /frontend/src/components/CommandPalette.tsx    @mercydeez
 
 # ── Governance docs — all three review ──────────────────────────────────────
+/DEVELOPMENT_CONTRACT.md                       @mercydeez @krish2105 @Yashpetkar7
 /TEAM_OWNERSHIP.md                             @mercydeez @krish2105 @Yashpetkar7
 /GIT_WORKFLOW.md                               @mercydeez @krish2105 @Yashpetkar7
 /PROJECT_STRUCTURE.md                          @mercydeez @krish2105 @Yashpetkar7

@@ -275,7 +275,7 @@ implementation.md             single living forward roadmap (what's shipped + wh
 
 - [docs/README.md](docs/README.md) - documentation index and folder guide.
 
-- **Contributing & team (three-developer parallel workflow):** [`CONTRIBUTING.md`](CONTRIBUTING.md), [`TEAM_OWNERSHIP.md`](TEAM_OWNERSHIP.md), [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md), [`GIT_WORKFLOW.md`](GIT_WORKFLOW.md).
+- **Contributing & team (three-developer parallel workflow):** [`DEVELOPMENT_CONTRACT.md`](DEVELOPMENT_CONTRACT.md), [`CONTRIBUTING.md`](CONTRIBUTING.md), [`TEAM_OWNERSHIP.md`](TEAM_OWNERSHIP.md), [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md), [`GIT_WORKFLOW.md`](GIT_WORKFLOW.md).
 - [`docs/product/DEMO_SCRIPT.md`](docs/product/DEMO_SCRIPT.md) — a guided 8-minute walkthrough for reviewers.
 - [`docs/architecture/ADR.md`](docs/architecture/ADR.md) — architecture decision records (the *why* behind the design).
 - [`docs/product/PITCH.md`](docs/product/PITCH.md) — one-page pitch: problem, approach, and engineering tradeoffs.
