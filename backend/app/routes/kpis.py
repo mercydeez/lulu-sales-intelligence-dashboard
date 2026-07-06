@@ -112,28 +112,27 @@ async def compute_and_cache_kpis(db: AsyncSession, allowed_stores: Optional[List
             SELECT
                 COUNT(*) FILTER (WHERE s.is_streaming = false) as historical_count,
                 COUNT(*) FILTER (WHERE s.is_streaming = true) as streaming_count,
-                COALESCE(SUM(s.sales) FILTER (WHERE s.date = :today), 0)::integer as sales_today,
-                COALESCE(SUM(s.sales) FILTER (WHERE s.date >= :week_ago), 0)::integer as sales_week,
-                COALESCE(SUM(s.sales) FILTER (WHERE s.date >= :month_ago), 0)::integer as sales_month,
+                COALESCE(SUM(s.units) FILTER (WHERE s.date = :today), 0)::integer as sales_today,
+                COALESCE(SUM(s.units) FILTER (WHERE s.date >= :week_ago), 0)::integer as sales_week,
+                COALESCE(SUM(s.units) FILTER (WHERE s.date >= :month_ago), 0)::integer as sales_month,
 
-                -- Compute Revenue (units * price)
-                COALESCE(SUM(s.sales * i.unit_price_aed) FILTER (WHERE s.date = :today), 0)::numeric as revenue_today,
-                COALESCE(SUM(s.sales * i.unit_price_aed) FILTER (WHERE s.date >= :week_ago), 0)::numeric as revenue_week,
-                COALESCE(SUM(s.sales * i.unit_price_aed) FILTER (WHERE s.date >= :month_ago), 0)::numeric as revenue_month,
+                -- Revenue = units * unit_price_aed, defined once in metric_sales_fact (E6-1)
+                COALESCE(SUM(s.revenue_aed) FILTER (WHERE s.date = :today), 0)::numeric as revenue_today,
+                COALESCE(SUM(s.revenue_aed) FILTER (WHERE s.date >= :week_ago), 0)::numeric as revenue_week,
+                COALESCE(SUM(s.revenue_aed) FILTER (WHERE s.date >= :month_ago), 0)::numeric as revenue_month,
 
-                ROUND(AVG(s.sales)::numeric, 2) as avg_daily_sales,
-                ROUND(AVG(s.sales * i.unit_price_aed)::numeric, 2) as avg_daily_revenue,
+                ROUND(AVG(s.units)::numeric, 2) as avg_daily_sales,
+                ROUND(AVG(s.revenue_aed)::numeric, 2) as avg_daily_revenue,
                 COUNT(DISTINCT s.store_id) as unique_stores,
                 COUNT(DISTINCT s.item_id) as unique_items,
                 MIN(s.date) FILTER (WHERE s.is_streaming = false) as data_start,
                 MAX(s.date) FILTER (WHERE s.is_streaming = false) as data_end,
                 MAX(s.created_at) FILTER (WHERE s.is_streaming = true) as last_stream,
-                COALESCE(SUM(s.sales) FILTER (WHERE s.date >= :week_ago AND s.date < :today), 0)::integer as last_week_sales,
-                COALESCE(SUM(s.sales) FILTER (WHERE s.date >= :two_weeks_ago AND s.date < :week_ago), 0)::integer as prev_week_sales,
-                COALESCE(SUM(s.sales * i.unit_price_aed) FILTER (WHERE s.date >= :week_ago AND s.date < :today), 0)::numeric as last_week_revenue,
-                COALESCE(SUM(s.sales * i.unit_price_aed) FILTER (WHERE s.date >= :two_weeks_ago AND s.date < :week_ago), 0)::numeric as prev_week_revenue
-            FROM sales_fact_view s
-            JOIN items i ON s.item_id = i.id
+                COALESCE(SUM(s.units) FILTER (WHERE s.date >= :week_ago AND s.date < :today), 0)::integer as last_week_sales,
+                COALESCE(SUM(s.units) FILTER (WHERE s.date >= :two_weeks_ago AND s.date < :week_ago), 0)::integer as prev_week_sales,
+                COALESCE(SUM(s.revenue_aed) FILTER (WHERE s.date >= :week_ago AND s.date < :today), 0)::numeric as last_week_revenue,
+                COALESCE(SUM(s.revenue_aed) FILTER (WHERE s.date >= :two_weeks_ago AND s.date < :week_ago), 0)::numeric as prev_week_revenue
+            FROM metric_sales_fact s
         """
         params = {
             "today": today,

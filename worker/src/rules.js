@@ -2,6 +2,11 @@
 // 7-day window to the prior 7 days and emits findings with the evidence numbers
 // and a human sentence. No ML, no hidden heuristics — everything is derivable.
 //
+// E6-1: the metric MATH now lives in shared SQL (migration 050 `metric_*` views),
+// the SAME definitions routes/kpis.py reads. Each rule here is a thin SELECT that
+// thresholds and formats — it computes no revenue, change ratio, rate, or average
+// in JS. That defuses the Python/JS "two-language drift" on what the numbers mean.
+//
 // Convention (matches the app): VALUE is AED revenue (units * unit_price_aed),
 // VOLUME is units. Returns are rows with units < 0.
 import { query } from "./db.js";
@@ -30,23 +35,12 @@ function severityFromDrop(changeRatio) {
 }
 
 // --- Rule: per-store revenue drop week-over-week ---------------------------
+// Reads metric_store_wow; the change ratio is computed in SQL.
 async function revenueDropByStore(tenantId) {
   const rows = await query(
-    `WITH w AS (
-       SELECT s.store_id, st.name AS store_name,
-         COALESCE(SUM(s.sales * i.unit_price_aed)
-           FILTER (WHERE s.date >= CURRENT_DATE - INTERVAL '7 days'), 0) AS rev_recent,
-         COALESCE(SUM(s.sales * i.unit_price_aed)
-           FILTER (WHERE s.date >= CURRENT_DATE - INTERVAL '14 days'
-                     AND s.date < CURRENT_DATE - INTERVAL '7 days'), 0) AS rev_prior
-       FROM sales_fact_view s
-       JOIN items i  ON i.id = s.item_id  AND i.tenant_id  = s.tenant_id
-       JOIN stores st ON st.id = s.store_id AND st.tenant_id = s.tenant_id
-       WHERE s.tenant_id = $1
-       GROUP BY s.store_id, st.name
-     )
-     SELECT *, (rev_recent - rev_prior) / NULLIF(rev_prior, 0) AS change
-     FROM w WHERE rev_prior > 0 AND (rev_recent - rev_prior) / rev_prior <= -0.15`,
+    `SELECT store_id, store_name, rev_recent, rev_prior, change
+       FROM metric_store_wow
+      WHERE tenant_id = $1 AND rev_prior > 0 AND change <= -0.15`,
     [tenantId]
   );
   return rows.map((r) => {
@@ -73,22 +67,12 @@ async function revenueDropByStore(tenantId) {
 }
 
 // --- Rule: per-category revenue slump --------------------------------------
+// Reads metric_category_wow; the change ratio is computed in SQL.
 async function categorySlump(tenantId) {
   const rows = await query(
-    `WITH w AS (
-       SELECT i.category,
-         COALESCE(SUM(s.sales * i.unit_price_aed)
-           FILTER (WHERE s.date >= CURRENT_DATE - INTERVAL '7 days'), 0) AS rev_recent,
-         COALESCE(SUM(s.sales * i.unit_price_aed)
-           FILTER (WHERE s.date >= CURRENT_DATE - INTERVAL '14 days'
-                     AND s.date < CURRENT_DATE - INTERVAL '7 days'), 0) AS rev_prior
-       FROM sales_fact_view s
-       JOIN items i ON i.id = s.item_id AND i.tenant_id = s.tenant_id
-       WHERE s.tenant_id = $1
-       GROUP BY i.category
-     )
-     SELECT *, (rev_recent - rev_prior) / NULLIF(rev_prior, 0) AS change
-     FROM w WHERE rev_prior > 0 AND (rev_recent - rev_prior) / rev_prior <= -0.2`,
+    `SELECT category, rev_recent, rev_prior, change
+       FROM metric_category_wow
+      WHERE tenant_id = $1 AND rev_prior > 0 AND change <= -0.2`,
     [tenantId]
   );
   return rows.map((r) => {
@@ -115,23 +99,20 @@ async function categorySlump(tenantId) {
 }
 
 // --- Rule: returns spike (tenant-wide) -------------------------------------
+// Reads metric_returns_wow; the noise floor + trigger stay as thresholds here.
 async function returnSpike(tenantId) {
   const rows = await query(
-    `SELECT
-       COALESCE(SUM(ABS(s.sales)) FILTER (
-         WHERE s.sales < 0 AND s.date >= CURRENT_DATE - INTERVAL '7 days'), 0) AS ret_recent,
-       COALESCE(SUM(ABS(s.sales)) FILTER (
-         WHERE s.sales < 0 AND s.date >= CURRENT_DATE - INTERVAL '14 days'
-               AND s.date < CURRENT_DATE - INTERVAL '7 days'), 0) AS ret_prior
-     FROM sales_fact_view s
-     WHERE s.tenant_id = $1`,
+    `SELECT returns_recent_units, returns_prior_units, change
+       FROM metric_returns_wow
+      WHERE tenant_id = $1`,
     [tenantId]
   );
   const r = rows[0];
-  const recent = Number(r.ret_recent);
-  const prior = Number(r.ret_prior);
+  if (!r) return [];
+  const recent = Number(r.returns_recent_units);
+  const prior = Number(r.returns_prior_units);
   if (prior <= 0 || recent < 50) return []; // floor: ignore noise on tiny volumes
-  const change = (recent - prior) / prior;
+  const change = Number(r.change);
   if (change < 0.4) return [];
   return [
     {
@@ -157,33 +138,18 @@ async function returnSpike(tenantId) {
 
 // --- Rule: laggard store (growing materially slower than the chain) --------
 // Relative underperformance — fires even when every store is up, surfacing the
-// store that's leaving money on the table vs its peers.
+// store that's leaving money on the table vs its peers. Reads metric_store_wow;
+// the chain-average growth and per-store gap are computed in SQL.
 async function laggardStore(tenantId) {
   const rows = await query(
-    `WITH w AS (
-       SELECT st.id AS store_id, st.name AS store_name,
-         COALESCE(SUM(s.sales * i.unit_price_aed)
-           FILTER (WHERE s.date >= CURRENT_DATE - INTERVAL '7 days'), 0) AS rev_recent,
-         COALESCE(SUM(s.sales * i.unit_price_aed)
-           FILTER (WHERE s.date >= CURRENT_DATE - INTERVAL '14 days'
-                     AND s.date < CURRENT_DATE - INTERVAL '7 days'), 0) AS rev_prior
-       FROM sales_fact_view s
-       JOIN items i  ON i.id = s.item_id  AND i.tenant_id  = s.tenant_id
-       JOIN stores st ON st.id = s.store_id AND st.tenant_id = s.tenant_id
-       WHERE s.tenant_id = $1
-       GROUP BY st.id, st.name
-     ), g AS (
-       SELECT store_id, store_name, (rev_recent - rev_prior) / NULLIF(rev_prior, 0) AS growth
-       FROM w WHERE rev_prior > 0
-     ), avg AS (SELECT AVG(growth) AS chain_growth FROM g)
-     SELECT g.store_id, g.store_name, g.growth, avg.chain_growth
-     FROM g, avg
-     WHERE g.growth < avg.chain_growth - 0.05   -- >=5pp below the chain
-     ORDER BY g.growth ASC LIMIT 3`,
+    `SELECT store_id, store_name, change AS growth, chain_avg_change AS chain_growth, gap_pp
+       FROM metric_store_wow
+      WHERE tenant_id = $1 AND rev_prior > 0 AND change < chain_avg_change - 0.05
+      ORDER BY change ASC LIMIT 3`,
     [tenantId]
   );
   return rows.map((r) => {
-    const gap = Number(r.chain_growth) - Number(r.growth);
+    const gap = Number(r.gap_pp);
     return {
       rule: "laggard_store",
       category: "sales",
@@ -207,25 +173,15 @@ async function laggardStore(tenantId) {
 
 // --- Rule: high return rate by category ------------------------------------
 // Returns as a share of gross units, flagged when well above the tenant average.
+// Reads metric_category_return_rate; rate and the tenant mean are computed in SQL.
 async function highReturnRateCategory(tenantId) {
   const rows = await query(
-    `WITH c AS (
-       SELECT i.category,
-         SUM(CASE WHEN s.sales > 0 THEN s.sales ELSE 0 END) AS gross_units,
-         SUM(CASE WHEN s.sales < 0 THEN -s.sales ELSE 0 END) AS return_units
-       FROM sales_fact_view s
-       JOIN items i ON i.id = s.item_id AND i.tenant_id = s.tenant_id
-       WHERE s.tenant_id = $1 AND s.date >= CURRENT_DATE - INTERVAL '30 days'
-       GROUP BY i.category
-     ), r AS (
-       SELECT category, gross_units, return_units,
-         return_units::numeric / NULLIF(gross_units, 0) AS rate
-       FROM c WHERE gross_units > 0
-     ), avg AS (SELECT AVG(rate) AS mean_rate FROM r)
-     SELECT r.category, r.rate, r.return_units, r.gross_units, avg.mean_rate
-     FROM r, avg
-     WHERE r.rate > GREATEST(avg.mean_rate * 1.5, 0.05)
-     ORDER BY r.rate DESC LIMIT 3`,
+    `SELECT category, rate, return_units, gross_units, mean_rate
+       FROM metric_category_return_rate
+      WHERE tenant_id = $1
+        AND gross_units > 0
+        AND rate > GREATEST(mean_rate * 1.5, 0.05)
+      ORDER BY rate DESC LIMIT 3`,
     [tenantId]
   );
   return rows.map((r) => {

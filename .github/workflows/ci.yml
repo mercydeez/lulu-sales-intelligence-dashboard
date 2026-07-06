@@ -181,6 +181,12 @@ jobs:
       - name: Diagnostics worker runs a measure pass without error
         run: docker compose run --rm worker npm run measure:once
 
+      # E6-1: prove the canonical metric_* views are value-preserving + tenant-safe
+      # against the live seeded DB. Runs in-container where DATABASE_URL already
+      # points at the seeded Postgres; RUN_DB_TESTS=1 un-skips the live-DB guards.
+      - name: Metric-view parity + tenant safety (E6-1)
+        run: docker compose exec -T -e RUN_DB_TESTS=1 backend python -m pytest tests/test_metric_views_parity.py -v --tb=short
+
       - name: Tear down
         if: always()
         run: docker compose down -v
