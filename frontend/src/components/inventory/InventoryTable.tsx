@@ -8,9 +8,18 @@ export interface InventoryTableProps {
   loading: boolean;
   canManageInventory: boolean;
   onAddToProcurement: (item: InventoryItem) => void;
+  emptyTitle?: string;
+  emptyDescription?: string;
 }
 
-export default function InventoryTable({ items, loading, canManageInventory, onAddToProcurement }: InventoryTableProps) {
+export default function InventoryTable({
+  items,
+  loading,
+  canManageInventory,
+  onAddToProcurement,
+  emptyTitle = 'No items found',
+  emptyDescription = 'Try adjusting your filters or search query.',
+}: InventoryTableProps) {
   return (
     <Card variant="glass" padding="none" className="overflow-hidden">
       <div className="p-4 border-b border-line flex items-center justify-between">
@@ -43,7 +52,7 @@ export default function InventoryTable({ items, loading, canManageInventory, onA
           ) : items.length === 0 ? (
             <TableRow>
               <Td colSpan={7}>
-                <EmptyState icon={<Package className="w-7 h-7" />} title="No items found" description="Try adjusting your filters or search query." />
+                <EmptyState icon={<Package className="w-7 h-7" />} title={emptyTitle} description={emptyDescription} />
               </Td>
             </TableRow>
           ) : (
@@ -75,7 +84,7 @@ export default function InventoryTable({ items, loading, canManageInventory, onA
                 <Td className="text-end text-ink">{formatCurrency(item.unit_cost)}</Td>
                 <Td className="text-center">
                   {(item.status === 'out_of_stock' || item.status === 'low_stock') && canManageInventory && (
-                    <Button size="sm" onClick={() => onAddToProcurement(item)}>Order</Button>
+                    <Button size="sm" onClick={() => onAddToProcurement(item)}>Create order</Button>
                   )}
                 </Td>
               </TableRow>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Package, Bell, ShoppingCart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -25,6 +26,7 @@ import {
 export default function InventoryPage() {
   const { authFetch, hasPermission } = useAuth();
   const { t } = useLanguage();
+  const searchParams = useSearchParams();
   const [summary, setSummary] = useState<InventorySummary | null>(null);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [categories, setCategories] = useState<CategoryData[]>([]);
@@ -33,9 +35,12 @@ export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStore, setSelectedStore] = useState<number | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [selectedStatus, setSelectedStatus] = useState<string>(searchParams.get('status') || '');
 
-  const [activeTab, setActiveTab] = useState<'inventory' | 'alerts' | 'procurement'>('inventory');
+  const initialTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'alerts' | 'procurement'>(
+    initialTab === 'alerts' || initialTab === 'procurement' ? initialTab : 'inventory'
+  );
   const [alerts, setAlerts] = useState<InventoryAlert[]>([]);
   const [procurementList, setProcurementList] = useState<ProcurementItem[]>([]);
   const [showProcurementModal, setShowProcurementModal] = useState(false);
@@ -77,6 +82,17 @@ export default function InventoryPage() {
   }), []);
 
   const { isConnected: isLiveConnected, error: liveError } = useEventStream('/stream/alerts', { eventHandlers });
+
+  useEffect(() => {
+    const linkedStatus = searchParams.get('status') || '';
+    const linkedTab = searchParams.get('tab');
+    setSelectedStatus(linkedStatus);
+    if (linkedTab === 'alerts' || linkedTab === 'procurement') {
+      setActiveTab(linkedTab);
+    } else if (linkedStatus) {
+      setActiveTab('inventory');
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     fetchData();
@@ -261,6 +277,10 @@ export default function InventoryPage() {
               loading={loading}
               canManageInventory={canManageInventory}
               onAddToProcurement={addToProcurement}
+              emptyTitle={selectedStatus ? 'No ' + selectedStatus.replace(/_/g, ' ') + ' items found' : 'No items found'}
+              emptyDescription={selectedStatus
+                ? 'The current inventory list has no items matching this linked status for your store scope. Use Refresh to re-check live inventory data.'
+                : 'Try adjusting your filters or search query.'}
             />
           </Reveal>
         )}

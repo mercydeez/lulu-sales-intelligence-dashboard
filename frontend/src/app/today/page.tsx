@@ -147,7 +147,7 @@ function KpiZone({ config }: ZoneProps) {
 interface TriageDecision {
   id: number | null; severity: string; problem: string;
   impact: { aed: number | null; units: number | null; per: string | null };
-  recommended_action: string;
+  recommended_action: string; href?: string; kind?: string;
 }
 const SEV_HEX: Record<string, string> = {
   critical: '#f43f5e', high: '#f97316', medium: '#f59e0b', low: '#0f766e',
@@ -173,7 +173,9 @@ function DecisionsZone({ spec }: ZoneProps) {
       ) : (
         <div className="space-y-3">
           {decisions.map((d, i) => (
-            <Link key={d.id ?? i} href="/decisions"
+            /* Link straight to where the item is acted on (a reorder → its exact
+               PO with the item highlighted), so the item is never lost. */
+            <Link key={d.id ?? i} href={d.href || '/decisions'}
               className="block rounded-2xl bg-surface border border-line shadow-card p-4 hover:bg-surface-2 transition-colors"
               style={{ borderInlineStartWidth: '3px', borderInlineStartColor: SEV_HEX[d.severity] ?? SEV_HEX.low }}>
               <div className="flex items-start justify-between gap-4">
@@ -247,11 +249,13 @@ function StockZone(_: ZoneProps) {
         <div>
           <p className="text-sm font-semibold text-ink">
             {summary == null ? 'Checking your shelves…'
-              : out === 0 ? 'No stockouts on your shelves right now'
+              : out === 0 && low ? `Nothing out of stock now — but ${low} item${low === 1 ? '' : 's'} running low`
+              : out === 0 ? 'Nothing out of stock, nothing running low — you’re covered'
               : `${out} item${out === 1 ? '' : 's'} out of stock right now`}
           </p>
           <p className="text-xs text-ink-muted mt-0.5">
-            {low != null ? `${low} more running low. ` : ''}Every stockout hour is lost revenue.
+            {out === 0 && low ? 'These are the items your decisions above suggest reordering — act before they run out.'
+              : 'Every stockout hour is lost revenue.'}
           </p>
         </div>
       </div>

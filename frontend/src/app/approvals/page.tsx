@@ -64,7 +64,7 @@ export default function ApprovalsPage() {
           description="Purchase orders awaiting your decision."
           icon={<Inbox className="w-6 h-6" />}
           actions={pos.length > 0 ? (
-            <Button variant="primary" onClick={approveAll}><CheckCheck className="w-4 h-4" /> Approve all</Button>
+            <Button variant="primary" onClick={approveAll}><CheckCheck className="w-4 h-4" /> Approve all POs</Button>
           ) : undefined}
         />
 
@@ -103,10 +103,10 @@ export default function ApprovalsPage() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <Button variant="secondary" size="sm" disabled={busy === po.id} onClick={() => decide(po, 'approved')}>
-                    {busy === po.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Approve
+                    {busy === po.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Approve PO
                   </Button>
                   <Button variant="ghost" size="sm" disabled={busy === po.id} onClick={() => decide(po, 'cancelled')}>
-                    <X className="w-4 h-4" /> Reject
+                    <X className="w-4 h-4" /> Reject PO
                   </Button>
                 </div>
               </Card>

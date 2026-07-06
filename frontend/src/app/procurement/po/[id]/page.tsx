@@ -1,14 +1,16 @@
 'use client';
 
 /**
- * Printable Purchase Order document (Part III-H). A clean, print-optimised view
- * of a PO that a buyer can send to a supplier or save as PDF (browser print →
- * Save as PDF). Dependency-free: no server-side PDF library.
+ * Purchase Order — the END of the reorder workflow. When you arrive from a
+ * "X will run out" decision (?item=X), the line for X is highlighted and scrolled
+ * to, so the item you came to act on is never lost. Review and Approve happen on
+ * THIS page — no bouncing to another screen to approve.
  */
-import { useCallback, useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { Printer, ArrowLeft } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { Printer, ArrowLeft, CheckCircle2, Check } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/components/ui';
 import { PRODUCT_NAME } from '@/lib/brand';
 import AuditTimeline from '@/components/AuditTimeline';
 
@@ -20,12 +22,17 @@ interface PODetail {
   lines: POLine[]; receipts: { receipt_number: string; status: string }[];
 }
 
-export default function PrintablePOPage() {
+export default function PurchaseOrderPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const search = useSearchParams();
   const { authFetch } = useAuth();
+  const { show } = useToast();
+  const focusItem = search.get('item');   // the item you came here to act on
   const [po, setPo] = useState<PODetail | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const rowRef = useRef<HTMLTableRowElement | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -35,23 +42,65 @@ export default function PrintablePOPage() {
   }, [authFetch, id]);
   useEffect(() => { load(); }, [load]);
 
+  // Scroll the item you came for into view once the PO loads.
+  useEffect(() => {
+    if (po && focusItem && rowRef.current) {
+      rowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [po, focusItem]);
+
   const money = (n: number) => `${po?.currency ?? 'AED'} ${new Intl.NumberFormat('en-AE', { minimumFractionDigits: 2 }).format(n)}`;
   const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString('en-AE', { year: 'numeric', month: 'short', day: 'numeric' }) : '—');
+  const isMatch = (name: string) => !!focusItem && name.trim().toLowerCase() === focusItem.trim().toLowerCase();
+  const canApprove = po && (po.status === 'draft' || po.status === 'pending_approval');
+
+  const approve = async () => {
+    if (!po) return;
+    setApproving(true);
+    try {
+      const res = await authFetch(`/api/procurement/purchase-orders/${po.id}/status`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'approved' }),
+      });
+      if (res.ok) { show(`${po.po_number} approved — the order is on its way to the supplier.`, { variant: 'success' }); load(); }
+      else { const e = await res.json().catch(() => ({})); show(e.detail || 'Could not approve this order', { variant: 'error' }); }
+    } finally { setApproving(false); }
+  };
 
   if (notFound) return <div className="p-8 text-ink-muted">Purchase order not found.</div>;
   if (!po) return <div className="p-8 animate-pulse text-ink-muted">Loading purchase order…</div>;
 
   return (
     <main className="min-h-screen bg-surface p-6 md:p-10 text-ink">
-      {/* Toolbar — hidden when printing */}
-      <div className="max-w-3xl mx-auto flex items-center justify-between mb-6 print:hidden">
-        <button onClick={() => router.push('/procurement')} className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink">
-          <ArrowLeft className="w-4 h-4" /> Back to procurement
+      {/* Toolbar — hidden when printing. Approve is primary; Print is secondary. */}
+      <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 mb-4 print:hidden">
+        <button onClick={() => router.back()} className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink">
+          <ArrowLeft className="w-4 h-4" /> Back
         </button>
-        <button onClick={() => window.print()} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl sunset-gradient text-white text-sm font-semibold shadow-sunset">
-          <Printer className="w-4 h-4" /> Print / Save as PDF
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => window.print()} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-surface border border-line text-ink text-sm font-medium hover:bg-surface-2">
+            <Printer className="w-4 h-4" /> Print / PDF
+          </button>
+          {canApprove ? (
+            <button onClick={approve} disabled={approving}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl sunset-gradient text-white text-sm font-semibold shadow-sunset disabled:opacity-60">
+              <Check className="w-4 h-4" /> {approving ? 'Approving…' : 'Approve order'}
+            </button>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-sm font-medium ring-1 ring-emerald-200">
+              <CheckCircle2 className="w-4 h-4" /> {po.status.replace('_', ' ')}
+            </span>
+          )}
+        </div>
       </div>
+
+      {/* "You came for this item" banner — keeps the acted-on item front of mind. */}
+      {focusItem && (
+        <div className="max-w-3xl mx-auto mb-4 print:hidden rounded-xl bg-teal-50 ring-1 ring-teal-100 px-4 py-2.5 text-sm text-teal-900">
+          You&apos;re here to reorder <strong>{focusItem}</strong> — it&apos;s highlighted below.
+          {canApprove ? ' Approve this order to send it.' : ''}
+        </div>
+      )}
 
       {/* Document */}
       <div className="max-w-3xl mx-auto border border-line rounded-xl p-8 print:border-0 print:p-0">
@@ -67,22 +116,10 @@ export default function PrintablePOPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-6 mb-6 text-sm">
-          <div>
-            <p className="text-ink-muted">Supplier</p>
-            <p className="font-medium">{po.supplier_name}</p>
-          </div>
-          <div className="text-end">
-            <p className="text-ink-muted">Status</p>
-            <p className="font-medium capitalize">{po.status.replace('_', ' ')}</p>
-          </div>
-          <div>
-            <p className="text-ink-muted">Created</p>
-            <p className="font-medium">{fmtDate(po.created_at)}</p>
-          </div>
-          <div className="text-end">
-            <p className="text-ink-muted">Approved</p>
-            <p className="font-medium">{fmtDate(po.approved_at)}</p>
-          </div>
+          <div><p className="text-ink-muted">Supplier</p><p className="font-medium">{po.supplier_name}</p></div>
+          <div className="text-end"><p className="text-ink-muted">Status</p><p className="font-medium capitalize">{po.status.replace('_', ' ')}</p></div>
+          <div><p className="text-ink-muted">Created</p><p className="font-medium">{fmtDate(po.created_at)}</p></div>
+          <div className="text-end"><p className="text-ink-muted">Approved</p><p className="font-medium">{fmtDate(po.approved_at)}</p></div>
         </div>
 
         <table className="w-full text-sm mb-6">
@@ -95,14 +132,21 @@ export default function PrintablePOPage() {
             </tr>
           </thead>
           <tbody>
-            {po.lines.map((l) => (
-              <tr key={l.id} className="border-b border-line/60">
-                <td className="py-2">{l.item_name}</td>
-                <td className="py-2 text-end">{l.quantity.toLocaleString()}</td>
-                <td className="py-2 text-end">{money(l.unit_cost)}</td>
-                <td className="py-2 text-end">{money(l.line_total)}</td>
-              </tr>
-            ))}
+            {po.lines.map((l) => {
+              const match = isMatch(l.item_name);
+              return (
+                <tr key={l.id} ref={match ? rowRef : undefined}
+                  className={`border-b border-line/60 ${match ? 'bg-teal-50/70 ring-1 ring-teal-200' : ''}`}>
+                  <td className="py-2 ps-1">
+                    {match && <span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-500 me-2 align-middle" />}
+                    <span className={match ? 'font-semibold text-teal-900' : ''}>{l.item_name}</span>
+                  </td>
+                  <td className="py-2 text-end">{l.quantity.toLocaleString()}</td>
+                  <td className="py-2 text-end">{money(l.unit_cost)}</td>
+                  <td className="py-2 text-end">{money(l.line_total)}</td>
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-line">
@@ -124,7 +168,16 @@ export default function PrintablePOPage() {
         </div>
       </div>
 
-      {/* Per-PO audit trail — on-screen only, hidden when printing */}
+      {/* Repeat the primary action at the bottom so a long PO never hides it. */}
+      {canApprove && (
+        <div className="max-w-3xl mx-auto mt-5 print:hidden flex justify-end">
+          <button onClick={approve} disabled={approving}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl sunset-gradient text-white text-sm font-semibold shadow-sunset disabled:opacity-60">
+            <Check className="w-4 h-4" /> {approving ? 'Approving…' : `Approve order — ${money(po.total_amount)}`}
+          </button>
+        </div>
+      )}
+
       <div className="max-w-3xl mx-auto mt-6 print:hidden">
         <AuditTimeline entityId={po.id} limit={20} />
       </div>

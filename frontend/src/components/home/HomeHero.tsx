@@ -4,6 +4,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ROLE_DISPLAY_NAMES, UserRole } from '@/types/auth';
 import { Store, MapPin, Package, Users } from 'lucide-react';
 
+function getStoreIds(user: ReturnType<typeof useAuth>['user']): number[] {
+  return user?.permissions?.accessible_stores?.length
+    ? user.permissions.accessible_stores
+    : (user?.accessible_stores || []);
+}
+
 function getWelcomeMessage(role?: UserRole, regions?: string[], stores?: number[]): string {
   switch (role) {
     case 'super_admin':
@@ -21,7 +27,8 @@ function getWelcomeMessage(role?: UserRole, regions?: string[], stores?: number[
 
 export default function HomeHero() {
   const { user } = useAuth();
-  const storeCount = user?.role === 'super_admin' ? 10 : (user?.accessible_stores?.length || 0);
+  const scopedStores = getStoreIds(user);
+  const storeCount = user?.role === 'super_admin' ? 10 : scopedStores.length;
 
   return (
     <header className="max-w-7xl mx-auto mb-8">
@@ -39,7 +46,7 @@ export default function HomeHero() {
             </div>
             <p className="text-white/85">
               Welcome back, <span className="font-semibold">{user?.first_name}</span>!{' '}
-              {getWelcomeMessage(user?.role, user?.accessible_regions, user?.accessible_stores)}
+              {getWelcomeMessage(user?.role, user?.accessible_regions, scopedStores)}
             </p>
           </div>
           <div className="flex items-center gap-3">

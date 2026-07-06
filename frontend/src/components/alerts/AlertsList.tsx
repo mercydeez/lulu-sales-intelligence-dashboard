@@ -98,12 +98,13 @@ export default function AlertsList({
                     <button
                       onClick={() => onAcknowledge(alert)}
                       className="p-2 rounded-lg bg-coral-50 text-ink-soft hover:bg-coral-100 transition-colors"
-                      title="Acknowledge"
+                      title="Acknowledge alert"
+                      aria-label="Acknowledge alert"
                     >
                       <Check className="w-4 h-4" />
                     </button>
                   )}
-                  <Button size="sm" onClick={() => onResolve(alert)}>Resolve</Button>
+                  <Button size="sm" onClick={() => onResolve(alert)}>Resolve after action</Button>
                 </div>
               )}
             </div>

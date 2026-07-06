@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Truck, Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Button, Badge } from '@/components/ui';
@@ -28,19 +29,21 @@ const STATUS_BADGE: Record<string, BadgeVariant> = {
 // outstanding lines; 'status' is a plain lifecycle transition.
 type NextAction = { label: string; kind: 'status' | 'receive'; status?: string };
 const NEXT_ACTION: Record<string, NextAction | undefined> = {
-  draft: { label: 'Approve', kind: 'status', status: 'approved' },
-  approved: { label: 'Mark sent', kind: 'status', status: 'sent' },
-  sent: { label: 'Receive', kind: 'receive' },
-  partially_received: { label: 'Receive rest', kind: 'receive' },
+  draft: { label: 'Approve PO', kind: 'status', status: 'approved' },
+  approved: { label: 'Mark PO sent', kind: 'status', status: 'sent' },
+  sent: { label: 'Record receipt', kind: 'receive' },
+  partially_received: { label: 'Record remaining receipt', kind: 'receive' },
 };
 
 export default function ProcurementPage() {
   const { authFetch } = useAuth();
+  const searchParams = useSearchParams();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [pos, setPos] = useState<PO[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState('');
+  const [reorderCount, setReorderCount] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -54,6 +57,26 @@ export default function ProcurementPage() {
   }, [authFetch]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (searchParams.get('source') !== 'reorder') return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await authFetch('/api/inventory/reorder-suggestions?limit=100');
+        if (!active) return;
+        if (res.ok) {
+          const data = await res.json();
+          setReorderCount(data.count ?? 0);
+        } else {
+          setReorderCount(0);
+        }
+      } catch {
+        if (active) setReorderCount(0);
+      }
+    })();
+    return () => { active = false; };
+  }, [authFetch, searchParams]);
 
   const generate = async () => {
     setGenerating(true);
@@ -100,7 +123,7 @@ export default function ProcurementPage() {
           actions={
             <Button variant="primary" onClick={generate} disabled={generating}>
               {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              Generate from forecast
+              Create draft POs from forecast
             </Button>
           }
         />
@@ -137,7 +160,13 @@ export default function ProcurementPage() {
             <div className="h-24 animate-pulse rounded-lg bg-ink/5" />
           ) : pos.length === 0 ? (
             <p className="text-ink-muted text-sm py-6 text-center">
-              No purchase orders yet — click <span className="font-medium">Generate from forecast</span> to create them.
+              {searchParams.get('source') === 'reorder'
+                ? reorderCount === null
+                  ? 'Checking forecast reorder recommendations...'
+                  : reorderCount > 0
+                    ? reorderCount + ' forecast reorder recommendation' + (reorderCount === 1 ? '' : 's') + ' found. Click Create draft POs from forecast to create supplier-grouped drafts.'
+                    : 'No forecast reorder recommendations currently match your store scope.'
+                : <>No purchase orders yet — click <span className="font-medium">Create draft POs from forecast</span> to create them.</>}
             </p>
           ) : (
             <div className="overflow-x-auto">

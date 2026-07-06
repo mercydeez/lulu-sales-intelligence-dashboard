@@ -257,6 +257,16 @@ async def generate_draft_pos_from_reorder(
     if auto_approved:
         msg = (f"Created {len(created)} PO(s) from forecast — {auto_approved} auto-approved "
                f"(under AED {auto_under:,.0f}).")
+    elif not created and skipped_already_open:
+        # The most common "0 created" case: the forecast items are already on the
+        # draft POs below. Say so instead of a bare "Created 0" that reads as a failure.
+        msg = (f"All {len(skipped_already_open)} item(s) that need reordering are already on "
+               f"the draft purchase orders below — review and approve them.")
+    elif not created and skipped_no_supplier:
+        msg = (f"{len(skipped_no_supplier)} item(s) need reordering but have no supplier set — "
+               f"add a supplier to order them.")
+    elif not created:
+        msg = "Nothing needs reordering right now — every item has enough cover."
     return {
         "created": created,
         "auto_approved": auto_approved,

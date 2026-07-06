@@ -344,8 +344,9 @@ async def generate_briefing(
         ORDER BY measured_at DESC NULLS LAST LIMIT 1
     """), {"tid": tenant_id})).mappings().fetchone()
 
-    # Reuse the existing services (each tenant/scope-aware + cached).
-    roi = await roi_summary(db, tenant_id)
+    # Reuse the existing services (each tenant/scope-aware + cached). ROI is
+    # store-scoped so a store/regional manager's "at stake" is THEIR number.
+    roi = await roi_summary(db, tenant_id, allowed)
     try:
         fc = await revenue_projection(db, tenant_id, allowed, horizon=14)
     except Exception:

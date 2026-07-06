@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.database import get_db
 from app.services.roi import roi_summary, build_report_html, build_report_csv
-from app.routes.auth import get_current_user
+from app.routes.auth import get_current_user, get_accessible_store_ids
 
 router = APIRouter(tags=["ROI"])
 
@@ -24,7 +24,7 @@ async def get_roi_summary(user: dict = Depends(get_current_user),
     """Cash-in-inventory, dead-stock AED, estimated stockout loss, GMROI, days of
     supply — computed from the tenant's real inventory + sales."""
     tenant_id = user.get("tenant_id") or 1
-    return await roi_summary(db, tenant_id)
+    return await roi_summary(db, tenant_id, get_accessible_store_ids(user))
 
 
 async def _company_name(db: AsyncSession, tenant_id: int) -> str:
@@ -43,7 +43,7 @@ async def roi_report(fmt: str = Query("html", pattern="^(html|csv)$"),
     """A shareable inventory-value report for the buyer's finance team. `html` is a
     self-contained, browser-printable one-pager (→ PDF); `csv` for spreadsheets."""
     tenant_id = user.get("tenant_id") or 1
-    summary = await roi_summary(db, tenant_id)
+    summary = await roi_summary(db, tenant_id, get_accessible_store_ids(user))
     if fmt == "csv":
         return PlainTextResponse(build_report_csv(summary), media_type="text/csv",
             headers={"Content-Disposition": 'attachment; filename="inventory-value.csv"'})

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 from typing import Dict, List, Optional, Sequence
+from urllib.parse import quote
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -376,13 +377,41 @@ async def _gather_pending(db: AsyncSession, tenant_id: int,
     ), {"tid": tenant_id})).mappings().all()
     decisions = [build_decision(dict(r)) for r in rows]
     # Forecast-driven stockout risks (best-effort — must not 500 on a cold forecaster).
+    # Each is linked to the exact draft PO that already carries the item, so acting
+    # on "X will run out" lands on X's order — the item is never lost in the handoff.
     try:
         from app.services.forecast_service import reorder_suggestions
         reorder = (await reorder_suggestions(db, tenant_id, allowed, limit=10)).get("suggestions", [])
-        decisions.extend(build_reorder_decision(s) for s in reorder)
+        po_for_item = await _open_po_for_items(db, tenant_id, [s.get("item_id") for s in reorder])
+        for s in reorder:
+            d = build_reorder_decision(s)
+            po = po_for_item.get(s.get("item_id"))
+            if po:
+                item_q = quote(s.get("item_name") or "")
+                d["po_id"] = po["po_id"]
+                d["po_number"] = po["po_number"]
+                d["href"] = f"/procurement/po/{po['po_id']}?item={item_q}"
+            decisions.append(d)
     except Exception:
         pass
     return sort_decisions(decisions)
+
+
+async def _open_po_for_items(db: AsyncSession, tenant_id: int, item_ids) -> Dict:
+    """Map each item id → the most recent OPEN purchase order that already carries
+    it {item_id: {po_id, po_number}}. Lets a reorder decision deep-link to the
+    order for that exact item instead of a generic supplier list."""
+    ids = [i for i in (item_ids or []) if i is not None]
+    if not ids:
+        return {}
+    rows = (await db.execute(text("""
+        SELECT DISTINCT ON (l.item_id) l.item_id, l.po_id, po.po_number
+        FROM purchase_order_lines l JOIN purchase_orders po ON po.id = l.po_id
+        WHERE po.tenant_id = :t AND l.item_id = ANY(:items)
+          AND po.status IN ('draft','pending_approval','approved','sent','partially_received')
+        ORDER BY l.item_id, po.id DESC
+    """), {"t": tenant_id, "items": ids})).mappings().all()
+    return {r["item_id"]: {"po_id": r["po_id"], "po_number": r["po_number"]} for r in rows}
 
 
 # ===========================================================================

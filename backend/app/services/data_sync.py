@@ -131,6 +131,17 @@ class DataSyncService:
                 filters.append("(i.name ILIKE :search OR i.category ILIKE :search)")
                 params["search"] = f"%{search}%"
             
+            if status:
+                filters.append("""
+                    CASE
+                        WHEN ic.quantity <= 0 THEN 'out_of_stock'
+                        WHEN ic.quantity <= ic.reorder_level THEN 'low_stock'
+                        WHEN ic.quantity > ic.max_stock_level THEN 'overstocked'
+                        ELSE 'in_stock'
+                    END = :status
+                """)
+                params["status"] = status
+            
             where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
             
             # Query to get inventory based on sales patterns
@@ -244,19 +255,48 @@ class DataSyncService:
                     "status": status_val
                 })
             
-            # Get total count
+            # Get total count from the same calculated inventory and filters as
+            # the page query. Status must be filtered before pagination so a
+            # status link never opens an empty page while matching rows exist.
             count_query = f"""
                 WITH recent_sales AS (
-                    SELECT store_id, item_id
+                    SELECT
+                        store_id,
+                        item_id,
+                        SUM(sales) as total_sold,
+                        AVG(sales) as avg_daily_sales
                     FROM sales_fact_view
                     WHERE date >= CURRENT_DATE - INTERVAL '30 days'
                       AND tenant_id = :tenant_id
                     GROUP BY store_id, item_id
+                ),
+                inventory_calc AS (
+                    SELECT
+                        rs.store_id,
+                        rs.item_id,
+                        GREATEST(0,
+                            CASE
+                                WHEN rs.avg_daily_sales > 50 THEN 500 - (rs.total_sold / 10)::int
+                                WHEN rs.avg_daily_sales > 20 THEN 300 - (rs.total_sold / 15)::int
+                                ELSE 200 - (rs.total_sold / 20)::int
+                            END
+                        )::int as quantity,
+                        CASE
+                            WHEN rs.avg_daily_sales > 50 THEN 100
+                            WHEN rs.avg_daily_sales > 20 THEN 50
+                            ELSE 25
+                        END as reorder_level,
+                        CASE
+                            WHEN rs.avg_daily_sales > 50 THEN 600
+                            WHEN rs.avg_daily_sales > 20 THEN 400
+                            ELSE 250
+                        END as max_stock_level
+                    FROM recent_sales rs
                 )
                 SELECT COUNT(*)
-                FROM recent_sales rs
-                JOIN stores s ON rs.store_id = s.id
-                JOIN items i ON rs.item_id = i.id
+                FROM inventory_calc ic
+                JOIN stores s ON ic.store_id = s.id
+                JOIN items i ON ic.item_id = i.id
                 {where_clause}
             """
             count_params = {k: v for k, v in params.items() if k not in ['limit', 'offset']}
@@ -364,7 +404,7 @@ class DataSyncService:
                 "low_stock_count": int(row[2]) if row and row[2] else 0,
                 "out_of_stock_count": int(row[3]) if row and row[3] else 0,
                 "overstocked_count": int(row[4]) if row and row[4] else 0,
-                "pending_transfers": random.randint(2, 8),
+                "pending_transfers": 0,
                 "currency": "AED"
             }
             

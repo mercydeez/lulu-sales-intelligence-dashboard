@@ -269,6 +269,56 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const buildDataFallback = useCallback(async (question: string) => {
+    const readJson = async (url: string) => {
+      try {
+        const res = await authFetch(url);
+        return res.ok ? await res.json() : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const [kpis, inventory, alertSummary, activeAlerts, approvals] = await Promise.all([
+      readJson('/api/kpis'),
+      readJson('/api/inventory/summary'),
+      readJson('/api/alerts/summary'),
+      readJson('/api/alerts/list?status=active&limit=5'),
+      readJson('/api/procurement/approvals'),
+    ]);
+
+    const lines = [
+      'I could not generate an AI-written answer for: "' + question + '". Here is the current operational fallback from available dashboard data:',
+    ];
+
+    if (alertSummary) {
+      lines.push('• Active alerts: ' + (alertSummary.total_active ?? 0) + ' total, including ' + (alertSummary.critical_alerts ?? 0) + ' critical and ' + (alertSummary.warning_alerts ?? 0) + ' warning.');
+    }
+    if (inventory) {
+      lines.push('• Inventory: ' + (inventory.out_of_stock_count ?? 0) + ' out of stock, ' + (inventory.low_stock_count ?? 0) + ' low stock, ' + (inventory.overstocked_count ?? 0) + ' overstocked.');
+    }
+    if (approvals) {
+      lines.push('• Purchase approvals: ' + (approvals.count ?? 0) + ' PO' + (approvals.count === 1 ? '' : 's') + ' awaiting decision.');
+    }
+    if (kpis) {
+      lines.push('• Today: ' + new Intl.NumberFormat('en-AE').format(kpis.total_sales_today ?? 0) + ' units and AED ' + new Intl.NumberFormat('en-AE', { maximumFractionDigits: 0 }).format(kpis.total_revenue_today ?? 0) + ' revenue.');
+    }
+
+    const alerts = activeAlerts?.alerts ?? [];
+    if (alerts.length > 0) {
+      lines.push('Top active alerts to review first:');
+      alerts.slice(0, 3).forEach((alert: any, index: number) => {
+        lines.push((index + 1) + '. ' + alert.title + ' - ' + (alert.store_name || 'assigned store'));
+      });
+    }
+
+    if (lines.length === 1) {
+      lines.push('I also could not load the fallback dashboard data right now. Refresh the page and review Alerts, Inventory, and Approvals directly.');
+    }
+
+    return lines.join('\n');
+  }, [authFetch]);
+
   // Generate session ID on mount
   useEffect(() => {
     setSessionId(`session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
@@ -361,6 +411,15 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
         }
       }
 
+      if (!fullResponse.trim()) {
+        fullResponse = await buildDataFallback(messageText);
+        setMessages(prev => prev.map(m =>
+          m.id === assistantId
+            ? { ...m, content: fullResponse }
+            : m
+        ));
+      }
+
       // Mark as done streaming
       setMessages(prev => prev.map(m => 
         m.id === assistantId 
@@ -374,15 +433,16 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
       }
 
     } catch (error) {
+      const fallback = await buildDataFallback(messageText);
       setMessages(prev => prev.map(m => 
         m.id === assistantId 
-          ? { ...m, content: 'Sorry, I encountered an error. Please try again.', isStreaming: false }
+          ? { ...m, content: fallback, isStreaming: false }
           : m
       ));
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, isLoading, autoSpeak, authFetch]);
+  }, [sessionId, isLoading, autoSpeak, authFetch, buildDataFallback]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

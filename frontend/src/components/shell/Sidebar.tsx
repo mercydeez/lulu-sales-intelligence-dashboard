@@ -85,6 +85,7 @@ const NAV_ICONS: Record<string, ReactNode> = {
   Inbox: <Inbox className="w-5 h-5" />,
   BarChart3: <BarChart3 className="w-5 h-5" />,
   Package: <Package className="w-5 h-5" />,
+  Truck: <Truck className="w-5 h-5" />,
   Lightbulb: <Lightbulb className="w-5 h-5" />,
   TrendingUp: <TrendingUp className="w-5 h-5" />,
   FileText: <FileText className="w-5 h-5" />,

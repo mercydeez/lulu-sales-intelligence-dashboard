@@ -16,7 +16,7 @@ export default function ProcurementModal({ open, item, quantity, onQuantityChang
   if (!item) return null;
 
   return (
-    <Modal open={open} onClose={onCancel} title="Create Procurement Order">
+    <Modal open={open} onClose={onCancel} title="Create replenishment order">
       <div className="flex items-center gap-2 mb-4 text-teal-600">
         <ShoppingCart className="w-5 h-5" />
       </div>
@@ -57,7 +57,7 @@ export default function ProcurementModal({ open, item, quantity, onQuantityChang
 
       <div className="flex gap-3 mt-6">
         <Button variant="secondary" className="flex-1" onClick={onCancel}>Cancel</Button>
-        <Button className="flex-1" onClick={onConfirm}>Create Order</Button>
+        <Button className="flex-1" onClick={onConfirm}>Create replenishment order</Button>
       </div>
     </Modal>
   );

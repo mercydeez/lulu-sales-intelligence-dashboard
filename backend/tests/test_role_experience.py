@@ -35,6 +35,18 @@ def test_wave1_roles_resolve_to_distinct_configs():
     assert regional["decision_scope"] == "region"
 
 
+def test_procurement_buying_desk_config():
+    proc = resolve_config("procurement_manager")
+    assert proc["key"] == "procurement_manager"
+    assert proc["persona"]["title"] == "Supply Chain Expert"
+    assert proc["decision_scope"] == "chain"           # buys for the whole chain
+    assert "SUPPLY CHAIN EXPERT" in persona_prompt_fragment("procurement_manager")
+    # distinct from the other wave-1 roles
+    assert proc["nav"] != resolve_config("store_manager")["nav"]
+    assert proc["kpis"] != resolve_config("regional_manager")["kpis"]
+    assert any(z["type"] == "approvals" for z in proc["zones"])   # the PO queue
+
+
 def test_unknown_role_gets_default_and_current_behavior():
     cfg = resolve_config("super_admin")
     assert cfg["key"] == "_default"

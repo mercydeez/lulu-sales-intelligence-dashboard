@@ -62,16 +62,19 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"type": "decisions", "props": {"limit": 3, "title": "Decide now"}},
             {"type": "stock"},
         ],
+        # KPIs are today-focused (a store manager's frame) + counts. The 7-day
+        # revenue lives in the hero verdict alone, so it never appears twice with
+        # two different figures.
         "kpis": [
             {"key": "today_units", "label": "Sold today", "source": "kpis",
              "field": "total_sales_today", "format": "units"},
             {"key": "today_revenue", "label": "Revenue today", "source": "kpis",
              "field": "total_revenue_today", "format": "aed"},
-            {"key": "week_revenue", "label": "Revenue (7d)", "source": "kpis",
-             "field": "total_revenue_week", "format": "aed"},
-            {"key": "stockouts_now", "label": "Stockouts now", "source": "inventory",
+            {"key": "stockouts_now", "label": "Out of stock", "source": "inventory",
              "field": "out_of_stock_count", "format": "int"},
-            {"key": "decisions_pending", "label": "Decisions waiting", "source": "decisions",
+            {"key": "low_stock", "label": "Running low", "source": "inventory",
+             "field": "low_stock_count", "format": "int"},
+            {"key": "decisions_pending", "label": "To review", "source": "decisions",
              "field": "pending", "format": "int"},
         ],
         "nav": [
@@ -109,13 +112,15 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"type": "decisions", "props": {"limit": 3, "title": "Decide now"}},
             {"type": "approvals"},
         ],
+        # The 7-day region revenue is stated once, in the hero verdict; KPIs add
+        # movement + workload rather than repeating it with a second figure.
         "kpis": [
-            {"key": "week_revenue", "label": "Region revenue (7d)", "source": "kpis",
-             "field": "total_revenue_week", "format": "aed"},
             {"key": "week_units", "label": "Volume (7d)", "source": "kpis",
              "field": "total_sales_week", "format": "units"},
             {"key": "revenue_trend", "label": "Trend", "source": "kpis",
              "field": "revenue_trend", "format": "trend"},
+            {"key": "stockouts_now", "label": "Out of stock", "source": "inventory",
+             "field": "out_of_stock_count", "format": "int"},
             {"key": "decisions_pending", "label": "Decisions waiting", "source": "decisions",
              "field": "pending", "format": "int"},
             {"key": "at_stake", "label": "At stake /wk", "source": "decisions",

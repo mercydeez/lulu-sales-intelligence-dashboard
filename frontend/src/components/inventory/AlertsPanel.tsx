@@ -34,7 +34,7 @@ export default function AlertsPanel({
           Inventory Alerts
           <Badge variant="danger" size="sm">{unacknowledgedAlerts} unread</Badge>
         </h2>
-        <Button variant="secondary" size="sm" onClick={onMarkAllRead}>Mark All Read</Button>
+        <Button variant="secondary" size="sm" onClick={onMarkAllRead}>Acknowledge all inventory alerts</Button>
       </div>
 
       {alerts.length === 0 ? (
@@ -85,12 +85,13 @@ export default function AlertsPanel({
                       <button
                         onClick={() => onAcknowledge(alert.id)}
                         className="p-2 rounded-lg bg-coral-50 text-ink-soft hover:bg-coral-100 transition-colors"
-                        title="Acknowledge"
+                        title="Acknowledge inventory alert"
+                        aria-label="Acknowledge inventory alert"
                       >
                         <Check className="w-4 h-4" />
                       </button>
                       {canManageInventory && alert.type !== 'overstocked' && (
-                        <Button size="sm" onClick={() => onCreateOrder(alert)}>Create Order</Button>
+                        <Button size="sm" onClick={() => onCreateOrder(alert)}>Create replenishment order</Button>
                       )}
                     </div>
                   )}

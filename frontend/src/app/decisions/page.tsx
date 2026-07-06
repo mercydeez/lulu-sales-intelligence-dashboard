@@ -467,7 +467,7 @@ function PendingCard({ d, busy, compact, onApprove, onDismiss, onDraft }: Pendin
           </>
         ) : (
           <Link href={d.href}>
-            <Button size="sm" variant="secondary">Review in Procurement <ArrowRight className="w-3.5 h-3.5 ms-1.5" /></Button>
+            <Button size="sm">Review &amp; approve order <ArrowRight className="w-3.5 h-3.5 ms-1.5" /></Button>
           </Link>
         )}
       </div>

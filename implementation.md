@@ -337,6 +337,33 @@ professional before production/customer use."**
 ## 12-Month Blueprint execution (see `docs/EXECUTION_BLUEPRINT_12M.md`)
 The audit-derived Q1→Q4 plan. Tracked here as items land.
 
+### Store-manager workflow friction fixes — S1 blockers ✅ done (verified live)
+From the first-time Store-Manager UX audit. Root causes were **dropped context between steps** and
+**numbers that disagree or aren't scoped to me**. Fixed the roots so workflows are continuous; no new
+features.
+- ✅ **Reorder → the exact order, item preserved (S1-1, the #1 blocker).** Each forecast reorder
+  decision now deep-links to the draft PO that already carries that item
+  (`_open_po_for_items` in `decision_center.py` → `href=/procurement/po/{id}?item={name}`). The PO
+  page (`procurement/po/[id]`) reads `?item=`, **highlights + scrolls to that line**, shows a
+  "You're here to reorder X" banner, and — crucially — **Approve now lives on the same page** (review
+  and approve no longer split across two screens; Print demoted to secondary). Home "will run out"
+  cards and the Decision Center both route straight there ("Review & approve order"). Verified: home
+  card → PO-01-00001 with Heinz highlighted → Approve → `POST …/status 200`.
+- ✅ **"Created 0 draft POs" dead-end (S1-2).** `generate_draft_pos_from_reorder` now returns a
+  plain-language reason instead of a bare 0: "All N item(s) that need reordering are already on the
+  draft POs below — review and approve them" (or no-supplier / nothing-to-reorder variants).
+- ✅ **Two different 7-day revenue numbers on one screen (S1-3).** The 7-day revenue is stated once —
+  in the hero verdict. Dropped the duplicate `total_revenue_week` KPI tile from the store & regional
+  configs (replaced with today/stock/workload KPIs), so no metric appears twice with two computations.
+- ✅ **"AED 3,060,650 at stake" for a one-store manager (S1-4).** `roi_summary` now accepts `allowed`
+  stores and scopes every figure; the briefing + `/api/roi` pass it. A store manager's "at stake"
+  went **3,060,650 → 214,150** (their store), and is believable. Chain roles (super_admin) unchanged.
+- ✅ **"Am I OK or not?" mixed signals (S1-5).** The store stock card now connects the two horizons —
+  "Nothing out of stock now — but N running low… act before they run out" — instead of a flat "no
+  stockouts" that contradicted the "will run out" cards. (Residual: the inventory reorder-level count
+  and the forecast reorder count are different measures and can still differ — noted, not yet unified.)
+- ✅ **Tests:** 66 green across decision-center/role-experience/roi/briefing/procurement; `tsc` clean.
+
 ### Role Experience Engine — Wave 1 ✅ done (verified live)
 The infrastructure from `docs/product/ROLE_EXPERIENCE_BLUEPRINT.md`: every role gets a different
 homepage, navigation, Sage persona, KPI set, and decision scope from **configuration**, not

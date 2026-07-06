@@ -81,10 +81,10 @@ export default function ProcurementPanel({
                     <Td className="text-center">
                       {proc.status === 'pending' && (
                         <div className="flex items-center justify-center gap-2">
-                          <Button size="sm" onClick={() => onApprove(proc.id)} aria-label="Approve order">
+                          <Button size="sm" onClick={() => onApprove(proc.id)} aria-label="Approve replenishment order">
                             <Check className="w-4 h-4" />
                           </Button>
-                          <Button size="sm" variant="danger" onClick={() => onReject(proc.id)} aria-label="Reject order">
+                          <Button size="sm" variant="danger" onClick={() => onReject(proc.id)} aria-label="Reject replenishment order">
                             <X className="w-4 h-4" />
                           </Button>
                         </div>

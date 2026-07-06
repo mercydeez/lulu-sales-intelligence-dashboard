@@ -185,8 +185,18 @@ review by a qualified UAE professional.</p>
 </body></html>"""
 
 
-async def roi_summary(db: AsyncSession, tenant_id: int) -> Dict:
-    """Compute the ROI summary for a tenant from real data."""
+async def roi_summary(db: AsyncSession, tenant_id: int, allowed=None) -> Dict:
+    """Compute the ROI summary for a tenant from real data. When `allowed` (a list
+    of store ids) is given, scope every figure to those stores — so a store or
+    regional manager sees THEIR at-stake number, not the whole chain's."""
+    inv_scope = ""
+    sale_scope = ""
+    params = {"tid": tenant_id}
+    if allowed:
+        inv_scope = "AND i.store_id = ANY(:allowed)"
+        sale_scope = "AND s.store_id = ANY(:allowed)"
+        params["allowed"] = list(allowed)
+
     inv = (await db.execute(text(f"""
         SELECT
           COALESCE(SUM(i.current_stock * it.unit_price_aed), 0)            AS inventory_retail_value,
@@ -211,20 +221,20 @@ async def roi_summary(db: AsyncSession, tenant_id: int) -> Dict:
           COALESCE(SUM(i.current_stock), 0)                              AS total_stock_units
         FROM inventory i
         JOIN items it ON it.id = i.item_id
-        WHERE it.tenant_id = :tid
-    """), {"tid": tenant_id})).mappings().fetchone()
+        WHERE it.tenant_id = :tid {inv_scope}
+    """), params)).mappings().fetchone()
 
-    rev = (await db.execute(text("""
+    rev = (await db.execute(text(f"""
         SELECT COALESCE(SUM(s.sales * it.unit_price_aed), 0) AS revenue_90d
         FROM sales_fact_view s JOIN items it ON it.id = s.item_id
-        WHERE s.tenant_id = :tid AND s.date >= (CURRENT_DATE - 90)
-    """), {"tid": tenant_id})).mappings().fetchone()
+        WHERE s.tenant_id = :tid AND s.date >= (CURRENT_DATE - 90) {sale_scope}
+    """), params)).mappings().fetchone()
 
     raw = dict(inv or {})
     raw["revenue_90d"] = (rev or {}).get("revenue_90d", 0)
     raw["cogs_90d"] = 0
     if raw.get("has_cost"):
-        cogs = (await db.execute(text("""
+        cogs = (await db.execute(text(f"""
             WITH item_cost AS (
                 SELECT item_id, AVG(NULLIF(unit_cost, 0)) AS cost
                 FROM inventory GROUP BY item_id
@@ -233,8 +243,8 @@ async def roi_summary(db: AsyncSession, tenant_id: int) -> Dict:
             FROM sales_fact_view s
             JOIN items it ON it.id = s.item_id
             JOIN item_cost ic ON ic.item_id = s.item_id
-            WHERE it.tenant_id = :tid AND s.date >= (CURRENT_DATE - 90) AND ic.cost IS NOT NULL
-        """), {"tid": tenant_id})).mappings().fetchone()
+            WHERE it.tenant_id = :tid AND s.date >= (CURRENT_DATE - 90) AND ic.cost IS NOT NULL {sale_scope}
+        """), params)).mappings().fetchone()
         raw["cogs_90d"] = (cogs or {}).get("cogs_90d", 0)
 
     return build_summary(raw)

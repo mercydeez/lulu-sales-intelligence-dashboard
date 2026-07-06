@@ -22,7 +22,7 @@ interface TileConfig {
 export default function AlertQuickLinks({ stats }: { stats: AlertStats }) {
   const tiles: TileConfig[] = [
     {
-      href: '/inventory?tab=alerts', label: 'Critical Alerts', value: stats.criticalAlerts,
+      href: '/alerts?severity=critical&status=active', label: 'Critical Alerts', value: stats.criticalAlerts,
       hint: 'Require immediate action', icon: AlertTriangle,
       text: 'text-coral-600', tile: 'bg-coral-100 text-coral-600', ring: 'hover:border-coral-300',
     },
@@ -37,7 +37,7 @@ export default function AlertQuickLinks({ stats }: { stats: AlertStats }) {
       text: 'text-teal-600', tile: 'bg-teal-100 text-teal-600', ring: 'hover:border-teal-300',
     },
     {
-      href: '/inventory?tab=procurement', label: 'Pending Orders', value: stats.pendingOrders,
+      href: '/approvals', label: 'Pending Orders', value: stats.pendingOrders,
       hint: 'Awaiting approval', icon: ShoppingCart,
       text: 'text-violet-600', tile: 'bg-violet-100 text-violet-600', ring: 'hover:border-violet-300',
     },

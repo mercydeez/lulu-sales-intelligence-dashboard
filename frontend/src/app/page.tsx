@@ -24,27 +24,31 @@ export default function Home() {
   const { t } = useLanguage();
 
   const [alertStats, setAlertStats] = useState<AlertStats>({
-    outOfStock: 12,
-    lowStock: 45,
-    pendingOrders: 8,
-    criticalAlerts: 5,
+    outOfStock: 0,
+    lowStock: 0,
+    pendingOrders: 0,
+    criticalAlerts: 0,
   });
 
   useEffect(() => {
     const fetchAlertStats = async () => {
       try {
-        const response = await authFetch('/api/inventory/summary');
-        if (response.ok) {
-          const data = await response.json();
-          setAlertStats({
-            outOfStock: data.out_of_stock_count || 12,
-            lowStock: data.low_stock_count || 45,
-            pendingOrders: data.pending_transfers || 8,
-            criticalAlerts: data.out_of_stock_count || 5,
-          });
-        }
+        const [inventoryRes, alertsRes, approvalsRes] = await Promise.all([
+          authFetch('/api/inventory/summary'),
+          authFetch('/api/alerts/summary'),
+          authFetch('/api/procurement/approvals'),
+        ]);
+        const inventory = inventoryRes.ok ? await inventoryRes.json() : null;
+        const alerts = alertsRes.ok ? await alertsRes.json() : null;
+        const approvals = approvalsRes.ok ? await approvalsRes.json() : null;
+        setAlertStats({
+          outOfStock: inventory?.out_of_stock_count ?? 0,
+          lowStock: inventory?.low_stock_count ?? 0,
+          pendingOrders: approvals?.count ?? 0,
+          criticalAlerts: alerts?.critical_alerts ?? 0,
+        });
       } catch {
-        // Use default alert stats on fetch failure
+        setAlertStats({ outOfStock: 0, lowStock: 0, pendingOrders: 0, criticalAlerts: 0 });
       }
     };
     fetchAlertStats();

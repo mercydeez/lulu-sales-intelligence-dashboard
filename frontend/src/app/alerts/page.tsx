@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Bell, ClipboardList, Settings, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -23,6 +24,7 @@ import {
 export default function AlertsPage() {
   const { authFetch, hasRole } = useAuth();
   const { t } = useLanguage();
+  const searchParams = useSearchParams();
   const canManageRules = hasRole(['super_admin', 'regional_manager']);
 
   const [summary, setSummary] = useState<AlertSummary | null>(null);
@@ -116,6 +118,13 @@ export default function AlertsPage() {
       setTasksLoading(false);
     }
   }, [authFetch]);
+
+  useEffect(() => {
+    setSeverity(searchParams.get('severity') || '');
+    setStatus(searchParams.get('status') || '');
+    setCategory(searchParams.get('alert_type') || '');
+    setPage(1);
+  }, [searchParams]);
 
   useEffect(() => { fetchOverview(); }, [fetchOverview]);
   useEffect(() => { if (canManageRules) fetchRules(); }, [canManageRules, fetchRules]);
