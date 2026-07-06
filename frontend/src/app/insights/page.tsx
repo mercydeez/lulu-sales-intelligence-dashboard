@@ -5,7 +5,7 @@ import {
   Lightbulb, RefreshCw, CheckCircle2, Eye, AlertTriangle,
   TrendingUp, TrendingDown, Minus, Clock, Wand2,
 } from 'lucide-react';
-import { PageHeader, Card, Badge, Button, Skeleton, EmptyState, Stagger, RevealItem, useToast } from '@/components/ui';
+import { PageHeader, Card, Badge, Button, Skeleton, EmptyState, ErrorState, Stagger, RevealItem, useToast } from '@/components/ui';
 import { apiPost, ApiError } from '@/lib/apiClient';
 import {
   fetchFindings,
@@ -77,6 +77,7 @@ export default function InsightsPage() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [summary, setSummary] = useState<FindingsSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<FilterValue>('open');
   const [busyId, setBusyId] = useState<number | null>(null);
   const { show } = useToast();
@@ -95,8 +96,11 @@ export default function InsightsPage() {
       ]);
       setFindings(f.data);
       setSummary(s);
-    } catch {
-      /* keep last good state */
+      setError(null);
+    } catch (e) {
+      // Keep the last good state on a background-refresh failure, but remember the
+      // error so a *first* load that fails doesn't masquerade as "nothing to see".
+      setError(e instanceof ApiError ? e.message : 'Failed to load insights');
     } finally {
       setLoading(false);
     }
@@ -185,6 +189,8 @@ export default function InsightsPage() {
         <div className="space-y-3">
           {[0, 1, 2].map((i) => <Skeleton key={i} width="100%" height="92px" rounded="lg" />)}
         </div>
+      ) : findings.length === 0 && error ? (
+        <ErrorState title="Couldn't load your insights" description={error} onRetry={load} />
       ) : findings.length === 0 ? (
         <EmptyState
           title="No findings"

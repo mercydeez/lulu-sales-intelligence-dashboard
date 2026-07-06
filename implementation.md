@@ -504,6 +504,29 @@ what a COO must read to ~3.
   by the unit tests. Verified live: banner "10 → 3 + 7", "Store managers · 7" lane with per-card
   routing reasons, Meridian names throughout.
 
+### Enterprise polish — Sage voice, trust & failure recovery ✅ done (verified)
+A product-quality pass over the AI/Experience surfaces (**no new features**): make Sage
+sound like a senior retail operator, and stop owned surfaces from lying or dead-ending when
+a fetch fails. Scope stayed inside the AI/Experience vertical (`ChatBot.tsx`, `/today`,
+`/insights`, `ai_assistant.py`).
+- ✅ **Sage (ChatBot) speaks in the caller's persona**, not a generic "analytics assistant":
+  the opening line is built from the role persona title and only advertises voice when the
+  role actually has it (it previously pointed every user at a mic some roles can't use).
+- ✅ **Sage's zero-LLM fallback reads like an operator, not an apology.** Dropped the "I could
+  not generate an AI-written answer" preamble; it now presents the live operational picture
+  (today's units + AED, alerts, stock, approvals) and closes with the one move it would make,
+  ranked by cost (critical alerts → stockouts → approvals → low stock). Honest and confident;
+  units/AED kept separate.
+- ✅ **System prompt gains an "answer like a retail operator" section** (additive, strictly
+  subordinate to the grounding/honesty rules): lead with the number + basis, then meaning →
+  action → outcome → next step — but only claim impact/action the data supports. `test_ai_rbac`
+  + `test_role_experience` (23) still green.
+- ✅ **Failure recovery on the role homepage (`/today`) and Insights.** The verdict and
+  decisions zones no longer spin an infinite skeleton on error — they offer a retry. The
+  approvals and stock zones no longer report a false "all clear" when the fetch actually
+  failed, and Insights shows an honest error on a first-load failure instead of "nothing needs
+  attention". `tsc --noEmit` + `next build` clean (all 40+ pages).
+
 ### E0-1 — Automated backups + rehearsed restore ✅ done
 Closes the audit's "no automated backup/restore test exists — disqualifying" gap and Risk #8.
 - ✅ **Automated backups**: prod `backup` sidecar (both compose files; dev via `--profile backup`) —

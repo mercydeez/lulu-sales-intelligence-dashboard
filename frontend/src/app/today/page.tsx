@@ -13,7 +13,7 @@ import { useExperience, ExperienceConfig, KpiDescriptor, ZoneSpec } from '@/cont
 import { Button, ErrorState, SkeletonCard, Stagger, RevealItem } from '@/components/ui';
 import { apiGet } from '@/lib/apiClient';
 import {
-  Sparkles, ArrowRight, RefreshCw, Inbox, PackageX, TrendingUp, TrendingDown, Minus,
+  Sparkles, ArrowRight, RefreshCw, Inbox, PackageX, TrendingUp, TrendingDown, Minus, AlertTriangle,
 } from 'lucide-react';
 
 const AED = (n: number | null | undefined, dp = 0) =>
@@ -63,11 +63,47 @@ export default function TodayPage() {
 
 interface ZoneProps { config: ExperienceConfig; spec: ZoneSpec }
 
+type ZoneStatus = 'loading' | 'ok' | 'error';
+
+/* Honest, recoverable failure for a single zone — never a silent skeleton and
+   never a false "all clear" when the fetch actually failed. */
+function ZoneError({ label, onRetry }: { label: string; onRetry: () => void }) {
+  return (
+    <div className="rounded-2xl bg-surface border border-line shadow-card p-5 flex items-center justify-between gap-4">
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-amber-50 ring-1 ring-amber-100 shrink-0">
+          <AlertTriangle className="w-5 h-5 text-amber-600" />
+        </span>
+        <div>
+          <p className="text-sm font-semibold text-ink">{label}</p>
+          <p className="text-xs text-ink-muted mt-0.5">A quick retry usually clears it.</p>
+        </div>
+      </div>
+      <Button size="sm" variant="secondary" onClick={onRetry}>
+        <RefreshCw className="w-4 h-4 me-1.5" /> Retry
+      </Button>
+    </div>
+  );
+}
+
 /* ── Q1: What matters to me now? — the persona verdict ── */
 function VerdictZone({ config }: ZoneProps) {
   const [b, setB] = useState<{ greeting: string; tldr: string; headline: { summary: string } } | null>(null);
-  useEffect(() => { apiGet<typeof b>('/api/briefing').then(setB).catch(() => {}); }, []);
+  const [status, setStatus] = useState<ZoneStatus>('loading');
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setStatus('loading');
+    apiGet<typeof b>('/api/briefing')
+      .then((d) => { if (active) { setB(d); setStatus('ok'); } })
+      .catch(() => { if (active) setStatus('error'); });
+    return () => { active = false; };
+  }, [tick]);
   const p = config.persona;
+  const headline =
+    status === 'ok' && b ? b.headline.summary
+      : status === 'error' ? "I couldn't read your stores just now."
+        : 'Reading your data…';
   return (
     <section className="hero-mesh relative overflow-hidden rounded-3xl p-6 md:p-8 shadow-elevated">
       <div className="relative z-10">
@@ -82,9 +118,15 @@ function VerdictZone({ config }: ZoneProps) {
         </div>
         <p className="mt-5 text-sm" style={white(0.75)}>{b?.greeting ?? 'Good day'} — {p.greeting}</p>
         <h1 className="mt-1 text-xl md:text-2xl font-semibold leading-snug max-w-[46ch]" style={white()}>
-          {b ? b.headline.summary : 'Reading your data…'}
+          {headline}
         </h1>
-        {b?.tldr && <p className="mt-2 text-sm italic" style={white(0.75)}>{b.tldr}</p>}
+        {status === 'ok' && b?.tldr && <p className="mt-2 text-sm italic" style={white(0.75)}>{b.tldr}</p>}
+        {status === 'error' && (
+          <button onClick={() => setTick((t) => t + 1)}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 ring-1 ring-white/25 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/25 transition">
+            <RefreshCw className="w-3.5 h-3.5" /> Try again
+          </button>
+        )}
       </div>
     </section>
   );
@@ -157,14 +199,25 @@ function DecisionsZone({ spec }: ZoneProps) {
   const limit = Number(spec.props?.limit ?? 3);
   const title = String(spec.props?.title ?? 'Decide now');
   const [t, setT] = useState<{ total: number; executive: { decisions: TriageDecision[] } } | null>(null);
-  useEffect(() => { apiGet<typeof t>('/api/decisions/triage').then(setT).catch(() => {}); }, []);
+  const [status, setStatus] = useState<ZoneStatus>('loading');
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setStatus('loading');
+    apiGet<typeof t>('/api/decisions/triage')
+      .then((d) => { if (active) { setT(d); setStatus('ok'); } })
+      .catch(() => { if (active) setStatus('error'); });
+    return () => { active = false; };
+  }, [tick]);
   const decisions = t?.executive.decisions.slice(0, limit) ?? [];
 
   return (
     <section>
       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted mb-3">{title}</p>
-      {!t ? (
+      {status === 'loading' ? (
         <SkeletonCard />
+      ) : status === 'error' ? (
+        <ZoneError label="Couldn't load your decisions" onRetry={() => setTick((v) => v + 1)} />
       ) : decisions.length === 0 ? (
         <div className="rounded-2xl bg-surface border border-line p-6 text-center">
           <Inbox className="w-6 h-6 text-teal-600 mx-auto mb-2" />
@@ -206,10 +259,17 @@ function DecisionsZone({ spec }: ZoneProps) {
 /* ── Q3 (regional): PO approvals waiting ── */
 function ApprovalsZone(_: ZoneProps) {
   const [count, setCount] = useState<number | null>(null);
+  const [status, setStatus] = useState<ZoneStatus>('loading');
+  const [tick, setTick] = useState(0);
   useEffect(() => {
+    let active = true;
+    setStatus('loading');
     apiGet<{ count?: number }>('/api/procurement/approvals')
-      .then((d) => setCount(d.count ?? 0)).catch(() => setCount(0));
-  }, []);
+      .then((d) => { if (active) { setCount(d.count ?? 0); setStatus('ok'); } })
+      .catch(() => { if (active) setStatus('error'); });
+    return () => { active = false; };
+  }, [tick]);
+  if (status === 'error') return <ZoneError label="Couldn't check approvals" onRetry={() => setTick((v) => v + 1)} />;
   return (
     <section className="rounded-2xl bg-surface border border-line shadow-card p-5 flex items-center justify-between gap-4">
       <div className="flex items-center gap-3 min-w-0">
@@ -233,9 +293,17 @@ function ApprovalsZone(_: ZoneProps) {
 /* ── Q5 (store): stockouts right now ── */
 function StockZone(_: ZoneProps) {
   const [summary, setSummary] = useState<{ out_of_stock_count?: number; low_stock_count?: number } | null>(null);
+  const [status, setStatus] = useState<ZoneStatus>('loading');
+  const [tick, setTick] = useState(0);
   useEffect(() => {
-    apiGet<typeof summary>('/api/inventory/summary').then(setSummary).catch(() => setSummary({}));
-  }, []);
+    let active = true;
+    setStatus('loading');
+    apiGet<typeof summary>('/api/inventory/summary')
+      .then((d) => { if (active) { setSummary(d); setStatus('ok'); } })
+      .catch(() => { if (active) setStatus('error'); });
+    return () => { active = false; };
+  }, [tick]);
+  if (status === 'error') return <ZoneError label="Couldn't check your shelves" onRetry={() => setTick((v) => v + 1)} />;
   const out = summary?.out_of_stock_count ?? 0;
   const low = summary?.low_stock_count;
   return (
