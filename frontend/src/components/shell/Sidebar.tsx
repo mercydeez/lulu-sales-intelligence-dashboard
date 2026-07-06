@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { usePathname } from 'next/navigation';
@@ -9,88 +9,10 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useExperience } from '@/contexts/ExperienceContext';
 import { cn } from '@/lib/cn';
 import { PRODUCT_NAME } from '@/lib/brand';
-import {
-  LayoutDashboard,
-  Package,
-  BarChart3,
-  Bell,
-  Settings,
-  Store,
-  Tag,
-  FileText,
-  Shield,
-  X,
-  ShoppingBag,
-  Activity,
-  Users,
-  Database,
-  Brain,
-  Truck,
-  Code2,
-  Inbox,
-  Lightbulb,
-  ShieldAlert,
-  ScrollText,
-  Wand2,
-  UploadCloud,
-  TrendingUp,
-  MapPin,
-  Sunrise,
-  Scale,
-} from 'lucide-react';
-import { UserRole } from '@/types/auth';
-
-interface NavItem {
-  label: string;
-  tKey: string;
-  href: string;
-  icon: ReactNode;
-  roles?: UserRole[];
-  permission?: string;
-}
-
-export const navItems: NavItem[] = [
-  { label: 'Dashboard', tKey: 'nav.dashboard', href: '/', icon: <LayoutDashboard className="w-5 h-5" /> },
-  { label: 'Briefing', tKey: 'nav.briefing', href: '/briefing', icon: <Sunrise className="w-5 h-5" /> },
-  { label: 'Decisions', tKey: 'nav.decisions', href: '/decisions', icon: <Scale className="w-5 h-5" /> },
-  { label: 'Inventory', tKey: 'nav.inventory', href: '/inventory', icon: <Package className="w-5 h-5" />, permission: 'can_manage_inventory' },
-  { label: 'Promotions', tKey: 'nav.promotions', href: '/promotions', icon: <Tag className="w-5 h-5" />, permission: 'can_manage_promotions' },
-  { label: 'Procurement', tKey: 'nav.procurement', href: '/procurement', icon: <Truck className="w-5 h-5" />, permission: 'can_manage_inventory' },
-  { label: 'Approvals', tKey: 'nav.approvals', href: '/approvals', icon: <Inbox className="w-5 h-5" />, permission: 'can_manage_inventory' },
-  { label: 'Value', tKey: 'nav.value', href: '/value', icon: <TrendingUp className="w-5 h-5" />, permission: 'can_manage_inventory' },
-  { label: 'Analytics', tKey: 'nav.analytics', href: '/analytics', icon: <BarChart3 className="w-5 h-5" /> },
-  { label: 'Insights', tKey: 'nav.insights', href: '/insights', icon: <Lightbulb className="w-5 h-5" /> },
-  { label: 'Action Drafts', tKey: 'nav.actionDrafts', href: '/action-drafts', icon: <Wand2 className="w-5 h-5" />, permission: 'can_manage_inventory' },
-  { label: 'Forecast Lab', tKey: 'nav.forecastLab', href: '/forecast-lab', icon: <Brain className="w-5 h-5" /> },
-  { label: 'UAE Insights', tKey: 'nav.uaeInsights', href: '/uae-insights', icon: <MapPin className="w-5 h-5" /> },
-  { label: 'Employees', tKey: 'nav.employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
-  { label: 'Reports', tKey: 'nav.reports', href: '/reports', icon: <FileText className="w-5 h-5" />, permission: 'can_export' },
-  { label: 'Alerts', tKey: 'nav.alerts', href: '/alerts', icon: <Bell className="w-5 h-5" /> },
-  { label: 'Admin', tKey: 'nav.admin', href: '/admin', icon: <Shield className="w-5 h-5" />, roles: ['super_admin'] },
-  { label: 'Security', tKey: 'nav.security', href: '/security', icon: <ShieldAlert className="w-5 h-5" />, roles: ['super_admin'] },
-  { label: 'Audit', tKey: 'nav.audit', href: '/audit', icon: <ScrollText className="w-5 h-5" />, roles: ['super_admin'] },
-  { label: 'Import Data', tKey: 'nav.imports', href: '/imports', icon: <UploadCloud className="w-5 h-5" />, permission: 'can_manage_inventory' },
-  { label: 'Data Sources', tKey: 'nav.dataSources', href: '/data-sources', icon: <Database className="w-5 h-5" />, roles: ['super_admin'] },
-  { label: 'Developers', tKey: 'nav.developers', href: '/developers', icon: <Code2 className="w-5 h-5" />, roles: ['super_admin'] },
-  { label: 'Monitoring', tKey: 'nav.monitoring', href: '/monitoring', icon: <Activity className="w-5 h-5" />, permission: 'is_admin' },
-];
-
-// Role Experience Engine (Wave 1): the server nav manifest names icons as
-// strings — resolve them here. Unknown icon names degrade to LayoutDashboard.
-const NAV_ICONS: Record<string, ReactNode> = {
-  Sunrise: <Sunrise className="w-5 h-5" />,
-  Scale: <Scale className="w-5 h-5" />,
-  Store: <Store className="w-5 h-5" />,
-  Bell: <Bell className="w-5 h-5" />,
-  Inbox: <Inbox className="w-5 h-5" />,
-  BarChart3: <BarChart3 className="w-5 h-5" />,
-  Package: <Package className="w-5 h-5" />,
-  Truck: <Truck className="w-5 h-5" />,
-  Lightbulb: <Lightbulb className="w-5 h-5" />,
-  TrendingUp: <TrendingUp className="w-5 h-5" />,
-  FileText: <FileText className="w-5 h-5" />,
-  LayoutDashboard: <LayoutDashboard className="w-5 h-5" />,
-};
+import { Settings, X, ShoppingBag } from 'lucide-react';
+// Nav destinations + the server-manifest icon map live in one append-only config
+// so adding a page no longer edits this component. See src/config/nav.tsx.
+import { navItems, NAV_ICONS, type NavItem } from '@/config/nav';
 
 export interface SidebarProps {
   mobileOpen: boolean;

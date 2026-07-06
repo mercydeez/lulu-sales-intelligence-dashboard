@@ -19,27 +19,9 @@ from app.services.db_seeder import run_seed
 from app.services.cache_warmer import run_cache_warmer
 from app.services.forecast_trainer import run_forecast_trainer
 
-from app.routes import sales, history, kpis, stream, analytics, auth
-from app.routes import ai as ai_routes
-from app.routes import inventory, promotions, alerts, admin, reports, monitoring, employees
-from app.routes import data_sources
-from app.routes import tenants
-from app.routes import billing as billing_routes
-from app.routes import notifications as notifications_routes
-from app.routes import action_drafts as action_drafts_routes
-from app.routes import imports as imports_routes
-from app.routes import roi as roi_routes
-from app.routes import briefing as briefing_routes
-from app.routes import decisions as decisions_routes
-from app.routes import experience as experience_routes
-from app.routes import outcome_pricing as outcome_pricing_routes
-from app.routes import team as team_routes
-from app.routes import uae_intelligence as uae_intelligence_routes
-from app.routes import public_api, api_keys, webhooks, procurement
-from app.routes import findings as findings_routes
-from app.routes import security as security_routes
-from app.routes import search as search_routes
-from app.routes import data_rights as data_rights_routes
+# Every API router is declared once in the central registry (see routes/registry.py).
+# Adding an endpoint is a one-line append THERE — main.py no longer changes per route.
+from app.routes.registry import ROUTERS
 from app.middleware import (
     RequestIDMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware,
     BodySizeLimitMiddleware, CSRFMiddleware, SessionInvalidationMiddleware
@@ -307,43 +289,11 @@ if settings.environment == "development":
 app.add_middleware(CORSMiddleware, **cors_kwargs)
 
 # =============================================================================
-# API Routes
+# API Routes — declared centrally in routes/registry.py (mounted in list order).
+# To add an endpoint, append a tuple to ROUTERS there; do not edit this block.
 # =============================================================================
-app.include_router(sales.router, prefix="/api/sales", tags=["Sales"])
-app.include_router(history.router, prefix="/api/history", tags=["History"])
-app.include_router(kpis.router, prefix="/api/kpis", tags=["KPIs"])
-app.include_router(stream.router, prefix="/stream", tags=["Stream"])
-app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
-app.include_router(ai_routes.router, prefix="/api/ai", tags=["AI Assistant"])
-app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
-app.include_router(inventory.router, prefix="/api/inventory", tags=["Inventory Management"])
-app.include_router(promotions.router, prefix="/api/promotions", tags=["Promotions & Pricing"])
-app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts & Notifications"])
-app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
-app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
-app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
-app.include_router(employees.router, prefix="/api/employees", tags=["Employees"])
-app.include_router(data_sources.router, prefix="/api/data-sources", tags=["Data Sources"])
-app.include_router(tenants.router, prefix="/api/tenants", tags=["Tenants"])
-app.include_router(billing_routes.router, prefix="/api/billing", tags=["Billing"])
-app.include_router(notifications_routes.router, prefix="/api/notifications", tags=["Notifications"])
-app.include_router(action_drafts_routes.router, prefix="/api/action-drafts", tags=["Action Drafts"])
-app.include_router(imports_routes.router, prefix="/api/imports", tags=["Imports"])
-app.include_router(roi_routes.router, prefix="/api/roi", tags=["ROI"])
-app.include_router(briefing_routes.router, prefix="/api/briefing", tags=["Briefing"])
-app.include_router(decisions_routes.router, prefix="/api/decisions", tags=["Decisions"])
-app.include_router(experience_routes.router, prefix="/api/experience", tags=["Experience"])
-app.include_router(outcome_pricing_routes.router, prefix="/api/outcome-pricing", tags=["Outcome Pricing"])
-app.include_router(team_routes.router, prefix="/api/team", tags=["Team"])
-app.include_router(uae_intelligence_routes.router, prefix="/api/uae-intelligence", tags=["UAE Intelligence"])
-app.include_router(api_keys.router, prefix="/api/api-keys", tags=["API Keys"])
-app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
-app.include_router(procurement.router, prefix="/api/procurement", tags=["Procurement"])
-app.include_router(findings_routes.router, prefix="/api/findings", tags=["Diagnostics"])
-app.include_router(security_routes.router, prefix="/api/security", tags=["Security"])
-app.include_router(search_routes.router, prefix="/api/search", tags=["Search"])
-app.include_router(public_api.router, prefix="/api/public", tags=["Public API"])
-app.include_router(data_rights_routes.router, prefix="/api/data-rights", tags=["Data Rights"])
+for _router, _prefix, _tags in ROUTERS:
+    app.include_router(_router, prefix=_prefix, tags=_tags)
 
 # Also mount /api/latest from stream router
 @app.get("/api/latest", tags=["Stream"])

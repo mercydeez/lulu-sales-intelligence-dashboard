@@ -10,7 +10,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { Search, CornerDownLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { navItems } from '@/components/shell/Sidebar';
+import { navItems } from '@/config/nav';
 
 interface Command { label: string; href: string; hint?: string; }
 
