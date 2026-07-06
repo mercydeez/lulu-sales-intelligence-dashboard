@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Lightbulb, RefreshCw, CheckCircle2, Eye, AlertTriangle,
-  TrendingUp, TrendingDown, Minus, Clock, Wand2,
+  TrendingUp, TrendingDown, Minus, Clock, Wand2, ChevronDown,
 } from 'lucide-react';
 import { PageHeader, Card, Badge, Button, Skeleton, EmptyState, ErrorState, Stagger, RevealItem, useToast } from '@/components/ui';
 import { apiPost, ApiError } from '@/lib/apiClient';
@@ -15,6 +15,25 @@ import {
   acceptFindingAction,
 } from '@/lib/api';
 import { Finding, FindingsSummary, FindingSeverity, FindingStatus, FindingOutcome } from '@/types';
+
+/**
+ * The findings API now attaches the Decision Center's derived intelligence
+ * (same pure builders as /api/decisions — one derivation, no way to disagree).
+ * Local extension type: the shared Finding hub type stays untouched.
+ */
+type EnrichedFinding = Finding & {
+  impact?: { aed: number | null; units: number | null; per: string | null; basis: string };
+  confidence?: { score: number; level: 'high' | 'medium' | 'low'; factors: string[] };
+  expected_outcome?: string;
+  evidence_facts?: { label: string; value: string }[];
+};
+
+/** Same confidence-pill grammar as the Decision Center, so the two surfaces read identically. */
+const CONF_PILL: Record<string, string> = {
+  high: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+  medium: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+  low: 'bg-surface-2 text-ink-muted ring-1 ring-line',
+};
 
 const SEVERITY_STYLES: Record<FindingSeverity, { badge: 'danger' | 'warning' | 'coral' | 'neutral'; dot: string }> = {
   critical: { badge: 'danger', dot: 'bg-rose-600' },
@@ -74,7 +93,7 @@ function OutcomeBlock({ f }: { f: Finding }) {
 }
 
 export default function InsightsPage() {
-  const [findings, setFindings] = useState<Finding[]>([]);
+  const [findings, setFindings] = useState<EnrichedFinding[]>([]);
   const [summary, setSummary] = useState<FindingsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -218,21 +237,59 @@ export default function InsightsPage() {
                       <h3 className="font-semibold text-ink">{f.title}</h3>
                       <Badge variant={sev.badge} size="sm">{f.severity}</Badge>
                       <Badge variant="neutral" size="sm">{f.category}</Badge>
+                      {f.confidence && (
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${CONF_PILL[f.confidence.level]}`}>
+                          {f.confidence.level} confidence
+                        </span>
+                      )}
                       {f.status !== 'open' && <Badge variant="neutral" size="sm">{f.status}</Badge>}
                     </div>
                     <p className="text-sm text-ink-soft mt-1">{f.detail}</p>
-                    {f.recommended_action && (
-                      <div className="mt-2 flex items-start gap-2 rounded-lg bg-teal-50/70 px-3 py-2">
-                        <Lightbulb className="w-4 h-4 text-teal-600 mt-0.5 shrink-0" />
-                        <div className="text-sm text-teal-800">
-                          <span className="font-medium">Recommended: </span>{f.recommended_action}
-                          {f.action_accepted_at && (
-                            <span className="ms-1 text-xs text-teal-600">
-                              · accepted by {f.action_accepted_by ?? 'a manager'}
-                            </span>
-                          )}
-                        </div>
+                    {f.evidence_facts && f.evidence_facts.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {f.evidence_facts.map((fact, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-surface-2 px-2 py-1 text-xs text-ink-soft">
+                            <span className="text-ink-muted">{fact.label}</span>
+                            <span className="font-semibold text-ink tabular-nums">{fact.value}</span>
+                          </span>
+                        ))}
                       </div>
+                    )}
+                    {f.recommended_action && (
+                      <div className="mt-2 rounded-lg bg-teal-50/70 px-3 py-2">
+                        <div className="flex items-start gap-2">
+                          <Lightbulb className="w-4 h-4 text-teal-600 mt-0.5 shrink-0" />
+                          <div className="text-sm text-teal-800">
+                            <span className="font-medium">Sage recommends: </span>{f.recommended_action}
+                            {f.action_accepted_at && (
+                              <span className="ms-1 text-xs text-teal-600">
+                                · accepted by {f.action_accepted_by ?? 'a manager'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {f.expected_outcome && (
+                          <p className="mt-1.5 ps-6 text-[13px] text-teal-800/90">
+                            <span className="font-medium">Expected outcome:</span> {f.expected_outcome}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {f.confidence && f.impact && (
+                      <details className="mt-2 group">
+                        <summary className="flex items-center gap-1 text-xs text-ink-muted cursor-pointer select-none hover:text-ink w-fit">
+                          <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
+                          Why this confidence &amp; impact
+                        </summary>
+                        <div className="mt-2 ps-4 space-y-1">
+                          {f.confidence.factors.map((factor, i) => (
+                            <p key={i} className="text-xs text-ink-soft flex items-start gap-1.5">
+                              <CheckCircle2 className="w-3 h-3 text-teal-500 mt-0.5 shrink-0" />{factor}
+                            </p>
+                          ))}
+                          <p className="text-xs text-ink-muted">Impact basis: {f.impact.basis}.</p>
+                        </div>
+                      </details>
                     )}
                     <OutcomeBlock f={f} />
                     {f.entity_name && (

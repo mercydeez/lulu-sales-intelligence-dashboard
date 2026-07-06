@@ -9,7 +9,7 @@ explainable confidence, and money-first sorting.
 from app.services.decision_center import (
     estimate_impact, confidence, expected_outcome, evidence_facts,
     build_decision, build_reorder_decision, sort_decisions, summarize,
-    triage_decisions, route_owner, strategic_score,
+    triage_decisions, route_owner, strategic_score, enrich_finding,
 )
 
 
@@ -253,3 +253,36 @@ def test_strategic_score_weights_chainwide_above_store_of_equal_aed():
     cat = _category("C", 100000, 20000, 1)      # AED gap 80k, category (1.4x)
     store = _store("S", 3, 100000, 20000, 2)    # AED gap 80k, store (1.0x)
     assert strategic_score(cat) > strategic_score(store)
+
+
+# ---------------------------------------------------------------------------
+# enrich_finding — the findings API attaches the SAME derivations the Decision
+# Center uses, so Insights and /decisions can never disagree on a number.
+# ---------------------------------------------------------------------------
+def test_enrich_finding_attaches_decision_derivations():
+    f = enrich_finding(_revenue_finding())
+    assert f["impact"] == estimate_impact(_revenue_finding())
+    assert f["confidence"] == confidence(_revenue_finding())
+    assert f["expected_outcome"] == expected_outcome(_revenue_finding(), f["impact"])
+    assert f["evidence_facts"] == evidence_facts(_revenue_finding())
+    # raw fields survive untouched (the Finding contract is additive)
+    assert f["title"] == "Revenue down 61.2% at Al Barsha"
+    assert f["evidence"]["rev_prior"] == 26446.0
+
+
+def test_enrich_finding_matches_build_decision_exactly():
+    """The two consumer paths (findings API vs decisions API) must agree."""
+    f = enrich_finding(_revenue_finding())
+    d = build_decision(_revenue_finding())
+    assert f["impact"] == d["impact"]
+    assert f["confidence"] == d["confidence"]
+    assert f["expected_outcome"] == d["expected_outcome"]
+    assert f["evidence_facts"] == d["evidence"]
+
+
+def test_enrich_finding_handles_json_string_evidence():
+    """DB rows may deliver evidence as a JSON string — same result either way."""
+    import json as _json
+    raw = _revenue_finding()
+    stringy = _revenue_finding(evidence=_json.dumps(raw["evidence"]))
+    assert enrich_finding(stringy)["impact"] == enrich_finding(raw)["impact"]

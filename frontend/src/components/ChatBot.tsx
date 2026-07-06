@@ -136,12 +136,21 @@ const NODE_LABELS: Record<string, string> = {
 /**
  * Sage's opening line — written in the caller's persona voice, not a generic
  * "chatbot" greeting. Only advertises voice when the role actually has it, so
- * we never point a user at a control they can't use.
+ * we never point a user at a control they can't use. The example questions are
+ * rendered as one-tap chips below the message (SUGGESTED_QUESTIONS).
  */
 function buildWelcome(title: string, canVoice: boolean): string {
-  const voiceLine = canVoice ? '\n🎤 Prefer to talk it through? Tap the mic and ask.\n' : '';
-  return `👋 I'm **${CHATBOT_NAME}**, your ${title}. I read your live sales, inventory, and open findings directly — and I answer with the number, what it means, and the move I'd make next.\n\nTry asking:\n• "How did revenue move this week — and why?"\n• "Which stores need my attention today?"\n• "What's my biggest stock risk right now?"\n• "Where am I losing money to dead stock?"\n${voiceLine}\nWhat should we look at first?`;
+  const voiceLine = canVoice ? ' Prefer to talk it through? Tap the mic 🎤 and ask.' : '';
+  return `👋 I'm **${CHATBOT_NAME}**, your ${title}. I read your live sales, inventory, and open findings directly — and I answer with the number, what it means, and the move I'd make next.${voiceLine}\n\nTap a question below, or ask your own.`;
 }
+
+// One-tap starters — each is a question the deterministic engine can ground.
+const SUGGESTED_QUESTIONS = [
+  'How did revenue move this week — and why?',
+  'Which stores need my attention today?',
+  "What's my biggest stock risk right now?",
+  'Where am I losing money to dead stock?',
+];
 
 function confidenceStyle(c?: number | null) {
   if (c == null) return { label: '—', cls: 'bg-surface-3 text-ink-muted' };
@@ -909,6 +918,22 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
               </div>
             ))}
             
+            {/* One-tap starters — shown only while the chat is pristine */}
+            {messages.length === 1 && messages[0].id === '0' && !isLoading && (
+              <div className="flex flex-wrap gap-2 ps-11">
+                {SUGGESTED_QUESTIONS.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => sendMessage(q)}
+                    className="px-3 py-1.5 rounded-full text-xs text-start text-ink bg-surface-2 hover:bg-violet-500/10 border border-line hover:border-violet-300 transition-colors"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {isLoading && messages[messages.length - 1]?.content === '' && (
               <div className="flex items-center gap-2 text-ink-muted">
                 <Loader2 className="w-4 h-4 animate-spin" />

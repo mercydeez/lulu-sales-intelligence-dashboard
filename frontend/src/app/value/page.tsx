@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Button, SkeletonCard, ErrorState, Stagger, RevealItem } from '@/components/ui';
 import { apiGet, authFetch, ApiError } from '@/lib/apiClient';
-import { TrendingUp, RefreshCw, Info, UploadCloud, Download } from 'lucide-react';
+import { TrendingUp, RefreshCw, Info, UploadCloud, Download, Sparkles, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 const AED = (n: number | null | undefined, dp = 0) =>
@@ -19,6 +19,32 @@ interface RoiSummary {
   context: { revenue_90d_aed: number; below_reorder_count: number; total_skus: number;
     total_stock_units: number; has_cost_data: boolean };
   headline: { label: string; aed: number };
+}
+
+/**
+ * Sage's read of the numbers — composed deterministically from the summary the
+ * API already returned (same pattern as the briefing's narrate()). Picks the
+ * single biggest lever and the one next step; silent when there's nothing to say.
+ */
+function sageRead(roi: RoiSummary): { line: string; href: string; cta: string } | null {
+  const m = roi.metrics;
+  const dead = m.dead_stock?.aed ?? 0;
+  const deadCount = m.dead_stock?.count ?? 0;
+  const stockout = m.stockout_loss_estimate?.aed ?? 0;
+  const belowReorder = roi.context.below_reorder_count;
+  if (!dead && !stockout) return null;
+  if (dead >= stockout) {
+    return {
+      line: `Your biggest lever is dead stock: ${AED(dead)} sitting in ${deadCount} SKU${deadCount === 1 ? '' : 's'} with no sale in 60 days. Mark down or transfer to turn it back into cash.`,
+      href: '/insights',
+      cta: 'See what to fix',
+    };
+  }
+  return {
+    line: `Your biggest lever is availability: an estimated ${AED(stockout)} of sales at risk from stockouts${belowReorder ? ` — ${belowReorder} SKU${belowReorder === 1 ? ' is' : 's are'} already below reorder level` : ''}. Reorder before the shelves empty.`,
+    href: '/decisions',
+    cta: 'Review reorder decisions',
+  };
 }
 
 export default function ValuePage() {
@@ -108,6 +134,29 @@ export default function ValuePage() {
                 </p>
               </Card>
             </RevealItem>
+
+            {/* Sage's read: the one lever + the one next step (derived, never padded) */}
+            {(() => {
+              const read = sageRead(roi);
+              return read ? (
+                <RevealItem>
+                  <div className="flex items-start gap-3 rounded-2xl bg-teal-50/70 ring-1 ring-teal-100 p-4">
+                    <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-teal-100 ring-1 ring-teal-200 shrink-0">
+                      <Sparkles className="w-4 h-4 text-teal-700" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm text-teal-900 leading-relaxed">
+                        <span className="font-semibold">Sage&apos;s read:</span> {read.line}
+                      </p>
+                      <Link href={read.href}
+                        className="mt-1.5 inline-flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-800">
+                        {read.cta} <ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
+                  </div>
+                </RevealItem>
+              ) : null;
+            })()}
 
             {/* Metric grid */}
             <RevealItem>

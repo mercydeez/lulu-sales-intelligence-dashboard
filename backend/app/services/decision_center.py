@@ -203,6 +203,19 @@ def evidence_facts(finding: Dict) -> List[Dict]:
     return facts
 
 
+def enrich_finding(finding: Dict) -> Dict:
+    """Attach the Decision Center's derived intelligence (impact, confidence,
+    expected outcome, humanized evidence) to a raw finding dict, in place-ish
+    (returns the same dict). Used by the findings API so Insights and the
+    Decision Center speak from ONE derivation and can never disagree. Pure."""
+    impact = estimate_impact(finding)
+    finding["impact"] = impact
+    finding["confidence"] = confidence(finding)
+    finding["expected_outcome"] = expected_outcome(finding, impact)
+    finding["evidence_facts"] = evidence_facts(finding)
+    return finding
+
+
 # ---------------------------------------------------------------------------
 # Decision assembly. Pure.
 # ---------------------------------------------------------------------------

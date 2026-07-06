@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.database import get_db
+from app.services.decision_center import enrich_finding
 from app.routes.auth import get_current_user
 
 router = APIRouter()
@@ -58,7 +59,10 @@ async def list_findings(
         "detected_at DESC LIMIT :limit"
     )
     rows = (await db.execute(text(sql), params)).mappings().all()
-    return {"data": [dict(r) for r in rows], "count": len(rows)}
+    # Each row carries the Decision Center's derived intelligence (impact,
+    # confidence, expected outcome, humanized evidence) from the SAME pure
+    # builders /api/decisions uses — one derivation, no way to disagree.
+    return {"data": [enrich_finding(dict(r)) for r in rows], "count": len(rows)}
 
 
 @router.get("/summary")
