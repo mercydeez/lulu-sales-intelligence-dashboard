@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   PageHeader, Card, Badge, Button, Modal, EmptyState, SkeletonCard, ErrorState, useToast,
@@ -55,16 +55,37 @@ export default function ActionDraftsPage() {
   useEffect(() => { if (isOperator) load(); else setLoading(false); }, [isOperator, load]);
 
   const open = async (id: number) => {
-    try { setDetail(await apiGet<DraftDetail>(`/api/action-drafts/${id}`)); } catch { /* ignore */ }
+    try { setDetail(await apiGet<DraftDetail>(`/api/action-drafts/${id}`)); }
+    catch (e) { show(e instanceof ApiError ? e.message : "Couldn't open the draft", { variant: 'error' }); }
   };
+
+  // Approve/reject are terminal (the backend refuses re-review), so both are
+  // two-step: first click arms the button, second click within 3s executes.
+  const [arming, setArming] = useState<'approve' | 'reject' | null>(null);
+  const disarmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disarm = useCallback(() => {
+    if (disarmTimer.current) { clearTimeout(disarmTimer.current); disarmTimer.current = null; }
+    setArming(null);
+  }, []);
+  useEffect(() => () => { if (disarmTimer.current) clearTimeout(disarmTimer.current); }, []);
 
   const review = async (decision: 'approve' | 'reject') => {
     if (!detail) return;
+    if (arming !== decision) {
+      // First click (or switching sides): arm and auto-disarm after 3s.
+      if (disarmTimer.current) clearTimeout(disarmTimer.current);
+      setArming(decision);
+      disarmTimer.current = setTimeout(() => setArming(null), 3000);
+      return;
+    }
+    disarm();
     setBusy(true);
     try {
       await apiPost(`/api/action-drafts/${detail.id}/${decision}`, {});
-      show(decision === 'approve' ? 'Draft approved (execution stays manual)' : 'Draft rejected',
-           { variant: decision === 'approve' ? 'success' : 'info' });
+      show(decision === 'approve'
+        ? 'Approved — your decision is recorded. Nothing is sent or executed automatically.'
+        : 'Rejected — Sage will keep the underlying finding until it recurs or resolves.',
+        { variant: decision === 'approve' ? 'success' : 'info' });
       setDetail(null);
       await load();
     } catch (e) {
@@ -147,7 +168,7 @@ export default function ActionDraftsPage() {
           </div>
         )}
 
-        <Modal open={!!detail} onClose={() => setDetail(null)} title={detail?.title ?? 'Draft'}>
+        <Modal open={!!detail} onClose={() => { setDetail(null); disarm(); }} title={detail?.title ?? 'Draft'}>
           {detail && (
             <div className="space-y-4">
               <div className="flex items-center gap-2">
@@ -160,13 +181,25 @@ export default function ActionDraftsPage() {
                 places the order, or changes prices. Execution stays with you.
               </p>
               {detail.status === 'draft' && (
-                <div className="flex items-center gap-2">
-                  <Button onClick={() => review('approve')} disabled={busy}>
-                    <CheckCircle2 className="w-4 h-4 me-1.5" /> Approve
-                  </Button>
-                  <Button variant="secondary" onClick={() => review('reject')} disabled={busy}>
-                    <XCircle className="w-4 h-4 me-1.5" /> Reject
-                  </Button>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Button onClick={() => review('approve')} disabled={busy} loading={busy && arming === null}>
+                      <CheckCircle2 className="w-4 h-4 me-1.5" />
+                      {arming === 'approve' ? 'Confirm approval' : 'Approve'}
+                    </Button>
+                    <Button variant={arming === 'reject' ? 'danger' : 'secondary'}
+                      onClick={() => review('reject')} disabled={busy}>
+                      <XCircle className="w-4 h-4 me-1.5" />
+                      {arming === 'reject' ? 'Confirm reject' : 'Reject'}
+                    </Button>
+                  </div>
+                  {arming && (
+                    <p className="mt-2 text-xs text-ink-muted" role="status">
+                      {arming === 'approve'
+                        ? 'Click again to confirm. Approval records your decision — nothing is sent or executed automatically.'
+                        : 'Click again to confirm. A rejected draft can’t be reopened — Sage can draft a fresh one from the finding.'}
+                    </p>
+                  )}
                 </div>
               )}
               {detail.reviewed_by && (

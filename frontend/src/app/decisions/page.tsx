@@ -16,7 +16,7 @@ import {
   Button, ErrorState, SkeletonCard, Stagger, RevealItem, useToast,
 } from '@/components/ui';
 import { apiGet, apiPost, ApiError } from '@/lib/apiClient';
-import { acceptFindingAction, resolveFinding } from '@/lib/api';
+import { acceptFindingAction, resolveFinding, acknowledgeFinding } from '@/lib/api';
 import {
   Sparkles, RefreshCw, Inbox, CheckCircle2, ArrowRight, Wand2, MapPin, Store, Bot,
   ThumbsUp, X, Scale, ChevronDown, Timer,
@@ -85,6 +85,8 @@ export default function DecisionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
+  // Single-slot undo for the last dismissal (acknowledge() reopens it server-side).
+  const [undoable, setUndoable] = useState<{ id: number; problem: string } | null>(null);
 
   const fetchAll = useCallback(async () => {
     const [t, d] = await Promise.all([
@@ -95,7 +97,7 @@ export default function DecisionsPage() {
   }, []);
 
   const load = useCallback(async () => {
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setUndoable(null);
     try { await fetchAll(); }
     catch (e) { setError(e instanceof ApiError ? e.message : 'Failed to load decisions'); }
     finally { setLoading(false); }
@@ -114,7 +116,7 @@ export default function DecisionsPage() {
         show('Decision recorded — Sage will measure the outcome and report back.', { variant: 'success' });
       } else if (kind === 'dismiss') {
         await resolveFinding(d.id);
-        show('Dismissed — Sage will flag it again only if it recurs.', { variant: 'info' });
+        setUndoable({ id: d.id, problem: d.problem }); // the undo bar carries the message
       } else {
         await apiPost(`/api/action-drafts/from-finding/${d.id}`);
         show('Draft created — review and approve it in Action Drafts.', { variant: 'success', title: 'Sage drafted the action' });
@@ -122,6 +124,20 @@ export default function DecisionsPage() {
       if (kind !== 'draft') refresh();
     } catch (e) {
       show(e instanceof ApiError ? e.message : 'Action failed', { variant: 'error' });
+    } finally { setBusy(null); }
+  };
+
+  const undoDismiss = async () => {
+    if (!undoable) return;
+    const { id } = undoable;
+    setBusy(id);
+    try {
+      await acknowledgeFinding(id); // reopens: back into the pending queue
+      setUndoable(null);
+      show('Reopened — back in your queue.', { variant: 'info' });
+      refresh();
+    } catch (e) {
+      show(e instanceof ApiError ? e.message : 'Undo failed', { variant: 'error' });
     } finally { setBusy(null); }
   };
 
@@ -163,6 +179,18 @@ export default function DecisionsPage() {
             </button>
           ))}
         </div>
+
+        {/* Undo bar — the last dismissal stays reversible until the next reload */}
+        {undoable && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-surface border border-line shadow-card px-4 py-2.5">
+            <p className="text-sm text-ink-soft min-w-0 truncate">
+              Dismissed <span className="font-medium text-ink">“{undoable.problem}”</span> — Sage will flag it again only if it recurs.
+            </p>
+            <Button variant="ghost" size="sm" onClick={undoDismiss} disabled={busy === undoable.id}>
+              Undo
+            </Button>
+          </div>
+        )}
 
         {loading ? (
           <div className="space-y-4"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>

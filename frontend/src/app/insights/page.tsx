@@ -5,7 +5,8 @@ import {
   Lightbulb, RefreshCw, CheckCircle2, Eye, AlertTriangle,
   TrendingUp, TrendingDown, Minus, Clock, Wand2, ChevronDown,
 } from 'lucide-react';
-import { PageHeader, Card, Badge, Button, Skeleton, EmptyState, ErrorState, Stagger, RevealItem, useToast } from '@/components/ui';
+import { motion, AnimatePresence } from 'framer-motion';
+import { PageHeader, Card, Badge, Button, Skeleton, EmptyState, ErrorState, useToast } from '@/components/ui';
 import { apiPost, ApiError } from '@/lib/apiClient';
 import {
   fetchFindings,
@@ -99,6 +100,9 @@ export default function InsightsPage() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<FilterValue>('open');
   const [busyId, setBusyId] = useState<number | null>(null);
+  // Findings resolved this session that still offer Undo (acknowledge reopens
+  // them server-side). Auto-refresh pauses while an undo is on the table.
+  const [justResolved, setJustResolved] = useState<Set<number>>(new Set());
   const { show } = useToast();
 
   const load = useCallback(async () => {
@@ -116,6 +120,7 @@ export default function InsightsPage() {
       setFindings(f.data);
       setSummary(s);
       setError(null);
+      setJustResolved(new Set()); // a fresh list supersedes pending undo offers
     } catch (e) {
       // Keep the last good state on a background-refresh failure, but remember the
       // error so a *first* load that fails doesn't masquerade as "nothing to see".
@@ -128,17 +133,48 @@ export default function InsightsPage() {
   useEffect(() => {
     setLoading(true);
     load();
+  }, [load]);
+
+  useEffect(() => {
+    if (justResolved.size > 0) return; // don't refresh an undo out from under the user
     const id = setInterval(load, 30000); // diagnostics refresh on the worker's cadence
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, justResolved]);
 
   const act = async (id: number, action: 'ack' | 'resolve' | 'accept') => {
     setBusyId(id);
     try {
-      if (action === 'ack') await acknowledgeFinding(id);
-      else if (action === 'resolve') await resolveFinding(id);
-      else await acceptFindingAction(id);
+      if (action === 'ack') {
+        await acknowledgeFinding(id);
+        show('Acknowledged — Sage keeps watching it.', { variant: 'info' });
+        await load();
+      } else if (action === 'resolve') {
+        // Optimistic: flip the card to a "Resolved · Undo" strip instead of
+        // vanishing it — acknowledge() is the verified reopen path.
+        await resolveFinding(id);
+        setFindings((prev) => prev.map((f) => (f.id === id ? { ...f, status: 'resolved' as FindingStatus } : f)));
+        setJustResolved((prev) => new Set(prev).add(id));
+      } else {
+        await acceptFindingAction(id);
+        show('Decision recorded — Sage will measure the outcome and report back.', { variant: 'success' });
+        await load();
+      }
+    } catch (e) {
+      show(e instanceof ApiError ? e.message : 'Action failed', { variant: 'error' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const undoResolve = async (id: number) => {
+    setBusyId(id);
+    try {
+      await acknowledgeFinding(id); // reopens: status→acknowledged, resolved_at cleared
+      setJustResolved((prev) => { const next = new Set(prev); next.delete(id); return next; });
+      show('Reopened — back in your queue.', { variant: 'info' });
       await load();
+    } catch (e) {
+      show(e instanceof ApiError ? e.message : 'Undo failed', { variant: 'error' });
     } finally {
       setBusyId(null);
     }
@@ -222,11 +258,19 @@ export default function InsightsPage() {
           }
         />
       ) : (
-        <Stagger className="space-y-3">
+        <div className="space-y-3">
+          <AnimatePresence initial={false}>
           {findings.map((f) => {
             const sev = SEVERITY_STYLES[f.severity];
             return (
-              <RevealItem key={f.id}>
+              <motion.div
+                key={f.id}
+                layout
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, height: 0, marginBottom: 0, overflow: 'hidden' }}
+                transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              >
               <Card variant="glass" padding="md">
                 <div className="flex items-start gap-4">
                   <div className={`mt-1 p-2 rounded-xl text-white ${sev.dot}`}>
@@ -292,6 +336,17 @@ export default function InsightsPage() {
                       </details>
                     )}
                     <OutcomeBlock f={f} />
+                    {justResolved.has(f.id) && (
+                      <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-emerald-50 ring-1 ring-emerald-200 px-3 py-2">
+                        <p className="text-sm text-emerald-800 flex items-center gap-2 min-w-0">
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          Resolved — it won&apos;t be flagged again unless it recurs.
+                        </p>
+                        <Button variant="ghost" size="sm" disabled={busyId === f.id} onClick={() => undoResolve(f.id)}>
+                          Undo
+                        </Button>
+                      </div>
+                    )}
                     {f.entity_name && (
                       <p className="text-xs text-ink-muted mt-1">
                         {f.entity_type}: {f.entity_name} ·{' '}
@@ -337,10 +392,11 @@ export default function InsightsPage() {
                   )}
                 </div>
               </Card>
-              </RevealItem>
+              </motion.div>
             );
           })}
-        </Stagger>
+          </AnimatePresence>
+        </div>
       )}
     </div>
   );
