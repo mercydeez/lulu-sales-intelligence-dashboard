@@ -387,6 +387,17 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
     }
   }, [isOpen, isMinimized]);
 
+  // Esc closes the panel (unless the mic is live — stopping a recording with
+  // Esc mid-sentence would be surprising; stop the recording first).
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isRecording) onToggle();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, isRecording, onToggle]);
+
   const sendMessage = useCallback(async (messageText: string) => {
     if (!messageText.trim() || isLoading) return;
 
@@ -813,6 +824,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-2 hover:bg-surface/10 rounded-lg transition-colors"
             title={isMinimized ? "Expand" : "Minimize"}
+            aria-label={isMinimized ? 'Expand chat panel' : 'Minimize chat panel'}
           >
             {isMinimized ? <Maximize2 className="w-4 h-4 text-white" /> : <Minimize2 className="w-4 h-4 text-white" />}
           </button>
@@ -820,6 +832,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
             onClick={onToggle}
             className="p-2 hover:bg-surface/10 rounded-lg transition-colors"
             title="Close"
+            aria-label="Close chat panel"
           >
             <X className="w-4 h-4 text-white" />
           </button>
@@ -837,6 +850,8 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                   autoSpeak ? 'bg-violet-500/20 text-violet-400' : 'hover:bg-surface-2 text-ink-muted'
                 }`}
                 title={autoSpeak ? "Disable auto-speak" : "Enable auto-speak"}
+                aria-label={autoSpeak ? 'Disable spoken replies' : 'Enable spoken replies'}
+                aria-pressed={autoSpeak}
               >
                 {autoSpeak ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
               </button>
@@ -848,13 +863,14 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
               onClick={clearChat}
               className="p-2 hover:bg-surface-2 rounded-lg transition-colors text-ink-muted"
               title="Clear chat"
+              aria-label="Clear conversation"
             >
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4" role="log" aria-live="polite" aria-label="Conversation with Sage">
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -908,6 +924,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                           disabled={isSpeaking}
                           className="p-1 hover:bg-surface-2 rounded transition-colors"
                           title="Speak"
+                          aria-label="Read this reply aloud"
                         >
                           <Volume2 className={`w-3 h-3 ${isSpeaking ? 'text-violet-400 animate-pulse' : 'text-ink-muted'}`} />
                         </button>
@@ -961,6 +978,8 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                       : 'bg-surface-2 hover:bg-surface-3 text-ink hover:scale-105'
                   }`}
                   title={isRecording ? "Click to stop recording" : "Click to start recording"}
+                  aria-label={isRecording ? 'Stop voice recording' : 'Start voice recording'}
+                  aria-pressed={isRecording}
                 >
                   {isProcessingVoice ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -1001,6 +1020,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                 type="submit"
                 disabled={!input.trim() || isLoading}
                 className="p-3 bg-gradient-to-r from-violet-600 to-purple-600 rounded-xl text-white disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+                aria-label="Send message"
               >
                 {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
               </button>

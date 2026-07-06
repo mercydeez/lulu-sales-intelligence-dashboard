@@ -527,6 +527,33 @@ a fetch fails. Scope stayed inside the AI/Experience vertical (`ChatBot.tsx`, `/
   failed, and Insights shows an honest error on a first-load failure instead of "nothing needs
   attention". `tsc --noEmit` + `next build` clean (all 40+ pages).
 
+### Enterprise polish sprints 2–4 — invisible AI, workflow delight, keyboard/a11y ✅ done
+Continuation of the polish pass (no new features), inside the AI/Experience vertical.
+- ✅ **Sprint 2 — invisible AI.** `GET /api/findings` rows now carry `impact`/`confidence`/
+  `expected_outcome`/`evidence_facts` via `decision_center.enrich_finding` — the same pure
+  builders `/api/decisions` uses, so Insights and the Decision Center can never disagree
+  (+3 pure tests). Insights cards adopt the Decision Center's explainability grammar
+  (confidence pill, evidence chips, expected outcome, "why this confidence & impact").
+  `/value` gains "Sage's read" — a deterministic one-liner naming the biggest lever
+  (dead stock vs stockout risk) with one next-step link. ChatBot welcome bullets became
+  one-tap suggested-question chips.
+- ✅ **Sprint 3 — workflow delight.** Resolve/dismiss are now undoable (acknowledge() is the
+  verified server-side reopen path): Insights flips the card to a "Resolved · Undo" strip
+  (auto-refresh pauses while an undo is pending); the Decision Center gets a single-slot
+  undo bar for the last dismissal. Action-draft approve/reject (terminal server-side)
+  became two-step arm→confirm with honest microcopy; the silent row-open failure now
+  toasts. Insights cards exit with a collapse/fade (AnimatePresence).
+- ✅ **Sprint 4 — enterprise polish.** The design-system `Tabs` (role=tablist,
+  aria-selected, animated indicator) replaced raw filter buttons on Decisions, Insights,
+  Action Drafts, and Forecast Lab. Forecast Lab gained a real error state (a failed fetch
+  no longer masquerades as "no model metrics yet") + entrance motion. ChatBot: Esc closes,
+  `role="log" aria-live="polite"` on the conversation, aria-labels/aria-pressed on all
+  icon-only controls. CommandPalette: Gmail-style `g` sequences (g t/d/b/i → Today/
+  Decisions/Briefing/Insights, role-filtered, never while typing) + a shortcut footer.
+  Insights action buttons stack below content on narrow screens.
+- **Verified:** `tsc --noEmit` + `next build` clean; backend owned suites green
+  (decision_center 23, ai_rbac+role_experience 23, briefing/action_drafting).
+
 ### E0-1 — Automated backups + rehearsed restore ✅ done
 Closes the audit's "no automated backup/restore test exists — disqualifying" gap and Risk #8.
 - ✅ **Automated backups**: prod `backup` sidecar (both compose files; dev via `--profile backup`) —

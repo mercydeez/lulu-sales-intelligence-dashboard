@@ -14,6 +14,20 @@ import { navItems } from '@/config/nav';
 
 interface Command { label: string; href: string; hint?: string; }
 
+// "g then <key>" jump targets. d/b/i only fire when the role's nav actually
+// carries the page; t (Today, the role homepage) is available to every role.
+const GO_SEQUENCES: Record<string, string> = {
+  t: '/today', d: '/decisions', b: '/briefing', i: '/insights',
+};
+
+/** True when the key event happens inside a text-entry control. */
+function isTyping(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
 export default function CommandPalette() {
   const router = useRouter();
   const { hasRole, hasPermission, isAuthenticated, authFetch } = useAuth();
@@ -22,20 +36,45 @@ export default function CommandPalette() {
   const [active, setActive] = useState(0);
   const [live, setLive] = useState<Command[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const openRef = useRef(false);
+  openRef.current = open;
+  const allowedHrefsRef = useRef<Set<string>>(new Set());
+  const pendingG = useRef<number>(0); // timestamp of an armed "g", 0 = disarmed
 
-  // Toggle on Cmd/Ctrl-K; close on Esc.
+  // Toggle on Cmd/Ctrl-K; close on Esc; "g then t/d/b/i" jumps (Gmail-style).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setOpen((o) => !o);
-      } else if (e.key === 'Escape') {
-        setOpen(false);
+        pendingG.current = 0;
+        return;
       }
+      if (e.key === 'Escape') {
+        setOpen(false);
+        pendingG.current = 0;
+        return;
+      }
+      // Sequence shortcuts: plain keys only, never while typing or in the palette.
+      if (e.metaKey || e.ctrlKey || e.altKey || openRef.current || isTyping(e)) return;
+      if (e.key === 'g') {
+        pendingG.current = Date.now();
+        return;
+      }
+      if (pendingG.current && Date.now() - pendingG.current < 1500) {
+        const href = GO_SEQUENCES[e.key];
+        pendingG.current = 0;
+        if (href && (href === '/today' || allowedHrefsRef.current.has(href))) {
+          e.preventDefault();
+          router.push(href);
+        }
+        return;
+      }
+      pendingG.current = 0;
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [router]);
 
   useEffect(() => { if (open) { setQuery(''); setActive(0); setTimeout(() => inputRef.current?.focus(), 20); } }, [open]);
 
@@ -50,6 +89,11 @@ export default function CommandPalette() {
     }
     return [...nav, ...extra];
   }, [hasRole, hasPermission]);
+
+  // The g-shortcuts respect the same role filtering as the palette itself.
+  useEffect(() => {
+    allowedHrefsRef.current = new Set(commands.map((c) => c.href));
+  }, [commands]);
 
   // Live entity search (stores + items) — debounced, tenant-scoped via the API.
   useEffect(() => {
@@ -114,6 +158,11 @@ export default function CommandPalette() {
               {i === active && <CornerDownLeft className="w-4 h-4 text-ink-muted" />}
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-3 px-4 py-2 border-t border-line text-[11px] text-ink-muted">
+          <span><kbd className="border border-line rounded px-1">↑↓</kbd> navigate</span>
+          <span><kbd className="border border-line rounded px-1">↵</kbd> open</span>
+          <span className="ms-auto">Tip: <kbd className="border border-line rounded px-1">g</kbd> then <kbd className="border border-line rounded px-1">d</kbd> jumps to Decisions (t/b/i too)</span>
         </div>
       </motion.div>
     </motion.div>

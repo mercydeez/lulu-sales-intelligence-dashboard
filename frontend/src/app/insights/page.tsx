@@ -6,7 +6,7 @@ import {
   TrendingUp, TrendingDown, Minus, Clock, Wand2, ChevronDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PageHeader, Card, Badge, Button, Skeleton, EmptyState, ErrorState, useToast } from '@/components/ui';
+import { PageHeader, Card, Badge, Button, Skeleton, EmptyState, ErrorState, Tabs, useToast } from '@/components/ui';
 import { apiPost, ApiError } from '@/lib/apiClient';
 import {
   fetchFindings,
@@ -224,20 +224,12 @@ export default function InsightsPage() {
         ))}
       </div>
 
-      {/* Status filter */}
-      <div className="flex gap-2">
-        {STATUS_FILTERS.map((f) => (
-          <button
-            key={f.label}
-            onClick={() => setStatus(f.value)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              status === f.value ? 'bg-teal-50 text-teal-700' : 'text-ink-muted hover:bg-surface-2'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+      {/* Status filter (design-system Tabs: tablist semantics + animated indicator) */}
+      <Tabs
+        items={STATUS_FILTERS.map((f) => ({ id: f.value || 'all', label: f.label }))}
+        value={status || 'all'}
+        onChange={(id) => setStatus(id === 'all' ? '' : (id as FilterValue))}
+      />
 
       {/* Findings list */}
       {loading ? (
@@ -272,7 +264,7 @@ export default function InsightsPage() {
                 transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
               >
               <Card variant="glass" padding="md">
-                <div className="flex items-start gap-4">
+                <div className="flex items-start gap-4 flex-wrap sm:flex-nowrap">
                   <div className={`mt-1 p-2 rounded-xl text-white ${sev.dot}`}>
                     <AlertTriangle className="w-4 h-4" />
                   </div>
@@ -355,7 +347,7 @@ export default function InsightsPage() {
                     )}
                   </div>
                   {f.status !== 'resolved' && (
-                    <div className="flex flex-col gap-2 shrink-0">
+                    <div className="flex flex-row sm:flex-col flex-wrap gap-2 shrink-0 w-full sm:w-auto">
                       {f.recommended_action && !f.action_accepted_at && (
                         <Button
                           variant="secondary" size="sm" disabled={busyId === f.id}

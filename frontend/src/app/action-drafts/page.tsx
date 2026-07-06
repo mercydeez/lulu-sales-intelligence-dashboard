@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  PageHeader, Card, Badge, Button, Modal, EmptyState, SkeletonCard, ErrorState, useToast,
+  PageHeader, Card, Badge, Button, Modal, EmptyState, SkeletonCard, ErrorState, Tabs, useToast,
 } from '@/components/ui';
 import type { BadgeVariant } from '@/components/ui';
 import { apiGet, apiPost, ApiError } from '@/lib/apiClient';
@@ -140,15 +140,12 @@ export default function ActionDraftsPage() {
           icon={<Wand2 className="w-5 h-5" />}
         />
 
-        <div className="flex flex-wrap gap-2 mb-6">
-          {FILTERS.map((f) => (
-            <button key={f.value} onClick={() => setFilter(f.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                filter === f.value ? 'bg-teal-600 text-white' : 'text-ink-muted hover:bg-surface-2 border border-line'}`}>
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          className="mb-6"
+          items={FILTERS.map((f) => ({ id: f.value || 'all', label: f.label }))}
+          value={filter || 'all'}
+          onChange={(id) => setFilter(id === 'all' ? '' : id)}
+        />
 
         {loading ? <div className="space-y-3"><SkeletonCard /><SkeletonCard /></div>
         : error ? <ErrorState title="Couldn't load drafts" description={error} onRetry={load} />

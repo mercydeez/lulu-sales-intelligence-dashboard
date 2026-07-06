@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  Button, ErrorState, SkeletonCard, Stagger, RevealItem, useToast,
+  Button, ErrorState, SkeletonCard, Stagger, RevealItem, Tabs, useToast,
 } from '@/components/ui';
 import { apiGet, apiPost, ApiError } from '@/lib/apiClient';
 import { acceptFindingAction, resolveFinding, acknowledgeFinding } from '@/lib/api';
@@ -169,16 +169,16 @@ export default function DecisionsPage() {
           </Button>
         </div>
 
-        {/* Tabs */}
-        <div className="inline-flex rounded-xl bg-surface-2 p-1 mb-6">
-          {([['pending', 'Needs decision'], ['decided', `Decided${decided?.count ? ` (${decided.count})` : ''}`]] as const).map(([key, label]) => (
-            <button key={key} onClick={() => setTab(key)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                tab === key ? 'bg-surface text-ink shadow-card' : 'text-ink-muted hover:text-ink'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* Tabs (design-system Tabs: role=tablist + aria-selected + animated indicator) */}
+        <Tabs
+          className="mb-6"
+          items={[
+            { id: 'pending', label: 'Needs decision' },
+            { id: 'decided', label: `Decided${decided?.count ? ` (${decided.count})` : ''}` },
+          ]}
+          value={tab}
+          onChange={(id) => setTab(id as 'pending' | 'decided')}
+        />
 
         {/* Undo bar — the last dismissal stays reversible until the next reload */}
         {undoable && (

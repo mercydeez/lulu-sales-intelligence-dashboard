@@ -7,7 +7,7 @@ import {
   ComposedChart, Area, Legend, ReferenceLine,
 } from 'recharts';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, Card, Button, Badge, EmptyState, SkeletonText } from '@/components/ui';
+import { PageHeader, Card, Button, Badge, EmptyState, ErrorState, SkeletonText, Tabs, Reveal } from '@/components/ui';
 
 interface Leader { model: string; tier: string; accuracy: number | null; mape: number | null; }
 interface FeatureImp { feature: string; weight: number; }
@@ -63,16 +63,22 @@ export default function ForecastLabPage() {
   const { authFetch } = useAuth();
   const [data, setData] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'exec' | 'tech'>('exec');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const fetchMetrics = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await authFetch('/api/analytics/model-metrics?horizon=14');
       if (res.ok) setData(await res.json());
+      // An honest failure state — a failed fetch must not masquerade as
+      // "no model metrics yet".
+      else setError(`Model metrics request failed (${res.status})`);
     } catch (e) {
       console.error('model-metrics failed', e);
+      setError('Could not reach the forecasting service');
     } finally {
       setLoading(false);
     }
@@ -104,16 +110,11 @@ export default function ForecastLabPage() {
           icon={<Brain className="w-5 h-5" />}
           actions={
             <div className="flex items-center gap-2">
-              <div className="flex rounded-full border border-line overflow-hidden text-sm">
-                <button
-                  onClick={() => setView('exec')}
-                  className={`px-3 py-1.5 ${view === 'exec' ? 'bg-primary-700 text-white' : 'text-ink-muted'}`}
-                >Executive</button>
-                <button
-                  onClick={() => setView('tech')}
-                  className={`px-3 py-1.5 ${view === 'tech' ? 'bg-primary-700 text-white' : 'text-ink-muted'}`}
-                >Technical</button>
-              </div>
+              <Tabs
+                items={[{ id: 'exec', label: 'Executive' }, { id: 'tech', label: 'Technical' }]}
+                value={view}
+                onChange={(id) => setView(id as 'exec' | 'tech')}
+              />
               <Button variant="secondary" size="md" onClick={fetchMetrics} aria-label="Refresh">
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
@@ -123,6 +124,10 @@ export default function ForecastLabPage() {
 
         {loading ? (
           <Card variant="solid" padding="lg"><SkeletonText lines={8} /></Card>
+        ) : error ? (
+          <Card variant="solid" padding="lg">
+            <ErrorState title="Couldn't load model metrics" description={error} onRetry={fetchMetrics} />
+          </Card>
         ) : warming ? (
           <Card variant="solid" padding="lg">
             <EmptyState
@@ -136,7 +141,7 @@ export default function ForecastLabPage() {
               description="Once there is enough sales history, model accuracy and diagnostics appear here." />
           </Card>
         ) : (
-          <>
+          <Reveal>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid #0f766e' }}>
                 <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Forecast accuracy</div>
@@ -529,7 +534,7 @@ export default function ForecastLabPage() {
                 })()}
               </div>
             )}
-          </>
+          </Reveal>
         )}
       </div>
     </main>
