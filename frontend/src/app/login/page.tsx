@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { PRODUCT_NAME } from '@/lib/brand';
+import { track } from '@/lib/telemetry';
 import {
   Eye, EyeOff, Lock, Mail, AlertCircle, Loader2, ShoppingBag,
   TrendingUp, ShieldCheck, Activity, Sparkles, ArrowRight, KeyRound,
@@ -52,8 +53,10 @@ export default function LoginPage() {
       return;
     }
     const res = await login({ email, password, remember_me: rememberMe });
-    if (res.ok) router.push('/');
-    else if (res.requires2fa && res.mfaToken) setMfaToken(res.mfaToken);
+    if (res.ok) {
+      track('login_succeeded');
+      router.push('/');
+    } else if (res.requires2fa && res.mfaToken) setMfaToken(res.mfaToken);
   };
 
   const handleVerify = async (e: FormEvent) => {
@@ -65,7 +68,10 @@ export default function LoginPage() {
       return;
     }
     const ok = await verifyTwoFactor(mfaToken!, code.replace(/\s/g, ''));
-    if (ok) router.push('/');
+    if (ok) {
+      track('login_2fa_succeeded');
+      router.push('/');
+    }
   };
 
   const [forgotMsg, setForgotMsg] = useState('');
@@ -367,6 +373,9 @@ export default function LoginPage() {
           <p className="mt-8 text-center text-sm text-ink-soft">
             {t('auth.newHere')}{' '}
             <Link href="/signup" className="font-semibold text-teal-700 hover:text-teal-800 dark:hover:text-teal-200">{t('auth.createWorkspace')}</Link>
+          </p>
+          <p className="mt-3 text-center">
+            <Link href="/status" className="text-xs text-ink-muted hover:text-ink transition-colors">{t('status.title')}</Link>
           </p>
         </motion.div>
       </div>

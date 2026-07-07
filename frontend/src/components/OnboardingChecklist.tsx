@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Card, CardHeader, CardTitle, Button } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
+import { track } from '@/lib/telemetry';
 import { CheckCircle2, Circle, ArrowRight } from 'lucide-react';
 
 interface Step { key: string; label: string; done: boolean; href?: string | null; }
@@ -55,7 +56,7 @@ export default function OnboardingChecklist() {
               : <Circle className="w-5 h-5 text-ink-muted flex-shrink-0" />}
             <span className={`flex-1 ${s.done ? 'text-ink-muted line-through' : 'text-ink'}`}>{s.label}</span>
             {!s.done && s.href && s.key === nextStep?.key && (
-              <Link href={s.href}>
+              <Link href={s.href} onClick={() => track('onboarding_step_clicked', { step: s.key })}>
                 <Button variant="secondary" size="sm">Start <ArrowRight className="w-4 h-4 ms-1" /></Button>
               </Link>
             )}

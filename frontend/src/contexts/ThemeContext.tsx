@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { track } from '@/lib/telemetry';
 
 /**
  * Theme system (E4-2) — light / dark / system tri-state.
@@ -78,7 +79,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener('change', onChange);
   }, [theme]);
 
-  const setTheme = useCallback((pref: ThemePref) => setThemeState(pref), []);
+  // Track explicit changes only (not the initial boot resolution).
+  const setTheme = useCallback((pref: ThemePref) => {
+    setThemeState((prev) => {
+      if (prev !== pref) track('theme_changed', { theme: pref });
+      return pref;
+    });
+  }, []);
 
   return (
     <ThemeContext.Provider value={{ theme, resolved, setTheme }}>

@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { en, ar } from '@/locales';
+import { track } from '@/lib/telemetry';
 
 export type Lang = 'en' | 'ar';
 export type Dir = 'ltr' | 'rtl';
@@ -48,8 +49,20 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     if (typeof window !== 'undefined') window.localStorage.setItem('lang', lang);
   }, [lang]);
 
-  const setLang = useCallback((l: Lang) => setLangState(l), []);
-  const toggleLang = useCallback(() => setLangState((l) => (l === 'en' ? 'ar' : 'en')), []);
+  // Track explicit changes only (not the persisted-boot value).
+  const setLang = useCallback((l: Lang) => {
+    setLangState((prev) => {
+      if (prev !== l) track('lang_changed', { lang: l });
+      return l;
+    });
+  }, []);
+  const toggleLang = useCallback(() => {
+    setLangState((l) => {
+      const next: Lang = l === 'en' ? 'ar' : 'en';
+      track('lang_changed', { lang: next });
+      return next;
+    });
+  }, []);
   const t = useCallback((key: string) => DICTS[lang][key] ?? en[key] ?? key, [lang]);
 
   const dir: Dir = lang === 'ar' ? 'rtl' : 'ltr';

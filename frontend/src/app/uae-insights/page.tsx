@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, Card, Badge, SkeletonCard, EmptyState, Stagger, RevealItem } from '@/components/ui';
-import { CalendarDays, MapPin, ArrowLeftRight, PackageX } from 'lucide-react';
+import { PageHeader, Card, Badge, Button, SkeletonCard, EmptyState, Stagger, RevealItem } from '@/components/ui';
+import { track } from '@/lib/telemetry';
+import { CalendarDays, MapPin, ArrowLeftRight, PackageX, Upload } from 'lucide-react';
 
 const AED = (n: number) => `AED ${n.toLocaleString('en-AE', { maximumFractionDigits: 0 })}`;
 
@@ -73,7 +75,17 @@ export default function UaeInsightsPage() {
             <RevealItem><Card padding="lg">
               <div className="flex items-center gap-2 mb-3"><MapPin className="w-4 h-4 text-teal-600" />
                 <h3 className="text-sm font-semibold text-ink-soft uppercase tracking-wide">Emirate performance (90d)</h3></div>
-              {emirates.length === 0 ? <EmptyState title="No regional data" description="Assign stores to emirates or import sales to see this." /> : (
+              {emirates.length === 0 ? (
+                <EmptyState
+                  title="No regional data"
+                  description="Assign stores to emirates or import sales to see this."
+                  action={
+                    <Link href="/imports" onClick={() => track('import_cta_clicked', { source: 'uae_insights_empty' })}>
+                      <Button variant="secondary" size="sm"><Upload className="w-4 h-4" />Import sales data</Button>
+                    </Link>
+                  }
+                />
+              ) : (
                 <div className="space-y-3">
                   {emirates.map((e) => (
                     <div key={e.emirate}>

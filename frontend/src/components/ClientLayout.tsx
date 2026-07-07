@@ -5,24 +5,47 @@ import { useEffect, ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useExperience } from '@/contexts/ExperienceContext';
 import { AppShell } from '@/components/shell';
+import { initTelemetry, identify, resetIdentity, track } from '@/lib/telemetry';
 
 // Pages that don't require authentication
 const publicPaths = ['/login', '/forgot-password', '/reset-password', '/dev'];
 
+// Truly open pages: reachable signed-in or out, no redirect in either
+// direction, rendered without the shell. The status page must stay reachable
+// even when auth (and the API behind it) is down — that's its whole job.
+const openPaths = ['/status'];
+
 export default function ClientLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const { config } = useExperience();
+
+  // Telemetry (measurement loop): init after first paint; bind/unbind the
+  // session to ids only (no PII — see lib/telemetry.ts); SPA-correct pageviews.
+  useEffect(() => {
+    initTelemetry();
+  }, []);
+  useEffect(() => {
+    if (isLoading) return;
+    if (isAuthenticated && user?.id) identify(user.id, { role: user.role });
+    else if (!isAuthenticated) resetIdentity();
+  }, [isAuthenticated, isLoading, user?.id, user?.role]);
+  useEffect(() => {
+    if (pathname) track('page_viewed', { path: pathname });
+  }, [pathname]);
 
   // Match a public path exactly or as a path segment — NOT as a bare prefix, or
   // '/dev' would swallow '/developers' and bounce authed users to the dashboard.
   const isPublicPath = publicPaths.some(
     (path) => pathname === path || pathname?.startsWith(path + '/')
   );
+  const isOpenPath = openPaths.some(
+    (path) => pathname === path || pathname?.startsWith(path + '/')
+  );
 
   useEffect(() => {
-    if (!isLoading) {
+    if (!isLoading && !isOpenPath) {
       if (!isAuthenticated && !isPublicPath) {
         // Redirect to login if not authenticated and not on public page
         router.push('/login');
@@ -31,7 +54,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
         router.push(config?.home && config.home !== '/' ? config.home : '/');
       }
     }
-  }, [isAuthenticated, isLoading, isPublicPath, pathname, router, config?.home]);
+  }, [isAuthenticated, isLoading, isPublicPath, isOpenPath, pathname, router, config?.home]);
 
   // Role home: wave-1 roles live on /today; send them there from the generic
   // dashboard root once their config arrives. Other roles keep '/' unchanged.
@@ -40,6 +63,12 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
       router.replace(config.home);
     }
   }, [isLoading, isAuthenticated, pathname, config?.home, router]);
+
+  // Open pages render immediately — never gated behind the auth check, so
+  // /status stays reachable while the API (and therefore auth) is down.
+  if (isOpenPath) {
+    return <>{children}</>;
+  }
 
   // Show loading while checking auth
   if (isLoading) {
