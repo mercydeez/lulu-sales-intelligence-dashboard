@@ -36,6 +36,7 @@ from app.routes import uae_intelligence as uae_intelligence_routes
 from app.routes import public_api, api_keys, webhooks, procurement
 from app.routes import security as security_routes
 from app.routes import data_rights as data_rights_routes
+from app.routes import sso as sso_routes
 
 # Atharva — AI / Sage / Decisions / Briefing / Role Experience / Diagnostics
 from app.routes import ai as ai_routes
@@ -82,6 +83,7 @@ ROUTERS: List[RouterSpec] = [
     (security_routes.router, "/api/security", ["Security"]),
     (public_api.router, "/api/public", ["Public API"]),
     (data_rights_routes.router, "/api/data-rights", ["Data Rights"]),
+    (sso_routes.router, "/api/sso", ["SSO"]),
 
     # === Atharva — AI / Sage / Decisions / Briefing / Experience ===========
     (ai_routes.router, "/api/ai", ["AI Assistant"]),

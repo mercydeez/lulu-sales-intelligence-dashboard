@@ -53,7 +53,20 @@ blocked at login (403) and a `mfa_required_admin` security event is recorded.
 [`../product/ACCOUNT_LIFECYCLE.md`](../product/ACCOUNT_LIFECYCLE.md). Toggling the
 flag off is the break-glass for initial enrollment.
 
+**SSO does not bypass this.** The OIDC login path (E5-1a) applies the same admin
+MFA gate: an admin without local TOTP is blocked (`sso_admin_mfa_required`) unless
+the provider explicitly opts into trusting the IdP's MFA. See
+[`SSO.md`](SSO.md).
+
+## SSO / OIDC (E5-1a)
+Enterprise OIDC login (Azure AD / Entra reference) is available at `/api/sso/*`,
+OFF by default. JIT provisioning is analyst-only and cannot create admins; identity
+linking is same-tenant only. Full setup, security model, and limitations (incl.
+SAML being config-contract-only) are in [`SSO.md`](SSO.md).
+
 ## Audited events
 `password_reset_requested`, `password_changed`, `user_invited`, `invite_accepted`,
-`mfa_required_admin`, plus the existing login/role/permission/token events
+`mfa_required_admin`, the SSO events (`sso_login_started/succeeded/failed`,
+`sso_state_invalid`, `sso_jit_user_created`, `sso_identity_linked`,
+`sso_admin_mfa_required`), plus the existing login/role/permission/token events
 (`security_events`, migration 030).

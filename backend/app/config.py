@@ -228,6 +228,21 @@ class Settings(BaseSettings):
     backup_manifest_path: str = "/backups/latest.json"
     backup_stale_after_hours: int = 30
 
+    # --- E5-1a SSO / OIDC foundation (Krishna security) --------------------
+    # SSO is OFF by default. OIDC must be explicitly enabled. Provider configs
+    # live per-tenant in tenant_sso_providers; client secrets live ONLY in env
+    # vars named by tenant_sso_providers.client_secret_env (never in the DB/logs).
+    sso_enabled: bool = False
+    sso_oidc_enabled: bool = False
+    sso_state_ttl_seconds: int = 600            # single-use auth state lifetime
+    sso_jwks_cache_ttl_seconds: int = 3600      # in-memory JWKS/discovery cache TTL
+    sso_require_verified_email: bool = True     # reject IdP emails not marked verified
+    sso_default_role: str = "analyst"           # JIT default; never an admin role
+    sso_trust_idp_mfa_default: bool = False     # fail-closed: local admin MFA wins
+    # Comma-separated hosts a post-login return_to may point at (exact host match).
+    sso_allowed_redirect_hosts: str = ""
+    sso_max_return_to_length: int = 500
+
     model_config = {"env_file": ".env", "case_sensitive": False}
 
     @model_validator(mode="after")

@@ -70,3 +70,20 @@ A **demo** deployment can run in a prod-env single box (e.g. Render free tier) b
 | `ALLOW_INSECURE_NO_RLS` | bool | false | false | Dangerous: boot prod without RLS |
 
 > **Note (program state):** Phase 1 adds these flags + validation. The API lifespan begins honoring them in **Phase 2** (process split). Until Phase 2 lands, `docker-compose.production.yml` / `render.yaml` must set `USE_RLS_ROLE` (or `ALLOW_INSECURE_NO_RLS`) so the tightened validator does not block boot — handled in Phase 2.
+
+## SSO / OIDC (E5-1a)
+
+Enterprise OIDC login, OFF by default. Full setup + security model: [`../security/SSO.md`](../security/SSO.md).
+
+| Variable | Type | Default | Notes |
+|---|---|---|---|
+| `SSO_ENABLED` | bool | false | Master switch for all SSO |
+| `SSO_OIDC_ENABLED` | bool | false | Enable the OIDC login path (needs `SSO_ENABLED` too) |
+| `SSO_STATE_TTL_SECONDS` | int | 600 | Single-use auth-state lifetime |
+| `SSO_JWKS_CACHE_TTL_SECONDS` | int | 3600 | In-memory discovery/JWKS cache TTL |
+| `SSO_REQUIRE_VERIFIED_EMAIL` | bool | true | Reject IdP emails not marked verified |
+| `SSO_DEFAULT_ROLE` | str | analyst | JIT default; never an admin role |
+| `SSO_TRUST_IDP_MFA_DEFAULT` | bool | false | Fail-closed: local admin MFA is not bypassed |
+| `SSO_ALLOWED_REDIRECT_HOSTS` | str | "" | Comma-separated hosts a `return_to` may target |
+| `SSO_MAX_RETURN_TO_LENGTH` | int | 500 | Max `return_to` length |
+| `<client_secret_env>` | secret | — | Per-provider client secret; the env var **name** is stored in `tenant_sso_providers.client_secret_env`, the value only in the environment (e.g. `SSO_AZURE_CLIENT_SECRET`). **Never commit it.** |
