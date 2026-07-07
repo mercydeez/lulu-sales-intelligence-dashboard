@@ -7,7 +7,7 @@ import { useLanguage, Lang } from '@/contexts/LanguageContext';
 import { useTheme, ThemePref } from '@/contexts/ThemeContext';
 import { Card, PageHeader, Button, Stagger, RevealItem } from '@/components/ui';
 import NotificationPreferences from '@/components/settings/NotificationPreferences';
-import { Settings as SettingsIcon, Globe, User as UserIcon, LogOut, Check, Building2, CreditCard, ShieldCheck, Scale, Users, Sun, Moon, Monitor, LucideIcon } from 'lucide-react';
+import { Settings as SettingsIcon, Globe, User as UserIcon, LogOut, Check, Building2, CreditCard, ShieldCheck, Scale, Users, Sun, Moon, Monitor, Activity, LucideIcon } from 'lucide-react';
 
 const LANGUAGES: { code: Lang; label: string; native: string }[] = [
   { code: 'en', label: 'English', native: 'English' },
@@ -126,12 +126,20 @@ export default function SettingsPage() {
           <p className="text-xs text-ink-muted mb-4">
             How your data is isolated, protected and governed — ready for a security review.
           </p>
-          <Link href="/trust">
-            <Button variant="secondary" size="sm">
-              <ShieldCheck className="w-4 h-4" />
-              View trust &amp; security
-            </Button>
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/trust">
+              <Button variant="secondary" size="sm">
+                <ShieldCheck className="w-4 h-4" />
+                View trust &amp; security
+              </Button>
+            </Link>
+            <Link href="/status">
+              <Button variant="secondary" size="sm">
+                <Activity className="w-4 h-4" />
+                {t('status.title')}
+              </Button>
+            </Link>
+          </div>
         </Card></RevealItem>
 
         {/* Company profile (admins only) */}

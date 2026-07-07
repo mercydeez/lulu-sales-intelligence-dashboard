@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useEventStream } from '@/hooks/useEventStream';
 import { Badge, ThemeToggle } from '@/components/ui';
+import { WhatsNew } from './WhatsNew';
 import {
   Bell,
   Settings,
@@ -303,6 +304,9 @@ export function Topbar({ onMenuClick }: TopbarProps) {
           <div className="hidden md:block">
             <ThemeToggle />
           </div>
+
+          {/* Release notes (what's new) — trust loop */}
+          <WhatsNew />
 
           <div className="relative" ref={notificationRef}>
             <button
