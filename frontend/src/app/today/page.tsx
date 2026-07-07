@@ -192,7 +192,7 @@ interface TriageDecision {
   recommended_action: string; href?: string; kind?: string;
 }
 const SEV_HEX: Record<string, string> = {
-  critical: '#f43f5e', high: '#f97316', medium: '#f59e0b', low: '#0f766e',
+  critical: '#f43f5e', high: '#f97316', medium: '#f59e0b', low: 'var(--brand)',
 };
 
 function DecisionsZone({ spec }: ZoneProps) {

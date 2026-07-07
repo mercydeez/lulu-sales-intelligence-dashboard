@@ -12,26 +12,36 @@
  *   <Bar dataKey="revenue" fill={seriesColor(0)} radius={[6,6,0,0]} />
  */
 
-/** Distinct, AA-contrast categorical hues (brand teal leads). */
+/** Distinct, AA-contrast categorical hues (brand teal leads).
+ *
+ * These resolve through the CSS `--series-*` vars so every chart follows the
+ * active theme (globals.css defines light values + brightened dark values)
+ * with no JS re-render. CSS vars are valid in SVG fill/stroke/stopColor —
+ * do NOT string-manipulate these (no `+ '33'` alpha suffixes); use
+ * stopOpacity/fillOpacity props for transparency instead. */
 export const CHART_SERIES = [
-  '#0f766e', // teal (brand)
-  '#6d49cf', // violet
-  '#d97706', // amber
-  '#c8451f', // coral
-  '#2563eb', // blue
-  '#0f8f73', // emerald
-  '#db2777', // pink
-  '#475569', // slate
+  'var(--series-1)', // teal (brand)
+  'var(--series-2)', // violet
+  'var(--series-3)', // amber
+  'var(--series-4)', // coral
+  'var(--series-5)', // blue
+  'var(--series-6)', // emerald
+  'var(--series-7)', // pink
+  'var(--series-8)', // slate
 ] as const;
 
 /** Cycle the categorical palette by index. */
 export const seriesColor = (i: number) => CHART_SERIES[((i % CHART_SERIES.length) + CHART_SERIES.length) % CHART_SERIES.length];
 
-/** Semantic colors — only ever mean meaning. */
-export const SIGNAL = { up: '#0f8f73', down: '#c8451f', neutral: '#5f6660' } as const;
+/** Semantic colors — only ever mean meaning. Theme-following via CSS vars. */
+export const SIGNAL = {
+  up: 'var(--signal-up)',
+  down: 'var(--signal-down)',
+  neutral: 'var(--signal-neutral)',
+} as const;
 
-const GRID = '#eceae4';
-const AXIS_TEXT = '#5f6660';
+const GRID = 'var(--chart-grid)';
+const AXIS_TEXT = 'var(--chart-text)';
 
 /**
  * Brand-aligned named chart colors. Replaces the retired
@@ -72,19 +82,19 @@ export const axisProps = {
   axisLine: false,
 } as const;
 
-/** Tooltip style props — clean white card, soft shadow, rounded. */
+/** Tooltip style props — clean themed card, soft shadow, rounded. */
 export const tooltipStyle = {
-  cursor: { fill: 'rgba(15,118,110,0.06)' },
+  cursor: { fill: 'rgb(var(--a-teal) / 0.06)' },
   contentStyle: {
-    background: '#ffffff',
-    border: '1px solid #e6e6e0',
+    background: 'var(--chart-tooltip-bg)',
+    border: '1px solid var(--chart-tooltip-border)',
     borderRadius: 12,
-    boxShadow: '0 12px 32px -12px rgba(20,29,33,0.30)',
+    boxShadow: '0 12px 32px -12px var(--shadow-color)',
     fontSize: 12,
     padding: '10px 12px',
   },
-  labelStyle: { color: '#1a1d21', fontWeight: 600, marginBottom: 4 },
-  itemStyle: { color: '#4b5258' },
+  labelStyle: { color: 'var(--text-primary)', fontWeight: 600, marginBottom: 4 },
+  itemStyle: { color: 'var(--text-secondary)' },
 } as const;
 
 /**

@@ -431,7 +431,7 @@ export default function LiveStreamChart() {
                 strokeWidth={2}
                 fill="url(#cumulativeGradient)"
                 dot={false}
-                activeDot={{ r: 6, fill: CHART.emerald, stroke: '#ffffff', strokeWidth: 2 }}
+                activeDot={{ r: 6, fill: CHART.emerald, stroke: 'var(--bg-card)', strokeWidth: 2 }}
               />
               {/* Sales bars - shows individual transactions with red for returns */}
               <Bar
@@ -598,7 +598,7 @@ export default function LiveStreamChart() {
                 <Tooltip
                   formatter={(value: number) => [formatNumber(value), 'Sales']}
                   labelFormatter={(label: string) => storeChartData.find(s => s.name === label)?.fullName || label}
-                  contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e6e6e0', borderRadius: '8px' }}
+                  contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: '8px' }}
                 />
                 <Bar dataKey="sales" radius={[0, 4, 4, 0]}>
                   {storeChartData.map((entry, index) => (

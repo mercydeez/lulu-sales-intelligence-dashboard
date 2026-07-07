@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useEventStream } from '@/hooks/useEventStream';
-import { Badge } from '@/components/ui';
+import { Badge, ThemeToggle } from '@/components/ui';
 import {
   Bell,
   Settings,
@@ -54,10 +54,10 @@ function sevToType(sev: string): NotificationItem['type'] {
 }
 
 const notificationConfig = {
-  critical: { icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-100', border: 'border-rose-200' },
-  warning: { icon: AlertCircle, color: 'text-amber-600', bg: 'bg-amber-100', border: 'border-amber-200' },
-  info: { icon: Info, color: 'text-violet-600', bg: 'bg-violet-100', border: 'border-violet-200' },
-  success: { icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-100', border: 'border-emerald-200' },
+  critical: { icon: AlertTriangle, color: 'text-rose-600 dark:text-rose-300', bg: 'bg-rose-100 dark:bg-rose-500/15', border: 'border-rose-200 dark:border-rose-500/30' },
+  warning: { icon: AlertCircle, color: 'text-amber-600 dark:text-amber-300', bg: 'bg-amber-100 dark:bg-amber-500/15', border: 'border-amber-200 dark:border-amber-500/30' },
+  info: { icon: Info, color: 'text-violet-600 dark:text-violet-300', bg: 'bg-violet-100 dark:bg-violet-500/15', border: 'border-violet-200 dark:border-violet-500/30' },
+  success: { icon: CheckCircle, color: 'text-emerald-600 dark:text-emerald-300', bg: 'bg-emerald-100 dark:bg-emerald-500/15', border: 'border-emerald-200 dark:border-emerald-500/30' },
 };
 
 const roleBadgeVariant: Record<string, 'violet' | 'teal' | 'coral' | 'neutral'> = {
@@ -298,6 +298,12 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Appearance toggle — compact icon segments; the settings page has the
+              labeled variant, so this can hide on small screens. */}
+          <div className="hidden md:block">
+            <ThemeToggle />
+          </div>
+
           <div className="relative" ref={notificationRef}>
             <button
               onClick={() => setNotificationOpen(!notificationOpen)}
@@ -361,7 +367,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                           key={notification.id}
                           onClick={() => openNotification(notification)}
                           className={`px-4 py-3 border-b border-line hover:bg-surface-2 cursor-pointer transition-all ${
-                            !notification.read ? 'bg-coral-50/40' : ''
+                            !notification.read ? 'bg-coral-50/40 dark:bg-coral-500/10' : ''
                           }`}
                         >
                           <div className="flex items-start gap-3">
@@ -480,7 +486,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                 <div className="pt-1 border-t border-line">
                   <button
                     onClick={handleLogout}
-                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition-colors"
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:text-rose-300 dark:hover:bg-rose-500/10 transition-colors"
                   >
                     <LogOut className="w-4 h-4" />
                     Sign Out

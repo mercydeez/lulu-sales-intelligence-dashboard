@@ -187,7 +187,7 @@ export default function ReturnsByCategoryChart() {
                 <Cell
                   key={`cell-${index}`}
                   fill={COLORS[index % COLORS.length]}
-                  stroke={activeIndex === index ? '#1f2933' : 'transparent'}
+                  stroke={activeIndex === index ? 'var(--text-primary)' : 'transparent'}
                   strokeWidth={activeIndex === index ? 2 : 0}
                   style={{
                     filter: activeIndex === index ? 'brightness(1.1)' : 'none',

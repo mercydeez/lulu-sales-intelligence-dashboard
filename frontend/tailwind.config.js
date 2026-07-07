@@ -1,5 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  // Theme is class-driven (html.light / html.dark, applied pre-paint in
+  // layout.tsx and at runtime by ThemeContext). Most theming flows through the
+  // CSS channel variables in globals.css; `dark:` variants are for edge cases.
+  darkMode: 'class',
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',

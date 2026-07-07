@@ -31,7 +31,7 @@ export function ChartFrame({
   subtitle,
   actions,
   live = false,
-  accent = '#0f766e',
+  accent = 'var(--brand)',
   height = 300,
   loading = false,
   empty = false,

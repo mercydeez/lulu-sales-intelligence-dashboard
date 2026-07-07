@@ -145,7 +145,7 @@ export default function SalesTrendChart({ days = 30 }: SalesTrendChartProps) {
               strokeWidth={2.5}
               fill="url(#trendSalesFill)"
               dot={false}
-              activeDot={{ r: 5, fill: CHART.teal, stroke: '#ffffff', strokeWidth: 2 }}
+              activeDot={{ r: 5, fill: CHART.teal, stroke: 'var(--bg-card)', strokeWidth: 2 }}
               connectNulls={false}
               animationDuration={900}
             />
@@ -157,7 +157,7 @@ export default function SalesTrendChart({ days = 30 }: SalesTrendChartProps) {
               strokeDasharray="5 5"
               fill="url(#trendForecastFill)"
               dot={false}
-              activeDot={{ r: 5, fill: CHART.violet, stroke: '#ffffff', strokeWidth: 2 }}
+              activeDot={{ r: 5, fill: CHART.violet, stroke: 'var(--bg-card)', strokeWidth: 2 }}
               connectNulls={false}
               animationDuration={900}
             />

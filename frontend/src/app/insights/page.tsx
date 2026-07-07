@@ -40,7 +40,7 @@ const SEVERITY_STYLES: Record<FindingSeverity, { badge: 'danger' | 'warning' | '
   critical: { badge: 'danger', dot: 'bg-rose-600' },
   high: { badge: 'coral', dot: 'bg-orange-500' },
   medium: { badge: 'warning', dot: 'bg-amber-500' },
-  low: { badge: 'neutral', dot: 'bg-slate-400' },
+  low: { badge: 'neutral', dot: 'bg-ink-muted' },
 };
 
 // 'outcomes' is a pseudo-filter: accepted findings the measure loop has evaluated.
@@ -60,10 +60,10 @@ const OUTCOME_STYLES: Record<
   FindingOutcome,
   { label: string; cls: string; icon: typeof TrendingUp }
 > = {
-  improved: { label: 'Resolved — metric recovered after the action', cls: 'bg-emerald-50 text-emerald-700', icon: CheckCircle2 },
-  unchanged: { label: 'Not yet recovered since accepted', cls: 'bg-amber-50 text-amber-700', icon: Minus },
-  worsened: { label: 'Worsened since the action was accepted', cls: 'bg-rose-50 text-rose-700', icon: TrendingDown },
-  pending: { label: 'Awaiting outcome measurement', cls: 'bg-slate-50 text-ink-muted', icon: Clock },
+  improved: { label: 'Resolved — metric recovered after the action', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300', icon: CheckCircle2 },
+  unchanged: { label: 'Not yet recovered since accepted', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300', icon: Minus },
+  worsened: { label: 'Worsened since the action was accepted', cls: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300', icon: TrendingDown },
+  pending: { label: 'Awaiting outcome measurement', cls: 'bg-surface-2 text-ink-muted', icon: Clock },
 };
 
 function OutcomeBlock({ f }: { f: Finding }) {

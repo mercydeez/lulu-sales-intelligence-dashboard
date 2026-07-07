@@ -17,7 +17,7 @@ const SEV_STYLE: Record<SecuritySeverity, { badge: 'danger' | 'warning' | 'coral
   critical: { badge: 'danger', dot: 'bg-rose-600', ring: 'ring-rose-500/40' },
   high: { badge: 'coral', dot: 'bg-orange-500', ring: 'ring-orange-500/40' },
   medium: { badge: 'warning', dot: 'bg-amber-500', ring: 'ring-amber-500/30' },
-  low: { badge: 'neutral', dot: 'bg-slate-400', ring: 'ring-slate-300/30' },
+  low: { badge: 'neutral', dot: 'bg-ink-muted', ring: 'ring-ink-muted/30' },
   info: { badge: 'neutral', dot: 'bg-teal-400', ring: 'ring-teal-300/30' },
 };
 

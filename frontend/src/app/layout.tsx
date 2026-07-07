@@ -5,6 +5,7 @@ import AIProvider from '@/components/AIProvider';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ExperienceProvider } from '@/contexts/ExperienceContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 import { ToastProvider } from '@/components/ui/Toast';
 import ClientLayout from '@/components/ClientLayout';
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
@@ -22,8 +23,11 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const viewport: Viewport = {
-  // Brand teal tints the mobile browser / PWA chrome.
-  themeColor: '#0f766e',
+  // Brand teal tints the mobile browser / PWA chrome; near-black in dark mode.
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#0f766e' },
+    { media: '(prefers-color-scheme: dark)', color: '#0b0d0e' },
+  ],
 };
 
 const APP_TITLE = `${PRODUCT_NAME} | Real-time Retail Analytics`;
@@ -66,18 +70,19 @@ export default function RootLayout({
   return (
     <html lang="en" dir="ltr" className="light" suppressHydrationWarning>
       <head>
-        {/* Set language + direction before first paint to avoid an EN/AR flash
-            and the "English text with an RTL sidebar" mismatch. Kept in sync at
-            runtime by LanguageContext. */}
+        {/* Set language/direction AND theme before first paint — no EN/AR flash,
+            no light-flash-before-dark. Kept in sync at runtime by
+            LanguageContext / ThemeContext (same resolution rules). */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var l=localStorage.getItem('lang');if(l==='ar'){document.documentElement.lang='ar';document.documentElement.dir='rtl';}}catch(e){}})();`,
+            __html: `(function(){try{var l=localStorage.getItem('lang');if(l==='ar'){document.documentElement.lang='ar';document.documentElement.dir='rtl';}var t=localStorage.getItem('theme');var d=t==='dark'||((t==null||t==='system')&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d){var c=document.documentElement.classList;c.remove('light');c.add('dark');}}catch(e){}})();`,
           }}
         />
       </head>
       <body className={`${manrope.variable} ${plexMono.variable} font-sans text-ink antialiased`}>
         <ServiceWorkerRegister />
         <div className="min-h-screen">
+          <ThemeProvider>
           <LanguageProvider>
             <AuthProvider>
               <ExperienceProvider>
@@ -91,6 +96,7 @@ export default function RootLayout({
               </ExperienceProvider>
             </AuthProvider>
           </LanguageProvider>
+          </ThemeProvider>
         </div>
       </body>
     </html>

@@ -8,6 +8,7 @@
    =============================================== */
 :root,
 html.light {
+  color-scheme: light;
   --bg-primary: #fafaf8;
   --bg-secondary: #ffffff;
   --bg-card: #ffffff;
@@ -32,6 +33,7 @@ html.light {
   /* Chart colors — operations console (calm neutral grid, brand series) */
   --chart-grid: #eceae4;
   --chart-text: #5f6660;
+  --chart-ref: #c4c4bc;   /* reference/baseline lines (e.g. ROC diagonal) */
   --chart-tooltip-bg: #ffffff;
   --chart-tooltip-border: #e6e6e0;
 
@@ -66,10 +68,93 @@ html.light {
   --c-surface-3: 234 234 228; /* #eaeae4 */
   --c-canvas: 250 250 248;    /* #fafaf8 */
   --c-line: 236 233 227;      /* #ece9e3 */
+
+  /* Semantic signal hues as vars so charts/badges follow the theme (mirrored in
+     lib/chart.ts SIGNAL). Dark mode brightens them for AA on dark surfaces. */
+  --signal-up: #0f8f73;
+  --signal-down: #c8451f;
+  --signal-neutral: #5f6660;
+
+  /* Immersive canvas: solid base + soft tinted mesh, themeable so dark mode can
+     swap in a near-black canvas with subtler tints (see body below). */
+  --canvas-bg: #f7f7f3;
+  --canvas-mesh:
+    radial-gradient(900px 500px at 8% -8%, rgba(15, 118, 110, 0.07), transparent 60%),
+    radial-gradient(820px 480px at 102% 0%, rgba(109, 73, 207, 0.06), transparent 58%),
+    radial-gradient(700px 600px at 50% 120%, rgba(217, 119, 6, 0.05), transparent 60%);
 }
 
-/* Dark mode was removed — the app is a single, high-contrast light theme tuned
-   for an immersive operations console. Re-add a theme system later if needed. */
+/* ===============================================
+   DARK THEME — Apple-minimal operations console
+   Near-black canvas; elevation = lighter surface, not shadow; hairline borders
+   carry structure; accents brightened one step for AA contrast on dark.
+   Toggled by ThemeContext (html.dark), boot-applied pre-paint in layout.tsx.
+   =============================================== */
+html.dark {
+  color-scheme: dark;
+  --bg-primary: #0b0d0e;
+  --bg-secondary: #16191b;
+  --bg-card: #16191b;
+  --bg-card-solid: #16191b;
+  --bg-hover: #1e2224;
+  --text-primary: #f2f4f3;
+  --text-secondary: #b6bdbb;
+  --text-muted: #8b9390;
+  --accent-coral: #e87a55;
+  --accent-violet: #2da88a;
+  --accent-teal: #2da88a;
+  --accent-amber: #f0a13c;
+  /* legacy aliases — remapped to the brightened dark brand */
+  --accent-cyan: #2da88a;
+  --accent-purple: #2da88a;
+  --accent-emerald: #34c39c;
+  --accent-rose: #e87a55;
+  --brand: #2da88a;
+  --border-color: #24292b;
+  --shadow-color: rgba(0, 0, 0, 0.55);
+
+  --chart-grid: #22272a;
+  --chart-text: #8b9390;
+  --chart-ref: #3d4447;
+  --chart-tooltip-bg: #1b1f21;
+  --chart-tooltip-border: #2c3236;
+
+  /* Categorical palette, one step brighter for dark surfaces (AA for graphics) */
+  --series-1: #2da88a;  /* teal (brand)   */
+  --series-2: #a78bfa;  /* violet          */
+  --series-3: #f0a13c;  /* amber           */
+  --series-4: #e87a55;  /* coral           */
+  --series-5: #60a5fa;  /* blue            */
+  --series-6: #34c39c;  /* emerald         */
+  --series-7: #f472b6;  /* pink            */
+  --series-8: #94a3b8;  /* slate           */
+
+  --a-teal: 45 168 138;
+  --a-violet: 167 139 250;
+  --a-amber: 240 161 60;
+  --a-coral: 232 122 85;
+  --a-blue: 96 165 250;
+
+  --c-ink: 242 244 243;       /* #f2f4f3 */
+  --c-ink-soft: 182 189 187;  /* #b6bdbb */
+  --c-ink-muted: 139 147 144; /* #8b9390 */
+  --c-surface: 22 25 27;      /* #16191b */
+  --c-surface-1: 22 25 27;
+  --c-surface-2: 30 34 36;    /* #1e2224 */
+  --c-surface-3: 38 43 46;    /* #262b2e */
+  --c-canvas: 11 13 14;       /* #0b0d0e */
+  --c-line: 36 41 43;         /* #24292b */
+
+  --signal-up: #34c39c;
+  --signal-down: #e87a55;
+  --signal-neutral: #8b9390;
+
+  --canvas-bg: #0a0c0d;
+  --canvas-mesh:
+    radial-gradient(900px 500px at 8% -8%, rgba(45, 168, 138, 0.06), transparent 60%),
+    radial-gradient(820px 480px at 102% 0%, rgba(167, 139, 250, 0.05), transparent 58%),
+    radial-gradient(700px 600px at 50% 120%, rgba(240, 161, 60, 0.04), transparent 60%);
+}
 
 /* ===============================================
    LIGHT-BASE OVERRIDES for legacy dark utility classes
@@ -158,6 +243,47 @@ html.light .row-alternate:nth-child(odd) {
 }
 
 /* ===============================================
+   DARK-BASE OVERRIDES for light pastel utility classes
+   (same compat-shim pattern as the html.light block above: ~200 tinted
+   chips/badges across the app use bg-<hue>-50/100 + text-<hue>-600/700,
+   which would glare on the dark surface. Remap them here in one place —
+   translucent tint + brightened text — instead of editing 60 files.)
+   =============================================== */
+html.dark .bg-teal-50, html.dark .bg-teal-100 { background-color: rgb(var(--a-teal) / 0.14) !important; }
+html.dark .bg-coral-50, html.dark .bg-coral-100 { background-color: rgb(var(--a-coral) / 0.14) !important; }
+html.dark .bg-rose-50, html.dark .bg-rose-100 { background-color: rgba(244, 63, 94, 0.14) !important; }
+html.dark .bg-amber-50, html.dark .bg-amber-100 { background-color: rgb(var(--a-amber) / 0.14) !important; }
+html.dark .bg-emerald-50, html.dark .bg-emerald-100 { background-color: rgba(52, 195, 156, 0.14) !important; }
+html.dark .bg-violet-50, html.dark .bg-violet-100 { background-color: rgb(var(--a-violet) / 0.14) !important; }
+html.dark .bg-blue-50, html.dark .bg-blue-100 { background-color: rgb(var(--a-blue) / 0.14) !important; }
+html.dark .bg-orange-50, html.dark .bg-orange-100 { background-color: rgba(249, 115, 22, 0.14) !important; }
+
+html.dark .hover\:bg-teal-50:hover, html.dark .hover\:bg-teal-100:hover { background-color: rgb(var(--a-teal) / 0.18) !important; }
+html.dark .hover\:bg-coral-50:hover { background-color: rgb(var(--a-coral) / 0.18) !important; }
+html.dark .hover\:bg-rose-50:hover { background-color: rgba(244, 63, 94, 0.18) !important; }
+html.dark .hover\:bg-amber-50:hover { background-color: rgb(var(--a-amber) / 0.18) !important; }
+
+html.dark .text-teal-600, html.dark .text-teal-700 { color: #5dc7aa !important; }
+html.dark .text-coral-600, html.dark .text-coral-700 { color: #e08a63 !important; }
+html.dark .text-rose-600, html.dark .text-rose-700 { color: #fda4af !important; }
+html.dark .text-amber-600, html.dark .text-amber-700 { color: #fcd34d !important; }
+html.dark .text-emerald-600, html.dark .text-emerald-700 { color: #6ee7b7 !important; }
+html.dark .text-violet-600, html.dark .text-violet-700 { color: #c4b5fd !important; }
+html.dark .text-blue-600, html.dark .text-blue-700 { color: #93c5fd !important; }
+html.dark .text-orange-600, html.dark .text-orange-700 { color: #fdba74 !important; }
+
+html.dark .border-teal-200, html.dark .border-teal-400 { border-color: rgb(var(--a-teal) / 0.45) !important; }
+html.dark .border-coral-200 { border-color: rgb(var(--a-coral) / 0.4) !important; }
+html.dark .border-rose-200 { border-color: rgba(244, 63, 94, 0.4) !important; }
+html.dark .border-amber-200 { border-color: rgb(var(--a-amber) / 0.4) !important; }
+html.dark .border-emerald-200 { border-color: rgba(52, 195, 156, 0.4) !important; }
+html.dark .border-violet-200 { border-color: rgb(var(--a-violet) / 0.4) !important; }
+
+/* Exception: keep white text white on brand-gradient surfaces in dark too */
+html.dark .on-sunset .text-white,
+html.dark .on-sunset.text-white { color: #ffffff !important; }
+
+/* ===============================================
    BASE STYLES
    =============================================== */
 * {
@@ -185,16 +311,22 @@ html.light .row-alternate:nth-child(odd) {
 
 body {
   color: var(--text-primary);
-  /* Immersive canvas: a soft tinted mesh over the warm off-white, fixed so it
-     reads as depth without distracting from data. */
-  background-color: #f7f7f3;
-  background-image:
-    radial-gradient(900px 500px at 8% -8%, rgba(15, 118, 110, 0.07), transparent 60%),
-    radial-gradient(820px 480px at 102% 0%, rgba(109, 73, 207, 0.06), transparent 58%),
-    radial-gradient(700px 600px at 50% 120%, rgba(217, 119, 6, 0.05), transparent 60%);
+  /* Immersive canvas: a soft tinted mesh over the themeable base, fixed so it
+     reads as depth without distracting from data. Light values unchanged;
+     html.dark swaps in a near-black canvas with subtler tints. */
+  background-color: var(--canvas-bg);
+  background-image: var(--canvas-mesh);
   background-attachment: fixed;
   min-height: 100vh;
 }
+
+/* Dark scrollbars — neutral track/thumb tuned to the dark surface ramp */
+html.dark * {
+  scrollbar-color: #2e3437 #101314;
+}
+html.dark *::-webkit-scrollbar-track { background: #101314; }
+html.dark *::-webkit-scrollbar-thumb { background: #2e3437; }
+html.dark *::-webkit-scrollbar-thumb:hover { background: #3c5a53; }
 
 @layer utilities {
   /* Fade in animation */
@@ -470,6 +602,44 @@ body {
 }
 
 /* ===============================================
+   DARK OVERRIDES for the surface/utility classes above
+   (Apple-minimal: elevation = lighter surface + hairline, shadows retire)
+   =============================================== */
+html.dark .glass {
+  background: linear-gradient(180deg, #171a1c 0%, #141719 100%);
+  backdrop-filter: none;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+html.dark .glass-strong {
+  background: linear-gradient(180deg, #1a1e20 0%, #16191b 100%);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .card-hover:hover,
+html.dark .card-pop:hover {
+  border-color: #333a3d;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+html.dark .ring-brand {
+  background:
+    linear-gradient(#16191b, #16191b) padding-box,
+    linear-gradient(135deg, rgba(45, 168, 138, 0.55), rgba(167, 139, 250, 0.4)) border-box;
+}
+
+html.dark .shimmer {
+  background: linear-gradient(90deg, #1a1e20 0%, #24292c 50%, #1a1e20 100%);
+  background-size: 200% 100%;
+}
+
+html.dark .row-alternate:nth-child(even) { background-color: rgba(255, 255, 255, 0.025); }
+html.dark .row-alternate:nth-child(odd) { background-color: transparent; }
+
+/* ===============================================
    Accessibility (3.7)
    =============================================== */
 
@@ -481,7 +651,7 @@ select:focus-visible,
 textarea:focus-visible,
 [role="tab"]:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid #0f766e;
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
   border-radius: 6px;
 }

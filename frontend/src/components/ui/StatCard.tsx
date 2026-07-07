@@ -30,19 +30,21 @@ export interface StatCardProps extends DivProps {
   children?: ReactNode;
 }
 
+// Accent channel vars (globals.css) — light values match the old hex exactly;
+// dark mode swaps in brightened hues so the left border keeps AA on dark.
 const toneAccent: Record<StatCardTone, string> = {
-  coral: '#c8451f',
-  teal: '#0f766e',
-  violet: '#6d49cf',
-  amber: '#d97706',
+  coral: 'rgb(var(--a-coral))',
+  teal: 'rgb(var(--a-teal))',
+  violet: 'rgb(var(--a-violet))',
+  amber: 'rgb(var(--a-amber))',
 };
 
 /** Tinted icon chip per tone — a touch of color-coding on the calm card. */
 const toneChip: Record<StatCardTone, string> = {
-  coral: 'bg-coral-50 text-coral-600',
-  teal: 'bg-teal-50 text-teal-700',
-  violet: 'bg-violet-50 text-violet-600',
-  amber: 'bg-amber-50 text-amber-600',
+  coral: 'bg-coral-50 text-coral-600 dark:bg-coral-500/15 dark:text-coral-300',
+  teal: 'bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
+  violet: 'bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300',
+  amber: 'bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300',
 };
 
 /** Tone-mapped gradient for the hero (gradient) variant — so the cards are
@@ -55,8 +57,8 @@ const toneGradient: Record<StatCardTone, string> = {
 };
 
 const deltaChip: Record<'up' | 'down' | 'flat', string> = {
-  up: 'bg-teal-50 text-teal-700',
-  down: 'bg-coral-50 text-coral-700',
+  up: 'bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
+  down: 'bg-coral-50 text-coral-700 dark:bg-coral-500/15 dark:text-coral-300',
   flat: 'bg-surface-2 text-ink-muted',
 };
 

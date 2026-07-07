@@ -37,10 +37,10 @@ interface Briefing {
 type Mood = 'strong' | 'steady' | 'soft' | 'attention';
 
 const SEV_HEX: Record<string, string> = {
-  critical: '#f43f5e', high: '#f97316', medium: '#f59e0b', low: '#0f766e',
+  critical: '#f43f5e', high: '#f97316', medium: '#f59e0b', low: 'var(--brand)',
 };
 const SEV_TEXT: Record<string, string> = {
-  critical: 'text-rose-600', high: 'text-orange-600', medium: 'text-amber-600', low: 'text-teal-600',
+  critical: 'text-rose-600 dark:text-rose-400', high: 'text-orange-600 dark:text-orange-400', medium: 'text-amber-600 dark:text-amber-400', low: 'text-teal-600 dark:text-teal-300',
 };
 /** Logical (RTL-correct) colored accent bar on the inline-start edge. */
 const sevBar = (sev: string): React.CSSProperties => ({

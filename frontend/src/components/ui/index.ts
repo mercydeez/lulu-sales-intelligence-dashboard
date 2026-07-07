@@ -51,6 +51,9 @@ export type { PageHeaderProps } from './PageHeader';
 export { Tabs } from './Tabs';
 export type { TabsProps, TabItem } from './Tabs';
 
+export { ThemeToggle } from './ThemeToggle';
+export type { ThemeToggleProps } from './ThemeToggle';
+
 export { Reveal, ScrollReveal, Stagger, RevealItem, MotionCard, fadeRise, staggerContainer } from './motion';
 
 export { PageTransition } from './PageTransition';
