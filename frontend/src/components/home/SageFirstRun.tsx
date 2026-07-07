@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import { Sparkles, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useExperience } from '@/contexts/ExperienceContext';
 import { useAI } from '@/components/AIProvider';
 import { Button } from '@/components/ui';
 import { track } from '@/lib/telemetry';
@@ -23,6 +24,7 @@ const ROLE_QUESTION: Record<string, string> = {
 
 export default function SageFirstRun() {
   const { user } = useAuth();
+  const { config } = useExperience();
   const { openChat } = useAI();
   const [visible, setVisible] = useState(false);
 
@@ -32,7 +34,9 @@ export default function SageFirstRun() {
     } catch { /* private mode — stay hidden */ }
   }, []);
 
-  if (!visible) return null;
+  // Roles whose experience config hides the assistant get no nudge —
+  // never render a button that opens nothing (Experience Engine v2).
+  if (!visible || config?.assistant_mode === 'hidden') return null;
 
   const question = ROLE_QUESTION[user?.role ?? ''] ?? ROLE_QUESTION.super_admin;
 
