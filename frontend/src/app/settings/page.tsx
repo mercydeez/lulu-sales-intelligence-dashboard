@@ -4,19 +4,28 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage, Lang } from '@/contexts/LanguageContext';
+import { useTheme, ThemePref } from '@/contexts/ThemeContext';
 import { Card, PageHeader, Button, Stagger, RevealItem } from '@/components/ui';
 import NotificationPreferences from '@/components/settings/NotificationPreferences';
-import { Settings as SettingsIcon, Globe, User as UserIcon, LogOut, Check, Building2, CreditCard, ShieldCheck, Scale, Users } from 'lucide-react';
+import { Settings as SettingsIcon, Globe, User as UserIcon, LogOut, Check, Building2, CreditCard, ShieldCheck, Scale, Users, Sun, Moon, Monitor, LucideIcon } from 'lucide-react';
 
 const LANGUAGES: { code: Lang; label: string; native: string }[] = [
   { code: 'en', label: 'English', native: 'English' },
   { code: 'ar', label: 'Arabic', native: 'العربية' },
 ];
 
+// Labels/hints resolved with t() at render (keys: src/locales/commercial.ts).
+const THEMES: { value: ThemePref; labelKey: string; hintKey: string; icon: LucideIcon }[] = [
+  { value: 'light', labelKey: 'theme.light', hintKey: 'theme.light.hint', icon: Sun },
+  { value: 'dark', labelKey: 'theme.dark', hintKey: 'theme.dark.hint', icon: Moon },
+  { value: 'system', labelKey: 'theme.system', hintKey: 'theme.system.hint', icon: Monitor },
+];
+
 export default function SettingsPage() {
   const router = useRouter();
   const { logout, user } = useAuth();
-  const { lang, setLang } = useLanguage();
+  const { lang, setLang, t } = useLanguage();
+  const { theme, setTheme } = useTheme();
   const isAdmin = ['super_admin', 'admin'].includes(user?.role ?? '');
 
   const handleLogout = async () => {
@@ -49,7 +58,7 @@ export default function SettingsPage() {
                   onClick={() => setLang(l.code)}
                   className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-start ${
                     active
-                      ? 'border-teal-400 bg-teal-50 text-ink'
+                      ? 'border-teal-400 bg-teal-50 dark:bg-teal-500/10 text-ink'
                       : 'border-line hover:bg-surface-2/60 text-ink-soft'
                   }`}
                 >
@@ -64,6 +73,44 @@ export default function SettingsPage() {
           </div>
           <p className="text-xs text-ink-muted mt-3">
             Arabic switches the interface to right-to-left. Data values remain in their source format.
+          </p>
+        </Card></RevealItem>
+
+        {/* Appearance (E4-2) — same option-card pattern as Language */}
+        <RevealItem><Card padding="lg">
+          <div className="flex items-center gap-2 mb-4">
+            <Sun className="w-4 h-4 text-teal-600" />
+            <h3 className="text-sm font-semibold text-ink-soft uppercase tracking-wide">{t('settings.appearance')}</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" role="group" aria-label={t('settings.appearance')}>
+            {THEMES.map((opt) => {
+              const active = theme === opt.value;
+              const Icon = opt.icon;
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => setTheme(opt.value)}
+                  aria-pressed={active}
+                  className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-start ${
+                    active
+                      ? 'border-teal-400 bg-teal-50 dark:bg-teal-500/10 text-ink'
+                      : 'border-line hover:bg-surface-2/60 text-ink-soft'
+                  }`}
+                >
+                  <span className="flex items-center gap-3">
+                    <Icon className="w-4 h-4 text-ink-muted" />
+                    <span>
+                      <span className="block text-sm font-medium">{t(opt.labelKey)}</span>
+                      <span className="block text-xs text-ink-muted">{t(opt.hintKey)}</span>
+                    </span>
+                  </span>
+                  {active && <Check className="w-4 h-4 text-teal-600" />}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-ink-muted mt-3">
+            {t('settings.appearance.note')}
           </p>
         </Card></RevealItem>
 
@@ -136,7 +183,7 @@ export default function SettingsPage() {
                 View profile
               </Button>
             </Link>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="text-rose-600 hover:bg-rose-50">
+            <Button variant="ghost" size="sm" onClick={handleLogout} className="text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/10">
               <LogOut className="w-4 h-4" />
               Sign out
             </Button>

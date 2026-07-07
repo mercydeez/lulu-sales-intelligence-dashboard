@@ -5,22 +5,25 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { PRODUCT_NAME } from '@/lib/brand';
 import {
   Eye, EyeOff, Lock, Mail, AlertCircle, Loader2, ShoppingBag,
   TrendingUp, ShieldCheck, Activity, Sparkles, ArrowRight, KeyRound,
 } from 'lucide-react';
 
+// Labels/features are translation keys (src/locales/auth.ts) — resolved with
+// t() at render so the screen is fully EN/AR (E4-4 core screen).
 const DEMO_ACCOUNTS = [
-  { label: 'Super Admin', email: 'atharva@retaildemo.app', grad: 'sunset-gradient' },
-  { label: 'Regional Mgr', email: 'krishna@retaildemo.app', grad: 'grad-violet' },
-  { label: 'Store Mgr', email: 'yash@retaildemo.app', grad: 'grad-amber' },
+  { labelKey: 'auth.demo.superAdmin', email: 'atharva@retaildemo.app', grad: 'sunset-gradient' },
+  { labelKey: 'auth.demo.regional', email: 'krishna@retaildemo.app', grad: 'grad-violet' },
+  { labelKey: 'auth.demo.store', email: 'yash@retaildemo.app', grad: 'grad-amber' },
 ];
 
 const FEATURES = [
-  { icon: Activity, text: 'Live sales stream updating every few seconds' },
-  { icon: TrendingUp, text: 'Seasonal demand forecasts with accuracy scoring' },
-  { icon: ShieldCheck, text: 'Role-based access scoped to your stores' },
+  { icon: Activity, textKey: 'auth.feature.live' },
+  { icon: TrendingUp, textKey: 'auth.feature.forecast' },
+  { icon: ShieldCheck, textKey: 'auth.feature.rbac' },
 ];
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -28,6 +31,7 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 export default function LoginPage() {
   const router = useRouter();
   const { login, verifyTwoFactor, isLoading, error, clearError } = useAuth();
+  const { t, toggleLang } = useLanguage();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,7 +48,7 @@ export default function LoginPage() {
     setLocalError('');
     clearError();
     if (!email || !password) {
-      setLocalError('Please enter both email and password');
+      setLocalError(t('auth.errBoth'));
       return;
     }
     const res = await login({ email, password, remember_me: rememberMe });
@@ -57,7 +61,7 @@ export default function LoginPage() {
     setLocalError('');
     clearError();
     if (code.replace(/\s/g, '').length < 6) {
-      setLocalError('Enter the 6-digit code from your authenticator app');
+      setLocalError(t('auth.errCode'));
       return;
     }
     const ok = await verifyTwoFactor(mfaToken!, code.replace(/\s/g, ''));
@@ -67,7 +71,7 @@ export default function LoginPage() {
   const [forgotMsg, setForgotMsg] = useState('');
   const handleForgot = async () => {
     setForgotMsg(''); setLocalError('');
-    if (!email) { setLocalError('Enter your email above, then click “Forgot password?”'); return; }
+    if (!email) { setLocalError(t('auth.errForgotNeedsEmail')); return; }
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       await fetch(`${API_URL}/api/auth/forgot-password`, {
@@ -75,7 +79,7 @@ export default function LoginPage() {
         body: JSON.stringify({ email }),
       });
     } catch { /* ignore — generic message either way */ }
-    setForgotMsg('If that account exists, a password reset link has been sent.');
+    setForgotMsg(t('auth.forgotSent'));
   };
 
   const fillDemo = (demoEmail: string) => {
@@ -133,14 +137,13 @@ export default function LoginPage() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/80" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
               </span>
-              Real-time retail analytics
+              {t('auth.badge')}
             </div>
             <h1 className="text-4xl font-bold leading-tight mb-4">
-              Every sale, every store, the moment it happens.
+              {t('auth.heroTitle')}
             </h1>
             <p className="text-white/85 text-lg leading-relaxed">
-              Live KPIs, demand forecasting, and inventory intelligence across the
-              Meridian Hypermarket UAE network — in one immersive, powerful workspace.
+              {t('auth.heroSub')}
             </p>
           </motion.div>
 
@@ -150,23 +153,23 @@ export default function LoginPage() {
             initial="hidden" animate="show"
             variants={{ show: { transition: { staggerChildren: 0.1, delayChildren: 0.25 } } }}
           >
-            {FEATURES.map(({ icon: Icon, text }) => (
+            {FEATURES.map(({ icon: Icon, textKey }) => (
               <motion.div
-                key={text}
+                key={textKey}
                 variants={{ hidden: { opacity: 0, x: -16 }, show: { opacity: 1, x: 0, transition: { ease: EASE } } }}
                 className="flex items-center gap-3"
               >
                 <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/15 backdrop-blur-sm ring-1 ring-white/25">
                   <Icon className="w-4 h-4" />
                 </div>
-                <span className="text-white/90 text-sm">{text}</span>
+                <span className="text-white/90 text-sm">{t(textKey)}</span>
               </motion.div>
             ))}
           </motion.div>
         </div>
 
         <div className="relative z-10 text-white/70 text-xs">
-          Independent student project · synthetic data · © 2026 Meridian Hypermarket UAE
+          {t('auth.footnote')}
         </div>
       </div>
 
@@ -177,18 +180,30 @@ export default function LoginPage() {
           transition={{ duration: 0.5, ease: EASE }}
           className="w-full max-w-md"
         >
+          {/* Language toggle — the Topbar only renders when authenticated, so
+              the login screen needs its own EN/AR switch (E4-4). */}
+          <div className="flex justify-end mb-4">
+            <button
+              type="button"
+              onClick={toggleLang}
+              className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold text-ink-muted hover:bg-surface-2 transition-colors"
+            >
+              {t('lang.toggle')}
+            </button>
+          </div>
+
           {/* Mobile brand */}
           <div className="lg:hidden text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-glow-teal">
               <ShoppingBag className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-ink">{PRODUCT_NAME}</h1>
-            <p className="text-ink-muted text-sm">UAE Sales Analytics Dashboard</p>
+            <p className="text-ink-muted text-sm">{t('auth.tagline')}</p>
           </div>
 
           <div className="mb-8">
-            <h2 className="text-3xl font-bold text-ink mb-2">Welcome back 👋</h2>
-            <p className="text-ink-soft">Sign in to your analytics workspace.</p>
+            <h2 className="text-3xl font-bold text-ink mb-2">{t('auth.welcome')}</h2>
+            <p className="text-ink-soft">{t('auth.signInSub')}</p>
           </div>
 
           {/* Error / info alerts */}
@@ -215,13 +230,13 @@ export default function LoginPage() {
             <form onSubmit={handleVerify} className="space-y-5">
               <div className="flex items-center gap-3 p-4 rounded-2xl bg-teal-50 border border-teal-100">
                 <ShieldCheck className="w-5 h-5 text-teal-600 shrink-0" />
-                <p className="text-sm text-teal-800">
-                  Two-step verification is on. Enter the 6-digit code from your authenticator app.
+                <p className="text-sm text-teal-800 dark:text-teal-200">
+                  {t('auth.mfaNotice')}
                 </p>
               </div>
               <div>
                 <label htmlFor="code" className="block text-sm font-medium text-ink-soft mb-2">
-                  Authentication code
+                  {t('auth.authCode')}
                 </label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none">
@@ -240,13 +255,13 @@ export default function LoginPage() {
                   />
                 </div>
               </div>
-              <SubmitButton isLoading={isLoading} idle="Verify" busy="Verifying..." />
+              <SubmitButton isLoading={isLoading} idle={t('auth.verify')} busy={t('auth.verifying')} />
               <button
                 type="button"
                 onClick={() => { setMfaToken(null); setCode(''); setLocalError(''); clearError(); }}
                 className="w-full text-sm font-medium text-ink-muted hover:text-ink transition-colors"
               >
-                ← Back to sign in
+                {t('auth.backToSignIn')}
               </button>
             </form>
           ) : (
@@ -254,7 +269,7 @@ export default function LoginPage() {
               {/* Email */}
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-ink-soft mb-2">
-                  Email Address
+                  {t('auth.email')}
                 </label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none">
@@ -273,7 +288,7 @@ export default function LoginPage() {
               {/* Password */}
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-ink-soft mb-2">
-                  Password
+                  {t('auth.password')}
                 </label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none">
@@ -308,14 +323,14 @@ export default function LoginPage() {
                     className="w-4 h-4 rounded border-line text-teal-600 focus:ring-teal-500/30 cursor-pointer accent-teal-600"
                     disabled={isLoading}
                   />
-                  <span className="ms-2 text-sm text-ink-soft">Remember me</span>
+                  <span className="ms-2 text-sm text-ink-soft">{t('auth.rememberMe')}</span>
                 </label>
-                <button type="button" onClick={handleForgot} className="text-sm font-medium text-teal-700 hover:text-teal-800 transition-colors">
-                  Forgot password?
+                <button type="button" onClick={handleForgot} className="text-sm font-medium text-teal-700 hover:text-teal-800 dark:hover:text-teal-200 transition-colors">
+                  {t('auth.forgot')}
                 </button>
               </div>
 
-              <SubmitButton isLoading={isLoading} idle="Sign In" busy="Signing in..." />
+              <SubmitButton isLoading={isLoading} idle={t('auth.signIn')} busy={t('auth.signingIn')} />
             </form>
           )}
 
@@ -323,7 +338,7 @@ export default function LoginPage() {
           <div className="mt-8">
             <div className="flex items-center gap-3 mb-3">
               <span className="h-px flex-1 bg-line" />
-              <span className="text-xs font-medium text-ink-muted">Try a demo account</span>
+              <span className="text-xs font-medium text-ink-muted">{t('auth.tryDemo')}</span>
               <span className="h-px flex-1 bg-line" />
             </div>
             <div className="grid grid-cols-3 gap-2">
@@ -339,19 +354,19 @@ export default function LoginPage() {
                   className="rounded-2xl border border-line bg-surface p-3 text-start hover:border-teal-300 hover:shadow-card disabled:opacity-60"
                 >
                   <div className={`w-7 h-7 rounded-lg ${acc.grad} mb-2`} />
-                  <p className="text-xs font-semibold text-ink leading-tight">{acc.label}</p>
+                  <p className="text-xs font-semibold text-ink leading-tight">{t(acc.labelKey)}</p>
                   <p className="text-[10px] text-ink-muted truncate">{acc.email}</p>
                 </motion.button>
               ))}
             </div>
             <p className="mt-3 text-center text-xs text-ink-muted">
-              Password for all demos: <span className="font-mono font-medium text-ink-soft">Demo@2026!</span>
+              {t('auth.demoPassword')} <span className="font-mono font-medium text-ink-soft">Demo@2026!</span>
             </p>
           </div>
 
           <p className="mt-8 text-center text-sm text-ink-soft">
-            New here?{' '}
-            <Link href="/signup" className="font-semibold text-teal-700 hover:text-teal-800">Create your workspace</Link>
+            {t('auth.newHere')}{' '}
+            <Link href="/signup" className="font-semibold text-teal-700 hover:text-teal-800 dark:hover:text-teal-200">{t('auth.createWorkspace')}</Link>
           </p>
         </motion.div>
       </div>
