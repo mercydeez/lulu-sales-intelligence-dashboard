@@ -12,6 +12,7 @@ import * as operations from './operations';
 import * as commercial from './commercial';
 import * as auth from './auth';
 import * as ai from './ai';
+import * as platform from './platform';
 
 type Dict = Record<string, string>;
 
@@ -21,6 +22,7 @@ export const en: Dict = {
   ...commercial.en,
   ...auth.en,
   ...ai.en,
+  ...platform.en,
 };
 
 export const ar: Dict = {
@@ -29,4 +31,5 @@ export const ar: Dict = {
   ...commercial.ar,
   ...auth.ar,
   ...ai.ar,
+  ...platform.ar,
 };

@@ -9,6 +9,7 @@ import {
 } from '@/components/ui';
 import type { BadgeVariant } from '@/components/ui';
 import { apiGet, apiPost, authFetch, ApiError } from '@/lib/apiClient';
+import UsageMeters from '@/components/settings/UsageMeters';
 import { CreditCard, FileText, ShieldAlert, Printer } from 'lucide-react';
 
 const AED = (n: number | null | undefined) =>
@@ -126,6 +127,9 @@ export default function BillingPage() {
                 )}
               </Card></RevealItem>
             )}
+
+            {/* Plan usage vs limits (CX money loop — Y2) */}
+            <RevealItem><UsageMeters /></RevealItem>
 
             {/* Invoices */}
             <RevealItem><Card padding="lg">
