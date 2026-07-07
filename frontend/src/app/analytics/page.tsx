@@ -59,13 +59,14 @@ export default function AnalyticsPage() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      // Lazy-load jsPDF only when the user actually exports — keeps it out of the route bundle.
-      const [{ generatePDF }, trend, categories] = await Promise.all([
-        import('@/lib/pdfExport'),
+      // Print-quality HTML export (E4-5) — browser print dialog → "Save as PDF".
+      // Replaces the retired client-side jsPDF pipeline.
+      const [{ printReport }, trend, categories] = await Promise.all([
+        import('@/lib/printExport'),
         fetchTrend(RANGE_DAYS[range], false),
         fetchCategoryBreakdown(),
       ]);
-      await generatePDF({
+      await printReport({
         title: 'Sales Analytics Report',
         subtitle: `${PRODUCT_NAME} — synthetic demo data`,
         dateRange: `Trend window: Last ${RANGE_DAYS[range]} days`,

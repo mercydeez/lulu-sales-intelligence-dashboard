@@ -54,9 +54,10 @@ export default function ReportsPage() {
     if (!report) return;
     setExporting(true);
     try {
-      // Lazy-load jsPDF only on export — keeps it out of the reports route bundle.
-      const { generatePDF } = await import('@/lib/pdfExport');
-      await generatePDF({
+      // Print-quality HTML export (E4-5) — browser print dialog → "Save as PDF".
+      // Replaces the retired client-side jsPDF pipeline.
+      const { printReport } = await import('@/lib/printExport');
+      await printReport({
         title: 'Sales & Performance Report',
         subtitle: `${PRODUCT_NAME} — figures are units (synthetic demand data)`,
         dateRange: `Period: ${RANGE_LABEL[range]}${storeId ? ` · ${stores.find((s) => s.id === storeId)?.name ?? `Store ${storeId}`}` : ' · All stores'}`,
