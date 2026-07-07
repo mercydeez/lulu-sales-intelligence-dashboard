@@ -42,6 +42,26 @@ export default function StatusPage() {
   const [lastChecked, setLastChecked] = useState<string | null>(null);
 
   const check = useCallback(async () => {
+    // Preferred: the server-cached public-status endpoint (K2) — one probe a
+    // minute no matter how many tabs are open, and component-level detail.
+    try {
+      const res = await fetch(`${API_URL}/api/monitoring/public-status`, { cache: 'no-store' });
+      if (res.ok) {
+        const d = await res.json();
+        setApi(d.components?.api === 'operational' ? 'operational' : 'down');
+        setData(
+          d.components?.database === 'operational' && d.components?.cache_stream === 'operational'
+            ? 'operational'
+            : 'down'
+        );
+        setLastChecked(new Date().toLocaleTimeString());
+        return;
+      }
+    } catch {
+      /* fall through to raw probes */
+    }
+
+    // Fallback (older backend or API fully down): the k8s probes directly.
     const probe = async (path: string): Promise<ComponentState> => {
       try {
         const res = await fetch(`${API_URL}${path}`, { cache: 'no-store' });

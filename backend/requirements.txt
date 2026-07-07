@@ -42,3 +42,7 @@ pytest==8.0.0
 pytest-asyncio>=0.23.0,<0.25.0
 pytest-cov==4.1.0
 aiohttp==3.9.3
+
+# Observability (K4 — CX_LOOPS_PLAN): error tracking. main.py inits it only
+# when SENTRY_DSN is set (guarded import), so the dep is inert by default.
+sentry-sdk[fastapi]==2.19.2

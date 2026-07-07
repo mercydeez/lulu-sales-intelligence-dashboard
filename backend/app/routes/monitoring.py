@@ -9,7 +9,7 @@ from typing import Dict, Any
 from app.config import get_settings, logger
 from app.services.metrics import get_metrics
 from app.services.database import engine, async_session
-from app.services.redis_client import get_redis
+from app.services.redis_client import get_redis, cache_get, cache_set
 from app.routes.auth import get_current_user, require_role
 from sqlalchemy import text
 
@@ -159,6 +159,57 @@ async def liveness_check() -> Dict[str, str]:
     Returns 200 if the service is alive.
     """
     return {"status": "alive", "timestamp": datetime.utcnow().isoformat()}
+
+
+@router.get("/public-status")
+async def public_status() -> Dict[str, Any]:
+    """Public component status for the /status page (CX trust loop — K2,
+    docs/product/CX_LOOPS_PLAN.md). Unauthenticated by design; Redis-cached
+    60s so a thousand open status tabs cost one probe a minute. Exposes
+    component states ONLY — no versions, hosts, or error strings (info-leak
+    safe). Always returns 200: the payload carries the health verdict.
+    """
+    cache_key = "public_status:v1"
+    try:
+        cached = await cache_get(cache_key)
+        if cached:
+            return cached
+    except Exception:
+        pass  # the cache path must never take the status endpoint down
+
+    async def db_ok() -> bool:
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            return True
+        except Exception:
+            return False
+
+    async def redis_ok() -> bool:
+        try:
+            r = await get_redis()
+            await r.ping()
+            return True
+        except Exception:
+            return False
+
+    database_up = await db_ok()
+    cache_up = await redis_ok()
+    payload: Dict[str, Any] = {
+        "status": "operational" if (database_up and cache_up) else "degraded",
+        "components": {
+            "api": "operational",  # this handler answered
+            "database": "operational" if database_up else "down",
+            "cache_stream": "operational" if cache_up else "down",
+        },
+        "checked_at": datetime.utcnow().isoformat() + "Z",
+    }
+    if cache_up:
+        try:
+            await cache_set(cache_key, payload, expire=60)
+        except Exception:
+            pass
+    return payload
 
 
 @router.get("/stats")
