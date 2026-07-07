@@ -87,3 +87,21 @@ Enterprise OIDC login, OFF by default. Full setup + security model: [`../securit
 | `SSO_ALLOWED_REDIRECT_HOSTS` | str | "" | Comma-separated hosts a `return_to` may target |
 | `SSO_MAX_RETURN_TO_LENGTH` | int | 500 | Max `return_to` length |
 | `<client_secret_env>` | secret | — | Per-provider client secret; the env var **name** is stored in `tenant_sso_providers.client_secret_env`, the value only in the environment (e.g. `SSO_AZURE_CLIENT_SECRET`). **Never commit it.** |
+
+## SCIM provisioning (E5-1c)
+
+Enterprise identity-lifecycle provisioning, OFF by default. Full setup + security:
+[`../security/SCIM.md`](../security/SCIM.md). SCIM bearer tokens are created via
+`POST /api/scim/admin/tokens` (admin only), stored hashed, shown once.
+
+| Variable | Type | Default | Notes |
+|---|---|---|---|
+| `SCIM_ENABLED` | bool | false | Master switch for all SCIM endpoints |
+| `SCIM_TOKEN_TTL_DAYS` | int | 365 | Default expiry for new SCIM tokens |
+| `SCIM_DEFAULT_ROLE` | str | analyst | Role for SCIM-provisioned users (never admin) |
+| `SCIM_ALLOW_ADMIN_ROLE_MAPPING` | bool | false | Allow a group→admin mapping (keep false) |
+| `SCIM_GROUP_MAPPING_ENABLED` | bool | false | Apply group→role mappings at all |
+| `SCIM_MAX_PAGE_SIZE` | int | 100 | Cap on SCIM list `count` |
+| `SCIM_DEACTIVATE_REVOKES_TOKENS` | bool | true | Revoke sessions on deactivate |
+| `SCIM_ALLOW_REACTIVATION` | bool | true | Allow `active:false` → `true` |
+| `SCIM_AUDIT_ENABLED` | bool | true | Record SCIM security events |

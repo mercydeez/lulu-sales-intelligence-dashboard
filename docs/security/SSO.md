@@ -111,5 +111,13 @@ VALUES
 
 - No frontend UI in this task (backend contract only).
 - No real SAML login (config contract + docs only).
-- No SCIM; no group→role mapping (JIT uses `default_role`).
 - Actual Azure tenant credentials must be configured by an operator; nothing is seeded.
+
+## 8. SCIM provisioning (lifecycle companion)
+
+SSO authenticates users; **SCIM** (E5-1c) provisions their lifecycle automatically
+from the IdP (create/update/deactivate). SCIM is a separate, tenant-scoped
+bearer-token API at `/api/scim/v2/{tenant_slug}`, OFF by default, and — like JIT —
+can never create admins. See **[`SCIM.md`](SCIM.md)** and the combined pilot
+runbook **[`../runbooks/ENTERPRISE_IDENTITY.md`](../runbooks/ENTERPRISE_IDENTITY.md)**.
+SCIM does not bypass the SSO admin-MFA gate.

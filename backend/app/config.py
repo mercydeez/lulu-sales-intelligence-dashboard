@@ -243,6 +243,20 @@ class Settings(BaseSettings):
     sso_allowed_redirect_hosts: str = ""
     sso_max_return_to_length: int = 500
 
+    # --- E5-1c SCIM enterprise provisioning (Krishna security) -------------
+    # SCIM is OFF by default. Per-tenant bearer tokens (hashed at rest) authorize
+    # the SCIM protocol endpoints. SCIM-provisioned users default to analyst and
+    # can NEVER be admin/owner/super_admin. See docs/security/SCIM.md.
+    scim_enabled: bool = False
+    scim_token_ttl_days: int = 365              # default expiry for new SCIM tokens
+    scim_default_role: str = "analyst"          # role for SCIM-provisioned users
+    scim_allow_admin_role_mapping: bool = False # never map groups->admin unless explicit
+    scim_group_mapping_enabled: bool = False    # apply group->role mappings at all
+    scim_max_page_size: int = 100               # cap SCIM list `count`
+    scim_deactivate_revokes_tokens: bool = True # revoke sessions on deactivate
+    scim_allow_reactivation: bool = True        # allow active:false -> true
+    scim_audit_enabled: bool = True             # record SCIM security events
+
     model_config = {"env_file": ".env", "case_sensitive": False}
 
     @model_validator(mode="after")

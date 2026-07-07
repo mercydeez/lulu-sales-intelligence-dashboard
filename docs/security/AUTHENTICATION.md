@@ -58,11 +58,16 @@ MFA gate: an admin without local TOTP is blocked (`sso_admin_mfa_required`) unle
 the provider explicitly opts into trusting the IdP's MFA. See
 [`SSO.md`](SSO.md).
 
-## SSO / OIDC (E5-1a)
+## Enterprise identity: SSO + SCIM (E5-1a / E5-1c)
 Enterprise OIDC login (Azure AD / Entra reference) is available at `/api/sso/*`,
 OFF by default. JIT provisioning is analyst-only and cannot create admins; identity
 linking is same-tenant only. Full setup, security model, and limitations (incl.
 SAML being config-contract-only) are in [`SSO.md`](SSO.md).
+
+**SCIM provisioning** (`/api/scim/*`, E5-1c) is the identity-lifecycle companion:
+IdP-driven create/update/deactivate via hashed, tenant-scoped bearer tokens.
+SCIM-provisioned users default to analyst and can never be admin, deactivation
+never hard-deletes, and SCIM does not bypass admin MFA. See [`SCIM.md`](SCIM.md).
 
 ## Audited events
 `password_reset_requested`, `password_changed`, `user_invited`, `invite_accepted`,

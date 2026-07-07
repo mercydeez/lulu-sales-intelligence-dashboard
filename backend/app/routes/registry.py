@@ -37,6 +37,7 @@ from app.routes import public_api, api_keys, webhooks, procurement
 from app.routes import security as security_routes
 from app.routes import data_rights as data_rights_routes
 from app.routes import sso as sso_routes
+from app.routes import scim as scim_routes
 
 # Yash — Frontend-platform support surfaces (CX loops)
 from app.routes import feedback as feedback_routes
@@ -87,6 +88,7 @@ ROUTERS: List[RouterSpec] = [
     (public_api.router, "/api/public", ["Public API"]),
     (data_rights_routes.router, "/api/data-rights", ["Data Rights"]),
     (sso_routes.router, "/api/sso", ["SSO"]),
+    (scim_routes.router, "/api/scim", ["SCIM"]),
 
     # === Yash — Frontend-platform support surfaces (CX loops) ==============
     (feedback_routes.router, "/api/feedback", ["Feedback"]),
