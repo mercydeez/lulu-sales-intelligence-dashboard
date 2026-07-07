@@ -187,6 +187,11 @@ jobs:
       - name: Metric-view parity + tenant safety (E6-1)
         run: docker compose exec -T -e RUN_DB_TESTS=1 backend python -m pytest tests/test_metric_views_parity.py -v --tb=short
 
+      # E7-4: root-cause decomposition — value-correctness + tenant isolation
+      # against the live seeded DB (pure-logic tests already run in the backend job).
+      - name: Root-cause decomposition (E7-4)
+        run: docker compose exec -T -e RUN_DB_TESTS=1 backend python -m pytest tests/test_root_cause.py -v --tb=short
+
       - name: Tear down
         if: always()
         run: docker compose down -v

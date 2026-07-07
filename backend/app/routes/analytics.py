@@ -5,7 +5,7 @@ Optimized with Redis caching for performance
 """
 import asyncio
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date, datetime, timedelta, timezone
@@ -17,6 +17,7 @@ from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE
 from app.models.sales import Sale, Store, Item
 from app.config import logger
 from app.routes.auth import get_current_user, get_accessible_store_ids
+from app.services import root_cause as _rc
 from app.services.source_adapters import (
     active_external_source,
     source_cache_tag,
@@ -920,3 +921,67 @@ async def get_model_metrics(
     if cache_key not in _inflight_metrics:
         asyncio.create_task(_warm_model_metrics_in_background(tenant_id, allowed, horizon))
     return _empty_model_metrics("warming")
+
+
+# =============================================================================
+# Root-cause decomposition (E7-4) — the deterministic "Diagnose" layer.
+# Explains why a metric changed vs a comparison window, attributing each
+# store/category/item/day contributor's share of the total change. Pure SQL over
+# the canonical E6-1 view `metric_sales_fact`; no LLM. Logic lives in
+# app.services.root_cause so it is unit-testable without the web layer.
+# =============================================================================
+@router.get("/root-cause", response_model=_rc.RootCauseResult)
+async def get_root_cause(
+    start_date: date = Query(..., description="Current period start (inclusive)"),
+    end_date: date = Query(..., description="Current period end (inclusive)"),
+    metric: str = Query("revenue_aed", description="revenue_aed | units_sold | return_units | return_value_aed"),
+    comparison: str = Query("previous_period", description="previous_period | previous_week | previous_year"),
+    compare_start_date: Optional[date] = Query(None, description="Explicit comparison start (overrides comparison)"),
+    compare_end_date: Optional[date] = Query(None, description="Explicit comparison end (overrides comparison)"),
+    dimensions: Optional[str] = Query(None, description="CSV of store,category,item,day (default all)"),
+    limit: int = Query(10, ge=1, le=50, description="Top-N contributors per dimension"),
+    min_abs_delta: Optional[float] = Query(None, description="Drop contributors whose |delta| is below this"),
+    store_id: Optional[int] = Query(None, description="Optional single-store filter"),
+    category: Optional[str] = Query(None, description="Optional single-category filter"),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Decompose the change in a metric between the current and comparison periods.
+
+    Deterministic and tenant-scoped: reads only `metric_sales_fact`, filters the
+    caller's tenant, and honours the caller's accessible-store scope. Returns the
+    period totals, the total delta, and per-dimension contributors ranked by the
+    size of their movement with each one's `share_of_change_pct`.
+    """
+    try:
+        norm = _rc.validate_params(metric, start_date, end_date, comparison, dimensions, limit)
+        # Validate the comparison window early so bad compare dates -> 400 (not 500).
+        _rc.resolve_comparison_period(
+            start_date, end_date, norm["comparison"], compare_start_date, compare_end_date
+        )
+    except _rc.ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    tenant_id = current_user.get("tenant_id") or 1
+    allowed = get_accessible_store_ids(current_user)
+
+    try:
+        return await _rc.decompose(
+            db, tenant_id, allowed,
+            metric=norm["metric"],
+            start_date=start_date,
+            end_date=end_date,
+            comparison=norm["comparison"],
+            dimensions=norm["dimensions"],
+            limit=norm["limit"],
+            compare_start_date=compare_start_date,
+            compare_end_date=compare_end_date,
+            store_id=store_id,
+            category=category,
+            min_abs_delta=min_abs_delta,
+        )
+    except _rc.ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # never leak raw SQL errors to the client
+        logger.error(f"root-cause decomposition failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to compute root-cause decomposition")
