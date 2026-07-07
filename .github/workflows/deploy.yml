@@ -1,0 +1,141 @@
+name: Deploy
+
+# E0-3 deploy pipeline:
+#   push to main            -> deploy STAGING
+#   push tag vX.Y.Z         -> deploy PRODUCTION (exact tag)
+#   manual workflow_dispatch -> choose staging/production + ref (rollback path)
+# Every path first runs validate-deploy-config (no secrets), then deploys, then
+# gates on scripts/smoke-deploy.sh. Rollback = re-run with a previous good tag.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      ref:
+        description: "Git ref/tag/SHA to deploy (defaults to the triggering ref)"
+        required: false
+
+# Least privilege: the workflow only needs to read the repo. Deploy happens via
+# an external webhook or SSH using environment secrets, not the GITHUB_TOKEN.
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Always-on config validation (no deploy secrets required).
+  # ---------------------------------------------------------------------------
+  validate-deploy-config:
+    name: Validate deploy config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax check deploy scripts
+        run: |
+          bash -n scripts/validate-production-compose.sh
+          bash -n scripts/deploy-compose.sh
+          bash -n scripts/smoke-deploy.sh
+
+      - name: Validate production compose (no demo/seed artifacts; E0-2 wired)
+        run: bash scripts/validate-production-compose.sh
+
+      - name: deploy-compose.sh dry-run (no mode configured is OK)
+        run: DRY_RUN=true bash scripts/deploy-compose.sh
+
+      - name: Parse all workflow YAML
+        run: |
+          python3 - <<'PY'
+          import pathlib, yaml
+          for p in sorted(pathlib.Path(".github/workflows").glob("*.yml")):
+              yaml.safe_load(p.read_text()); print("ok", p)
+          PY
+
+  # ---------------------------------------------------------------------------
+  # Staging: push to main, or manual dispatch -> staging.
+  # ---------------------------------------------------------------------------
+  deploy-staging:
+    name: Deploy staging
+    needs: validate-deploy-config
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        env:
+          DEPLOY_ENVIRONMENT: staging
+          DEPLOY_REF: ${{ github.event.inputs.ref || github.ref_name }}
+          DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_REPOSITORY: ${{ github.repository }}
+          # Webhook mode (either this OR the SSH set below is enough):
+          DEPLOY_WEBHOOK_URL: ${{ secrets.STAGING_DEPLOY_WEBHOOK_URL }}
+          # SSH mode:
+          DEPLOY_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          DEPLOY_APP_DIR: ${{ secrets.STAGING_APP_DIR }}
+        run: bash scripts/deploy-compose.sh
+
+      - name: Smoke test staging
+        env:
+          BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+        run: |
+          if [ -z "${BASE_URL}" ]; then
+            echo "ERROR: STAGING_BASE_URL secret is not set — cannot smoke-test the deploy"; exit 1
+          fi
+          bash scripts/smoke-deploy.sh
+
+  # ---------------------------------------------------------------------------
+  # Production: push tag vX.Y.Z, or manual dispatch -> production.
+  # Deploys the EXACT tag/ref. Rollback = re-run with a previous tag.
+  # ---------------------------------------------------------------------------
+  deploy-production:
+    name: Deploy production
+    needs: validate-deploy-config
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to production
+        env:
+          DEPLOY_ENVIRONMENT: production
+          DEPLOY_REF: ${{ github.event.inputs.ref || github.ref_name }}
+          DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_REPOSITORY: ${{ github.repository }}
+          DEPLOY_WEBHOOK_URL: ${{ secrets.PRODUCTION_DEPLOY_WEBHOOK_URL }}
+          DEPLOY_SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          DEPLOY_APP_DIR: ${{ secrets.PRODUCTION_APP_DIR }}
+        run: bash scripts/deploy-compose.sh
+
+      - name: Smoke test production
+        env:
+          BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+        run: |
+          if [ -z "${BASE_URL}" ]; then
+            echo "ERROR: PRODUCTION_BASE_URL secret is not set — cannot smoke-test the deploy"; exit 1
+          fi
+          bash scripts/smoke-deploy.sh

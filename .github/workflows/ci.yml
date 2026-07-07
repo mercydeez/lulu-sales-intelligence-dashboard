@@ -343,3 +343,34 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "0"
           ignore-unfixed: true
+
+  # =========================================================================
+  # Deploy config (E0-3/E0-4) — validate scripts, production compose, workflows.
+  # No deploy secrets required; runs on every push/PR.
+  # =========================================================================
+  deploy-config:
+    name: Deploy Config Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Shell syntax check deploy scripts
+        run: |
+          bash -n scripts/validate-production-compose.sh
+          bash -n scripts/deploy-compose.sh
+          bash -n scripts/smoke-deploy.sh
+
+      - name: Validate production compose (no demo/seed; E0-2 wired; /health/ready)
+        run: bash scripts/validate-production-compose.sh
+
+      - name: deploy-compose.sh dry-run
+        run: DRY_RUN=true bash scripts/deploy-compose.sh
+
+      - name: Parse all workflow YAML
+        run: |
+          python3 - <<'PY'
+          import pathlib, yaml
+          for p in sorted(pathlib.Path(".github/workflows").glob("*.yml")):
+              yaml.safe_load(p.read_text()); print("ok", p)
+          PY

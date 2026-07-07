@@ -98,3 +98,41 @@ This repo can **emit** a webhook alert and **expose** health status. Actual phon
 WhatsApp delivery depends entirely on the **external provider** the webhook is wired to
 (Better Stack / Healthchecks.io / PagerDuty / Twilio / Slack). No phone number or
 provider is hardcoded; wiring that provider is a deployment step, documented above.
+
+## 9. External monitor acceptance closure (E0-2 → E0-3)
+
+The <5-minute founder-phone acceptance is closed by an **external uptime monitor**
+polling `/health/ready`, plus the in-app test-alert path. This section is the
+provider-neutral closure procedure and the evidence to file.
+
+### 9.1 Recommended polling
+- **URL:** `https://api.<domain>/health/ready`
+- **Interval:** 60 seconds
+- **Trigger:** alert after **2 consecutive failures** (~2 min detection)
+- **Expected founder notification window:** **under 5 minutes** end-to-end
+
+### 9.2 Provider-neutral setup (pick one)
+- **Better Stack (Uptime):** HTTP monitor on `/health/ready`, 60s, escalation → phone call/SMS.
+- **Healthchecks.io:** a check pinged by an external HTTP monitor; integrations → SMS/WhatsApp/phone.
+- **PagerDuty:** service + escalation policy; a synthetic/uptime source hits `/health/ready`.
+- **Twilio webhook bridge:** monitor calls your bridge → Twilio SMS/voice to the founder.
+- **Slack / WhatsApp bridge:** monitor → Slack channel with on-call mention, or a WhatsApp bridge.
+
+All of these consume the same signal: a non-200 from `/health/ready` (or an
+optional deduped webhook alert emitted by the backend when `ALERT_ENABLED=true`).
+
+### 9.3 Test-alert proof
+1. As admin/super_admin: `POST /api/monitoring/alerts/test` (returns `result.sent`, never the URL).
+2. Verify the **provider** received the webhook (provider's delivery log).
+3. Verify the **founder phone / SMS / WhatsApp** notification arrived.
+
+### 9.4 Evidence to capture (do NOT commit screenshots or secrets)
+- [ ] Screenshot of the external monitor configuration (URL `/health/ready`, 60s, 2-failure trigger).
+- [ ] Screenshot/log of the **delivered alert** on the founder phone.
+- [ ] `/health/deep` response showing `checks.worker_heartbeat.status = "ok"` (fresh).
+- [ ] Deploy **smoke logs** (`scripts/smoke-deploy.sh`) from the last staging + production deploy.
+
+### 9.5 Honest limitation (restated)
+The code emits the webhook and exposes health state; **actual phone delivery is the
+external provider's responsibility**. The acceptance is "closed" when the monitor is
+wired and a test alert is verifiably delivered — evidence above.

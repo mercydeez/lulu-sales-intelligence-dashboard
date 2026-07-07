@@ -1,5 +1,14 @@
 # Deploying to Render (free tier)
 
+> **Production deploy pipeline (E0-3):** for the compose-based staging/production
+> pipeline (push to `main` → staging, tag `vX.Y.Z` → production, smoke-gated,
+> rollback by redeploying a previous tag), see
+> **[docs/runbooks/DEPLOY_PIPELINE.md](docs/runbooks/DEPLOY_PIPELINE.md)**. For
+> uptime monitoring + founder-phone alerting, see
+> **[docs/runbooks/UPTIME_MONITORING_AND_ALERTING.md](docs/runbooks/UPTIME_MONITORING_AND_ALERTING.md)**.
+> Production uses schema-only `database/prod-init.sql` + the `migrate` job (no demo
+> data, no `train.csv`); `scripts/validate-production-compose.sh` enforces this.
+
 This app is a 4-service stack: **Postgres**, **Redis**, a **FastAPI backend**
 (always-on — it runs the live data generator + SSE), and a **Next.js frontend**.
 `render.yaml` provisions all four.
