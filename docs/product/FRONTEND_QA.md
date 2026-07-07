@@ -10,6 +10,24 @@
   then run against a running app: `E2E_BASE_URL=http://localhost:3000 npm run test:e2e`.
 - **Typecheck/build gates:** `npx tsc --noEmit` and `npm run build` (both green).
   Test files live under `src/**/*.test.tsx`; `e2e/` is excluded from tsc.
+- **Accessibility (E4-8):** axe-core over core routes in both themes.
+  `npm run test:a11y` (spec: `frontend/e2e/a11y.spec.ts`). Same opt-in setup as
+  E2E plus `npm i -D @axe-core/playwright`. Gate: **critical** violations fail;
+  serious-and-below are logged (ratchet the gate to `serious` once the log is
+  clean). Demo login overridable via `E2E_DEMO_EMAIL` / `E2E_DEMO_PASSWORD`.
+
+  **CI handoff (Krishna — `.github/workflows/ci.yml` is yours):** after the
+  existing frontend build step, boot the app and append:
+  ```yaml
+  - name: a11y (axe) scan
+    working-directory: frontend
+    run: |
+      npm i -D @playwright/test @axe-core/playwright
+      npx playwright install --with-deps chromium
+      npm run test:a11y
+    env:
+      E2E_BASE_URL: http://localhost:3000
+  ```
 
 ## Current coverage (starting point)
 - `src/lib/formatters.test.ts` — guards the **units-vs-AED** honesty convention
@@ -17,6 +35,8 @@
 - `src/app/accept-invite/page.test.tsx` — renders the invalid-link/empty state.
 - `e2e/smoke.spec.ts` — login renders; accept-invite / reset-password show their
   no-token states.
+- `e2e/a11y.spec.ts` — axe scans: public routes, six authenticated routes, and
+  dark-mode passes on `/login` + dashboard (theme seeded via `localStorage.theme`).
 
 This is a foundation, not full coverage. Prioritized next specs: login → dashboard,
 2FA, report export, security/audit page, Sage answer, EN/AR + RTL, SSE-degraded banner.
