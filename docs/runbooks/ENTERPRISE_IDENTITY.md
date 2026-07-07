@@ -11,10 +11,13 @@ SCIM provisioning (E5-1c). Details: [`../security/SSO.md`](../security/SSO.md),
 ## Pilot checklist
 
 **SSO**
-- [ ] Provider configured — insert a `tenant_sso_providers` row (see SSO.md §4); set the client secret env var.
-- [ ] Provider validated — `GET /api/sso/providers?tenant_slug=…` lists it; `SSO_ENABLED=true`, `SSO_OIDC_ENABLED=true`.
-- [ ] SSO login smoke — `POST /api/sso/oidc/start` → sign in at the IdP → callback issues tokens.
+- [ ] Provider configured — `POST /api/sso/admin/providers` (admin) or SQL (SSO.md §4/§10); set the client-secret env var.
+- [ ] Provider validated — `POST /api/sso/admin/providers/{id}/validate` → `ok:true` (diagnostics carry no secrets).
+- [ ] Provider enabled — `POST /api/sso/admin/providers/{id}/enable` (only a valid provider enables).
+- [ ] (Enterprise SAML) managed bridge — create a `workos_saml` provider, `SSO_MANAGED_SAML_BRIDGE_ENABLED=true`, validate + enable. Native `saml` is rejected.
+- [ ] SSO login smoke — `POST /api/sso/oidc/start` → sign in at the IdP/bridge → callback issues tokens.
 - [ ] **Admin MFA block** — an admin without local TOTP is blocked at SSO login (`sso_admin_mfa_required`, 403).
+- [ ] Provider disable — `POST /api/sso/admin/providers/{id}/disable` → `POST /oidc/start` now fails.
 
 **SCIM**
 - [ ] `SCIM_ENABLED=true`; create a token — `POST /api/scim/admin/tokens` (admin only) → copy the raw token once.

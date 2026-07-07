@@ -1,21 +1,24 @@
-# SSO (Single Sign-On) — OIDC foundation (E5-1a)
+# SSO (Single Sign-On) — OIDC + provider operations (E5-1a / E5-1b)
 
-## 1. Support status
+## 1. Enterprise SSO support matrix
 
 | Capability | Status |
 |---|---|
 | **OIDC (authorization code)** | ✅ Implemented (backend) |
-| **Azure AD / Microsoft Entra ID** | ✅ Reference provider |
+| **Azure AD / Microsoft Entra ID (OIDC)** | ✅ Reference provider |
+| **Managed SAML bridge via OIDC** (`provider_type='workos_saml'`) | ✅ **Implemented (E5-1b)** — reuses the OIDC flow when `SSO_MANAGED_SAML_BRIDGE_ENABLED=true` |
+| **Native SAML SP** (`provider_type='saml'`) | ❌ **Not implemented — fail-closed.** Login is rejected with a clear error and a `sso_native_saml_rejected` event. We do **not** hand-roll SAML XML/signature parsing. |
+| Tenant-admin provider management (`/api/sso/admin/providers`) | ✅ **Implemented (E5-1b)** |
+| Provider validation / diagnostics | ✅ **Implemented (E5-1b)** |
 | JIT provisioning into a tenant | ✅ Implemented (analyst-only) |
-| Link external identity to existing user | ✅ Implemented (same tenant only) |
-| Admin MFA fail-closed under SSO | ✅ Implemented |
-| **SAML** | ⚠️ **Config contract only** — `provider_type` `saml`/`workos_saml` exists, but there is **no** SAML SP login path yet. Use a managed SAML→OIDC bridge (e.g. WorkOS) or a future vetted SAML SP. Do **not** assume SAML login works. |
-| Frontend login UI | ❌ Not in this task (backend contract only) |
-| SCIM provisioning | ❌ Deferred |
-| Group→role mapping | ❌ Deferred (JIT default role only) |
+| Link external identity to existing user | ✅ Same-tenant only |
+| Admin MFA fail-closed under SSO | ✅ Implemented (incl. managed bridge) |
+| SCIM provisioning | ✅ Implemented (E5-1c — see [`SCIM.md`](SCIM.md)) |
+| Frontend login/admin UI | ❌ Not in these tasks (backend contract only) |
+| Group→role mapping | ❌ Deferred (JIT/SCIM default role only) |
 
-The implemented login path is **OIDC**. SAML is a forward-compatible config shape,
-not a working login flow — we will not hand-roll SAML XML signature validation.
+The implemented login paths are **OIDC** and the **managed SAML→OIDC bridge**.
+**Native SAML is not a working login flow** and is never offered or claimed.
 
 ## 2. Endpoints (mounted at `/api/sso`)
 
@@ -46,10 +49,10 @@ we add a `return_to` redirect variant).
 Group/role mapping is **not** implemented — JIT users get the provider `default_role`
 (clamped to a safe non-admin role), regardless of IdP groups.
 
-## 4. Tenant provider setup (SQL — no public write endpoint)
+## 4. Tenant provider setup (SQL or admin API)
 
-Provider config is created by an operator (admin write endpoints are intentionally
-deferred). Example (fill real values; the secret stays in env):
+Providers can be created via the **admin API** (§10, recommended) or directly in
+SQL by an operator. SQL example (fill real values; the secret stays in env):
 
 ```sql
 INSERT INTO tenant_sso_providers
@@ -109,9 +112,10 @@ VALUES
 
 ## 7. Known limitations
 
-- No frontend UI in this task (backend contract only).
-- No real SAML login (config contract + docs only).
-- Actual Azure tenant credentials must be configured by an operator; nothing is seeded.
+- No frontend UI in these tasks (backend contract only).
+- **No native SAML SP login** — enterprise SAML is supported only via the managed
+  OIDC bridge (§9); native `saml` providers are fail-closed.
+- Actual IdP/bridge credentials must be configured by an operator; nothing is seeded.
 
 ## 8. SCIM provisioning (lifecycle companion)
 
@@ -121,3 +125,70 @@ bearer-token API at `/api/scim/v2/{tenant_slug}`, OFF by default, and — like J
 can never create admins. See **[`SCIM.md`](SCIM.md)** and the combined pilot
 runbook **[`../runbooks/ENTERPRISE_IDENTITY.md`](../runbooks/ENTERPRISE_IDENTITY.md)**.
 SCIM does not bypass the SSO admin-MFA gate.
+
+## 9. Managed SAML bridge (E5-1b)
+
+Enterprise IdPs that speak **SAML** are supported through a **managed bridge** (e.g.
+WorkOS): the IdP speaks SAML to the bridge, and the bridge speaks **OIDC** to
+Retail IQ. We therefore reuse the entire OIDC security path — no SAML XML or
+signature parsing is done here.
+
+- Create a provider with `provider_type='workos_saml'` and the bridge's
+  issuer/authorization/token/JWKS endpoints + `client_id` + `client_secret_env`.
+- Set `SSO_MANAGED_SAML_BRIDGE_ENABLED=true` to allow bridge logins.
+- Redirect URI: `https://api.<domain>/api/sso/oidc/callback` (same as OIDC).
+- The secret is stored only in the env var named by `client_secret_env`.
+- Allowed domains, JIT, and MFA behave exactly as for OIDC.
+- A bridge login records `sso_managed_saml_bridge_started`; public metadata labels
+  it `managed_saml_bridge` (never "native SAML").
+- `provider_type='saml'` (native) is **rejected** at login with a clear message and
+  a `sso_native_saml_rejected` event.
+
+## 10. Tenant-admin provider management (E5-1b)
+
+Endpoints under `/api/sso/admin/providers` (local JWT, **super_admin/admin/owner**,
+tenant-scoped). Secrets are never returned — only `client_secret_env_configured`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/sso/admin/providers` | List this tenant's providers (safe fields) |
+| POST | `/api/sso/admin/providers` | Create a provider **disabled/draft** (validated) |
+| PATCH | `/api/sso/admin/providers/{id}` | Update safe fields (re-sets status to draft) |
+| POST | `/api/sso/admin/providers/{id}/validate` | Run diagnostics; store status |
+| POST | `/api/sso/admin/providers/{id}/enable` | Enable — **only if valid** |
+| POST | `/api/sso/admin/providers/{id}/disable` | Disable immediately (login blocked) |
+
+**Lifecycle:** create → validate → enable → test login → (disable to roll back).
+Validation checks required fields, `openid` scope, allowed-domain list, **safe
+default role** (never admin), URL safety (HTTPS in prod), and that
+`client_secret_env` is an **env var name** (a pasted secret/URL/JWT is rejected).
+Optional live validation (`SSO_LIVE_PROVIDER_VALIDATION_ENABLED=true`) also checks
+the secret env var exists. Diagnostics contain **no secrets**. Cross-tenant
+provider IDs return 404. Disabling a provider blocks `POST /oidc/start` immediately;
+existing linked identities remain.
+
+## 11. Security model (provider ops)
+- No hand-rolled SAML XML/signature parsing; native SAML is fail-closed.
+- Managed bridge reuses all OIDC checks: single-use state, nonce, issuer, audience,
+  expiry, email verification, tenant scoping, allowed domains, admin-MFA fail-closed.
+- Provider secrets are only env-var **names** in the DB; values live in the
+  environment and are never logged or returned.
+- Admin endpoints are tenant-scoped and admin-gated; no cross-tenant access.
+
+## 12. Acceptance checklist (SSO provider ops)
+- [ ] OIDC provider created + validated + enabled.
+- [ ] Managed bridge provider created + validated (bridge enabled).
+- [ ] `GET /api/sso/providers` returns safe metadata (no secrets; honest labels).
+- [ ] Non-admin SSO login succeeds (analyst).
+- [ ] Admin without local MFA is blocked (`sso_admin_mfa_required`).
+- [ ] Native `saml` provider login rejected (`sso_native_saml_rejected`).
+- [ ] Provider disabled → `POST /oidc/start` fails.
+- [ ] Security events captured; **no secrets in logs**.
+- [ ] SCIM provisioning still works (see [`SCIM.md`](SCIM.md)).
+
+## 13. Disable / rollback (SSO)
+1. Disable the provider: `POST /api/sso/admin/providers/{id}/disable`.
+2. Set `SSO_ENABLED=false` (and `SSO_MANAGED_SAML_BRIDGE_ENABLED=false`) to kill all SSO.
+3. Local super_admin login (with MFA) always remains available.
+4. If the IdP is compromised, also revoke/rotate the SCIM token (see SCIM.md).
+5. Redeploy the previous tag if needed; verify `/health/ready`.

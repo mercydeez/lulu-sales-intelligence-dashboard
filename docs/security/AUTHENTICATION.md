@@ -69,6 +69,11 @@ IdP-driven create/update/deactivate via hashed, tenant-scoped bearer tokens.
 SCIM-provisioned users default to analyst and can never be admin, deactivation
 never hard-deletes, and SCIM does not bypass admin MFA. See [`SCIM.md`](SCIM.md).
 
+**SSO provider operations** (`/api/sso/admin/providers`, E5-1b) let a tenant admin
+create/validate/enable/disable SSO providers (secrets never returned), and enterprise
+**SAML** is supported via a **managed OIDC bridge** (`workos_saml`) — native SAML is
+fail-closed. See [`SSO.md`](SSO.md) §9–§13.
+
 ## Audited events
 `password_reset_requested`, `password_changed`, `user_invited`, `invite_accepted`,
 `mfa_required_admin`, the SSO events (`sso_login_started/succeeded/failed`,

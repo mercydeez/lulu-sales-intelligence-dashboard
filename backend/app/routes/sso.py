@@ -84,6 +84,22 @@ async def oidc_start(body: StartRequest, request: Request, db: AsyncSession = De
     provider = await sso_service.get_oidc_provider(
         db, tenant_id=body.tenant_id, tenant_slug=body.tenant_slug, provider_name=body.provider_name)
     if not provider:
+        # Give a precise, safe error: native SAML is rejected; a disabled managed
+        # bridge is reported as such; otherwise not-found.
+        any_prov = await sso_service.get_enabled_provider(
+            db, tenant_id=body.tenant_id, tenant_slug=body.tenant_slug, provider_name=body.provider_name)
+        if any_prov:
+            cls = sso_service.classify_login_provider(any_prov["provider_type"], s)
+            if cls == "native_saml":
+                await _event("sso_native_saml_rejected", request, severity="medium", category="auth",
+                             tenant_id=any_prov["tenant_id"],
+                             detail=f"Native SAML login rejected for provider '{any_prov['name']}'")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Native SAML login is not implemented. Configure a managed "
+                           "SAML/OIDC bridge provider instead.")
+            if cls == "bridge_disabled":
+                raise HTTPException(status_code=400, detail="managed_saml_bridge_disabled")
         raise HTTPException(status_code=404, detail="provider_not_found")
 
     redirect_uri = _callback_redirect_uri(request)
@@ -96,9 +112,15 @@ async def oidc_start(body: StartRequest, request: Request, db: AsyncSession = De
         raise HTTPException(status_code=500, detail="sso_start_failed")
 
     url = sso_service.build_authorization_url(provider, redirect_uri, state, nonce)
-    await _event("sso_login_started", request, severity="low", category="audit",
-                 tenant_id=provider["tenant_id"],
-                 detail=f"OIDC login started for provider '{provider['name']}'")
+    # Managed SAML bridge reuses the OIDC flow — label the event honestly.
+    if sso_service.is_managed_bridge(provider["provider_type"]):
+        await _event("sso_managed_saml_bridge_started", request, severity="low", category="audit",
+                     tenant_id=provider["tenant_id"],
+                     detail=f"Managed SAML bridge login started for provider '{provider['name']}'")
+    else:
+        await _event("sso_login_started", request, severity="low", category="audit",
+                     tenant_id=provider["tenant_id"],
+                     detail=f"OIDC login started for provider '{provider['name']}'")
     # NOTE: url contains state/nonce (not secrets) — do not log it.
     return {"authorization_url": url, "expires_in": s.sso_state_ttl_seconds}
 
@@ -206,3 +228,138 @@ async def oidc_callback(
         await _event("sso_login_failed", request, severity="medium", category="auth",
                      detail="SSO callback failed: internal_error")
         raise HTTPException(status_code=500, detail="sso_callback_failed")
+
+
+# ===========================================================================
+# E5-1b — Tenant-admin SSO provider operations (/api/sso/admin/providers).
+# Local JWT auth, admin-level role, tenant-scoped. Never returns secrets.
+# ===========================================================================
+from fastapi import Body  # noqa: E402
+from app.routes.auth import require_role  # noqa: E402
+
+_SSO_ADMIN = require_role("super_admin", "admin", "owner")
+
+
+def _sso_admin_guard():
+    if not get_settings().sso_admin_config_enabled:
+        raise HTTPException(status_code=404, detail="sso_admin_config_disabled")
+
+
+def _map_sso_error(e: SsoError):
+    raise HTTPException(status_code=e.status, detail=e.message)
+
+
+class ProviderCreate(BaseModel):
+    name: str
+    provider_type: str = "oidc"
+    issuer: Optional[str] = None
+    authorization_endpoint: Optional[str] = None
+    token_endpoint: Optional[str] = None
+    jwks_uri: Optional[str] = None
+    client_id: Optional[str] = None
+    client_secret_env: Optional[str] = None
+    scopes: Optional[str] = None
+    allowed_domains: Optional[list] = None
+    jit_provisioning_enabled: Optional[bool] = False
+    default_role: Optional[str] = "analyst"
+    trust_idp_mfa: Optional[bool] = False
+
+
+class ProviderUpdate(BaseModel):
+    issuer: Optional[str] = None
+    authorization_endpoint: Optional[str] = None
+    token_endpoint: Optional[str] = None
+    jwks_uri: Optional[str] = None
+    client_id: Optional[str] = None
+    client_secret_env: Optional[str] = None
+    scopes: Optional[str] = None
+    allowed_domains: Optional[list] = None
+    jit_provisioning_enabled: Optional[bool] = None
+    default_role: Optional[str] = None
+    trust_idp_mfa: Optional[bool] = None
+
+
+@router.get("/admin/providers")
+async def admin_list_providers(request: Request, db: AsyncSession = Depends(get_db),
+                               user: dict = Depends(_SSO_ADMIN)):
+    _sso_admin_guard()
+    tenant_id = user.get("tenant_id") or 1
+    return {"providers": await sso_service.admin_list_providers(db, tenant_id)}
+
+
+@router.post("/admin/providers", status_code=201)
+async def admin_create_provider(body: ProviderCreate, request: Request,
+                                db: AsyncSession = Depends(get_db), user: dict = Depends(_SSO_ADMIN)):
+    _sso_admin_guard()
+    tenant_id = user.get("tenant_id") or 1
+    try:
+        view = await sso_service.admin_create_provider(db, tenant_id, body.model_dump(), user["id"])
+    except SsoError as e:
+        _map_sso_error(e)
+    await _event("sso_provider_created", request, severity="medium", category="audit",
+                 tenant_id=tenant_id, actor_user_id=user["id"], actor_email=user.get("email"),
+                 detail=f"SSO provider '{body.name}' ({body.provider_type}) created (id={view['id']})")
+    return view
+
+
+@router.patch("/admin/providers/{provider_id}")
+async def admin_update_provider(provider_id: int, body: ProviderUpdate, request: Request,
+                                db: AsyncSession = Depends(get_db), user: dict = Depends(_SSO_ADMIN)):
+    _sso_admin_guard()
+    tenant_id = user.get("tenant_id") or 1
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    try:
+        view = await sso_service.admin_update_provider(db, tenant_id, provider_id, updates, user["id"])
+    except SsoError as e:
+        _map_sso_error(e)
+    await _event("sso_provider_updated", request, severity="low", category="audit",
+                 tenant_id=tenant_id, actor_user_id=user["id"], actor_email=user.get("email"),
+                 detail=f"SSO provider {provider_id} updated")
+    return view
+
+
+@router.post("/admin/providers/{provider_id}/validate")
+async def admin_validate_provider(provider_id: int, request: Request,
+                                  db: AsyncSession = Depends(get_db), user: dict = Depends(_SSO_ADMIN)):
+    _sso_admin_guard()
+    tenant_id = user.get("tenant_id") or 1
+    try:
+        diag = await sso_service.admin_validate_provider(db, tenant_id, provider_id)
+    except SsoError as e:
+        _map_sso_error(e)
+    evt = "sso_provider_validated" if diag["ok"] else "sso_provider_validation_failed"
+    sev = "low" if diag["ok"] else "medium"
+    await _event(evt, request, severity=sev, category="audit", tenant_id=tenant_id,
+                 actor_user_id=user["id"], actor_email=user.get("email"),
+                 detail=f"SSO provider {provider_id} validation: {'ok' if diag['ok'] else 'failed'}")
+    return diag  # safe diagnostics (no secrets)
+
+
+@router.post("/admin/providers/{provider_id}/enable")
+async def admin_enable_provider(provider_id: int, request: Request,
+                                db: AsyncSession = Depends(get_db), user: dict = Depends(_SSO_ADMIN)):
+    _sso_admin_guard()
+    tenant_id = user.get("tenant_id") or 1
+    try:
+        view = await sso_service.admin_enable_provider(db, tenant_id, provider_id)
+    except SsoError as e:
+        _map_sso_error(e)
+    await _event("sso_provider_enabled", request, severity="medium", category="audit",
+                 tenant_id=tenant_id, actor_user_id=user["id"], actor_email=user.get("email"),
+                 detail=f"SSO provider {provider_id} enabled")
+    return view
+
+
+@router.post("/admin/providers/{provider_id}/disable")
+async def admin_disable_provider(provider_id: int, request: Request,
+                                 db: AsyncSession = Depends(get_db), user: dict = Depends(_SSO_ADMIN)):
+    _sso_admin_guard()
+    tenant_id = user.get("tenant_id") or 1
+    try:
+        view = await sso_service.admin_disable_provider(db, tenant_id, provider_id, user["id"])
+    except SsoError as e:
+        _map_sso_error(e)
+    await _event("sso_provider_disabled", request, severity="medium", category="audit",
+                 tenant_id=tenant_id, actor_user_id=user["id"], actor_email=user.get("email"),
+                 detail=f"SSO provider {provider_id} disabled")
+    return view

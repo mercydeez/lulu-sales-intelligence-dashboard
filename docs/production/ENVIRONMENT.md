@@ -87,6 +87,11 @@ Enterprise OIDC login, OFF by default. Full setup + security model: [`../securit
 | `SSO_ALLOWED_REDIRECT_HOSTS` | str | "" | Comma-separated hosts a `return_to` may target |
 | `SSO_MAX_RETURN_TO_LENGTH` | int | 500 | Max `return_to` length |
 | `<client_secret_env>` | secret | — | Per-provider client secret; the env var **name** is stored in `tenant_sso_providers.client_secret_env`, the value only in the environment (e.g. `SSO_AZURE_CLIENT_SECRET`). **Never commit it.** |
+| `SSO_ADMIN_CONFIG_ENABLED` | bool | true | Enable the tenant-admin provider endpoints (`/api/sso/admin/providers`) |
+| `SSO_MANAGED_SAML_BRIDGE_ENABLED` | bool | false | Allow `workos_saml` (managed SAML→OIDC bridge) logins |
+| `SSO_NATIVE_SAML_ENABLED` | bool | false | Native SAML SP — **not implemented**; stays off (fail-closed) |
+| `SSO_LIVE_PROVIDER_VALIDATION_ENABLED` | bool | false | On validate, also check the secret env var exists (and discovery/JWKS) |
+| `SSO_PROVIDER_VALIDATION_TIMEOUT_SECONDS` | int | 5 | Timeout for live provider validation |
 
 ## SCIM provisioning (E5-1c)
 

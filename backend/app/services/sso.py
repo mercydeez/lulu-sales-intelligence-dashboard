@@ -196,11 +196,14 @@ def admin_mfa_block_reason(
 
 
 def public_provider_view(provider: Dict[str, Any], include_admin_fields: bool = False) -> Dict[str, Any]:
-    """Public-safe provider metadata (NO client_secret_env unless admin)."""
+    """Public-safe provider metadata (NO client_secret_env unless admin). The
+    `login_type` label is honest: 'oidc' or 'managed_saml_bridge' (never claims
+    native SAML)."""
     out = {
         "id": provider.get("id"),
         "name": provider.get("name"),
         "provider_type": provider.get("provider_type"),
+        "login_type": login_type_label(provider.get("provider_type")),
         "enabled": provider.get("enabled"),
         "issuer": provider.get("issuer"),
         "jit_provisioning_enabled": provider.get("jit_provisioning_enabled"),
@@ -301,6 +304,48 @@ def _ensure_oidc_enabled() -> None:
         raise SsoError("sso_disabled", 404)
 
 
+# E5-1b: which provider_types can drive the OIDC login flow. A managed SAML bridge
+# (workos_saml) speaks OIDC to us, so it reuses the OIDC flow when enabled. Native
+# `saml` is NEVER login-usable (fail-closed).
+MANAGED_BRIDGE_TYPES = {"workos_saml"}
+NATIVE_SAML_TYPES = {"saml"}
+
+
+def oidc_compatible_types(settings=None) -> List[str]:
+    """Provider types that may complete the OIDC authorization-code flow."""
+    s = settings or get_settings()
+    types = ["oidc"]
+    if s.sso_managed_saml_bridge_enabled:
+        types.append("workos_saml")
+    return types
+
+
+def is_managed_bridge(provider_type: Optional[str]) -> bool:
+    return (provider_type or "") in MANAGED_BRIDGE_TYPES
+
+
+def login_type_label(provider_type: Optional[str]) -> str:
+    """Honest label for public metadata."""
+    if provider_type in MANAGED_BRIDGE_TYPES:
+        return "managed_saml_bridge"
+    if provider_type in NATIVE_SAML_TYPES:
+        return "native_saml_unsupported"
+    return "oidc"
+
+
+def classify_login_provider(provider_type: Optional[str], settings=None) -> str:
+    """How a provider_type resolves for LOGIN:
+    'oidc_ok' | 'bridge_ok' | 'bridge_disabled' | 'native_saml' | 'unsupported'."""
+    s = settings or get_settings()
+    if provider_type == "oidc":
+        return "oidc_ok"
+    if provider_type in MANAGED_BRIDGE_TYPES:
+        return "bridge_ok" if s.sso_managed_saml_bridge_enabled else "bridge_disabled"
+    if provider_type in NATIVE_SAML_TYPES:
+        return "native_saml"
+    return "unsupported"
+
+
 async def get_oidc_provider(
     session: AsyncSession,
     *,
@@ -308,9 +353,11 @@ async def get_oidc_provider(
     tenant_slug: Optional[str] = None,
     provider_name: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Load one ENABLED oidc provider, scoped to a tenant (by id or slug)."""
-    where = ["p.enabled = true", "p.provider_type = 'oidc'"]
-    params: Dict[str, Any] = {}
+    """Load one ENABLED, OIDC-compatible provider (oidc, or managed bridge when
+    enabled), scoped to a tenant. Native SAML is never returned here."""
+    types = oidc_compatible_types()
+    where = ["p.enabled = true", "p.provider_type = ANY(:types)"]
+    params: Dict[str, Any] = {"types": types}
     if tenant_id is not None:
         where.append("p.tenant_id = :tid")
         params["tid"] = tenant_id
@@ -328,10 +375,31 @@ async def get_oidc_provider(
 
 
 async def get_provider_by_id(session: AsyncSession, provider_id: int) -> Optional[Dict[str, Any]]:
-    """Load an ENABLED oidc provider by id (used at callback via the state row)."""
+    """Load an ENABLED, OIDC-compatible provider by id (callback via the state row)."""
     row = (await session.execute(text(
-        "SELECT * FROM tenant_sso_providers WHERE id = :id AND enabled = true AND provider_type = 'oidc'"
-    ), {"id": provider_id})).mappings().first()
+        "SELECT * FROM tenant_sso_providers WHERE id = :id AND enabled = true "
+        "AND provider_type = ANY(:types)"
+    ), {"id": provider_id, "types": oidc_compatible_types()})).mappings().first()
+    return dict(row) if row else None
+
+
+async def get_enabled_provider(session: AsyncSession, *, tenant_id: Optional[int] = None,
+                               tenant_slug: Optional[str] = None,
+                               provider_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Load ANY enabled provider (any type) — used to give a precise login error
+    (native SAML rejected / bridge disabled) when get_oidc_provider returns None."""
+    where = ["p.enabled = true"]
+    params: Dict[str, Any] = {}
+    if tenant_id is not None:
+        where.append("p.tenant_id = :tid"); params["tid"] = tenant_id
+    elif tenant_slug is not None:
+        where.append("p.tenant_id = (SELECT id FROM tenants WHERE slug = :slug)"); params["slug"] = tenant_slug
+    else:
+        return None
+    if provider_name:
+        where.append("p.name = :pname"); params["pname"] = provider_name
+    sql = "SELECT p.* FROM tenant_sso_providers p WHERE " + " AND ".join(where) + " ORDER BY p.id LIMIT 1"
+    row = (await session.execute(text(sql), params)).mappings().first()
     return dict(row) if row else None
 
 
@@ -349,7 +417,10 @@ async def list_providers_public(session: AsyncSession, *, tenant_slug: Optional[
         return []
     sql = "SELECT p.* FROM tenant_sso_providers p WHERE " + " AND ".join(where) + " ORDER BY p.name"
     rows = (await session.execute(text(sql), params)).mappings().all()
-    return [public_provider_view(dict(r)) for r in rows]
+    # Only OFFER providers that can actually complete a login: OIDC, or a managed
+    # bridge when enabled. Native SAML / disabled bridges are never offered.
+    usable = {t for t in oidc_compatible_types()}
+    return [public_provider_view(dict(r)) for r in rows if r["provider_type"] in usable]
 
 
 async def create_auth_state(
@@ -521,3 +592,317 @@ async def _insert_identity(session, tenant_id, user_id, provider_id, issuer, sub
     """), {"tid": tenant_id, "uid": user_id, "pid": provider_id, "iss": issuer,
            "sub": subject, "email": email, "ev": verified, "claims": json.dumps(safe_claims)})
     await session.commit()
+
+
+# ===========================================================================
+# E5-1b — Provider validation + tenant-admin provider operations.
+# ===========================================================================
+import re as _re
+
+_ENV_NAME_RE = _re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
+
+
+def is_env_var_name(value) -> bool:
+    """True if `value` looks like an ENV VAR NAME (e.g. SSO_AZURE_CLIENT_SECRET),
+    not a secret value."""
+    return bool(value) and bool(_ENV_NAME_RE.match(str(value)))
+
+
+def looks_like_secret_value(value) -> bool:
+    """Heuristic: does `value` look like an actual secret / URL / JWT / long token
+    rather than an env var name? Used to reject a secret pasted into
+    client_secret_env."""
+    if not value:
+        return False
+    s = str(value)
+    if "://" in s:
+        return True                      # a URL
+    if s.count(".") >= 2 and len(s) > 30:
+        return True                      # JWT-ish
+    if len(s) >= 24 and not is_env_var_name(s):
+        return True                      # long random token, not an env name
+    return False
+
+
+def validate_provider_configuration(provider: Dict[str, Any], settings=None, *, live: bool = False) -> Dict[str, Any]:
+    """Validate a provider config. Pure (no network) — `live` only checks that the
+    secret ENV VAR exists via os.environ. Returns safe diagnostics (NO secrets)."""
+    s = settings or get_settings()
+    errors: List[str] = []
+    warnings: List[str] = []
+    checks: Dict[str, Any] = {}
+
+    ptype = provider.get("provider_type")
+    checks["provider_type"] = ptype
+    cl = classify_login_provider(ptype, s)
+    if cl == "native_saml":
+        errors.append("native_saml_not_implemented")
+    elif cl == "unsupported":
+        errors.append(f"unsupported_provider_type:{ptype}")
+    elif cl == "bridge_disabled":
+        warnings.append("managed_saml_bridge_disabled")  # valid draft; login stays off until enabled
+
+    for f in ("name", "issuer", "authorization_endpoint", "token_endpoint", "jwks_uri", "client_id"):
+        if not provider.get(f):
+            errors.append(f"missing:{f}")
+        else:
+            checks[f] = "present"
+
+    cse = provider.get("client_secret_env")
+    if not cse:
+        errors.append("missing:client_secret_env")
+    elif looks_like_secret_value(cse) or not is_env_var_name(cse):
+        errors.append("client_secret_env_must_be_env_name")  # never store a raw secret
+    else:
+        checks["client_secret_env"] = "env_name_ok"
+
+    scopes = (provider.get("scopes") or "")
+    if "openid" not in str(scopes).split():
+        errors.append("scopes_missing_openid")
+
+    ad = provider.get("allowed_domains")
+    if ad is not None and not isinstance(ad, list):
+        errors.append("allowed_domains_not_list")
+    if provider.get("jit_provisioning_enabled") and not ad:
+        errors.append("jit_requires_allowed_domains")
+
+    role = provider.get("default_role") or "analyst"
+    if clamp_jit_role(role) != str(role).lower():
+        errors.append("privileged_default_role")
+    else:
+        checks["default_role"] = "safe"
+
+    prod = s.environment in ("production", "staging")
+    for f in ("issuer", "authorization_endpoint", "token_endpoint", "jwks_uri"):
+        u = provider.get(f)
+        if not u:
+            continue
+        if prod and not str(u).startswith("https://"):
+            errors.append(f"insecure_url:{f}")
+        elif not prod and not (str(u).startswith("https://") or str(u).startswith("http://localhost")
+                               or str(u).startswith("http://127.0.0.1")):
+            warnings.append(f"nonstandard_url:{f}")
+
+    if live and cse and is_env_var_name(cse) and not os.environ.get(cse):
+        errors.append("secret_env_missing")
+
+    return {
+        "ok": len(errors) == 0,
+        "checks": checks,
+        "warnings": warnings,
+        "errors": errors,
+        "provider_type": ptype,
+        "managed_bridge": is_managed_bridge(ptype),
+    }
+
+
+def admin_provider_view(provider: Dict[str, Any]) -> Dict[str, Any]:
+    """Admin-safe provider view. NEVER returns client_secret_env's value/name —
+    only whether it is configured."""
+    meta = provider.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except Exception:
+            meta = {}
+    return {
+        "id": provider.get("id"),
+        "name": provider.get("name"),
+        "provider_type": provider.get("provider_type"),
+        "login_type": login_type_label(provider.get("provider_type")),
+        "managed_bridge": is_managed_bridge(provider.get("provider_type")),
+        "enabled": provider.get("enabled"),
+        "status": meta.get("status", "draft"),
+        "issuer": provider.get("issuer"),
+        "client_id": provider.get("client_id"),
+        "scopes": provider.get("scopes"),
+        "allowed_domains": provider.get("allowed_domains"),
+        "jit_provisioning_enabled": provider.get("jit_provisioning_enabled"),
+        "default_role": provider.get("default_role"),
+        "trust_idp_mfa": provider.get("trust_idp_mfa"),
+        "client_secret_env_configured": bool(provider.get("client_secret_env")),
+        "last_validated_at": meta.get("last_validated_at"),
+        "last_validation_error": meta.get("last_validation_error"),
+    }
+
+
+import json  # noqa: E402  (used by admin_provider_view + metadata writes)
+
+# safe provider_types the admin API may CREATE (native saml is never login-usable)
+_CREATABLE_TYPES = {"oidc", "workos_saml"}
+
+
+async def admin_list_providers(session: AsyncSession, tenant_id: int) -> List[Dict[str, Any]]:
+    rows = (await session.execute(text(
+        "SELECT * FROM tenant_sso_providers WHERE tenant_id = :tid ORDER BY id"
+    ), {"tid": tenant_id})).mappings().all()
+    return [admin_provider_view(dict(r)) for r in rows]
+
+
+async def admin_get_provider(session: AsyncSession, tenant_id: int, provider_id: int) -> Optional[Dict[str, Any]]:
+    r = (await session.execute(text(
+        "SELECT * FROM tenant_sso_providers WHERE id = :id AND tenant_id = :tid"
+    ), {"id": provider_id, "tid": tenant_id})).mappings().first()
+    return dict(r) if r else None
+
+
+async def _write_metadata(session, tenant_id, provider_id, updates: Dict[str, Any]) -> None:
+    cur = await admin_get_provider(session, tenant_id, provider_id)
+    meta = cur.get("metadata") if cur else {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except Exception:
+            meta = {}
+    meta = {**(meta or {}), **updates}
+    await session.execute(text(
+        "UPDATE tenant_sso_providers SET metadata = CAST(:m AS jsonb), updated_at = now() "
+        "WHERE id = :id AND tenant_id = :tid"), {"m": json.dumps(meta), "id": provider_id, "tid": tenant_id})
+
+
+async def admin_create_provider(session: AsyncSession, tenant_id: int, body: Dict[str, Any],
+                                created_by: int) -> Dict[str, Any]:
+    ptype = body.get("provider_type")
+    if ptype not in _CREATABLE_TYPES:
+        if ptype in NATIVE_SAML_TYPES:
+            raise SsoError("native_saml_not_supported", 400,
+                           "Native SAML login is not implemented. Configure a managed "
+                           "SAML/OIDC bridge provider (provider_type='workos_saml') instead.")
+        raise SsoError("unsupported_provider_type", 400)
+
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise SsoError("missing_name", 400)
+    dup = (await session.execute(text(
+        "SELECT id FROM tenant_sso_providers WHERE tenant_id = :tid AND name = :n"
+    ), {"tid": tenant_id, "n": name})).mappings().first()
+    if dup:
+        raise SsoError("duplicate_provider_name", 409)
+
+    role = clamp_jit_role(body.get("default_role") or "analyst")
+    if (body.get("default_role") or "analyst").lower() in _ADMIN_ROLES:
+        raise SsoError("privileged_default_role", 400,
+                       "default_role cannot be a privileged/admin role")
+
+    draft = {
+        "provider_type": ptype, "name": name, "issuer": body.get("issuer"),
+        "authorization_endpoint": body.get("authorization_endpoint"),
+        "token_endpoint": body.get("token_endpoint"), "jwks_uri": body.get("jwks_uri"),
+        "client_id": body.get("client_id"), "client_secret_env": body.get("client_secret_env"),
+        "scopes": body.get("scopes") or "openid email profile",
+        "allowed_domains": body.get("allowed_domains") or [],
+        "jit_provisioning_enabled": bool(body.get("jit_provisioning_enabled")),
+        "default_role": role, "trust_idp_mfa": bool(body.get("trust_idp_mfa")),
+    }
+    # Validate config up front — reject unsafe URLs / secret-in-env-name / etc.
+    diag = validate_provider_configuration(draft, get_settings(), live=False)
+    # A disabled managed bridge is a valid DRAFT (warning only); block only on errors.
+    if diag["errors"]:
+        raise SsoError("invalid_provider_config", 400, "; ".join(diag["errors"]))
+
+    row = (await session.execute(text("""
+        INSERT INTO tenant_sso_providers
+            (tenant_id, provider_type, name, enabled, issuer, authorization_endpoint,
+             token_endpoint, jwks_uri, client_id, client_secret_env, scopes, allowed_domains,
+             jit_provisioning_enabled, default_role, trust_idp_mfa, metadata)
+        VALUES (:tid, :pt, :name, false, :iss, :auth, :tok, :jwks, :cid, :cse, :scopes,
+                CAST(:ad AS jsonb), :jit, CAST(:role AS user_role), :mfa, CAST(:meta AS jsonb))
+        RETURNING id
+    """), {
+        "tid": tenant_id, "pt": ptype, "name": name, "iss": draft["issuer"],
+        "auth": draft["authorization_endpoint"], "tok": draft["token_endpoint"], "jwks": draft["jwks_uri"],
+        "cid": draft["client_id"], "cse": draft["client_secret_env"], "scopes": draft["scopes"],
+        "ad": json.dumps(draft["allowed_domains"]), "jit": draft["jit_provisioning_enabled"],
+        "role": role, "mfa": draft["trust_idp_mfa"],
+        "meta": json.dumps({"status": "draft", "created_by": created_by}),
+    })).mappings().first()
+    await session.commit()
+    return admin_provider_view(await admin_get_provider(session, tenant_id, row["id"]))
+
+
+_UPDATABLE_FIELDS = ("issuer", "authorization_endpoint", "token_endpoint", "jwks_uri",
+                     "client_id", "client_secret_env", "scopes", "jit_provisioning_enabled",
+                     "trust_idp_mfa")
+
+
+async def admin_update_provider(session: AsyncSession, tenant_id: int, provider_id: int,
+                                body: Dict[str, Any], updated_by: int) -> Dict[str, Any]:
+    prov = await admin_get_provider(session, tenant_id, provider_id)
+    if not prov:
+        raise SsoError("provider_not_found", 404)
+
+    sets, params = [], {"id": provider_id, "tid": tenant_id}
+    for f in _UPDATABLE_FIELDS:
+        if f in body:
+            sets.append(f"{f} = :{f}")
+            params[f] = body[f]
+    if "allowed_domains" in body:
+        if not isinstance(body["allowed_domains"], list):
+            raise SsoError("allowed_domains_not_list", 400)
+        sets.append("allowed_domains = CAST(:ad AS jsonb)")
+        params["ad"] = json.dumps(body["allowed_domains"])
+    if "default_role" in body:
+        if (body["default_role"] or "").lower() in _ADMIN_ROLES:
+            raise SsoError("privileged_default_role", 400)
+        sets.append("default_role = CAST(:role AS user_role)")
+        params["role"] = clamp_jit_role(body["default_role"])
+    # tenant_id and provider_type are NOT updatable.
+    if not sets:
+        return prov
+    await session.execute(text(
+        f"UPDATE tenant_sso_providers SET {', '.join(sets)}, updated_at = now() "
+        f"WHERE id = :id AND tenant_id = :tid"), params)
+    # config changed -> require re-validation before it can be (re)enabled
+    await _write_metadata(session, tenant_id, provider_id, {"status": "draft", "updated_by": updated_by})
+    await session.commit()
+    return admin_provider_view(await admin_get_provider(session, tenant_id, provider_id))
+
+
+async def admin_validate_provider(session: AsyncSession, tenant_id: int, provider_id: int,
+                                  *, live: Optional[bool] = None) -> Dict[str, Any]:
+    prov = await admin_get_provider(session, tenant_id, provider_id)
+    if not prov:
+        raise SsoError("provider_not_found", 404)
+    s = get_settings()
+    do_live = s.sso_live_provider_validation_enabled if live is None else live
+    diag = validate_provider_configuration(prov, s, live=do_live)
+    from datetime import datetime as _dt, timezone as _tz
+    await _write_metadata(session, tenant_id, provider_id, {
+        "status": "valid" if diag["ok"] else "invalid",
+        "last_validated_at": _dt.now(_tz.utc).isoformat(),
+        "last_validation_error": None if diag["ok"] else "; ".join(diag["errors"]),
+    })
+    await session.commit()
+    return diag
+
+
+async def admin_enable_provider(session: AsyncSession, tenant_id: int, provider_id: int) -> Dict[str, Any]:
+    prov = await admin_get_provider(session, tenant_id, provider_id)
+    if not prov:
+        raise SsoError("provider_not_found", 404)
+    # Re-validate now; only a VALID config may be enabled.
+    diag = validate_provider_configuration(prov, get_settings(), live=False)
+    if not diag["ok"]:
+        raise SsoError("cannot_enable_invalid_provider", 400, "; ".join(diag["errors"]))
+    await session.execute(text(
+        "UPDATE tenant_sso_providers SET enabled = true, updated_at = now() WHERE id = :id AND tenant_id = :tid"),
+        {"id": provider_id, "tid": tenant_id})
+    await _write_metadata(session, tenant_id, provider_id, {"status": "valid"})
+    await session.commit()
+    return admin_provider_view(await admin_get_provider(session, tenant_id, provider_id))
+
+
+async def admin_disable_provider(session: AsyncSession, tenant_id: int, provider_id: int,
+                                 disabled_by: int) -> Dict[str, Any]:
+    prov = await admin_get_provider(session, tenant_id, provider_id)
+    if not prov:
+        raise SsoError("provider_not_found", 404)
+    from datetime import datetime as _dt, timezone as _tz
+    await session.execute(text(
+        "UPDATE tenant_sso_providers SET enabled = false, updated_at = now() WHERE id = :id AND tenant_id = :tid"),
+        {"id": provider_id, "tid": tenant_id})
+    await _write_metadata(session, tenant_id, provider_id,
+                          {"status": "disabled", "disabled_at": _dt.now(_tz.utc).isoformat(),
+                           "disabled_by": disabled_by})
+    await session.commit()
+    return admin_provider_view(await admin_get_provider(session, tenant_id, provider_id))

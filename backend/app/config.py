@@ -243,6 +243,13 @@ class Settings(BaseSettings):
     sso_allowed_redirect_hosts: str = ""
     sso_max_return_to_length: int = 500
 
+    # --- E5-1b SSO provider operations + managed SAML bridge (Krishna) ------
+    sso_admin_config_enabled: bool = True          # tenant-admin provider mgmt endpoints
+    sso_managed_saml_bridge_enabled: bool = False  # allow workos_saml (SAML->OIDC bridge) login
+    sso_native_saml_enabled: bool = False          # native SAML SP — NOT implemented; stays off
+    sso_live_provider_validation_enabled: bool = False   # hit discovery/JWKS during validate
+    sso_provider_validation_timeout_seconds: int = 5
+
     # --- E5-1c SCIM enterprise provisioning (Krishna security) -------------
     # SCIM is OFF by default. Per-tenant bearer tokens (hashed at rest) authorize
     # the SCIM protocol endpoints. SCIM-provisioned users default to analyst and

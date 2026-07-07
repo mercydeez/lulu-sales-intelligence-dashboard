@@ -3,6 +3,10 @@
 SCIM 2.0-compatible provisioning that pairs with SSO ([`SSO.md`](SSO.md)): the IdP
 creates/updates/deactivates users in Retail IQ automatically.
 
+> SCIM is the **identity-lifecycle** layer. **SSO login** (OIDC / managed SAML
+> bridge) and **tenant-admin provider management** (`/api/sso/admin/providers`)
+> are documented in [`SSO.md`](SSO.md) (E5-1a / E5-1b).
+
 ## 1. Support status
 
 | Capability | Status |
