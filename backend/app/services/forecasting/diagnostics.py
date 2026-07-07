@@ -22,7 +22,21 @@ from .engine import (
     _feature_columns,
     SeasonalTrend,
     LightGBMForecaster,
+    _mape,
     _wape,
+)
+from .calendar_features import uae_calendar_features, calendar_feature_summary
+
+FORECASTING_VERSION = "v2_uae_calendar"
+BASELINE_MODEL = "seasonal_naive"
+METHODOLOGY_NOTE = (
+    "Forecasts compare the selected model's error against a seasonal-naive baseline "
+    "(WAPE/MAPE on held-out actuals). E7-1 adds UAE retail-calendar features "
+    "(Ramadan/Eid/DSF/National Day/back-to-school/summer). UAE lunar dates "
+    "(Ramadan/Eid) are approximate until confirmed against official UAE sources. "
+    "Weather features are optional and neutral when unavailable. Ramadan-window "
+    "accuracy is reported only when the backtest window contains Ramadan dates; "
+    "no LLM is involved in forecasting accuracy."
 )
 
 _FEATURE_LABELS = {
@@ -50,11 +64,66 @@ def _acc_from_wape(wape: Optional[float]) -> Optional[float]:
     return max(0.0, round(100 - wape, 1))
 
 
+def wape_improvement_vs_baseline_pct(
+    baseline_wape: Optional[float], selected_wape: Optional[float]
+) -> Optional[float]:
+    """How much lower the selected model's WAPE is than seasonal-naive, in %.
+    Positive => the model beats the baseline. Safe (None) when the baseline WAPE
+    is missing or zero (no div-by-zero)."""
+    if baseline_wape is None or selected_wape is None or baseline_wape == 0:
+        return None
+    return round((baseline_wape - selected_wape) / baseline_wape * 100, 1)
+
+
+def ramadan_window_accuracy(backtest_points: List[dict]) -> dict:
+    """Accuracy of the selected model on the Ramadan subset of its held-out
+    backtest window. Reuses the already-computed [{date, actual, predicted}] —
+    no extra training. Honest by construction:
+
+      * no backtest window at all     -> reason ``no_backtest_window``
+      * window has no Ramadan dates    -> reason ``no_ramadan_dates_in_backtest_window``
+      * otherwise                      -> MAPE/WAPE/accuracy over the Ramadan days.
+    """
+    empty = {
+        "ramadan_accuracy": None,
+        "ramadan_mape": None,
+        "ramadan_wape": None,
+        "ramadan_eval_days": 0,
+        "ramadan_accuracy_reason": "no_backtest_window",
+    }
+    if not backtest_points:
+        return empty
+    try:
+        dates = pd.to_datetime([p["date"] for p in backtest_points])
+        feats = uae_calendar_features(dates)
+        mask = np.asarray(feats["uae_is_ramadan"].values) == 1
+        if not mask.any():
+            return {**empty, "ramadan_accuracy_reason": "no_ramadan_dates_in_backtest_window"}
+        actual = np.asarray([float(p["actual"]) for p in backtest_points])[mask]
+        pred = np.asarray([float(p["predicted"]) for p in backtest_points])[mask]
+        mape, wape = _mape(actual, pred), _wape(actual, pred)
+        return {
+            "ramadan_accuracy": _acc_from_wape(wape),
+            "ramadan_mape": round(mape, 1) if mape is not None else None,
+            "ramadan_wape": round(wape, 1) if wape is not None else None,
+            "ramadan_eval_days": int(mask.sum()),
+            "ramadan_accuracy_reason": "ok",
+        }
+    except Exception:
+        return empty
+
+
 def forecast_summary(history: pd.DataFrame, horizon: int = 14) -> dict:
-    """Run the engine's backtest and shape it for the exec view + leaderboard."""
+    """Run the engine's backtest and shape it for the exec view + leaderboard.
+
+    E7-1 adds v2 accuracy fields (seasonal-naive baseline, WAPE improvement,
+    Ramadan-window accuracy, calendar-feature summary + methodology note). All new
+    fields are ADDITIVE — every pre-existing field is unchanged and backward
+    compatible."""
     res = forecast_series(history, horizon).to_dict()
+    scores = res.get("scores") or {}
     leaderboard = []
-    for name, sc in (res.get("scores") or {}).items():
+    for name, sc in scores.items():
         if isinstance(sc, dict) and sc.get("wape") is not None:
             leaderboard.append({
                 "model": name,
@@ -63,15 +132,35 @@ def forecast_summary(history: pd.DataFrame, horizon: int = 14) -> dict:
                 "mape": round(sc["mape"], 1) if sc.get("mape") is not None else None,
             })
     leaderboard.sort(key=lambda x: (x["accuracy"] is not None, x["accuracy"] or 0), reverse=True)
-    return {
+
+    # --- v2 accuracy: baseline (seasonal-naive) vs selected, Ramadan window ---
+    baseline = scores.get(BASELINE_MODEL) if isinstance(scores.get(BASELINE_MODEL), dict) else {}
+    baseline_wape = baseline.get("wape")
+    baseline_mape = baseline.get("mape")
+    selected_wape = res.get("selected_wape")
+    selected_mape = res.get("selected_mape")
+
+    summary = {
         "selected_model": res.get("model"),
-        "accuracy": _acc_from_wape(res.get("selected_wape")),
-        "mape": round(res["selected_mape"], 1) if res.get("selected_mape") is not None else None,
+        "accuracy": _acc_from_wape(selected_wape),
+        "mape": round(selected_mape, 1) if selected_mape is not None else None,
         "leaderboard": leaderboard,
         "forecast": res.get("points", []),
         "backtest": res.get("backtest", []),
         "interval_pct": res.get("interval_pct"),
+        # --- E7-1 v2 additive fields ---
+        "forecasting_version": FORECASTING_VERSION,
+        "baseline_model": BASELINE_MODEL,
+        "baseline_mape": round(baseline_mape, 1) if baseline_mape is not None else None,
+        "baseline_wape": round(baseline_wape, 1) if baseline_wape is not None else None,
+        "selected_model_mape": round(selected_mape, 1) if selected_mape is not None else None,
+        "selected_model_wape": round(selected_wape, 1) if selected_wape is not None else None,
+        "wape_improvement_vs_baseline_pct": wape_improvement_vs_baseline_pct(baseline_wape, selected_wape),
+        "calendar_feature_summary": calendar_feature_summary(uses_weather=False),
+        "methodology_note": METHODOLOGY_NOTE,
     }
+    summary.update(ramadan_window_accuracy(summary["backtest"]))
+    return summary
 
 
 def accuracy_over_time(

@@ -713,6 +713,25 @@ def _empty_model_metrics(status: str = "ready") -> dict:
         "feature_importance": [], "classifier": {}, "heatmap": [],
         "category_heatmap": [], "item_accuracy": [],
         "business_impact": {}, "status": status,
+        # --- E7-1 Forecasting v2 fields (safe defaults; populated by
+        # diagnostics.forecast_summary once history exists) ---
+        "forecasting_version": "v2_uae_calendar",
+        "baseline_model": "seasonal_naive",
+        "baseline_mape": None, "baseline_wape": None,
+        "selected_model_mape": None, "selected_model_wape": None,
+        "wape_improvement_vs_baseline_pct": None,
+        "ramadan_accuracy": None, "ramadan_mape": None, "ramadan_wape": None,
+        "ramadan_eval_days": 0, "ramadan_accuracy_reason": "not_computed",
+        "calendar_feature_summary": {
+            "uses_uae_calendar": True, "uses_weather_features": False,
+            "lunar_dates_approximate": True,
+        },
+        "methodology_note": (
+            "Forecasts compare the selected model against a seasonal-naive baseline. "
+            "UAE lunar dates are approximate until confirmed; weather features are "
+            "neutral when unavailable; Ramadan accuracy is reported only when the "
+            "backtest window contains Ramadan dates."
+        ),
     }
 
 

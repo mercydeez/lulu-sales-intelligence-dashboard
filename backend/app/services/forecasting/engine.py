@@ -23,6 +23,8 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from .calendar_features import uae_calendar_features, UAE_FEATURE_COLUMNS
+
 LAGS = (1, 7, 14, 28)
 ROLL = (7, 14, 28)
 
@@ -31,7 +33,10 @@ ROLL = (7, 14, 28)
 # Feature engineering
 # ---------------------------------------------------------------------------
 def _calendar(idx: pd.DatetimeIndex) -> pd.DataFrame:
-    return pd.DataFrame(
+    """Base calendar features + the UAE retail-calendar features (E7-1). The UAE
+    features are FUTURE-KNOWN (derivable from the date), so they are safe for
+    recursive forecasting and never introduce target leakage."""
+    base = pd.DataFrame(
         {
             "dow": idx.dayofweek,
             "dom": idx.day,
@@ -41,19 +46,32 @@ def _calendar(idx: pd.DatetimeIndex) -> pd.DataFrame:
         },
         index=idx,
     )
+    uae = uae_calendar_features(idx)
+    return pd.concat([base, uae], axis=1)
 
 
-def _feature_columns() -> List[str]:
+def _feature_columns(exog_cols: Optional[List[str]] = None) -> List[str]:
+    """Model feature columns. UAE calendar features are always included (E7-1);
+    `exog_cols` (e.g. weather) are appended only when exogenous features are
+    supplied to _build_features — the default path is unchanged."""
     cols = ["dow", "dom", "month", "weekofyear", "is_weekend"]
+    cols += list(UAE_FEATURE_COLUMNS)
     cols += [f"lag_{l}" for l in LAGS]
     cols += [f"rollmean_{w}" for w in ROLL]
     cols += [f"rollstd_{w}" for w in ROLL]
+    if exog_cols:
+        cols += list(exog_cols)
     return cols
 
 
-def _build_features(series: pd.Series) -> pd.DataFrame:
+def _build_features(series: pd.Series, exog: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     """series: a daily, date-indexed float series. Returns a feature frame
-    (lags/rolling are shifted to avoid leakage from the target day)."""
+    (lags/rolling are shifted to avoid leakage from the target day; calendar and
+    exogenous features are future-known and used as-is).
+
+    `exog`: an optional date-indexed DataFrame of exogenous features (e.g. weather
+    from weather_features). Reindexed to the series; missing rows are neutral 0.
+    Off by default so existing behaviour is byte-for-byte unchanged."""
     df = _calendar(series.index)
     for l in LAGS:
         df[f"lag_{l}"] = series.shift(l)
@@ -61,6 +79,10 @@ def _build_features(series: pd.Series) -> pd.DataFrame:
     for w in ROLL:
         df[f"rollmean_{w}"] = shifted.rolling(w).mean()
         df[f"rollstd_{w}"] = shifted.rolling(w).std()
+    if exog is not None and not exog.empty:
+        aligned = exog.reindex(series.index).fillna(0.0)
+        for c in aligned.columns:
+            df[c] = aligned[c].values
     df["y"] = series.values
     return df
 
