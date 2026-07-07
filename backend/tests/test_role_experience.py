@@ -10,6 +10,7 @@ filter actually restricts what region/store roles see.
 from app.services.role_experience import (
     resolve_config, decision_scope_for, persona_prompt_fragment, known_roles,
     VALID_KPI_SOURCES, VALID_KPI_FORMATS, VALID_SCOPES,
+    VALID_ASSISTANT_MODES, VALID_HOMEPAGE_LAYOUTS,
 )
 from app.services.decision_center import scope_decisions, triage_decisions, build_decision, build_reorder_decision
 from app.services.ai_assistant import get_system_prompt
@@ -48,12 +49,31 @@ def test_procurement_buying_desk_config():
 
 
 def test_unknown_role_gets_default_and_current_behavior():
-    cfg = resolve_config("super_admin")
+    # A role with no config (e.g. a future HR role) degrades to the default:
+    # legacy dashboard home + full built-in sidebar + panel assistant.
+    cfg = resolve_config("hr_manager")
     assert cfg["key"] == "_default"
     assert cfg["home"] == "/"          # existing dashboard stays home
     assert cfg["nav"] is None          # full built-in sidebar (unchanged)
     assert cfg["decision_scope"] == "chain"
+    assert cfg["assistant_mode"] == "panel"   # legacy floating-panel Sage
     assert resolve_config(None)["key"] == "_default"
+
+
+def test_super_admin_gets_executive_experience():
+    """Wave 2: super_admin now resolves to the executive "Chief of Staff" copilot
+    (config-only; no new RBAC role). Everything else stays reachable by URL/⌘K."""
+    cfg = resolve_config("super_admin")
+    assert cfg["key"] == "executive"
+    assert cfg["home"] == "/today"
+    assert cfg["assistant_mode"] == "copilot"
+    assert cfg["decision_scope"] == "chain"           # sees the whole business
+    assert cfg["persona"]["title"] == "Chief of Staff"
+    # The curated six-item executive nav (labels driven by tKey on the client).
+    hrefs = [n["href"] for n in cfg["nav"]]
+    assert hrefs == ["/today", "/briefing", "/value", "/decisions", "/analytics", "/insights"]
+    assert cfg["capabilities"] == {"ai_chat": True, "voice": True}
+    assert cfg["quick_actions"] and all(a["href"] in EXISTING_ROUTES for a in cfg["quick_actions"])
 
 
 def test_configs_are_copies_not_registry_references():
@@ -87,10 +107,41 @@ def test_decision_scopes_are_valid():
         assert decision_scope_for(role) in VALID_SCOPES
 
 
-def test_persona_fragment_wave1_nonempty_default_empty():
+def test_persona_fragment_nonempty_for_configured_roles_default_empty():
     assert "STORE COACH" in persona_prompt_fragment("store_manager")
     assert "REGIONAL COACH" in persona_prompt_fragment("regional_manager")
-    assert persona_prompt_fragment("super_admin") == ""
+    assert "CHIEF OF STAFF" in persona_prompt_fragment("super_admin")  # executive persona
+    # A role with no config (→ _default) still has no persona fragment.
+    assert persona_prompt_fragment("hr_manager") == ""
+
+
+# --- Experience API v2 payload contract -------------------------------------
+
+def test_v2_payload_shape_present_and_valid():
+    for role in known_roles() + [None, "hr_manager"]:
+        cfg = resolve_config(role)
+        assert cfg["version"] == 2
+        assert cfg["assistant_mode"] in VALID_ASSISTANT_MODES
+        assert cfg["homepage"]["layout"] in VALID_HOMEPAGE_LAYOUTS
+        # homepage envelope mirrors the (v1) top-level zone list.
+        assert cfg["homepage"]["zones"] == cfg["zones"]
+        assert set(cfg["capabilities"]) == {"ai_chat", "voice"}
+        assert isinstance(cfg["quick_actions"], list)
+        assert set(cfg["ai_context"]) >= {"focus", "scope"}
+        # quick actions (when present) only point at real routes.
+        for a in cfg["quick_actions"]:
+            assert a["href"] in EXISTING_ROUTES, a
+            assert a.get("key") and a.get("label")
+
+
+def test_prompt_fragment_never_in_delivered_config():
+    """Security regression guard: the persona system-prompt fragment must never
+    reach the client, even though it still exists server-side for the prompt."""
+    for role in known_roles() + [None, "hr_manager"]:
+        cfg = resolve_config(role)
+        assert "prompt_fragment" not in cfg["persona"]
+    # …but the server-side accessor still returns it (used by get_system_prompt).
+    assert "CHIEF OF STAFF" in persona_prompt_fragment("super_admin")
 
 
 def test_system_prompt_carries_persona_but_grounding_wins():

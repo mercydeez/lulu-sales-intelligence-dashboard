@@ -256,13 +256,17 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
   const { user, hasPermission, hasRole, authFetch } = useAuth();
   const { config: experience } = useExperience();
   const personaTitle = experience?.persona?.title ?? 'Sales Assistant';
-  
-  // Permission checks - super_admin and regional_manager get full access
-  // store_manager gets chat only, analyst gets restricted access
-  const canUseChat = hasRole(['super_admin', 'regional_manager', 'store_manager']) || 
-                     hasPermission('can_use_ai_chat');
-  const canUseVoice = hasRole(['super_admin', 'regional_manager']) || 
-                      hasPermission('can_use_voice_chat');
+
+  // Authorization stays server-side (routes/ai.py require_ai_chat / require_voice_chat).
+  // The client gate mirrors it via role/permission, and the experience config's
+  // `capabilities` can only NARROW it further (never widen) — so a role that
+  // isn't allowed chat can't gain it by config, and one that is can be turned off
+  // per experience. Absent capabilities (v1 payload) → unchanged behavior.
+  const caps = experience?.capabilities;
+  const canUseChat = (hasRole(['super_admin', 'regional_manager', 'store_manager']) ||
+                      hasPermission('can_use_ai_chat')) && (caps?.ai_chat ?? true);
+  const canUseVoice = (hasRole(['super_admin', 'regional_manager']) ||
+                      hasPermission('can_use_voice_chat')) && (caps?.voice ?? true);
   
   const [messages, setMessages] = useState<Message[]>(() => [
     {

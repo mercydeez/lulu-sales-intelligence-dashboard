@@ -6,10 +6,15 @@ zone list, KPI descriptors, navigation manifest, decision scope, notification
 defaults — and generic surfaces render from it. Adding a role = adding a config
 here, not building screens.
 
-Wave 1 covers the roles that exist in RBAC today (`store_manager`,
-`regional_manager`) plus a `_default` that preserves current behavior for every
-other role (super_admin, admin, ...). Roles that need data we don't have
-(HR attendance, Loss Prevention POS grain) are intentionally absent.
+Wave 1 covers the operational roles that exist in RBAC today (`store_manager`,
+`regional_manager`); Wave 2 (Sage Copilot) adds the executive experience mapped
+to `super_admin` (the "Chief of Staff" copilot). A `_default` preserves current
+behavior for every other role. Roles that need data we don't have (HR attendance,
+Loss Prevention POS grain) are intentionally absent.
+
+The delivered payload is Experience API v2 — see `resolve_config` for the shape
+(version, assistant_mode, homepage envelope, quick_actions, ai_context,
+capabilities) and the security note on why persona prompt fragments never ship.
 
 Design rules:
 - Configs are DATA. No role-specific code paths anywhere else.
@@ -36,7 +41,96 @@ VALID_KPI_SOURCES = {"kpis", "decisions", "inventory"}
 VALID_KPI_FORMATS = {"aed", "units", "int", "trend"}
 VALID_SCOPES = {"chain", "region", "store"}
 
+# ── Experience API v2 (Sage Copilot) ────────────────────────────────────────
+# The config now fully describes the frontend experience: which assistant shell
+# to render, the role's one-tap actions, the homepage layout, and lightweight AI
+# display context. These are DATA (config-as-data), never code paths.
+#   assistant_mode : which Sage shell the frontend renders
+#   capabilities   : rendering hints only — the server still authorizes every AI
+#                    call (routes/ai.py require_ai_chat); a client can never widen
+#                    its own access by asserting a capability here.
+#   ai_context     : DISPLAY/routing metadata (focus areas, scope label) — never
+#                    prompt text. Prompt fragments stay server-side (see below).
+VALID_ASSISTANT_MODES = {"panel", "copilot", "hidden"}
+VALID_HOMEPAGE_LAYOUTS = {"focus", "grid"}
+
+# Any v2 field a role record omits falls back here at resolve time, so older or
+# partial configs stay valid and the payload shape is always complete.
+_V2_DEFAULTS: Dict = {
+    "assistant_mode": "panel",                     # panel | copilot | hidden
+    "quick_actions": [],                           # [{key,label,href,icon}]
+    "ai_context": {"focus": [], "scope": ""},      # display/routing metadata only
+    "capabilities": {"ai_chat": True, "voice": True},  # hints; server authorizes
+    "layout": "focus",                             # homepage layout (→ homepage.layout)
+}
+
 _CONFIGS: Dict[Optional[str], Dict] = {
+    # ── Executive (super_admin) — "Chief of Staff" (AI-first copilot) ────────
+    # Wave 2: the CEO / executive experience is pure configuration over engines
+    # that already exist (briefing, decisions/triage, ROI/value, analytics). It
+    # is mapped to `super_admin` so NO new RBAC role is required; a dedicated
+    # `ceo` role can adopt this same record later (interface request to Krishna).
+    # The six-item nav is the executive's *curated* surface — every other page
+    # stays reachable by URL and the ⌘K command palette; nothing is deleted.
+    "super_admin": {
+        "key": "executive",
+        "home": "/today",
+        "decision_scope": "chain",
+        "assistant_mode": "copilot",
+        "capabilities": {"ai_chat": True, "voice": True},
+        "ai_context": {"focus": ["revenue", "profit", "risks", "growth"], "scope": "All stores"},
+        "persona": {
+            "name": None,  # filled with settings.chatbot_name at resolve time
+            "title": "Chief of Staff",
+            "tagline": "The whole business, one screen",
+            "greeting": "Here's where the business stands — and the calls that need you.",
+            "voice": ["strategic", "money-first", "concise", "decisive"],
+            "prompt_fragment": (
+                "PERSONA — CHIEF OF STAFF: You are briefing a CEO / senior executive who owns "
+                "the whole chain. Be their chief of staff: strategic, concise, money-first. Lead "
+                "with the single number that matters and the one decision that moves it, then stop "
+                "— delegate the detail. Prefer AED for value and units for volume, never mixed. "
+                "Surface risks and growth openings before they ask. Respect their time."
+            ),
+        },
+        # Five-Questions homepage: verdict (what matters) · KPIs · decisions
+        # (what to do first) · quick actions (what Sage can do). Business-health
+        # / risks / growth widgets arrive with the Copilot feed (Phase 2/3) and
+        # slot in here as config — the frontend already degrades unknown types.
+        "zones": [
+            {"type": "verdict"},
+            {"type": "kpis"},
+            {"type": "decisions", "props": {"limit": 3, "title": "Decisions that need you"}},
+            {"type": "quick_actions", "props": {"title": "What Sage can do for you"}},
+        ],
+        "kpis": [
+            {"key": "week_revenue", "label": "Revenue (7d)", "source": "kpis",
+             "field": "total_revenue_week", "format": "aed"},
+            {"key": "revenue_trend", "label": "Trend", "source": "kpis",
+             "field": "revenue_trend", "format": "trend"},
+            {"key": "week_units", "label": "Volume (7d)", "source": "kpis",
+             "field": "total_sales_week", "format": "units"},
+            {"key": "decisions_pending", "label": "Decisions waiting", "source": "decisions",
+             "field": "pending", "format": "int"},
+            {"key": "at_stake", "label": "At stake /wk", "source": "decisions",
+             "field": "at_stake_aed_per_week", "format": "aed"},
+        ],
+        "nav": [
+            {"key": "overview", "tKey": "nav.overview", "label": "Overview", "href": "/today", "icon": "LayoutDashboard"},
+            {"key": "briefing", "tKey": "nav.execBriefing", "label": "Executive Briefing", "href": "/briefing", "icon": "Sunrise"},
+            {"key": "health", "tKey": "nav.businessHealth", "label": "Business Health", "href": "/value", "icon": "TrendingUp"},
+            {"key": "decisions", "tKey": "nav.decisions", "label": "Decisions", "href": "/decisions", "icon": "Scale"},
+            {"key": "growth", "tKey": "nav.growth", "label": "Growth", "href": "/analytics", "icon": "BarChart3"},
+            {"key": "sage", "tKey": "nav.sageCopilot", "label": "Sage Copilot", "href": "/insights", "icon": "Lightbulb"},
+        ],
+        "quick_actions": [
+            {"key": "briefing", "label": "Read today's executive briefing", "href": "/briefing", "icon": "Sunrise"},
+            {"key": "decisions", "label": "Review the decisions that need me", "href": "/decisions", "icon": "Scale"},
+            {"key": "health", "label": "Open business health", "href": "/value", "icon": "TrendingUp"},
+        ],
+        "notifications": {"brief_hour_gst": 7, "quiet_hours": [22, 6], "tiers": ["T1 exec brief 07:00", "T0 chain-critical only"]},
+    },
+
     # ── Store Manager — "Store Coach" (phone-first; today only) ─────────────
     "store_manager": {
         "key": "store_manager",
@@ -224,8 +318,19 @@ _CONFIGS: Dict[Optional[str], Dict] = {
 
 
 def resolve_config(role: Optional[str]) -> Dict:
-    """The role's experience config (deep copy — callers may not mutate the
-    registry). Unknown roles get the default, so new roles degrade gracefully."""
+    """The role's experience config as delivered to the client (Experience API
+    v2). A deep copy — callers may not mutate the registry. Unknown roles get the
+    default, so new roles degrade gracefully.
+
+    Guarantees on the returned payload:
+    - `version == 2`, and every v2 field is present (defaults fill omissions).
+    - `homepage = {layout, zones}` wraps the zone list; top-level `zones` is kept
+      for backward compatibility with v1 consumers.
+    - the persona `prompt_fragment` is REMOVED — it is a server-only system-prompt
+      fragment (see `persona_prompt_fragment`); shipping it would disclose the
+      prompt and widen the injection surface. Sage's prompt is assembled
+      server-side in `ai_assistant.get_system_prompt`.
+    """
     cfg = copy.deepcopy(_CONFIGS.get(role) or _CONFIGS[None])
     # Persona name follows the configured chatbot name (single source of truth).
     try:
@@ -233,6 +338,14 @@ def resolve_config(role: Optional[str]) -> Dict:
         cfg["persona"]["name"] = get_settings().chatbot_name
     except Exception:
         cfg["persona"]["name"] = cfg["persona"]["name"] or "Sage"
+    # SECURITY: never send the persona's system-prompt fragment to the client.
+    cfg["persona"].pop("prompt_fragment", None)
+    # Fill any v2 field the record omitted, then wrap the homepage envelope.
+    for key, default in _V2_DEFAULTS.items():
+        cfg.setdefault(key, copy.deepcopy(default))
+    layout = cfg.pop("layout", "focus")
+    cfg["homepage"] = {"layout": layout, "zones": cfg["zones"]}
+    cfg["version"] = 2
     cfg["role"] = role or "_unknown"
     return cfg
 

@@ -9,9 +9,10 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useExperience, ExperienceConfig, KpiDescriptor, ZoneSpec } from '@/contexts/ExperienceContext';
+import { useExperience, KpiDescriptor } from '@/contexts/ExperienceContext';
 import { Button, ErrorState, SkeletonCard, Stagger, RevealItem } from '@/components/ui';
 import { apiGet } from '@/lib/apiClient';
+import { registerWidgets, resolveWidget, type WidgetProps } from '@/components/copilot/registry';
 import {
   Sparkles, ArrowRight, RefreshCw, Inbox, PackageX, TrendingUp, TrendingDown, Minus, AlertTriangle,
 } from 'lucide-react';
@@ -36,9 +37,12 @@ export default function TodayPage() {
             onRetry={() => setReloadKey((k) => k + 1)} />
         ) : (
           <Stagger key={reloadKey} className="space-y-6">
-            {config.zones.map((zone, i) => {
-              const Zone = ZONE_REGISTRY[zone.type];
-              if (!Zone) return null;   // unknown zone types degrade silently
+            {/* v2 homepage envelope with a v1 fallback, resolved against the open
+                widget registry. Unknown types (widgets a build doesn't ship yet)
+                degrade silently. */}
+            {(config.homepage?.zones ?? config.zones).map((zone, i) => {
+              const Zone = resolveWidget(zone.type);
+              if (!Zone) return null;
               return (
                 <RevealItem key={`${zone.type}-${i}`}>
                   <Zone config={config} spec={zone} />
@@ -61,7 +65,8 @@ export default function TodayPage() {
   );
 }
 
-interface ZoneProps { config: ExperienceConfig; spec: ZoneSpec }
+// Homepage widgets share the registry's prop contract (config + zone spec).
+type ZoneProps = WidgetProps;
 
 type ZoneStatus = 'loading' | 'ok' | 'error';
 
@@ -332,10 +337,45 @@ function StockZone(_: ZoneProps) {
   );
 }
 
-const ZONE_REGISTRY: Record<string, (p: ZoneProps) => JSX.Element> = {
+/* ── Q4: What can Sage do for me? — the role's configured one-tap actions ──
+   Pure config: renders `config.quick_actions` (no new endpoint). Nothing
+   configured → renders nothing (graceful). */
+function QuickActionsWidget({ config, spec }: ZoneProps) {
+  const actions = config.quick_actions ?? [];
+  if (actions.length === 0) return null;
+  const title = String(spec.props?.title ?? 'What Sage can do for you');
+  return (
+    <section>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted mb-3">{title}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {actions.map((a) => (
+          <Link key={a.key} href={a.href}
+            className="group flex items-center justify-between gap-3 rounded-2xl bg-surface border border-line shadow-card p-4 hover:bg-surface-2 transition-colors">
+            <span className="flex items-center gap-3 min-w-0">
+              <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-teal-50 ring-1 ring-teal-100 shrink-0">
+                <Sparkles className="w-4 h-4 text-teal-600" />
+              </span>
+              <span className="text-sm font-medium text-ink truncate">{a.label}</span>
+            </span>
+            <ArrowRight className="w-4 h-4 text-ink-muted group-hover:text-teal-600 transition-colors shrink-0" />
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* Register this surface's widgets into the open registry (runs once at module
+   load). `briefing_hero` is a v2 semantic alias of the persona `verdict`. New
+   feed-backed widgets (business_health, risks, growth, recommendations) register
+   from the Copilot feed surface in a later phase; until then the backend can
+   list them and they degrade gracefully. */
+registerWidgets({
   verdict: VerdictZone,
+  briefing_hero: VerdictZone,
   kpis: KpiZone,
   decisions: DecisionsZone,
   approvals: ApprovalsZone,
   stock: StockZone,
-};
+  quick_actions: QuickActionsWidget,
+});

@@ -2,14 +2,18 @@
 
 /**
  * Command palette (Part III-H) — Cmd/Ctrl-K to jump anywhere or fire a quick
- * action. Sources its commands from the nav (role-filtered) plus a couple of
- * procurement shortcuts.
+ * action. Commands are sourced from the Experience API (the role's server nav
+ * manifest + quick actions) and then unioned with the full role-accessible route
+ * list, so the palette reflects the configured experience yet never leaves any
+ * page a user may open unreachable. Falls back to the built-in nav + procurement
+ * shortcuts when the experience config is unavailable.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { Search, CornerDownLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useExperience } from '@/contexts/ExperienceContext';
 import { navItems } from '@/config/nav';
 
 interface Command { label: string; href: string; hint?: string; }
@@ -31,6 +35,7 @@ function isTyping(e: KeyboardEvent): boolean {
 export default function CommandPalette() {
   const router = useRouter();
   const { hasRole, hasPermission, isAuthenticated, authFetch } = useAuth();
+  const { config } = useExperience();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -79,16 +84,32 @@ export default function CommandPalette() {
   useEffect(() => { if (open) { setQuery(''); setActive(0); setTimeout(() => inputRef.current?.focus(), 20); } }, [open]);
 
   const commands: Command[] = useMemo(() => {
-    const nav = navItems
+    // Quick actions from the Experience API (the role's configured one-tap jobs);
+    // fall back to the built-in procurement shortcuts when config has none.
+    const quick: Command[] = config?.quick_actions?.length
+      ? config.quick_actions.map((a) => ({ label: a.label, href: a.href, hint: 'Sage' }))
+      : hasPermission('can_manage_inventory')
+        ? [
+            { label: 'Generate POs from forecast', href: '/procurement', hint: 'Action' },
+            { label: 'Review approval inbox', href: '/approvals', hint: 'Action' },
+          ]
+        : [];
+    // Navigation: the role's server manifest first (Experience API), then the
+    // full role-accessible route list so nothing openable is unreachable from
+    // ⌘K. Deduped by href; manifest/label order wins.
+    const manifest: Command[] = (config?.nav ?? []).map((m) => ({ label: m.label, href: m.href, hint: 'Go to' }));
+    const full: Command[] = navItems
       .filter((i) => (!i.roles || hasRole(i.roles)) && (!i.permission || hasPermission(i.permission)))
       .map((i) => ({ label: i.label, href: i.href, hint: 'Go to' }));
-    const extra: Command[] = [];
-    if (hasPermission('can_manage_inventory')) {
-      extra.push({ label: 'Generate POs from forecast', href: '/procurement', hint: 'Action' });
-      extra.push({ label: 'Review approval inbox', href: '/approvals', hint: 'Action' });
+    const seen = new Set<string>();
+    const nav: Command[] = [];
+    for (const c of [...manifest, ...full]) {
+      if (seen.has(c.href)) continue;
+      seen.add(c.href);
+      nav.push(c);
     }
-    return [...nav, ...extra];
-  }, [hasRole, hasPermission]);
+    return [...quick, ...nav];
+  }, [config, hasRole, hasPermission]);
 
   // The g-shortcuts respect the same role filtering as the palette itself.
   useEffect(() => {

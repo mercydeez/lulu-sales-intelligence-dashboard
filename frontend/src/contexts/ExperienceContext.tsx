@@ -14,7 +14,10 @@ import { apiGet } from '@/lib/apiClient';
 
 export interface PersonaPack {
   name: string; title: string; tagline: string; greeting: string;
-  voice: string[]; prompt_fragment: string;
+  voice: string[];
+  // NOTE: the persona's system-prompt fragment is intentionally NOT part of the
+  // client payload — it is server-only (assembled into Sage's prompt in the
+  // backend). Never add it here.
 }
 export interface KpiDescriptor {
   key: string; label: string;
@@ -27,13 +30,32 @@ export interface NavManifestItem {
 }
 export interface ZoneSpec { type: string; props?: Record<string, unknown> }
 
+// ── Experience API v2 (Sage Copilot) ──────────────────────────────────────
+/** Which Sage shell the frontend renders. `copilot` and `panel` both use the
+ *  panel today; the dedicated copilot surface lands in a later phase. */
+export type AssistantMode = 'panel' | 'copilot' | 'hidden';
+export interface QuickAction { key: string; label: string; href: string; icon?: string }
+/** Rendering hints only — the server still authorizes every AI call. */
+export interface Capabilities { ai_chat: boolean; voice: boolean }
+/** Display/routing metadata only — never prompt text. */
+export interface AiContext { focus: string[]; scope: string }
+export interface HomepageSpec { layout: string; zones: ZoneSpec[] }
+
 export interface ExperienceConfig {
+  version?: number;
   key: string; role: string; home: string;
   decision_scope: 'chain' | 'region' | 'store';
   persona: PersonaPack;
+  // v1 zone list (still emitted); v2 wraps it in `homepage`. Read `homepage.zones`
+  // with a fallback to `zones` so both old and new payloads render.
   zones: ZoneSpec[];
+  homepage?: HomepageSpec;
   kpis: KpiDescriptor[];
   nav: NavManifestItem[] | null;
+  assistant_mode?: AssistantMode;
+  quick_actions?: QuickAction[];
+  ai_context?: AiContext;
+  capabilities?: Capabilities;
   notifications?: Record<string, unknown>;
   context?: { accessible_store_count: number };
 }
