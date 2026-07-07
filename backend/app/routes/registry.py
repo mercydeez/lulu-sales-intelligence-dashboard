@@ -38,6 +38,9 @@ from app.routes import security as security_routes
 from app.routes import data_rights as data_rights_routes
 from app.routes import sso as sso_routes
 
+# Yash — Frontend-platform support surfaces (CX loops)
+from app.routes import feedback as feedback_routes
+
 # Atharva — AI / Sage / Decisions / Briefing / Role Experience / Diagnostics
 from app.routes import ai as ai_routes
 from app.routes import action_drafts as action_drafts_routes
@@ -84,6 +87,9 @@ ROUTERS: List[RouterSpec] = [
     (public_api.router, "/api/public", ["Public API"]),
     (data_rights_routes.router, "/api/data-rights", ["Data Rights"]),
     (sso_routes.router, "/api/sso", ["SSO"]),
+
+    # === Yash — Frontend-platform support surfaces (CX loops) ==============
+    (feedback_routes.router, "/api/feedback", ["Feedback"]),
 
     # === Atharva — AI / Sage / Decisions / Briefing / Experience ===========
     (ai_routes.router, "/api/ai", ["AI Assistant"]),
