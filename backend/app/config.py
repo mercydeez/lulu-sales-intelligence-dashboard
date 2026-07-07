@@ -211,6 +211,23 @@ class Settings(BaseSettings):
     redis_self_hosted: bool = False                 # True => prod Redis MUST carry a password
     allow_insecure_no_rls: bool = False             # dangerous override: prod without the RLS role
 
+    # --- E0-2 uptime monitoring + alerting (Krishna) -----------------------
+    # Generic webhook alerting — provider-agnostic on purpose. Route the webhook to
+    # a phone/SMS/WhatsApp via Better Stack / Healthchecks.io / PagerDuty / Twilio /
+    # Slack. The URL is a SECRET and must never appear in any health/API response.
+    alert_enabled: bool = False                     # master switch; stays off unless set
+    alert_webhook_url: Optional[str] = None         # SECRET — POST target for alerts
+    alert_webhook_timeout_seconds: int = 5          # bound so a slow webhook can't hang health
+    alert_min_severity: str = "critical"            # critical | high | medium | low | info
+    alert_dedup_ttl_seconds: int = 300              # suppress duplicate alerts within this window
+    alert_environment: Optional[str] = None         # label in the alert; defaults to `environment`
+    # Worker heartbeat freshness (the worker writes health:worker:diagnostics to Redis).
+    worker_heartbeat_interval_ms: int = 30000       # informational: how often the worker beats
+    worker_heartbeat_stale_seconds: int = 120       # older than this => the worker is "stale"
+    # Backup manifest (E0-1 already produces it; we only READ its freshness here).
+    backup_manifest_path: str = "/backups/latest.json"
+    backup_stale_after_hours: int = 30
+
     model_config = {"env_file": ".env", "case_sensitive": False}
 
     @model_validator(mode="after")

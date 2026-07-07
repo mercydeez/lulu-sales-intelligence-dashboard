@@ -181,8 +181,15 @@ async def test_deep_reports_mode_and_leaks_no_secrets():
     assert resp.status_code == 200
     body = resp.json()
     assert "mode" in body and "demo_mode" in body["mode"]
-    assert body["checks"]["database"] == "ok"
-    # No secret material anywhere in the payload.
+    # E0-2: rich per-check shape (database/redis now carry a nested status).
+    assert body["checks"]["database"]["status"] == "ok"
+    assert body["checks"]["redis"]["status"] == "ok"
+    # E0-2: monitoring surface present.
+    assert "worker_heartbeat" in body["checks"]
+    assert "backup" in body["checks"]
+    assert body["checks"]["alerting"]["status"] in ("configured", "missing")
+    assert body["checks"]["alerting"]["provider"] in ("webhook", "none")
+    # No secret material anywhere in the payload (incl. the alert webhook URL).
     blob = resp.text.lower()
-    for needle in ("secret", "password", "jwt", "salespass"):
+    for needle in ("secret", "password", "jwt", "salespass", "webhook_url", "hook.example"):
         assert needle not in blob

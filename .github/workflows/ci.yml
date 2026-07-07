@@ -160,6 +160,29 @@ jobs:
           grep -q '"database":"healthy"' /tmp/health.json
           grep -q '"redis":"healthy"' /tmp/health.json
 
+      # E0-2: uptime monitoring. /health/deep must expose worker_heartbeat, and the
+      # running worker service must emit a FRESH heartbeat within a bounded wait.
+      - name: E0-2 — /health/deep exposes worker_heartbeat + becomes fresh
+        run: |
+          curl -fsS http://localhost:8000/health/deep | tee /tmp/deep.json
+          grep -q 'worker_heartbeat' /tmp/deep.json
+          grep -q '"backup"' /tmp/deep.json
+          grep -q '"alerting"' /tmp/deep.json
+          # Wait (bounded) for the worker's heartbeat to be reported ok.
+          for i in $(seq 1 18); do
+            hb=$(curl -s http://localhost:8000/health/deep | python3 -c "import sys,json;print(json.load(sys.stdin)['checks']['worker_heartbeat']['status'])" 2>/dev/null || echo "unknown")
+            echo "attempt $i: worker_heartbeat=$hb"
+            if [ "$hb" = "ok" ]; then echo "worker heartbeat fresh"; exit 0; fi
+            sleep 5
+          done
+          echo "worker heartbeat never became fresh"; docker compose logs worker | tail -50; exit 1
+
+      - name: E0-2 — /health/ready returns 200 on the full stack
+        run: |
+          code=$(curl -s -o /tmp/ready.json -w "%{http_code}" http://localhost:8000/health/ready)
+          cat /tmp/ready.json; echo
+          test "$code" = "200"
+
       - name: Set up Python for golden tests
         uses: actions/setup-python@v5
         with:

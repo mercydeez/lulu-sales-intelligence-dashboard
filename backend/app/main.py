@@ -339,9 +339,21 @@ async def health_check():
         logger.error(f"Redis health check failed: {e}")
         redis_status = "unhealthy"
 
-    # Overall status
+    # Worker heartbeat summary (E0-2) — best-effort; never blocks /health.
+    worker_status = "unknown"
+    try:
+        from app.services.redis_client import get_redis as _get_redis
+        from app.services.health_checks import check_worker_heartbeat
+        hb = await check_worker_heartbeat(await _get_redis())
+        worker_status = hb.get("status", "unknown")
+    except Exception:
+        worker_status = "unknown"
+
+    # Overall status: healthy needs DB + Redis + a fresh worker; both core deps
+    # down => unhealthy; anything in between (incl. a stale/missing worker) =>
+    # degraded. The "database"/"redis" string fields stay for backward-compat.
     if db_status == "healthy" and redis_status == "healthy":
-        overall_status = "healthy"
+        overall_status = "healthy" if worker_status == "ok" else "degraded"
     elif db_status == "unhealthy" and redis_status == "unhealthy":
         overall_status = "unhealthy"
     else:
@@ -351,6 +363,7 @@ async def health_check():
         "status": overall_status,
         "database": db_status,
         "redis": redis_status,
+        "worker": worker_status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": "1.0.0",
         "environment": settings.environment
@@ -419,6 +432,36 @@ async def health_ready():
         checks["config"] = "invalid"
         ready = False
 
+    # Worker heartbeat (E0-2). In production a stale/missing worker fails
+    # readiness; in dev/test it is reported honestly but does not block.
+    worker_hb = {"status": "unknown"}
+    try:
+        from app.services.redis_client import get_redis as _get_redis
+        from app.services.health_checks import check_worker_heartbeat
+        worker_hb = await check_worker_heartbeat(await _get_redis())
+    except Exception:
+        worker_hb = {"status": "unknown"}
+    checks["worker_heartbeat"] = worker_hb.get("status", "unknown")
+    _production = settings.environment in ("production", "staging")
+    if _production and worker_hb.get("status") != "ok":
+        ready = False
+
+    if not ready and _production:
+        # Best-effort, deduped page so an external monitor isn't the only path.
+        # Never raises into the response.
+        try:
+            from app.services.alerting import send_alert
+            failing = [k for k, v in checks.items() if v not in ("ok", "current")]
+            await send_alert(
+                title="Retail IQ readiness FAILED",
+                message=f"/health/ready not ready; failing checks: {', '.join(failing) or 'unknown'}",
+                severity="critical",
+                check="health_ready",
+                status="not_ready",
+            )
+        except Exception:
+            pass
+
     return JSONResponse(
         status_code=200 if ready else 503,
         content={"status": "ready" if ready else "not_ready", "checks": checks, "timestamp": _now()},
@@ -427,49 +470,31 @@ async def health_ready():
 
 @app.get("/health/deep", tags=["Health"])
 async def health_deep():
-    """Detailed subsystem status for operators. Never includes secrets."""
+    """Detailed subsystem status for operators (E0-2). Never includes secrets
+    (the alert webhook URL is never returned — only whether it is configured)."""
     from app.services.database import engine
     from app.services.redis_client import get_redis
-    from app.services.migration_runner import pending_migrations
+    from app.services.health_checks import full_health
     from sqlalchemy import text
 
-    checks: dict[str, object] = {}
-    healthy = True
-
-    # Database
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-        checks["database"] = "ok"
-    except Exception:
-        checks["database"] = "error"
-        healthy = False
-
-    # Redis (+ best-effort BullMQ queue presence)
+    redis = None
     try:
         redis = await get_redis()
-        await redis.ping()
-        queue = "unknown"
-        try:
-            keys = await redis.keys("bull:*")
-            queue = f"keys:{len(keys)}"
-        except Exception:
-            pass
-        checks["redis"] = "ok"
-        checks["worker_queue"] = queue
     except Exception:
-        checks["redis"] = "error"
-        checks["worker_queue"] = "unknown"
-        healthy = False
+        redis = None
 
-    # Migrations
+    # Standard E0-2 payload: DB, Redis, migrations, worker_heartbeat, backup, alerting.
+    payload = await full_health(engine, redis, settings)
+    checks = payload["checks"]
+
+    # --- Preserve the pre-existing operator detail fields (backward compatible) ---
+    # BullMQ queue presence (distinct from the worker HEARTBEAT freshness above).
     try:
-        pending = await pending_migrations()
-        checks["migrations"] = "current" if not pending else {"pending": pending}
+        keys = await redis.keys("bull:*") if redis is not None else []
+        checks["worker_queue"] = f"keys:{len(keys)}"
     except Exception:
-        checks["migrations"] = "unknown"
+        checks["worker_queue"] = "unknown"
 
-    # Expected tables exist (security_events, findings)
     try:
         async with engine.connect() as conn:
             res = await conn.execute(text(
@@ -483,7 +508,6 @@ async def health_deep():
         checks["security_events_table"] = "unknown"
         checks["findings_table"] = "unknown"
 
-    # Data freshness (latest generated sale)
     try:
         async with engine.connect() as conn:
             res = await conn.execute(text("SELECT MAX(created_at) FROM sales_stream_raw"))
@@ -492,18 +516,13 @@ async def health_deep():
     except Exception:
         checks["latest_stream_sale"] = "unknown"
 
-    return {
-        "status": "healthy" if healthy else "degraded",
-        "timestamp": _now(),
-        "environment": settings.environment,
-        "version": "1.0.0",
-        "mode": {
-            "demo_mode": settings.demo_mode,
-            "live_generator_enabled": settings.live_generator_enabled,
-            "generator_running": bool(settings.demo_mode and settings.live_generator_enabled),
-            "use_rls_role": settings.use_rls_role,
-            "external_ai": settings.enable_external_ai,
-            "local_ai": settings.enable_local_ai,
-        },
-        "checks": checks,
+    payload["version"] = "1.0.0"
+    payload["mode"] = {
+        "demo_mode": settings.demo_mode,
+        "live_generator_enabled": settings.live_generator_enabled,
+        "generator_running": bool(settings.demo_mode and settings.live_generator_enabled),
+        "use_rls_role": settings.use_rls_role,
+        "external_ai": settings.enable_external_ai,
+        "local_ai": settings.enable_local_ai,
     }
+    return payload

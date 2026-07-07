@@ -10,7 +10,7 @@ from app.config import get_settings, logger
 from app.services.metrics import get_metrics
 from app.services.database import engine, async_session
 from app.services.redis_client import get_redis
-from app.routes.auth import get_current_user
+from app.routes.auth import get_current_user, require_role
 from sqlalchemy import text
 
 
@@ -233,5 +233,31 @@ async def system_stats(current_user: dict = Depends(get_current_user)) -> Dict[s
         }
     except Exception as e:
         stats["cache"]["error"] = str(e)
-    
+
     return stats
+
+
+@router.post("/alerts/test")
+async def send_test_alert(user: dict = Depends(require_role("super_admin", "admin"))) -> Dict[str, Any]:
+    """Admin-only: emit a TEST alert through the configured webhook so an operator
+    can prove the founder-phone path end-to-end (E0-2 acceptance evidence).
+
+    Requires super_admin/admin. Never returns the webhook URL — only whether the
+    alert was sent and the alerting provider status. If alerting is disabled or no
+    webhook is configured, it reports that honestly instead of sending.
+    """
+    from app.services.alerting import send_alert, alerting_status
+
+    result = await send_alert(
+        title="Retail IQ test alert",
+        message=f"Manual test alert triggered by {user.get('email', 'admin')}.",
+        severity="critical",
+        check="manual_test",
+        status="test",
+    )
+    return {
+        "requested_by": user.get("email"),
+        "alerting": alerting_status(),   # {status, provider} — no URL
+        "result": result,                # {sent: bool, reason?: str}
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }

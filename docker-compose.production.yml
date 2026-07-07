@@ -146,6 +146,21 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS origins required (no wildcard)}
       CSP_CONNECT_SRC: ${CSP_CONNECT_SRC:-'self'}
       TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
+      # E0-2 uptime monitoring + alerting. ALERT_WEBHOOK_URL is a SECRET — set it
+      # in your env, never commit it. Route the webhook to founder phone/SMS via
+      # Better Stack / Healthchecks.io / PagerDuty / Twilio / Slack.
+      ALERT_ENABLED: ${ALERT_ENABLED:-false}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_WEBHOOK_TIMEOUT_SECONDS: ${ALERT_WEBHOOK_TIMEOUT_SECONDS:-5}
+      ALERT_MIN_SEVERITY: ${ALERT_MIN_SEVERITY:-critical}
+      ALERT_DEDUP_TTL_SECONDS: ${ALERT_DEDUP_TTL_SECONDS:-300}
+      WORKER_HEARTBEAT_STALE_SECONDS: ${WORKER_HEARTBEAT_STALE_SECONDS:-120}
+      BACKUP_MANIFEST_PATH: ${BACKUP_MANIFEST_PATH:-/backups/latest.json}
+      BACKUP_STALE_AFTER_HOURS: ${BACKUP_STALE_AFTER_HOURS:-30}
+    # Read-only view of the E0-1 backup volume so /health can report backup
+    # freshness (it never writes backups).
+    volumes:
+      - postgres_backups:/backups:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -187,6 +202,9 @@ services:
       DIAGNOSTICS_INTERVAL_MS: ${DIAGNOSTICS_INTERVAL_MS:-300000}
       NOTIFY_WEBHOOK_URL: ${NOTIFY_WEBHOOK_URL:-}
       NOTIFY_MIN_SEVERITY: ${NOTIFY_MIN_SEVERITY:-high}
+      # E0-2 worker heartbeat -> Redis key health:worker:diagnostics, read by /health.
+      WORKER_HEARTBEAT_INTERVAL_MS: ${WORKER_HEARTBEAT_INTERVAL_MS:-30000}
+      WORKER_HEARTBEAT_STALE_SECONDS: ${WORKER_HEARTBEAT_STALE_SECONDS:-120}
     depends_on:
       postgres:
         condition: service_healthy

@@ -30,6 +30,14 @@
 - [ ] `/health` remains backward-compatible
 - [ ] Compose + `render.yaml` use `/health/ready`
 
+## Uptime monitoring & alerting (blueprint E0-2)
+- [x] `/health` + `/health/deep` cover DB, Redis, migrations, **worker heartbeat**, backup manifest, alerting status
+- [x] Worker emits Redis heartbeat (`health:worker:diagnostics`); backend reports fresh/stale/missing
+- [x] Generic webhook alerting (`ALERT_WEBHOOK_URL`, deduped) — provider-agnostic; URL never in any response
+- [x] Admin-only `POST /api/monitoring/alerts/test` to prove the founder-phone path
+- [x] CI smoke asserts `/health/ready`=200 and a fresh worker heartbeat in `/health/deep`
+- [ ] **Deploy step:** external monitor polls `/health/ready` every 60s → founder phone (<5 min); test alert delivered (see `docs/runbooks/UPTIME_MONITORING_AND_ALERTING.md`)
+
 ## Backup & recovery (Phase 4 + blueprint E0-1)
 - [x] `backup-postgres.sh`, `restore-postgres.sh`, `verify-backup.sh`, `drill-restore.sh`, `backup-scheduler.sh` parse (`bash -n` + `sh -n`)
 - [x] Restore refuses accidental prod restore without explicit confirm
