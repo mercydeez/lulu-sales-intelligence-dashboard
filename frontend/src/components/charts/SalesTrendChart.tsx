@@ -15,6 +15,8 @@ import { TrendingUp } from 'lucide-react';
 import { fetchTrend } from '@/lib/api';
 import { CHART, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
 import { Reveal } from '@/components/ui';
+import { useUaeCalendar } from '@/hooks/useUaeCalendar';
+import { calendarBands } from '@/components/charts/CalendarBands';
 
 interface TrendDataPoint {
   date: string;
@@ -30,6 +32,7 @@ export default function SalesTrendChart({ days = 30 }: SalesTrendChartProps) {
   const [data, setData] = useState<TrendDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const calendar = useUaeCalendar();
 
   useEffect(() => {
     setMounted(true);
@@ -118,6 +121,8 @@ export default function SalesTrendChart({ days = 30 }: SalesTrendChartProps) {
                 <stop offset="95%" stopColor={CHART.violet} stopOpacity={0} />
               </linearGradient>
             </defs>
+            {/* UAE retail calendar shading (E4-7) — behind grid and series */}
+            {calendarBands(calendar, data.map((d) => d.date))}
             <CartesianGrid {...gridProps} />
             <XAxis dataKey="date" tickFormatter={formatDate} {...axisProps} minTickGap={24} />
             <YAxis tickFormatter={formatNumber} {...axisProps} width={44} />

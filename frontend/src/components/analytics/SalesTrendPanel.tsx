@@ -10,6 +10,8 @@ import { fetchTrend } from '@/lib/api';
 import { TrendPoint } from '@/types';
 import { CHART, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatCompact, formatCurrency, formatDateShort } from './format';
+import { useUaeCalendar } from '@/hooks/useUaeCalendar';
+import { calendarBands } from '@/components/charts/CalendarBands';
 
 interface SalesTrendPanelProps {
   days: number;
@@ -19,6 +21,7 @@ export function SalesTrendPanel({ days }: SalesTrendPanelProps) {
   const [data, setData] = useState<TrendPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const calendar = useUaeCalendar();
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +86,8 @@ export function SalesTrendPanel({ days }: SalesTrendPanelProps) {
                   <stop offset="95%" stopColor={CHART.violet} stopOpacity={0} />
                 </linearGradient>
               </defs>
+              {/* UAE retail calendar shading (E4-7) — behind grid and series */}
+              {calendarBands(calendar, data.map((d) => d.date))}
               <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
               <XAxis dataKey="date" tickFormatter={formatDateShort} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} minTickGap={24} />
               <YAxis stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
