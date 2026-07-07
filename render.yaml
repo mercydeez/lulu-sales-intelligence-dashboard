@@ -88,3 +88,10 @@ services:
       # backend's https URL, then trigger a redeploy so it bakes in.
       - key: NEXT_PUBLIC_API_URL
         sync: false
+      # Product telemetry (CX measurement loop). Leave unset → telemetry is a
+      # silent no-op. To enable: set the PostHog project key here and redeploy
+      # so it bakes into the build. See docs/product/TELEMETRY_SETUP.md.
+      - key: NEXT_PUBLIC_POSTHOG_KEY
+        sync: false
+      - key: NEXT_PUBLIC_POSTHOG_HOST
+        value: https://eu.i.posthog.com

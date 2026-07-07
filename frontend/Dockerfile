@@ -8,10 +8,16 @@ RUN npm install --legacy-peer-deps
 
 COPY . .
 
-# NEXT_PUBLIC_* values are inlined at build time, so the backend URL must be a
-# build arg (Render passes the service env var of the same name as a build arg).
+# NEXT_PUBLIC_* values are inlined at build time, so they must be build args
+# (Render passes the service env var of the same name as a build arg).
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Product telemetry (CX measurement loop). Empty by default → telemetry is a
+# silent no-op; set the key to enable PostHog. See docs/product/TELEMETRY_SETUP.md.
+ARG NEXT_PUBLIC_POSTHOG_KEY=
+ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
+ARG NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
+ENV NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST
 RUN npm run build
 
 # ---- Production Stage ----
