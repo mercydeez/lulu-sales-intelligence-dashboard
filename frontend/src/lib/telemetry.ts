@@ -33,6 +33,10 @@ export type TelemetryEvent =
   | 'usage_meters_viewed'
   | 'upgrade_cta_clicked'
   | 'status_page_viewed'
+  | 'exec_mode_toggled'
+  | 'sage_nudge_clicked'
+  | 'feedback_submitted'
+  | 'nps_submitted'
   | 'client_error';
 
 type Props = Record<string, string | number | boolean | null | undefined>;

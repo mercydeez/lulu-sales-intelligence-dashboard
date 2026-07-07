@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useExperience } from '@/contexts/ExperienceContext';
 import ChatBot from './ChatBot';
@@ -8,6 +8,25 @@ import AIToggleButton from './AIToggleButton';
 
 interface AIProviderProps {
   children: React.ReactNode;
+}
+
+/**
+ * Programmatic access to the Sage panel (A1 — Sage-guided onboarding).
+ * Exposed so surfaces like the first-run nudge can open the chat; safe
+ * no-op fallback outside the provider (same pattern as Language/Theme).
+ */
+interface AIContextValue {
+  isChatOpen: boolean;
+  openChat: () => void;
+  closeChat: () => void;
+}
+
+const AIContext = createContext<AIContextValue | undefined>(undefined);
+
+export function useAI(): AIContextValue {
+  const ctx = useContext(AIContext);
+  if (!ctx) return { isChatOpen: false, openChat: () => {}, closeChat: () => {} };
+  return ctx;
 }
 
 export default function AIProvider({ children }: AIProviderProps) {
@@ -24,18 +43,24 @@ export default function AIProvider({ children }: AIProviderProps) {
   }
 
   return (
-    <>
+    <AIContext.Provider
+      value={{
+        isChatOpen,
+        openChat: () => setIsChatOpen(true),
+        closeChat: () => setIsChatOpen(false),
+      }}
+    >
       {/* Main content with adjusted width when chat is open */}
       <div className={`transition-all duration-300 ${isChatOpen ? 'mr-[400px]' : ''}`}>
         {children}
       </div>
-      
+
       {/* AI Toggle Button */}
-      <AIToggleButton 
-        isOpen={isChatOpen} 
-        onClick={() => setIsChatOpen(true)} 
+      <AIToggleButton
+        isOpen={isChatOpen}
+        onClick={() => setIsChatOpen(true)}
       />
-      
+
       {/* ChatBot Panel — AnimatePresence drives the slide in/out */}
       <AnimatePresence>
         {isChatOpen && (
@@ -46,6 +71,6 @@ export default function AIProvider({ children }: AIProviderProps) {
           />
         )}
       </AnimatePresence>
-    </>
+    </AIContext.Provider>
   );
 }

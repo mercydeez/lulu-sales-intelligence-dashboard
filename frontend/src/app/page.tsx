@@ -17,11 +17,32 @@ import {
 import { StoreDistributionPanel, CategoryDonut, TopItemsPanel } from '@/components/analytics';
 import { HomeHero, AlertQuickLinks, FinancialOverview, AlertStats } from '@/components/home';
 import SecurityPostureCard from '@/components/home/SecurityPostureCard';
+import ExecutiveSummary from '@/components/home/ExecutiveSummary';
+import SageFirstRun from '@/components/home/SageFirstRun';
+import NpsPulse from '@/components/home/NpsPulse';
 import { Reveal, ScrollReveal, Stagger, RevealItem } from '@/components/ui';
+import { track } from '@/lib/telemetry';
+
+type Density = 'standard' | 'executive';
 
 export default function Home() {
   const { hasRole, authFetch } = useAuth();
   const { t } = useLanguage();
+
+  // Executive mode (E4-6): one number, one trend, one anomaly surface —
+  // the analytics wall becomes drill-down. Persisted per browser.
+  const [density, setDensity] = useState<Density>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = window.localStorage.getItem('dashboard.density');
+      if (saved === 'executive' || saved === 'standard') return saved;
+    }
+    return 'standard';
+  });
+  const setMode = (mode: Density) => {
+    setDensity(mode);
+    try { window.localStorage.setItem('dashboard.density', mode); } catch { /* private mode */ }
+    track('exec_mode_toggled', { mode });
+  };
 
   const [alertStats, setAlertStats] = useState<AlertStats>({
     outOfStock: 0,
@@ -61,6 +82,63 @@ export default function Home() {
       </Reveal>
 
       <Stagger className="max-w-7xl mx-auto space-y-8">
+        {/* Density toggle (E4-6) — mirrors the language/theme segment pattern */}
+        <RevealItem>
+          <div className="flex justify-end">
+            <div role="group" aria-label="Dashboard density" className="flex items-center rounded-lg border border-line overflow-hidden">
+              {(['standard', 'executive'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setMode(mode)}
+                  aria-pressed={density === mode}
+                  className={`px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                    density === mode ? 'bg-teal-600 text-white' : 'text-ink-muted hover:bg-surface-2'
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+          </div>
+        </RevealItem>
+
+        {/* Sage first-run nudge (A1) — both densities, disappears once used */}
+        <RevealItem>
+          <SageFirstRun />
+        </RevealItem>
+
+        {/* Quarterly NPS pulse (Y6) — cadence-gated, shows rarely */}
+        <RevealItem>
+          <NpsPulse />
+        </RevealItem>
+
+        {density === 'executive' ? (
+          <>
+            {/* Executive view: one number, one trend, one anomaly surface */}
+            <RevealItem>
+              <ExecutiveSummary />
+            </RevealItem>
+            <RevealItem>
+              <SalesTrendChart days={30} />
+            </RevealItem>
+            <RevealItem>
+              <ActionCenter />
+            </RevealItem>
+            <RevealItem>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => setMode('standard')}
+                  className="text-sm font-medium text-teal-700 hover:text-teal-600 dark:text-teal-300 transition-colors"
+                >
+                  Show the full dashboard →
+                </button>
+              </div>
+            </RevealItem>
+          </>
+        ) : (
+        <>
         <RevealItem>
           <AlertQuickLinks stats={alertStats} />
         </RevealItem>
@@ -138,6 +216,8 @@ export default function Home() {
         <ScrollReveal>
           <FinancialOverview />
         </ScrollReveal>
+        </>
+        )}
       </Stagger>
     </main>
   );

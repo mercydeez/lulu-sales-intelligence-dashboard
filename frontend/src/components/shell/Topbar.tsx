@@ -9,6 +9,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useEventStream } from '@/hooks/useEventStream';
 import { Badge, ThemeToggle } from '@/components/ui';
 import { WhatsNew } from './WhatsNew';
+import FeedbackDialog from '@/components/FeedbackDialog';
 import {
   Bell,
   Settings,
@@ -24,6 +25,7 @@ import {
   CheckCircle,
   ChevronRight,
   Menu,
+  MessageSquarePlus,
 } from 'lucide-react';
 import { ROLE_DISPLAY_NAMES, User as AuthUser, UserRole } from '@/types/auth';
 
@@ -94,6 +96,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
@@ -485,6 +488,14 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                     <Settings className="w-4 h-4" />
                     Preferences
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => { setUserMenuOpen(false); setFeedbackOpen(true); }}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-ink-soft hover:text-ink hover:bg-surface-2 transition-colors"
+                  >
+                    <MessageSquarePlus className="w-4 h-4" />
+                    Send feedback
+                  </button>
                 </div>
 
                 <div className="pt-1 border-t border-line">
@@ -502,6 +513,9 @@ export function Topbar({ onMenuClick }: TopbarProps) {
           </div>
         </div>
       </div>
+
+      {/* Free-form feedback (Y6) — opened from the user menu */}
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </header>
   );
 }
