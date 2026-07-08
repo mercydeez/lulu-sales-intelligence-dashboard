@@ -17,7 +17,9 @@ interface AIProviderProps {
  */
 interface AIContextValue {
   isChatOpen: boolean;
-  openChat: () => void;
+  /** Open the panel; an optional prompt is submitted once through the normal
+   *  send path (the copilot surface's embedded input hands off here). */
+  openChat: (initialPrompt?: string) => void;
   closeChat: () => void;
 }
 
@@ -31,35 +33,42 @@ export function useAI(): AIContextValue {
 
 export default function AIProvider({ children }: AIProviderProps) {
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [pendingPrompt, setPendingPrompt] = useState<string | undefined>(undefined);
   const { config } = useExperience();
 
   // Experience-driven assistant shell. `hidden` removes the Sage affordance
-  // entirely for the role; `panel` and `copilot` both render the current panel
-  // this phase (the dedicated copilot surface arrives later) — the switch is
-  // wired now so it becomes config-only. Absent config → default panel behavior.
+  // entirely for the role; `copilot` keeps the panel machinery (openChat from
+  // the /copilot surface and nudges still works) but retires the floating pill
+  // — the dedicated surface is the entry point. `panel` is the default, and
+  // absent config fails open to it.
   const assistantMode = config?.assistant_mode ?? 'panel';
   if (assistantMode === 'hidden') {
     return <>{children}</>;
   }
 
+  const openChat = (initialPrompt?: string) => {
+    setPendingPrompt(initialPrompt);
+    setIsChatOpen(true);
+  };
+  const closeChat = () => {
+    setIsChatOpen(false);
+    setPendingPrompt(undefined); // never resend on a later reopen
+  };
+
   return (
-    <AIContext.Provider
-      value={{
-        isChatOpen,
-        openChat: () => setIsChatOpen(true),
-        closeChat: () => setIsChatOpen(false),
-      }}
-    >
+    <AIContext.Provider value={{ isChatOpen, openChat, closeChat }}>
       {/* Main content with adjusted width when chat is open */}
       <div className={`transition-all duration-300 ${isChatOpen ? 'lg:me-[400px]' : ''}`}>
         {children}
       </div>
 
-      {/* AI Toggle Button */}
-      <AIToggleButton
-        isOpen={isChatOpen}
-        onClick={() => setIsChatOpen(true)}
-      />
+      {/* AI Toggle Button — retired in copilot mode (§3.4) */}
+      {assistantMode !== 'copilot' && (
+        <AIToggleButton
+          isOpen={isChatOpen}
+          onClick={() => openChat()}
+        />
+      )}
 
       {/* ChatBot Panel — AnimatePresence drives the slide in/out */}
       <AnimatePresence>
@@ -67,7 +76,8 @@ export default function AIProvider({ children }: AIProviderProps) {
           <ChatBot
             key="sage-chat"
             isOpen={isChatOpen}
-            onToggle={() => setIsChatOpen(false)}
+            onToggle={closeChat}
+            initialPrompt={pendingPrompt}
           />
         )}
       </AnimatePresence>

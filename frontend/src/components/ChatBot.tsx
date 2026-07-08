@@ -113,6 +113,9 @@ interface Message {
 interface ChatBotProps {
   isOpen: boolean;
   onToggle: () => void;
+  /** Submitted once on mount through the normal send path — the copilot
+   *  surface's embedded input hands its question off here. */
+  initialPrompt?: string;
 }
 
 // Human labels for the agent-trace "thinking" view.
@@ -252,7 +255,7 @@ function MessageMeta({ meta, onConfirm }: { meta: ChatMeta; onConfirm: () => voi
   );
 }
 
-export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
+export default function ChatBot({ isOpen, onToggle, initialPrompt }: ChatBotProps) {
   const { user, hasPermission, hasRole, authFetch } = useAuth();
   const { config: experience } = useExperience();
   const personaTitle = experience?.persona?.title ?? 'Sales Assistant';
@@ -509,6 +512,16 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
       setIsLoading(false);
     }
   }, [sessionId, isLoading, autoSpeak, authFetch, buildDataFallback]);
+
+  // Copilot hand-off: a prompt passed in is submitted exactly once, through the
+  // same send path as a typed message (server authorization unchanged).
+  const initialPromptSent = useRef(false);
+  useEffect(() => {
+    if (initialPrompt && canUseChat && !initialPromptSent.current) {
+      initialPromptSent.current = true;
+      sendMessage(initialPrompt);
+    }
+  }, [initialPrompt, canUseChat, sendMessage]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

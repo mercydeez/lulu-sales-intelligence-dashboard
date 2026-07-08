@@ -127,9 +127,10 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"key": "health", "tKey": "nav.businessHealth", "label": "Business Health", "href": "/value", "icon": "TrendingUp"},
             {"key": "decisions", "tKey": "nav.decisions", "label": "Decisions", "href": "/decisions", "icon": "Scale"},
             {"key": "growth", "tKey": "nav.growth", "label": "Growth", "href": "/analytics", "icon": "BarChart3"},
-            {"key": "sage", "tKey": "nav.sageCopilot", "label": "Sage Copilot", "href": "/insights", "icon": "Lightbulb"},
+            {"key": "sage", "tKey": "nav.sageCopilot", "label": "Sage Copilot", "href": "/copilot", "icon": "Lightbulb"},
         ],
         "quick_actions": [
+            {"key": "ask", "label": "Ask Sage anything", "href": "/copilot", "icon": "Lightbulb"},
             {"key": "briefing", "label": "Read today's executive briefing", "href": "/briefing", "icon": "Sunrise"},
             {"key": "decisions", "label": "Review the decisions that need me", "href": "/decisions", "icon": "Scale"},
             {"key": "health", "label": "Open business health", "href": "/value", "icon": "TrendingUp"},
