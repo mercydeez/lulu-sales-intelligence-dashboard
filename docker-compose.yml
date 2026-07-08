@@ -69,6 +69,12 @@ services:
       - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
       - MAX_BODY_SIZE_MB=10
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Opt-in gate for 3rd-party LLM calls — the key alone is not enough; the
+      # provider chain also requires ENABLE_EXTERNAL_AI=true (see services/llm).
+      - ENABLE_EXTERNAL_AI=${ENABLE_EXTERNAL_AI:-false}
+      # Per-IP requests/min. Default 100 can trip on dashboard refresh bursts
+      # (each page load fires many API calls + sidebar badges + experience).
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
       # Sage NL->SQL / AI provider chain. Empty by default => Sage uses the
       # rule-based fallback (no key needed to run). To enable the local model:

@@ -318,6 +318,13 @@ body {
   background-image: var(--canvas-mesh);
   background-attachment: fixed;
   min-height: 100vh;
+  overflow-x: hidden;
+}
+
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
 }
 
 /* Dark scrollbars — neutral track/thumb tuned to the dark surface ramp */

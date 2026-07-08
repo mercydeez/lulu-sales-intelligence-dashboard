@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { AlertTriangle, Package, Bell, ShoppingCart, LucideIcon } from 'lucide-react';
+import { AlertTriangle, Package, Bell, ShoppingCart, LucideIcon, ArrowRight } from 'lucide-react';
 
 export interface AlertStats {
   outOfStock: number;
@@ -44,20 +44,24 @@ export default function AlertQuickLinks({ stats }: { stats: AlertStats }) {
   ];
 
   return (
-    <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {tiles.map(({ href, label, value, hint, icon: Icon, text, tile, ring }) => (
         <Link
           key={label}
           href={href}
-          className={`glass card-pop rounded-2xl p-4 border border-transparent ${ring} group cursor-pointer`}
+          className={`glass card-pop rounded-2xl p-4 border border-transparent ${ring} group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50`}
         >
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
               <p className={`text-xs uppercase tracking-wider font-semibold ${text}`}>{label}</p>
-              <p className={`text-3xl font-bold mt-1 ${text}`}>{value}</p>
-              <p className="text-xs text-ink-muted mt-1">{hint}</p>
+              <p className={`mt-1 text-3xl font-bold tabular-nums ${text}`}>{value}</p>
+              <p className="mt-1 text-xs text-ink-muted">{hint}</p>
+              <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-ink-soft transition-colors group-hover:text-ink">
+                Open queue
+                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              </div>
             </div>
-            <div className={`p-3 rounded-2xl ${tile} group-hover:scale-110 transition-transform`}>
+            <div className={`shrink-0 p-3 rounded-2xl ${tile} group-hover:scale-110 transition-transform`}>
               <Icon className="w-7 h-7" />
             </div>
           </div>

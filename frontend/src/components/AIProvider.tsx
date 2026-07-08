@@ -51,7 +51,7 @@ export default function AIProvider({ children }: AIProviderProps) {
       }}
     >
       {/* Main content with adjusted width when chat is open */}
-      <div className={`transition-all duration-300 ${isChatOpen ? 'mr-[400px]' : ''}`}>
+      <div className={`transition-all duration-300 ${isChatOpen ? 'lg:me-[400px]' : ''}`}>
         {children}
       </div>
 
