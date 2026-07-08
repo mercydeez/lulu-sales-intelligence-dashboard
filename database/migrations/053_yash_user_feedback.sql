@@ -1,5 +1,6 @@
 -- =============================================================================
--- 051_yash_user_feedback.sql  (CX feedback loop — Y6, docs/product/CX_LOOPS_PLAN.md)
+-- 053_yash_user_feedback.sql  (CX feedback loop — Y6, docs/product/CX_LOOPS_PLAN.md)
+-- (renumbered 051→053: 051/052 were claimed by Krishna's SSO/SCIM migrations)
 -- One table for both signals: NPS pulses (kind='nps', score 0–10) and free-form
 -- product feedback (kind='feedback', comment). Append-only from the app's
 -- perspective; tenant-scoped with the standard RLS policy. Deliberately tiny —
