@@ -74,6 +74,11 @@ def test_super_admin_gets_executive_experience():
     assert hrefs == ["/today", "/briefing", "/value", "/decisions", "/analytics", "/insights"]
     assert cfg["capabilities"] == {"ai_chat": True, "voice": True}
     assert cfg["quick_actions"] and all(a["href"] in EXISTING_ROUTES for a in cfg["quick_actions"])
+    # Phase 2b: the exec homepage names the Copilot feed widgets (which read one
+    # shared fetch of /api/ai/copilot/feed on the client).
+    zone_types = [z["type"] for z in cfg["zones"]]
+    for feed_zone in ("business_health", "risks", "opportunities", "recommendations"):
+        assert feed_zone in zone_types, feed_zone
 
 
 def test_configs_are_copies_not_registry_references():

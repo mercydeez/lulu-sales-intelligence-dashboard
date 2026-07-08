@@ -93,14 +93,20 @@ _CONFIGS: Dict[Optional[str], Dict] = {
                 "Surface risks and growth openings before they ask. Respect their time."
             ),
         },
-        # Five-Questions homepage: verdict (what matters) · KPIs · decisions
-        # (what to do first) · quick actions (what Sage can do). Business-health
-        # / risks / growth widgets arrive with the Copilot feed (Phase 2/3) and
-        # slot in here as config — the frontend already degrades unknown types.
+        # Five-Questions homepage: verdict (what matters) · business health ·
+        # KPIs · decisions (what to do first) · risks · growth openings ·
+        # recommendations · quick actions (what Sage can do). The feed widgets
+        # (business_health/risks/opportunities/recommendations) read ONE shared
+        # fetch of /api/ai/copilot/feed; older frontends without those widgets
+        # degrade gracefully (unknown zone types are skipped).
         "zones": [
             {"type": "verdict"},
+            {"type": "business_health", "props": {"title": "Business health"}},
             {"type": "kpis"},
             {"type": "decisions", "props": {"limit": 3, "title": "Decisions that need you"}},
+            {"type": "risks", "props": {"title": "Risks Sage is watching"}},
+            {"type": "opportunities", "props": {"title": "Growth openings"}},
+            {"type": "recommendations", "props": {"title": "Sage recommends"}},
             {"type": "quick_actions", "props": {"title": "What Sage can do for you"}},
         ],
         "kpis": [
