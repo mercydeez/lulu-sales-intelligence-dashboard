@@ -33,6 +33,12 @@ export type { EmptyStateProps } from './EmptyState';
 export { ErrorState } from './ErrorState';
 export type { ErrorStateProps } from './ErrorState';
 
+export { NoPermissionState } from './NoPermissionState';
+export type { NoPermissionStateProps } from './NoPermissionState';
+
+export { StatusBanner } from './StatusBanner';
+export type { StatusBannerProps, StatusBannerVariant } from './StatusBanner';
+
 export { ConnectionBanner } from './ConnectionBanner';
 export type { ConnectionBannerProps } from './ConnectionBanner';
 

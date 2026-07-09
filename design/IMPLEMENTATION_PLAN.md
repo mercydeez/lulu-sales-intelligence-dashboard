@@ -1,7 +1,27 @@
 # Implementation Plan — Retail IQ Experience Redesign
 
 **Source of truth:** the other files in `design/`. This plan translates them into an engineering
-sequence. **No code has been written; this awaits approval.**
+sequence.
+
+## Status
+| Phase | State | Notes |
+|---|---|---|
+| **P0 Foundation** | ✅ **done** (awaiting review) | `feature/design-system-v3`; report: `design/progress/P0_FOUNDATION.md` |
+| P1 Home | ⏳ blocked on P0 review | do not start until P0 is reviewed |
+| P2 Workflows … P7 | ⏳ queued | one phase at a time |
+
+## Approved architectural adjustment — **backend frozen**
+The backend (`role_experience.py`) is **not modified**. It stays the single source of authorization,
+RBAC, experience config, and feature availability. All Information Architecture — domain grouping,
+navigation hierarchy, presentation — is done by a **client-side nav adapter** under `lib/nav/`:
+
+```
+FastAPI → Experience Config (availability) → Frontend Adapter (IA) → Enterprise UI
+```
+
+The existing experience config stays backward compatible; `lib/nav/` transforms the flat, authorized
+nav into the six-domain hierarchy entirely on the client. (Supersedes the plan's original M2, which
+proposed evolving the backend nav schema.)
 
 ## 0. The one finding that shapes everything
 
