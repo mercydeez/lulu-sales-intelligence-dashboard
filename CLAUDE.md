@@ -47,7 +47,7 @@ docker compose --profile backup run --rm backup /bin/sh /scripts/drill-restore.s
 
 Demo logins (password `Demo@2026!`): `atharva@retaildemo.app` (super_admin), `krishna@retaildemo.app` (regional_manager, Dubai only), `yash@retaildemo.app` (store_manager, Al Barsha only).
 
-**Product name is a placeholder.** The product is provisionally **"Retail IQ"**, centralized in one place: backend `settings.product_name` (`PRODUCT_NAME` env) and frontend `src/lib/brand.ts` (`NEXT_PUBLIC_PRODUCT_NAME`). The fictional demo retailer is **"Meridian Hypermarket"** (tenant 1 = "Meridian Retail"). The old "Lulu" brand has been removed except where it refers to the real Lulu Group (trademark/market discussion in `docs/product/*`) or the actual GitHub repo URL. When the final name is chosen, change those two config values.
+**Product name is "Retail Intelligence"** (owner-confirmed), centralized in one place: backend `settings.product_name` (`PRODUCT_NAME` env) and frontend `src/lib/brand.ts` (`NEXT_PUBLIC_PRODUCT_NAME`) — never hardcode it elsewhere. The fictional demo retailer is **"Meridian Hypermarket"** (tenant 1 = "Meridian Retail"); Meridian is DATA (store names, tenant workspace), never the product brand. The old "Lulu" brand has been removed except where it refers to the real Lulu Group (trademark/market discussion in `docs/product/*`) or the actual GitHub repo URL.
 
 Tests set their own env (`backend/tests/conftest.py` forces `ENVIRONMENT=testing` and dummy secrets before app imports) and don't need live Postgres/Redis for the config/security/middleware suites.
 
