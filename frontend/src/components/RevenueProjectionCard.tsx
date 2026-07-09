@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, Badge } from '@/components/ui';
 import { fetchRevenueProjection } from '@/lib/api';
 import type { RevenueProjection } from '@/types';
+import { TrendingUp } from 'lucide-react';
 
 const HORIZON = 14;
 
@@ -34,8 +35,10 @@ export default function RevenueProjectionCard() {
   return (
     <Card padding="lg" className="mb-6">
       <CardHeader>
-        <CardTitle>
-          <span className="me-2">📈</span>
+        <CardTitle className="flex items-center gap-2">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 text-teal-700">
+            <TrendingUp className="h-4 w-4" aria-hidden />
+          </span>
           {HORIZON}-Day Revenue Projection
         </CardTitle>
         {data?.model_version && (

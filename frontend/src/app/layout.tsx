@@ -24,7 +24,6 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const viewport: Viewport = {
-  // Brand teal tints the mobile browser / PWA chrome; near-black in dark mode.
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#0f766e' },
     { media: '(prefers-color-scheme: dark)', color: '#0b0d0e' },
@@ -35,9 +34,19 @@ const APP_TITLE = `${PRODUCT_NAME} | Real-time Retail Analytics`;
 const APP_DESCRIPTION =
   'Real-time sales streaming, demand forecasting, and inventory intelligence for retail operations.';
 
+function resolveMetadataBase() {
+  const candidate = process.env.NEXT_PUBLIC_APP_URL?.trim() || 'http://localhost:3000';
+  try {
+    return new URL(candidate);
+  } catch {
+    return new URL('http://localhost:3000');
+  }
+}
+
 export const metadata: Metadata = {
   title: { default: APP_TITLE, template: `%s · ${PRODUCT_NAME}` },
   description: APP_DESCRIPTION,
+  metadataBase: resolveMetadataBase(),
   manifest: '/manifest.webmanifest',
   applicationName: PRODUCT_NAME,
   appleWebApp: { capable: true, title: PRODUCT_NAME, statusBarStyle: 'default' },
@@ -71,9 +80,6 @@ export default function RootLayout({
   return (
     <html lang="en" dir="ltr" className="light" suppressHydrationWarning>
       <head>
-        {/* Set language/direction AND theme before first paint — no EN/AR flash,
-            no light-flash-before-dark. Kept in sync at runtime by
-            LanguageContext / ThemeContext (same resolution rules). */}
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var l=localStorage.getItem('lang');if(l==='ar'){document.documentElement.lang='ar';document.documentElement.dir='rtl';}var t=localStorage.getItem('theme');var d=t==='dark'||((t==null||t==='system')&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d){var c=document.documentElement.classList;c.remove('light');c.add('dark');}}catch(e){}})();`,

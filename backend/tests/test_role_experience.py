@@ -20,7 +20,7 @@ EXISTING_ROUTES = {
     "/", "/today", "/briefing", "/decisions", "/insights", "/inventory",
     "/procurement", "/approvals", "/alerts", "/reports", "/value", "/analytics",
     "/uae-insights", "/action-drafts", "/imports", "/employees", "/promotions",
-    "/forecast-lab", "/settings",
+    "/forecast-lab", "/settings", "/copilot",
 }
 
 
@@ -71,9 +71,14 @@ def test_super_admin_gets_executive_experience():
     assert cfg["persona"]["title"] == "Chief of Staff"
     # The curated six-item executive nav (labels driven by tKey on the client).
     hrefs = [n["href"] for n in cfg["nav"]]
-    assert hrefs == ["/today", "/briefing", "/value", "/decisions", "/analytics", "/insights"]
+    assert hrefs == ["/today", "/briefing", "/value", "/decisions", "/analytics", "/copilot"]
     assert cfg["capabilities"] == {"ai_chat": True, "voice": True}
     assert cfg["quick_actions"] and all(a["href"] in EXISTING_ROUTES for a in cfg["quick_actions"])
+    # Phase 2b: the exec homepage names the Copilot feed widgets (which read one
+    # shared fetch of /api/ai/copilot/feed on the client).
+    zone_types = [z["type"] for z in cfg["zones"]]
+    for feed_zone in ("business_health", "risks", "opportunities", "recommendations"):
+        assert feed_zone in zone_types, feed_zone
 
 
 def test_configs_are_copies_not_registry_references():
@@ -132,6 +137,38 @@ def test_v2_payload_shape_present_and_valid():
         for a in cfg["quick_actions"]:
             assert a["href"] in EXISTING_ROUTES, a
             assert a.get("key") and a.get("label")
+
+
+# --- Phase 3: operational role configs carry the copilot contract -----------
+
+def test_operational_roles_have_quick_actions_and_ai_context():
+    """Phase 3 (SAGE_COPILOT_ARCHITECTURE §7): store/regional/procurement carry
+    populated, role-distinct quick_actions and ai_context. ai_context is
+    display/routing metadata only (never prompt text — that stays server-side);
+    its first frontend consumer is the Phase 4 copilot surface header."""
+    configs = {r: resolve_config(r)
+               for r in ("store_manager", "regional_manager", "procurement_manager")}
+    for role, cfg in configs.items():
+        assert cfg["quick_actions"], role
+        assert cfg["ai_context"]["focus"] and cfg["ai_context"]["scope"], role
+    # Distinct per role — a store manager's one-taps are not a buyer's.
+    keys = [tuple(a["key"] for a in c["quick_actions"]) for c in configs.values()]
+    assert len(set(keys)) == 3
+    scopes = [c["ai_context"]["scope"] for c in configs.values()]
+    assert len(set(scopes)) == 3
+
+
+def test_operational_roles_name_feed_zones_but_keep_panel_mode():
+    """Feed zones arrive for operational roles (server-scoped feed), while the
+    copilot shell stays executive-only: assistant_mode remains `panel`."""
+    for role, feed_zone in (("store_manager", "recommendations"),
+                            ("regional_manager", "risks"),
+                            ("procurement_manager", "recommendations")):
+        cfg = resolve_config(role)
+        zone_types = [z["type"] for z in cfg["zones"]]
+        assert feed_zone in zone_types, role
+        assert "quick_actions" in zone_types, role
+        assert cfg["assistant_mode"] == "panel", role
 
 
 def test_prompt_fragment_never_in_delivered_config():

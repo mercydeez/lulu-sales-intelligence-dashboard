@@ -113,6 +113,9 @@ interface Message {
 interface ChatBotProps {
   isOpen: boolean;
   onToggle: () => void;
+  /** Submitted once on mount through the normal send path — the copilot
+   *  surface's embedded input hands its question off here. */
+  initialPrompt?: string;
 }
 
 // Human labels for the agent-trace "thinking" view.
@@ -140,8 +143,8 @@ const NODE_LABELS: Record<string, string> = {
  * rendered as one-tap chips below the message (SUGGESTED_QUESTIONS).
  */
 function buildWelcome(title: string, canVoice: boolean): string {
-  const voiceLine = canVoice ? ' Prefer to talk it through? Tap the mic 🎤 and ask.' : '';
-  return `👋 I'm **${CHATBOT_NAME}**, your ${title}. I read your live sales, inventory, and open findings directly — and I answer with the number, what it means, and the move I'd make next.${voiceLine}\n\nTap a question below, or ask your own.`;
+  const voiceLine = canVoice ? ' Prefer to talk it through? Tap the mic and ask.' : '';
+  return `I'm **${CHATBOT_NAME}**, your ${title}. I read your live sales, inventory, and open findings directly — and I answer with the number, what it means, and the move I'd make next.${voiceLine}\n\nTap a question below, or ask your own.`;
 }
 
 // One-tap starters — each is a question the deterministic engine can ground.
@@ -252,7 +255,7 @@ function MessageMeta({ meta, onConfirm }: { meta: ChatMeta; onConfirm: () => voi
   );
 }
 
-export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
+export default function ChatBot({ isOpen, onToggle, initialPrompt }: ChatBotProps) {
   const { user, hasPermission, hasRole, authFetch } = useAuth();
   const { config: experience } = useExperience();
   const personaTitle = experience?.persona?.title ?? 'Sales Assistant';
@@ -510,6 +513,16 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
     }
   }, [sessionId, isLoading, autoSpeak, authFetch, buildDataFallback]);
 
+  // Copilot hand-off: a prompt passed in is submitted exactly once, through the
+  // same send path as a typed message (server authorization unchanged).
+  const initialPromptSent = useRef(false);
+  useEffect(() => {
+    if (initialPrompt && canUseChat && !initialPromptSent.current) {
+      initialPromptSent.current = true;
+      sendMessage(initialPrompt);
+    }
+  }, [initialPrompt, canUseChat, sendMessage]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     sendMessage(input);
@@ -583,7 +596,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
     
     const recognition = initSpeechRecognition();
     if (!recognition) {
-      addSystemMessage('❌ **Speech recognition not supported.** Please use Chrome, Edge, or Safari browser.');
+      addSystemMessage('**Speech recognition not supported.** Please use Chrome, Edge, or Safari browser.');
       return;
     }
     
@@ -591,7 +604,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
     let finalTranscript = '';
     
     // Show recording started message
-    const recordingMsgId = addSystemMessage('🎤 **Listening...** Speak now! Your words will appear below in real-time.');
+    const recordingMsgId = addSystemMessage('**Listening...** Speak now. Your words will appear below in real-time.');
     
     recognition.onstart = () => {
       setIsRecording(true);
@@ -623,7 +636,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
       
       // Update the recording message to show what's being heard
       if (currentText) {
-        updateSystemMessage(recordingMsgId, `🎤 **Hearing:** "${currentText}"`);
+        updateSystemMessage(recordingMsgId, `**Hearing:** "${currentText}"`);
       }
     };
     
@@ -631,13 +644,13 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
       console.error('Speech recognition error:', event.error);
       
       if (event.error === 'no-speech') {
-        updateSystemMessage(recordingMsgId, '⚠️ **No speech detected.** Please speak louder or check your microphone.');
+        updateSystemMessage(recordingMsgId, '**No speech detected.** Please speak louder or check your microphone.');
       } else if (event.error === 'audio-capture') {
-        updateSystemMessage(recordingMsgId, '❌ **Microphone not found.** Please connect a microphone and try again.');
+        updateSystemMessage(recordingMsgId, '**Microphone not found.** Please connect a microphone and try again.');
       } else if (event.error === 'not-allowed') {
-        updateSystemMessage(recordingMsgId, '❌ **Microphone access denied.** Please allow microphone access in your browser settings.');
+        updateSystemMessage(recordingMsgId, '**Microphone access denied.** Please allow microphone access in your browser settings.');
       } else {
-        updateSystemMessage(recordingMsgId, `❌ **Error:** ${event.error}`);
+        updateSystemMessage(recordingMsgId, `**Error:** ${event.error}`);
       }
       
       stopRecording();
@@ -655,7 +668,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
       const finalText = finalTranscript.trim() || interimTranscript.trim();
       
       if (finalText) {
-        updateSystemMessage(recordingMsgId, `✅ **Captured:** "${finalText}"`);
+        updateSystemMessage(recordingMsgId, `**Captured:** "${finalText}"`);
         setInput(finalText);
         
         // Auto-send after a short delay
@@ -663,7 +676,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
           sendMessage(finalText);
         }, 300);
       } else {
-        updateSystemMessage(recordingMsgId, '⚠️ **No speech captured.** Click mic and try again.');
+        updateSystemMessage(recordingMsgId, '**No speech captured.** Click mic and try again.');
       }
       
       setInterimTranscript('');
@@ -673,7 +686,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
       recognition.start();
     } catch (e) {
       console.error('Failed to start recognition:', e);
-      addSystemMessage('❌ **Failed to start speech recognition.** Please try again.');
+      addSystemMessage('**Failed to start speech recognition.** Please try again.');
     }
   };
 
@@ -762,7 +775,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
   // If user doesn't have chat permission, show restricted message
   if (!canUseChat) {
     return (
-      <motion.aside {...panelMotion} className={`fixed right-0 top-0 h-full bg-surface border-l border-line shadow-2xl flex flex-col z-50 w-[400px]`}>
+      <motion.aside {...panelMotion} className="fixed end-0 top-0 h-full w-full max-w-[400px] bg-surface border-s border-line shadow-2xl flex flex-col z-50">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-600 to-purple-600 border-b border-line">
           <div className="flex items-center gap-2">
@@ -806,8 +819,8 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
   }
 
   return (
-    <motion.aside {...panelMotion} className={`fixed right-0 top-0 h-full bg-surface border-l border-line shadow-2xl flex flex-col z-50 ${
-      isMinimized ? 'w-16' : 'w-[400px]'
+    <motion.aside {...panelMotion} className={`fixed end-0 top-0 h-full bg-surface border-s border-line shadow-2xl flex flex-col z-50 ${
+      isMinimized ? 'w-16' : 'w-full max-w-[400px]'
     }`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-600 to-purple-600 border-b border-line">
@@ -993,7 +1006,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                     <Mic className="w-5 h-5" />
                   )}
                   {isRecording && (
-                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="absolute -top-1 -end-1 flex h-3 w-3">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
                     </span>
@@ -1015,7 +1028,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={isRecording ? "🎤 Recording... Click mic to stop" : "Ask about sales, trends, insights..."}
+                placeholder={isRecording ? "Recording... Click mic to stop" : "Ask about sales, trends, insights..."}
                 className="flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-ink placeholder-ink-muted focus:outline-none focus:border-violet-500 transition-colors"
                 disabled={isLoading || isRecording}
               />
@@ -1034,7 +1047,7 @@ export default function ChatBot({ isOpen, onToggle }: ChatBotProps) {
               <div className="mt-2 flex items-center justify-between bg-rose-500/20 rounded-lg px-3 py-2">
                 <div className="flex items-center gap-2 text-rose-400 text-sm">
                   <span className="w-3 h-3 bg-rose-500 rounded-full animate-pulse" />
-                  <span className="font-medium">🎤 Recording... Speak now!</span>
+                  <span className="font-medium">Recording... Speak now.</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-rose-300 text-sm font-mono">{recordingDuration.toFixed(1)}s</span>

@@ -7,6 +7,14 @@
 type Dict = Record<string, string>;
 
 export const en: Dict = {
+  // Domain rail (design-system v3)
+  'domain.home': 'Home',
+  'domain.workflows': 'Workflows',
+  'domain.operations': 'Operations',
+  'domain.intelligence': 'Intelligence',
+  'domain.platform': 'Platform',
+  'domain.admin': 'Admin',
+  'nav.preferences': 'Preferences',
   'nav.dashboard': 'Dashboard',
   'nav.briefing': 'Briefing',
   'nav.decisions': 'Decisions',
@@ -48,6 +56,14 @@ export const en: Dict = {
 };
 
 export const ar: Dict = {
+  // Domain rail (design-system v3)
+  'domain.home': 'الرئيسية',
+  'domain.workflows': 'المهام',
+  'domain.operations': 'العمليات',
+  'domain.intelligence': 'التحليلات',
+  'domain.platform': 'المنصة',
+  'domain.admin': 'الإدارة',
+  'nav.preferences': 'التفضيلات',
   'nav.dashboard': 'لوحة القيادة',
   'nav.briefing': 'الموجز اليومي',
   'nav.decisions': 'القرارات',

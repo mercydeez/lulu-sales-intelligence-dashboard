@@ -93,14 +93,20 @@ _CONFIGS: Dict[Optional[str], Dict] = {
                 "Surface risks and growth openings before they ask. Respect their time."
             ),
         },
-        # Five-Questions homepage: verdict (what matters) · KPIs · decisions
-        # (what to do first) · quick actions (what Sage can do). Business-health
-        # / risks / growth widgets arrive with the Copilot feed (Phase 2/3) and
-        # slot in here as config — the frontend already degrades unknown types.
+        # Five-Questions homepage: verdict (what matters) · business health ·
+        # KPIs · decisions (what to do first) · risks · growth openings ·
+        # recommendations · quick actions (what Sage can do). The feed widgets
+        # (business_health/risks/opportunities/recommendations) read ONE shared
+        # fetch of /api/ai/copilot/feed; older frontends without those widgets
+        # degrade gracefully (unknown zone types are skipped).
         "zones": [
             {"type": "verdict"},
+            {"type": "business_health", "props": {"title": "Business health"}},
             {"type": "kpis"},
             {"type": "decisions", "props": {"limit": 3, "title": "Decisions that need you"}},
+            {"type": "risks", "props": {"title": "Risks Sage is watching"}},
+            {"type": "opportunities", "props": {"title": "Growth openings"}},
+            {"type": "recommendations", "props": {"title": "Sage recommends"}},
             {"type": "quick_actions", "props": {"title": "What Sage can do for you"}},
         ],
         "kpis": [
@@ -121,9 +127,10 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"key": "health", "tKey": "nav.businessHealth", "label": "Business Health", "href": "/value", "icon": "TrendingUp"},
             {"key": "decisions", "tKey": "nav.decisions", "label": "Decisions", "href": "/decisions", "icon": "Scale"},
             {"key": "growth", "tKey": "nav.growth", "label": "Growth", "href": "/analytics", "icon": "BarChart3"},
-            {"key": "sage", "tKey": "nav.sageCopilot", "label": "Sage Copilot", "href": "/insights", "icon": "Lightbulb"},
+            {"key": "sage", "tKey": "nav.sageCopilot", "label": "Sage Copilot", "href": "/copilot", "icon": "Lightbulb"},
         ],
         "quick_actions": [
+            {"key": "ask", "label": "Ask Sage anything", "href": "/copilot", "icon": "Lightbulb"},
             {"key": "briefing", "label": "Read today's executive briefing", "href": "/briefing", "icon": "Sunrise"},
             {"key": "decisions", "label": "Review the decisions that need me", "href": "/decisions", "icon": "Scale"},
             {"key": "health", "label": "Open business health", "href": "/value", "icon": "TrendingUp"},
@@ -136,6 +143,14 @@ _CONFIGS: Dict[Optional[str], Dict] = {
         "key": "store_manager",
         "home": "/today",
         "decision_scope": "store",
+        # Display/routing metadata only — prompt text stays server-side (§3.6).
+        # First rendered by the copilot surface header (Phase 4).
+        "ai_context": {"focus": ["stockouts", "today_sales", "reorders"], "scope": "Your store"},
+        "quick_actions": [
+            {"key": "reorder", "label": "Reorder what's running low", "href": "/procurement", "icon": "Truck"},
+            {"key": "alerts", "label": "Check today's alerts", "href": "/alerts", "icon": "Bell"},
+            {"key": "briefing", "label": "Read today's briefing", "href": "/briefing", "icon": "Sunrise"},
+        ],
         "persona": {
             "name": None,  # filled with settings.chatbot_name at resolve time
             "title": "Store Coach",
@@ -155,6 +170,8 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"type": "kpis"},
             {"type": "decisions", "props": {"limit": 3, "title": "Decide now"}},
             {"type": "stock"},
+            {"type": "recommendations", "props": {"title": "Do these next"}},
+            {"type": "quick_actions"},
         ],
         # KPIs are today-focused (a store manager's frame) + counts. The 7-day
         # revenue lives in the hero verdict alone, so it never appears twice with
@@ -185,6 +202,12 @@ _CONFIGS: Dict[Optional[str], Dict] = {
         "key": "regional_manager",
         "home": "/today",
         "decision_scope": "region",
+        "ai_context": {"focus": ["store_comparison", "approvals", "wow_movement"], "scope": "Your region"},
+        "quick_actions": [
+            {"key": "approvals", "label": "Review pending approvals", "href": "/approvals", "icon": "Inbox"},
+            {"key": "compare", "label": "Compare my stores", "href": "/analytics", "icon": "BarChart3"},
+            {"key": "briefing", "label": "Read today's briefing", "href": "/briefing", "icon": "Sunrise"},
+        ],
         "persona": {
             "name": None,
             "title": "Regional Coach",
@@ -205,6 +228,8 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"type": "kpis"},
             {"type": "decisions", "props": {"limit": 3, "title": "Decide now"}},
             {"type": "approvals"},
+            {"type": "risks", "props": {"title": "Stores at risk"}},
+            {"type": "quick_actions"},
         ],
         # The 7-day region revenue is stated once, in the hero verdict; KPIs add
         # movement + workload rather than repeating it with a second figure.
@@ -239,6 +264,12 @@ _CONFIGS: Dict[Optional[str], Dict] = {
         "key": "procurement_manager",
         "home": "/today",
         "decision_scope": "chain",
+        "ai_context": {"focus": ["po_queue", "stock_pressure", "overstock"], "scope": "All stores (buying desk)"},
+        "quick_actions": [
+            {"key": "po_queue", "label": "Open the PO queue", "href": "/approvals", "icon": "Inbox"},
+            {"key": "generate_pos", "label": "Generate POs from forecast", "href": "/procurement", "icon": "Truck"},
+            {"key": "stock", "label": "Check stock pressure", "href": "/inventory", "icon": "Package"},
+        ],
         "persona": {
             "name": None,
             "title": "Supply Chain Expert",
@@ -259,6 +290,8 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"type": "kpis"},
             {"type": "approvals"},
             {"type": "decisions", "props": {"limit": 3, "title": "Buys that need you"}},
+            {"type": "recommendations", "props": {"title": "Buying recommendations"}},
+            {"type": "quick_actions"},
         ],
         "kpis": [
             {"key": "stockouts_now", "label": "Out of stock", "source": "inventory",

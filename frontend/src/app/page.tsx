@@ -22,6 +22,7 @@ import SageFirstRun from '@/components/home/SageFirstRun';
 import NpsPulse from '@/components/home/NpsPulse';
 import { Reveal, ScrollReveal, Stagger, RevealItem } from '@/components/ui';
 import { track } from '@/lib/telemetry';
+import { RotateCcw } from 'lucide-react';
 
 type Density = 'standard' | 'executive';
 
@@ -191,7 +192,9 @@ export default function Home() {
 
           <div className="mb-6">
             <h3 className="text-xl font-semibold text-ink mb-4 flex items-center gap-2">
-              <span className="text-coral-500">🔄</span>
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-rose-100 text-rose-700">
+                <RotateCcw className="h-4 w-4" aria-hidden />
+              </span>
               Returns Analysis
             </h3>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
