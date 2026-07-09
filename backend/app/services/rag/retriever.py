@@ -121,12 +121,13 @@ async def answer_from_docs(question: str, tenant_id: int, providers=None,
     if not chunks:
         return RagAnswer(ok=False, answer="No matching passage found in the documents.")
 
-    citations = [_cite(c) for c in chunks]
+    # RAG-6: rerank + dedup + budget + lost-in-the-middle ordering + citations.
+    from app.services.rag.rerank import assemble_context
+    ctx, chunks, citations = assemble_context(query or question, chunks)
     providers = providers or []
-    # With an LLM: narrate strictly from the retrieved chunks.
+    # With an LLM: narrate strictly from the assembled context.
     for provider in providers:
         try:
-            ctx = "\n\n".join(f"[{_cite(c)}]\n{c['content']}" for c in chunks)
             from app.services.llm import LLMError
             try:
                 ans = await provider.complete([
