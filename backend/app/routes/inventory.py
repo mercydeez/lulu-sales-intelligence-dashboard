@@ -105,7 +105,9 @@ async def get_inventory_items(
     status: Optional[str] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
+    # le=500 covers the full derived inventory (10 stores x 50 items) so a
+    # single request can return an unpaginated scoped view for any role.
+    limit: int = Query(50, ge=1, le=500),
     current_user: dict = Depends(get_current_user)
 ):
     """Get inventory items with filtering and pagination from real sales data"""

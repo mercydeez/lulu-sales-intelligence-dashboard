@@ -109,32 +109,26 @@ export default function InventoryPage() {
 
       const [summaryRes, itemsRes, categoriesRes] = await Promise.all([
         authFetch(`/api/inventory/summary?${params}`),
-        authFetch(`/api/inventory/items?${params}&limit=200`),
+        // limit=500 = full derived inventory (10 stores x 50 items), so the
+        // table always holds the same row set the summary KPIs count.
+        authFetch(`/api/inventory/items?${params}&limit=500`),
         authFetch(`/api/inventory/categories?${params}`),
       ]);
 
-      // If the core queries hard-fail, surface an error/retry instead of
-      // fabricating stock figures.
-      if (!itemsRes.ok && !summaryRes.ok) {
+      // The table and the KPI cards must come from the same fetch cycle: a
+      // failed items query with a live summary would render "Total items: N"
+      // next to an empty table, so treat either failure as a page error.
+      if (!itemsRes.ok || !summaryRes.ok) {
         throw new Error('Inventory API request failed');
       }
 
-      let inventoryItems: InventoryItem[] = [];
+      const summaryData = await summaryRes.json();
+      setSummary(summaryData && summaryData.total_items > 0 ? summaryData : null);
 
-      if (summaryRes.ok) {
-        const summaryData = await summaryRes.json();
-        setSummary(summaryData && summaryData.total_items > 0 ? summaryData : null);
-      } else {
-        setSummary(null);
-      }
-
-      if (itemsRes.ok) {
-        const data = await itemsRes.json();
-        inventoryItems = data.items && data.items.length > 0 ? data.items : [];
-        setItems(inventoryItems);
-      } else {
-        setItems([]);
-      }
+      const itemsData = await itemsRes.json();
+      const inventoryItems: InventoryItem[] =
+        itemsData.items && itemsData.items.length > 0 ? itemsData.items : [];
+      setItems(inventoryItems);
 
       if (categoriesRes.ok) {
         const data = await categoriesRes.json();

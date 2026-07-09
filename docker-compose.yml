@@ -66,7 +66,9 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD:-sales_redis_dev_pass}@redis:6379
       - ENVIRONMENT=development
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-super-secret-change-in-production-2026}
-      - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
+      # localhost:3001 = host `npm run dev` fallback port while the frontend
+      # container holds 3000 (see CLAUDE.md: compose does not hot-reload).
+      - CORS_ORIGINS=http://localhost:3000,http://frontend:3000,http://localhost:3001
       - MAX_BODY_SIZE_MB=10
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # Opt-in gate for 3rd-party LLM calls — the key alone is not enough; the
