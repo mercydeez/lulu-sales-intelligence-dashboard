@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { Printer, ArrowLeft, CheckCircle2, Check } from 'lucide-react';
+import { Printer, ArrowLeft, CheckCircle2, Check, TrendingUp } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui';
 import { PRODUCT_NAME } from '@/lib/brand';
@@ -163,7 +163,12 @@ export default function PurchaseOrderPage() {
         )}
 
         <div className="border-t border-line pt-4 text-xs text-ink-muted">
-          {po.source === 'forecast_reorder' && <p>📈 Auto-generated from demand forecast.</p>}
+          {po.source === 'forecast_reorder' && (
+            <p className="inline-flex items-center gap-1.5">
+              <TrendingUp className="h-3.5 w-3.5 text-teal-600" aria-hidden />
+              Auto-generated from demand forecast.
+            </p>
+          )}
           <p className="mt-1">This document is a system-of-record purchase order. Synthetic demo data.</p>
         </div>
       </div>

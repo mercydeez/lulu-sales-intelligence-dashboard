@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Truck, Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
+import { Truck, Sparkles, Loader2, CheckCircle2, TrendingUp } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Button, Badge } from '@/components/ui';
 import AuditTimeline from '@/components/AuditTimeline';
@@ -195,7 +195,9 @@ export default function ProcurementPage() {
                             {po.status.replace('_', ' ')}
                           </Badge>
                           {po.source === 'forecast_reorder' && (
-                            <span className="ms-2 text-[10px] text-ink-muted">📈 forecast</span>
+                            <span className="ms-2 inline-flex items-center gap-1 text-[10px] font-medium text-ink-muted">
+                              <TrendingUp className="h-3 w-3" aria-hidden /> forecast
+                            </span>
                           )}
                         </td>
                         <td className="py-2.5 pe-4 text-end text-ink">{po.line_count}</td>

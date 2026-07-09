@@ -71,11 +71,25 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated) { setState({ config: null, loading: false }); return; }
     let active = true;
+    const timers: ReturnType<typeof setTimeout>[] = [];
     setState((s) => ({ ...s, loading: true }));
-    apiGet<ExperienceConfig>('/api/experience')
-      .then((cfg) => { if (active) setState({ config: cfg, loading: false }); })
-      .catch(() => { if (active) setState({ config: null, loading: false }); });
-    return () => { active = false; };
+    // Retry with backoff: the page-load burst can trip the per-IP rate limit,
+    // and a single failed fetch must not lock every surface into the fallback
+    // experience (e.g. the full built-in sidebar instead of the curated nav).
+    const attempt = (retriesLeft: number) => {
+      apiGet<ExperienceConfig>('/api/experience')
+        .then((cfg) => { if (active) setState({ config: cfg, loading: false }); })
+        .catch(() => {
+          if (!active) return;
+          if (retriesLeft > 0) {
+            timers.push(setTimeout(() => attempt(retriesLeft - 1), (4 - retriesLeft) * 1500));
+          } else {
+            setState({ config: null, loading: false });
+          }
+        });
+    };
+    attempt(3);
+    return () => { active = false; timers.forEach(clearTimeout); };
     // Re-resolve when the signed-in user changes (role switch = new experience).
   }, [isAuthenticated, user?.email, user?.role]);
 

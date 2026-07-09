@@ -51,6 +51,7 @@ from app.routes import decisions as decisions_routes
 from app.routes import experience as experience_routes
 from app.routes import findings as findings_routes
 from app.routes import search as search_routes
+from app.routes import copilot as copilot_routes
 
 
 # A router, its mount prefix, and its OpenAPI tags.
@@ -102,4 +103,5 @@ ROUTERS: List[RouterSpec] = [
     (experience_routes.router, "/api/experience", ["Experience"]),
     (findings_routes.router, "/api/findings", ["Diagnostics"]),
     (search_routes.router, "/api/search", ["Search"]),
+    (copilot_routes.router, "/api/ai/copilot", ["Sage Copilot"]),
 ]

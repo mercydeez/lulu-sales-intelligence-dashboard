@@ -3,6 +3,39 @@
 @tailwind utilities;
 
 /* ===============================================
+   DESIGN SYSTEM v3 — named tokens (design/DESIGN_SYSTEM §3, VISUAL_LANGUAGE §2)
+   Additive foundation layer. These new variable NAMES do not collide with the
+   existing --c-* / --accent-* tokens, so every current utility keeps working;
+   redesigned components consume these as they migrate (phase by phase).
+   =============================================== */
+:root {
+  /* Foundation */
+  --canvas: #F7F4EF;
+  --surface: #FFFFFF;
+  --surface-elevated: #FCFBF9;
+  --surface-tint: #F3F8F7;
+  --line: #E6DED4;
+  --ink: #171717;
+  --ink-soft: #48515A;
+  --ink-muted: #6F7A84;
+  /* Brand (teal) */
+  --brand-50: #EEF9F7;
+  --brand-100: #D7F1ED;
+  --brand-600: #14867D;
+  --brand-700: #0F766E;
+  /* Semantic */
+  --success-50: #ECFDF5;  --success-600: #0F9F6E;
+  --warning-50: #FFFBEB;  --warning-700: #B7791F;
+  --danger-50: #FDF2F0;   --danger-600: #D95F4A;
+  --info-50: #EFF6FF;     --info-600: #2563EB;
+  --ai-50: #F1EEFE;       --ai-600: #6E59F6;
+  /* Utility */
+  --focus-ring: #14867D;
+  --overlay-scrim: rgba(23, 23, 23, 0.40);
+  --live-pulse: #14867D;
+}
+
+/* ===============================================
    THEME SYSTEM — Sunset Pop (light base, default)
    coral #ff6b5c · violet #8b5cf6 · teal #2dd4bf · amber #fbbf24
    =============================================== */
@@ -318,6 +351,13 @@ body {
   background-image: var(--canvas-mesh);
   background-attachment: fixed;
   min-height: 100vh;
+  overflow-x: hidden;
+}
+
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
 }
 
 /* Dark scrollbars — neutral track/thumb tuned to the dark surface ramp */

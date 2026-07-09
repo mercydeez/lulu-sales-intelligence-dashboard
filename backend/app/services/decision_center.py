@@ -351,6 +351,17 @@ _FINDING_COLS = (
 )
 
 
+async def gather_scoped_pending(
+    db: AsyncSession, tenant_id: int,
+    allowed: Optional[Sequence[int]], scope: str,
+) -> List[Dict]:
+    """The scoped, pending decision pool (open findings + forecast reorder
+    risks), money-ranked. Shared by `list_decisions`, `triage_view`, and the
+    Sage Copilot feed so all three surfaces read from ONE composed list — never
+    three independent derivations of "what's pending"."""
+    return scope_decisions(await _gather_pending(db, tenant_id, allowed), scope, allowed)
+
+
 async def list_decisions(
     db: AsyncSession,
     tenant_id: int,
@@ -370,7 +381,7 @@ async def list_decisions(
         decisions = scope_decisions([build_decision(dict(r)) for r in rows], scope, allowed)
         return {"state": "decided", "decisions": decisions, "count": len(decisions)}
 
-    decisions = scope_decisions(await _gather_pending(db, tenant_id, allowed), scope, allowed)
+    decisions = await gather_scoped_pending(db, tenant_id, allowed, scope)
     return {
         "state": "pending",
         "decisions": decisions,
@@ -584,6 +595,6 @@ async def triage_view(db: AsyncSession, tenant_id: int,
                       scope: str = "chain") -> Dict:
     """The triage view: 3 decisions for you, the rest routed to owners —
     filtered to the caller's role scope (chain / region / store)."""
-    decisions = scope_decisions(await _gather_pending(db, tenant_id, allowed), scope, allowed)
+    decisions = await gather_scoped_pending(db, tenant_id, allowed, scope)
     region_map = await _region_map(db, tenant_id)
     return triage_decisions(decisions, region_map, scope=scope)

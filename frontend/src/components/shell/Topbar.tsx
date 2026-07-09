@@ -260,7 +260,8 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onMenuClick}
-            className="lg:hidden p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 transition-all"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 transition-all lg:hidden"
+            aria-label="Open navigation"
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -275,7 +276,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
               <button
                 onClick={() => setLang('en')}
                 aria-pressed={lang === 'en'}
-                className={`px-2.5 py-1 text-xs font-semibold transition-colors ${
+                className={`min-h-9 px-3 text-xs font-semibold transition-colors ${
                   lang === 'en' ? 'bg-teal-600 text-white' : 'text-ink-muted hover:bg-surface-2'
                 }`}
               >
@@ -284,7 +285,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
               <button
                 onClick={() => setLang('ar')}
                 aria-pressed={lang === 'ar'}
-                className={`px-2.5 py-1 text-xs font-semibold transition-colors ${
+                className={`min-h-9 px-3 text-xs font-semibold transition-colors ${
                   lang === 'ar' ? 'bg-teal-600 text-white' : 'text-ink-muted hover:bg-surface-2'
                 }`}
               >
@@ -314,11 +315,13 @@ export function Topbar({ onMenuClick }: TopbarProps) {
           <div className="relative" ref={notificationRef}>
             <button
               onClick={() => setNotificationOpen(!notificationOpen)}
-              className="relative p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 transition-all"
+              className="relative inline-flex h-11 w-11 items-center justify-center rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 transition-all"
+              aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
+              aria-expanded={notificationOpen}
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-rose-500 text-white text-xs font-bold flex items-center justify-center animate-pulse">
+                <span className="absolute -top-1 -end-1 w-5 h-5 rounded-full bg-rose-500 text-white text-xs font-bold flex items-center justify-center animate-pulse">
                   {unreadCount}
                 </span>
               )}
@@ -331,7 +334,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.97 }}
                 transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute right-0 mt-2 w-96 glass-strong rounded-xl shadow-2xl overflow-hidden z-50">
+                className="absolute end-0 mt-2 w-[min(24rem,calc(100vw-2rem))] glass-strong rounded-xl shadow-2xl overflow-hidden z-50">
                 <div className="px-4 py-3 bg-surface-2 border-b border-line flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Bell className="w-4 h-4 text-teal-600" />
@@ -341,7 +344,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                         {unreadCount} new
                       </span>
                     )}
-                    <div className="flex items-center gap-1 ml-2">
+                    <div className="flex items-center gap-1 ms-2">
                       <span className="relative flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
@@ -424,11 +427,13 @@ export function Topbar({ onMenuClick }: TopbarProps) {
             <button
               onClick={() => setUserMenuOpen(!userMenuOpen)}
               className="flex items-center gap-3 px-3 py-2 rounded-xl bg-surface-2 hover:bg-surface-3 transition-all border border-line"
+              aria-label="Open user menu"
+              aria-expanded={userMenuOpen}
             >
               <div className="w-8 h-8 rounded-lg sunset-gradient flex items-center justify-center text-white font-semibold text-sm">
                 {user?.first_name?.[0]}{user?.last_name?.[0]}
               </div>
-              <div className="hidden lg:block text-left">
+              <div className="hidden lg:block text-start">
                 <p className="text-sm font-medium text-ink">
                   {user?.first_name} {user?.last_name}
                 </p>
@@ -446,7 +451,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.97 }}
                 transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute right-0 mt-2 w-64 py-2 glass-strong rounded-xl shadow-xl">
+                className="absolute end-0 mt-2 w-64 py-2 glass-strong rounded-xl shadow-xl">
                 <div className="px-4 py-3 border-b border-line">
                   <p className="text-sm font-medium text-ink">
                     {user?.first_name} {user?.last_name}

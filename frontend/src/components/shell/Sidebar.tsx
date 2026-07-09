@@ -23,7 +23,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { hasRole, hasPermission, authFetch, isAuthenticated } = useAuth();
   const { t } = useLanguage();
-  const { config } = useExperience();
+  const { config, loading: experienceLoading } = useExperience();
 
   // Live critical-alert count for the Alerts nav badge (same source the
   // dashboard uses for its alert tiles — /api/inventory/summary).
@@ -131,7 +131,16 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       </Link>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {filteredNavItems.map((item) => {
+        {/* While the role-curated nav manifest is loading, show a skeleton
+            instead of flashing the full built-in nav and collapsing it. */}
+        {isAuthenticated && experienceLoading
+          ? Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-2.5">
+                <span className="w-5 h-5 rounded-md bg-surface-2 animate-pulse" />
+                <span className="h-3.5 flex-1 max-w-[8rem] rounded bg-surface-2 animate-pulse" />
+              </div>
+            ))
+          : filteredNavItems.map((item) => {
           const active = pathname === item.href;
           const showBadge = item.href === '/alerts' && criticalCount > 0;
           const showApprovals = item.href === '/approvals' && approvalCount > 0;

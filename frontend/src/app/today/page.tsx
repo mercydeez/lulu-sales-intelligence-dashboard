@@ -13,6 +13,9 @@ import { useExperience, KpiDescriptor } from '@/contexts/ExperienceContext';
 import { Button, ErrorState, SkeletonCard, Stagger, RevealItem } from '@/components/ui';
 import { apiGet } from '@/lib/apiClient';
 import { registerWidgets, resolveWidget, type WidgetProps } from '@/components/copilot/registry';
+// Side-effect import: the Copilot feed widgets (business_health, risks,
+// opportunities/growth, recommendations) register before zones resolve.
+import '@/components/copilot/feedWidgets';
 import {
   Sparkles, ArrowRight, RefreshCw, Inbox, PackageX, TrendingUp, TrendingDown, Minus, AlertTriangle,
 } from 'lucide-react';

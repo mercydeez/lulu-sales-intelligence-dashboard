@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Inbox, Check, X, CheckCheck, Loader2 } from 'lucide-react';
+import { Inbox, Check, X, CheckCheck, Loader2, TrendingUp } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Button, Badge, Stagger, RevealItem } from '@/components/ui';
 
@@ -92,7 +92,11 @@ export default function ApprovalsPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <Link href={`/procurement/po/${po.id}`} className="font-mono text-teal-700 hover:underline">{po.po_number}</Link>
-                    {po.source === 'forecast_reorder' && <Badge variant="teal">📈 forecast</Badge>}
+                    {po.source === 'forecast_reorder' && (
+                      <Badge variant="teal">
+                        <TrendingUp className="h-3 w-3" aria-hidden /> forecast
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-sm text-ink-muted mt-0.5 truncate">
                     {po.supplier_name} · {po.line_count} lines
