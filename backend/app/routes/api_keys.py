@@ -23,7 +23,10 @@ class CreateKeyRequest(BaseModel):
 
 
 def _require_admin(user: dict) -> None:
-    if user.get("role") not in ("super_admin", "admin"):
+    # Demo (2026-07-08): regional_manager opened alongside admin so the Developers
+    # tab works for them (see role_experience full-nav change). Revert to
+    # ("super_admin", "admin") to restore the stricter default.
+    if user.get("role") not in ("super_admin", "admin", "regional_manager"):
         raise HTTPException(status_code=403, detail="Admin role required to manage API keys")
 
 

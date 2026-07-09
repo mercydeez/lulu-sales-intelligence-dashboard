@@ -72,12 +72,12 @@ export const navItems: NavItem[] = [
   { label: 'Employees', tKey: 'nav.employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Reports', tKey: 'nav.reports', href: '/reports', icon: <FileText className="w-5 h-5" />, permission: 'can_export' },
   { label: 'Alerts', tKey: 'nav.alerts', href: '/alerts', icon: <Bell className="w-5 h-5" /> },
-  { label: 'Admin', tKey: 'nav.admin', href: '/admin', icon: <Shield className="w-5 h-5" />, roles: ['super_admin'] },
-  { label: 'Security', tKey: 'nav.security', href: '/security', icon: <ShieldAlert className="w-5 h-5" />, roles: ['super_admin'] },
-  { label: 'Audit', tKey: 'nav.audit', href: '/audit', icon: <ScrollText className="w-5 h-5" />, roles: ['super_admin'] },
+  { label: 'Admin', tKey: 'nav.admin', href: '/admin', icon: <Shield className="w-5 h-5" />, roles: ['super_admin', 'regional_manager'] },
+  { label: 'Security', tKey: 'nav.security', href: '/security', icon: <ShieldAlert className="w-5 h-5" />, roles: ['super_admin', 'regional_manager'] },
+  { label: 'Audit', tKey: 'nav.audit', href: '/audit', icon: <ScrollText className="w-5 h-5" />, roles: ['super_admin', 'regional_manager'] },
   { label: 'Import Data', tKey: 'nav.imports', href: '/imports', icon: <UploadCloud className="w-5 h-5" />, permission: 'can_manage_inventory' },
-  { label: 'Data Sources', tKey: 'nav.dataSources', href: '/data-sources', icon: <Database className="w-5 h-5" />, roles: ['super_admin'] },
-  { label: 'Developers', tKey: 'nav.developers', href: '/developers', icon: <Code2 className="w-5 h-5" />, roles: ['super_admin'] },
+  { label: 'Data Sources', tKey: 'nav.dataSources', href: '/data-sources', icon: <Database className="w-5 h-5" />, roles: ['super_admin', 'regional_manager'] },
+  { label: 'Developers', tKey: 'nav.developers', href: '/developers', icon: <Code2 className="w-5 h-5" />, roles: ['super_admin', 'regional_manager'] },
   { label: 'Monitoring', tKey: 'nav.monitoring', href: '/monitoring', icon: <Activity className="w-5 h-5" />, permission: 'is_admin' },
 ];
 

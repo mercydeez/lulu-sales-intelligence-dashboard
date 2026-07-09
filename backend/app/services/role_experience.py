@@ -220,13 +220,13 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"key": "at_stake", "label": "At stake /wk", "source": "decisions",
              "field": "at_stake_aed_per_week", "format": "aed"},
         ],
-        "nav": [
-            {"key": "today", "tKey": "nav.today", "label": "Today", "href": "/today", "icon": "Sunrise"},
-            {"key": "my_work", "tKey": "nav.myWork", "label": "My Work", "href": "/decisions", "icon": "Scale"},
-            {"key": "approvals", "tKey": "nav.approvals", "label": "Approvals", "href": "/approvals", "icon": "Inbox"},
-            {"key": "my_stores", "tKey": "nav.myStores", "label": "My Stores", "href": "/analytics", "icon": "BarChart3"},
-            {"key": "alerts", "tKey": "nav.alerts", "label": "Alerts", "href": "/alerts", "icon": "Bell"},
-        ],
+        # Demo (2026-07-08): regional manager gets the FULL built-in sidebar
+        # (nav=None) so they see every operational + admin tab, not just the
+        # curated 5. Backend RBAC for the admin-gated pages is opened to
+        # regional_manager alongside super_admin (see admin/security/data_sources
+        # routes). To restore the curated "Regional Coach" nav, put the 5-item
+        # manifest back here.
+        "nav": None,
         "notifications": {"brief_hour_gst": 7, "quiet_hours": [22, 6], "tiers": ["T1 region brief", "T0 store critical / stuck transfer"]},
     },
 

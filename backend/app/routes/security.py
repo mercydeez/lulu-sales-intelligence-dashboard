@@ -37,7 +37,7 @@ BLOCKED_TYPES = (
 
 
 def _require_admin(user: dict) -> None:
-    if user.get("role") not in ("super_admin", "admin"):
+    if user.get("role") not in ("super_admin", "admin", "regional_manager"):
         raise HTTPException(status_code=403, detail="Admin role required for security data")
 
 

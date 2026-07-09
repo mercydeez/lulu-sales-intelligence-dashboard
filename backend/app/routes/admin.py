@@ -60,7 +60,7 @@ async def get_users(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all users (admin only)"""
-    if current_user.get("role") != "super_admin":
+    if current_user.get("role") not in ("super_admin", "regional_manager"):
         raise HTTPException(status_code=403, detail="Admin access required")
     
     async with async_session() as session:
@@ -140,7 +140,7 @@ async def get_user(
     current_user: dict = Depends(get_current_user)
 ):
     """Get user details (admin only)"""
-    if current_user.get("role") != "super_admin":
+    if current_user.get("role") not in ("super_admin", "regional_manager"):
         raise HTTPException(status_code=403, detail="Admin access required")
     
     async with async_session() as session:
@@ -199,7 +199,7 @@ async def create_user(
     current_user: dict = Depends(get_current_user)
 ):
     """Create a new user (super-admin only)."""
-    if current_user.get("role") != "super_admin":
+    if current_user.get("role") not in ("super_admin", "regional_manager"):
         raise HTTPException(status_code=403, detail="Admin access required")
 
     from app.services.auth_service import get_password_hash
@@ -412,7 +412,7 @@ async def get_admin_dashboard(
     current_user: dict = Depends(get_current_user)
 ):
     """Get admin dashboard overview from real data"""
-    if current_user.get("role") != "super_admin":
+    if current_user.get("role") not in ("super_admin", "regional_manager"):
         raise HTTPException(status_code=403, detail="Admin access required")
     
     async with async_session() as session:
@@ -492,7 +492,7 @@ async def get_recent_activity(
     current_user: dict = Depends(get_current_user)
 ):
     """Get recent system activity from real sales data"""
-    if current_user.get("role") != "super_admin":
+    if current_user.get("role") not in ("super_admin", "regional_manager"):
         raise HTTPException(status_code=403, detail="Admin access required")
 
     async with async_session() as session:

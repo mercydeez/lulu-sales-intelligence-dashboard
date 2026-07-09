@@ -49,13 +49,13 @@ class CreateSource(BaseModel):
 
 
 @router.get("")
-async def list_data_sources(user: dict = Depends(require_role("super_admin"))):
+async def list_data_sources(user: dict = Depends(require_role("super_admin", "regional_manager"))):
     return {"sources": await ds.list_sources(tenant_id=user.get("tenant_id") or 1)}
 
 
 @router.post("/test")
 async def test_unsaved(cfg: TestConfig, request: Request,
-                       user: dict = Depends(require_role("super_admin"))):
+                       user: dict = Depends(require_role("super_admin", "regional_manager"))):
     """Test a connection/mapping before saving it (the form's 'Test' button)."""
     _require_connectors_enabled()
     ok, message = await ds.test_connection(cfg.type, cfg.connection, cfg.mapping)
@@ -66,7 +66,7 @@ async def test_unsaved(cfg: TestConfig, request: Request,
 
 @router.post("", status_code=201)
 async def create_data_source(body: CreateSource, request: Request,
-                             user: dict = Depends(require_role("super_admin"))):
+                             user: dict = Depends(require_role("super_admin", "regional_manager"))):
     if body.type not in _VALID_TYPES:
         raise HTTPException(400, f"type must be one of {sorted(_VALID_TYPES)}")
     if body.type == "postgres" and not body.connection:
@@ -87,7 +87,7 @@ async def create_data_source(body: CreateSource, request: Request,
 
 @router.post("/{source_id}/test")
 async def test_saved(source_id: int, request: Request,
-                     user: dict = Depends(require_role("super_admin"))):
+                     user: dict = Depends(require_role("super_admin", "regional_manager"))):
     _require_connectors_enabled()
     tenant_id = user.get("tenant_id") or 1
     source = await ds.get_source_with_connection(source_id, tenant_id=tenant_id)
@@ -102,7 +102,7 @@ async def test_saved(source_id: int, request: Request,
 
 @router.post("/{source_id}/activate")
 async def activate(source_id: int, request: Request,
-                   user: dict = Depends(require_role("super_admin"))):
+                   user: dict = Depends(require_role("super_admin", "regional_manager"))):
     tenant_id = user.get("tenant_id") or 1
     if not await ds.set_active(source_id, tenant_id=tenant_id):
         raise HTTPException(404, "Data source not found")
@@ -113,7 +113,7 @@ async def activate(source_id: int, request: Request,
 
 @router.delete("/{source_id}")
 async def delete(source_id: int, request: Request,
-                 user: dict = Depends(require_role("super_admin"))):
+                 user: dict = Depends(require_role("super_admin", "regional_manager"))):
     tenant_id = user.get("tenant_id") or 1
     ok, message = await ds.delete_source(source_id, tenant_id=tenant_id)
     if not ok:
