@@ -13,8 +13,7 @@ import {
 import { useLanguage } from '@/contexts/LanguageContext';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/cn';
-import type { DomainGroup } from '@/lib/nav/adapter';
-import type { DomainKey } from '@/lib/nav/domains';
+import type { DomainGroup, DomainKey } from '@/lib/nav';
 
 const DOMAIN_ICONS: Record<string, LucideIcon> = {
   Home, Inbox, Package, BarChart3, Database, Shield,
