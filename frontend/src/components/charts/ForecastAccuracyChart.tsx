@@ -14,7 +14,7 @@ import {
 import { Target } from 'lucide-react';
 import { fetchBacktest } from '@/lib/api';
 import { BacktestResult } from '@/types';
-import { CHART, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
+import { CHART, CHART_MARGIN, Y_AXIS_WIDTH, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
 import { Reveal } from '@/components/ui';
 
 interface ForecastAccuracyChartProps {
@@ -104,10 +104,10 @@ export default function ForecastAccuracyChart({
       </div>
 
       <ResponsiveContainer width="100%" height={260}>
-        <ComposedChart data={result.points}>
+        <ComposedChart data={result.points} margin={CHART_MARGIN}>
           <CartesianGrid {...gridProps} />
           <XAxis dataKey="date" tickFormatter={formatDate} {...axisProps} minTickGap={20} />
-          <YAxis {...axisProps} width={40} />
+          <YAxis {...axisProps} width={Y_AXIS_WIDTH} />
           <Tooltip
             contentStyle={tooltipContent}
             labelStyle={tooltipLabelStyle}

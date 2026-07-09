@@ -110,3 +110,60 @@ export const tooltipLabelStyle = tooltipStyle.labelStyle;
  * to reference as `fill={`url(#${id})`}`. Render <ChartGradient> (below) once.
  */
 export const gradientId = (key: string) => `grad-${key}`;
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Shared layout contract (alignment).
+ *
+ * Colors above make charts LOOK the same; these make them SIT the same. Every
+ * chart hand-rolling its own margin/axis width is how sibling cards end up with
+ * plot edges that don't line up and labels that clip. Use these everywhere:
+ *   <AreaChart margin={CHART_MARGIN}> … <YAxis width={Y_AXIS_WIDTH} …>
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** Standard cartesian margin — same top/right breathing room on every chart. */
+export const CHART_MARGIN = { top: 8, right: 12, left: 0, bottom: 0 } as const;
+
+/** For charts that draw a top-positioned label (e.g. a ReferenceLine with
+ * `position: 'top'`): reserves headroom so the label isn't clipped. */
+export const CHART_MARGIN_LABELED = { top: 24, right: 12, left: 0, bottom: 0 } as const;
+
+/** Horizontal (layout="vertical") bar charts — extra right so end ticks fit. */
+export const HBAR_MARGIN = { top: 4, right: 24, left: 8, bottom: 4 } as const;
+
+/** Numeric Y axis width — one gutter for every cartesian chart so sibling
+ * cards' plot areas start at the same x. Fits "180.0K" at fontSize 12. */
+export const Y_AXIS_WIDTH = 48;
+
+/** Category Y axis width for horizontal bar charts (item/store names). Pair
+ * with a single-line label formatter — wrapped ticks collide at 10+ rows. */
+export const Y_AXIS_CATEGORY_WIDTH = 150;
+
+/** Height for a horizontal bar chart that keeps rows readable (no tick
+ * collision): ~28px per row + axis. */
+export const hbarHeight = (rows: number, min = 280) => Math.max(min, rows * 28 + 40);
+
+/**
+ * Cap a categorical series at `n` slices + an aggregated "Other". An 8-hue
+ * palette cannot encode 20+ categories (colors repeat and the legend overflows
+ * its card); 7 + Other = exactly one palette cycle and a 2-row legend.
+ * `sumKeys` are extra numeric fields to aggregate into the Other row (e.g. the
+ * revenue field a tooltip reads).
+ */
+export function topNWithOther<T extends object>(
+  data: T[],
+  n: number,
+  valueKey: keyof T & string,
+  nameKey: keyof T & string,
+  sumKeys: (keyof T & string)[] = [],
+  otherLabel = 'Other',
+): T[] {
+  if (data.length <= n + 1) return data;
+  const val = (row: T, key: string) => Number((row as Record<string, unknown>)[key]);
+  const sorted = [...data].sort((a, b) => val(b, valueKey) - val(a, valueKey));
+  const rest = sorted.slice(n);
+  const other = { ...rest[0], [nameKey]: otherLabel } as Record<string, unknown>;
+  for (const k of [valueKey, ...sumKeys]) {
+    other[k] = rest.reduce((s, r) => s + (val(r, k) || 0), 0);
+  }
+  return [...sorted.slice(0, n), other as T];
+}

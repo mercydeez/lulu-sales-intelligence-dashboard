@@ -33,6 +33,17 @@ export function shortItemLabel(name: string): string {
   return name.length > 22 ? `${name.slice(0, 21)}…` : name;
 }
 
+// Axis tick for item charts, guaranteed single-line. Long names make Recharts
+// wrap ticks into two <tspan> lines, and at 10+ rows those wrapped labels
+// collide into an unreadable stack. Drop the pack-size parenthetical (the
+// tooltip still carries the full name) and hard-cap the length so the tick
+// never wraps.
+export function axisItemLabel(name: string): string {
+  if (!name) return '';
+  const bare = name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  return bare.length > 18 ? `${bare.slice(0, 17)}…` : bare;
+}
+
 export function formatDateShort(dateStr: string): string {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return dateStr;

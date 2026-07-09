@@ -42,6 +42,8 @@ export type { AnimatedNumberProps } from './AnimatedNumber';
 export { ChartFrame } from './ChartFrame';
 export type { ChartFrameProps } from './ChartFrame';
 
+export { singleLineTick } from './ChartTick';
+
 export { LiveIndicator } from './LiveIndicator';
 export type { LiveIndicatorProps, LiveIndicatorTone } from './LiveIndicator';
 

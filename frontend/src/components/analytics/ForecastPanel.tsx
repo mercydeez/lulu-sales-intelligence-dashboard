@@ -8,7 +8,7 @@ import { Target } from 'lucide-react';
 import { Card, Select, Badge, Skeleton, EmptyState, StatCard } from '@/components/ui';
 import { fetchBacktest, fetchStores, fetchItems } from '@/lib/api';
 import { BacktestResult, Store, Item } from '@/types';
-import { CHART, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
+import { CHART, CHART_MARGIN, Y_AXIS_WIDTH, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatDateShort } from './format';
 
 interface ForecastPanelProps {
@@ -132,10 +132,10 @@ export function ForecastPanel({ defaultStoreId = 1 }: ForecastPanelProps) {
             <EmptyState title="No backtest" description={error ?? 'Not enough history for this selection.'} />
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={result.points} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <ComposedChart data={result.points} margin={CHART_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
                 <XAxis dataKey="date" tickFormatter={formatDateShort} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} minTickGap={20} />
-                <YAxis stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} />
+                <YAxis width={Y_AXIS_WIDTH} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} />
                 <Tooltip
                   contentStyle={tooltipStyle}
                   labelStyle={tooltipLabelStyle}

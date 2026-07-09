@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import { RotateCcw } from 'lucide-react';
 import { authFetch } from '@/contexts/AuthContext';
-import { CATEGORICAL as COLORS } from '@/lib/chart';
+import { CATEGORICAL as COLORS, topNWithOther } from '@/lib/chart';
 
 interface ReturnCategoryData {
   category: string;
@@ -147,6 +147,12 @@ export default function ReturnsByCategoryChart() {
     );
   }
 
+  // Cap at 7 + "Other" so the pie's slice count always matches the legend
+  // below (which showed only the first 8 rows while the pie itself drew ALL
+  // categories — with 20+ returns categories the colors cycled and repeated,
+  // and slices with no legend entry at all).
+  const slices = topNWithOther(data, 7, 'count', 'category', ['value']);
+
   return (
     <div className="glass rounded-xl p-6 relative">
       {/* Header */}
@@ -171,7 +177,7 @@ export default function ReturnsByCategoryChart() {
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
-              data={data}
+              data={slices}
               cx="50%"
               cy="50%"
               labelLine={false}
@@ -183,7 +189,7 @@ export default function ReturnsByCategoryChart() {
               onMouseEnter={onPieEnter}
               onMouseLeave={onPieLeave}
             >
-              {data.map((entry, index) => (
+              {slices.map((entry, index) => (
                 <Cell
                   key={`cell-${index}`}
                   fill={COLORS[index % COLORS.length]}
@@ -211,7 +217,7 @@ export default function ReturnsByCategoryChart() {
 
       {/* Legend */}
       <div className="mt-4 grid grid-cols-2 gap-2 max-h-[120px] overflow-y-auto">
-        {data.slice(0, 8).map((item: ReturnCategoryData, index: number) => (
+        {slices.map((item: ReturnCategoryData, index: number) => (
           <div
             key={item.category}
             className="flex items-center gap-2 p-2 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer"

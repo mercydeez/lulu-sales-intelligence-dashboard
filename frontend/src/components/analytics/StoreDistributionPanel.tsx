@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { ChartFrame } from '@/components/ui';
+import { ChartFrame, singleLineTick } from '@/components/ui';
 import { fetchStoreDistribution } from '@/lib/api';
 import { StoreDistributionPoint } from '@/types';
-import { CATEGORICAL, CHART, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
+import { CATEGORICAL, CHART, HBAR_MARGIN, Y_AXIS_CATEGORY_WIDTH, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatCompact, formatCurrency, shortStoreLabel } from './format';
 
 export function StoreDistributionPanel() {
@@ -39,10 +39,10 @@ export function StoreDistributionPanel() {
       empty={!loading && (error || data.length === 0)}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+        <BarChart data={data} layout="vertical" margin={HBAR_MARGIN}>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} horizontal={false} />
           <XAxis type="number" stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
-          <YAxis type="category" dataKey="store_name" stroke={CHART.axis} fontSize={11} width={130} interval={0} tickFormatter={shortStoreLabel} tickLine={false} axisLine={false} />
+          <YAxis type="category" dataKey="store_name" width={Y_AXIS_CATEGORY_WIDTH} interval={0} tick={singleLineTick(shortStoreLabel)} tickLine={false} axisLine={false} />
           <Tooltip
             cursor={{ fill: 'rgba(255, 107, 92, 0.06)' }}
             contentStyle={tooltipStyle}

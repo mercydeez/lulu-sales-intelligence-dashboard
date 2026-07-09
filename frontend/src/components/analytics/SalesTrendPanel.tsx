@@ -8,7 +8,7 @@ import { TrendingUp } from 'lucide-react';
 import { Card, Badge, Skeleton, EmptyState } from '@/components/ui';
 import { fetchTrend } from '@/lib/api';
 import { TrendPoint } from '@/types';
-import { CHART, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
+import { CHART, CHART_MARGIN_LABELED, Y_AXIS_WIDTH, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatCompact, formatCurrency, formatDateShort } from './format';
 import { useUaeCalendar } from '@/hooks/useUaeCalendar';
 import { calendarBands } from '@/components/charts/CalendarBands';
@@ -75,7 +75,9 @@ export function SalesTrendPanel({ days }: SalesTrendPanelProps) {
           <EmptyState title="No trend data" description="Historical sales are unavailable for this selection." />
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+            {/* CHART_MARGIN_LABELED: headroom for the "Forecast →" top label — with
+                the standard 8px top margin it renders clipped by the plot edge. */}
+            <AreaChart data={data} margin={CHART_MARGIN_LABELED}>
               <defs>
                 <linearGradient id="trendSales" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={CHART.teal} stopOpacity={0.35} />
@@ -90,7 +92,7 @@ export function SalesTrendPanel({ days }: SalesTrendPanelProps) {
               {calendarBands(calendar, data.map((d) => d.date))}
               <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
               <XAxis dataKey="date" tickFormatter={formatDateShort} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} minTickGap={24} />
-              <YAxis stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
+              <YAxis width={Y_AXIS_WIDTH} stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
               <Tooltip
                 contentStyle={tooltipStyle}
                 labelStyle={tooltipLabelStyle}

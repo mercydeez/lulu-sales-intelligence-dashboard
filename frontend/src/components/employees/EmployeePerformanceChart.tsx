@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { ChartFrame } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
-import { CHART, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
+import { CHART, CHART_MARGIN, Y_AXIS_WIDTH, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
 import { PerformanceChartData } from './types';
 
 interface EmployeePerformanceChartProps {
@@ -117,18 +117,18 @@ export function EmployeePerformanceChart({
             <Tooltip contentStyle={tooltipContent} labelStyle={tooltipLabelStyle} />
           </RadarChart>
         ) : chartType === 'bar' ? (
-          <BarChart data={rows} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+          <BarChart data={rows} margin={CHART_MARGIN}>
             <CartesianGrid {...gridProps} />
             <XAxis dataKey="name" {...axisProps} fontSize={12} />
-            <YAxis {...axisProps} fontSize={12} />
+            <YAxis {...axisProps} width={Y_AXIS_WIDTH} fontSize={12} />
             <Tooltip contentStyle={tooltipContent} labelStyle={tooltipLabelStyle} cursor={{ fill: 'rgba(15,118,110,0.06)' }} />
             <Bar dataKey={active.key} name={active.label} fill={active.color} radius={[6, 6, 0, 0]} maxBarSize={48} />
           </BarChart>
         ) : (
-          <LineChart data={rows} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+          <LineChart data={rows} margin={CHART_MARGIN}>
             <CartesianGrid {...gridProps} />
             <XAxis dataKey="name" {...axisProps} fontSize={12} />
-            <YAxis {...axisProps} fontSize={12} />
+            <YAxis {...axisProps} width={Y_AXIS_WIDTH} fontSize={12} />
             <Tooltip contentStyle={tooltipContent} labelStyle={tooltipLabelStyle} />
             <Line type="monotone" dataKey={active.key} name={active.label} stroke={active.color} strokeWidth={2.5} dot={{ fill: active.color, r: 3 }} />
           </LineChart>

@@ -2,7 +2,7 @@
 
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChartFrame } from '@/components/ui';
-import { CHART, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
+import { CHART, CHART_MARGIN, Y_AXIS_WIDTH, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
 import { AdminDashboard } from './types';
 
 interface AdminTrendChartProps {
@@ -26,7 +26,7 @@ export function AdminTrendChart({ dashboard, loading }: AdminTrendChartProps) {
       empty={!loading && data.length === 0}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+        <AreaChart data={data} margin={CHART_MARGIN}>
           <defs>
             <linearGradient id="adminTrend" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor={CHART.teal} stopOpacity={0.35} />
@@ -35,7 +35,7 @@ export function AdminTrendChart({ dashboard, loading }: AdminTrendChartProps) {
           </defs>
           <CartesianGrid {...gridProps} />
           <XAxis dataKey="date" tickFormatter={fmtDate} {...axisProps} fontSize={12} minTickGap={24} />
-          <YAxis {...axisProps} fontSize={12} />
+          <YAxis {...axisProps} width={Y_AXIS_WIDTH} fontSize={12} />
           <Tooltip contentStyle={tooltipContent} labelStyle={tooltipLabelStyle} labelFormatter={(l) => fmtDate(String(l))} />
           <Area type="monotone" dataKey="sales" name="Units" stroke={CHART.teal} strokeWidth={2.5} fill="url(#adminTrend)" dot={false} />
         </AreaChart>

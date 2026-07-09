@@ -5,7 +5,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recha
 import { ChartFrame } from '@/components/ui';
 import { fetchCategoryBreakdown } from '@/lib/api';
 import { CategoryBreakdownPoint } from '@/types';
-import { CATEGORICAL, tooltipContent as tooltipStyle } from '@/lib/chart';
+import { CATEGORICAL, topNWithOther, tooltipContent as tooltipStyle } from '@/lib/chart';
 import { formatCurrency } from './format';
 
 export function CategoryDonut() {
@@ -30,6 +30,10 @@ export function CategoryDonut() {
     };
   }, []);
 
+  // 7 + "Other": one full palette cycle — 20+ raw categories repeat the 8-hue
+  // palette and their legend overflows (clips) the card bottom.
+  const slices = topNWithOther(data, 7, 'percentage', 'category', ['total_revenue']);
+
   return (
     <ChartFrame
       title="Category Mix"
@@ -41,7 +45,7 @@ export function CategoryDonut() {
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
-            data={data}
+            data={slices}
             cx="50%"
             cy="50%"
             innerRadius={62}

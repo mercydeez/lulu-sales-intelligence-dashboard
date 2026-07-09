@@ -7,7 +7,8 @@ import {
   ComposedChart, Area, Legend, ReferenceLine,
 } from 'recharts';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, Card, Button, Badge, EmptyState, ErrorState, SkeletonText, Tabs, Reveal } from '@/components/ui';
+import { CHART_MARGIN, Y_AXIS_WIDTH, Y_AXIS_CATEGORY_WIDTH } from '@/lib/chart';
+import { PageHeader, Card, Button, Badge, EmptyState, ErrorState, SkeletonText, Tabs, Reveal, singleLineTick } from '@/components/ui';
 
 interface Leader { model: string; tier: string; accuracy: number | null; mape: number | null; }
 interface FeatureImp { feature: string; weight: number; }
@@ -267,10 +268,10 @@ export default function ForecastLabPage() {
                     </p>
                     <div style={{ width: '100%', height: 240 }}>
                       <ResponsiveContainer>
-                        <LineChart data={data.backtest}>
+                        <LineChart data={data.backtest} margin={CHART_MARGIN}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                           <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
-                          <YAxis tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                          <YAxis width={Y_AXIS_WIDTH} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
                           <Tooltip />
                           <Legend wrapperStyle={{ fontSize: 11 }} />
                           <Line type="monotone" dataKey="actual" name="Actual" stroke="var(--series-1)" strokeWidth={2} dot={false} />
@@ -291,10 +292,10 @@ export default function ForecastLabPage() {
                   </p>
                   <div style={{ width: '100%', height: 240 }}>
                     <ResponsiveContainer>
-                      <ComposedChart data={data.forecast.map((p) => ({ ...p, band: [p.lower ?? p.forecast, p.upper ?? p.forecast] }))}>
+                      <ComposedChart data={data.forecast.map((p) => ({ ...p, band: [p.lower ?? p.forecast, p.upper ?? p.forecast] }))} margin={CHART_MARGIN}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                         <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
-                        <YAxis tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                        <YAxis width={Y_AXIS_WIDTH} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
                         <Tooltip />
                         <Area type="monotone" dataKey="band" name="Interval" stroke="none" fill="var(--series-1)" fillOpacity={0.12} />
                         <Line type="monotone" dataKey="forecast" name="Forecast" stroke="var(--series-1)" strokeWidth={2} dot={false} />
@@ -324,10 +325,10 @@ export default function ForecastLabPage() {
                       </p>
                       <div style={{ width: '100%', height: 220 }}>
                         <ResponsiveContainer>
-                          <LineChart data={trend}>
+                          <LineChart data={trend} margin={CHART_MARGIN}>
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                             <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
-                            <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                            <YAxis width={Y_AXIS_WIDTH} domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
                             <Tooltip />
                             <Line type="monotone" dataKey="accuracy" name="Accuracy %" stroke="var(--series-1)" strokeWidth={2} dot={{ r: 3 }} />
                           </LineChart>
@@ -346,9 +347,9 @@ export default function ForecastLabPage() {
                     ) : (
                       <div style={{ width: '100%', height: 240 }}>
                         <ResponsiveContainer>
-                          <BarChart data={data.feature_importance} layout="vertical" margin={{ left: 24 }}>
+                          <BarChart data={data.feature_importance} layout="vertical" margin={{ top: 4, right: 24, left: 8, bottom: 4 }}>
                             <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
-                            <YAxis type="category" dataKey="feature" width={110} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                            <YAxis type="category" dataKey="feature" width={Y_AXIS_CATEGORY_WIDTH} tick={singleLineTick((v) => v, { fontSize: 10 })} />
                             <Tooltip />
                             <Bar dataKey="weight" radius={[0, 4, 4, 0]}>
                               {data.feature_importance.map((_, i) => <Cell key={i} fill="var(--series-1)" />)}
@@ -409,10 +410,10 @@ export default function ForecastLabPage() {
                         </p>
                         <div style={{ width: '100%', height: 220 }}>
                           <ResponsiveContainer>
-                            <LineChart data={clf.roc}>
+                            <LineChart data={clf.roc} margin={CHART_MARGIN}>
                               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                               <XAxis type="number" dataKey="fpr" domain={[0, 1]} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} label={{ value: 'FPR', position: 'insideBottom', offset: -2, fontSize: 10, fill: 'var(--chart-text)' }} />
-                              <YAxis type="number" dataKey="tpr" domain={[0, 1]} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                              <YAxis type="number" dataKey="tpr" domain={[0, 1]} width={Y_AXIS_WIDTH} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
                               <Tooltip />
                               <ReferenceLine segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]} stroke="var(--chart-ref)" strokeDasharray="4 4" />
                               <Line type="monotone" dataKey="tpr" stroke="var(--series-1)" strokeWidth={2} dot={false} />
@@ -435,10 +436,10 @@ export default function ForecastLabPage() {
                         </p>
                         <div style={{ width: '100%', height: 220 }}>
                           <ResponsiveContainer>
-                            <LineChart data={clf.pr}>
+                            <LineChart data={clf.pr} margin={CHART_MARGIN}>
                               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                               <XAxis type="number" dataKey="recall" domain={[0, 1]} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} label={{ value: 'Recall', position: 'insideBottom', offset: -2, fontSize: 10, fill: 'var(--chart-text)' }} />
-                              <YAxis type="number" dataKey="precision" domain={[0, 1]} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                              <YAxis type="number" dataKey="precision" domain={[0, 1]} width={Y_AXIS_WIDTH} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
                               <Tooltip />
                               <Line type="monotone" dataKey="precision" stroke="var(--series-3)" strokeWidth={2} dot={false} />
                             </LineChart>

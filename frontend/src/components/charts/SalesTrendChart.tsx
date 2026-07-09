@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import { TrendingUp } from 'lucide-react';
 import { fetchTrend } from '@/lib/api';
-import { CHART, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
+import { CHART, CHART_MARGIN, Y_AXIS_WIDTH, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
 import { Reveal } from '@/components/ui';
 import { useUaeCalendar } from '@/hooks/useUaeCalendar';
 import { calendarBands } from '@/components/charts/CalendarBands';
@@ -110,7 +110,7 @@ export default function SalesTrendChart({ days = 30 }: SalesTrendChartProps) {
       {/* Chart */}
       <div className="h-[320px]">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+          <AreaChart data={data} margin={CHART_MARGIN}>
             <defs>
               <linearGradient id="trendSalesFill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={CHART.teal} stopOpacity={0.28} />
@@ -125,7 +125,7 @@ export default function SalesTrendChart({ days = 30 }: SalesTrendChartProps) {
             {calendarBands(calendar, data.map((d) => d.date))}
             <CartesianGrid {...gridProps} />
             <XAxis dataKey="date" tickFormatter={formatDate} {...axisProps} minTickGap={24} />
-            <YAxis tickFormatter={formatNumber} {...axisProps} width={44} />
+            <YAxis tickFormatter={formatNumber} {...axisProps} width={Y_AXIS_WIDTH} />
             <Tooltip
               contentStyle={tooltipContent}
               labelStyle={tooltipLabelStyle}
