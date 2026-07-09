@@ -37,6 +37,16 @@
   no-token states.
 - `e2e/a11y.spec.ts` — axe scans: public routes, six authenticated routes, and
   dark-mode passes on `/login` + dashboard (theme seeded via `localStorage.theme`).
+- `e2e/render-smoke.spec.ts` — **blank-tab regression guard.** Logs in as
+  super_admin + regional_manager and navigates every one of the 21 sidebar
+  routes, asserting the `<main>` region paints >40 chars of visible text. This
+  catches pages that render blank (thrown render, failed JS chunk, or a render
+  gated on data/config that never arrives) — which a 200-endpoint check cannot
+  see. `npm run test:render` (needs the opt-in Playwright install). **Every nav
+  page must have a `<main>` landmark** — the test enforces it (also an a11y
+  requirement). Deploy-time blanks (stale chunk hashes after a redeploy) are
+  additionally handled at runtime by `components/ChunkLoadRecovery.tsx`, which
+  reloads once on a `ChunkLoadError`.
 
 This is a foundation, not full coverage. Prioritized next specs: login → dashboard,
 2FA, report export, security/audit page, Sage answer, EN/AR + RTL, SSE-degraded banner.

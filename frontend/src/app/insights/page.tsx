@@ -197,7 +197,7 @@ export default function InsightsPage() {
   const counts = summary?.by_severity ?? {};
 
   return (
-    <div className="space-y-6">
+    <main className="space-y-6">
       <PageHeader
         title="Insights"
         description="What's going wrong — and why. Detected automatically from your live data."
@@ -390,6 +390,6 @@ export default function InsightsPage() {
           </AnimatePresence>
         </div>
       )}
-    </div>
+    </main>
   );
 }

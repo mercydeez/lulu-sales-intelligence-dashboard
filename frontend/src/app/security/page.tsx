@@ -109,7 +109,7 @@ export default function SecurityPage() {
   const shown = category ? events.filter((e) => e.category === category) : events;
 
   return (
-    <div className="space-y-6">
+    <main className="space-y-6">
       <PageHeader
         title="Security"
         description="Real-time security operations — every blocked attack and sensitive action, as it happens."
@@ -254,6 +254,6 @@ export default function SecurityPage() {
           })}
         </div>
       )}
-    </div>
+    </main>
   );
 }

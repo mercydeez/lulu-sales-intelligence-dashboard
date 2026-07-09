@@ -9,6 +9,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { ToastProvider } from '@/components/ui/Toast';
 import ClientLayout from '@/components/ClientLayout';
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
+import ChunkLoadRecovery from '@/components/ChunkLoadRecovery';
 import { PRODUCT_NAME } from '@/lib/brand';
 
 const manrope = Manrope({
@@ -81,6 +82,7 @@ export default function RootLayout({
       </head>
       <body className={`${manrope.variable} ${plexMono.variable} font-sans text-ink antialiased`}>
         <ServiceWorkerRegister />
+        <ChunkLoadRecovery />
         <div className="min-h-screen">
           <ThemeProvider>
           <LanguageProvider>

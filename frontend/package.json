@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:a11y": "playwright test e2e/a11y.spec.ts"
+    "test:a11y": "playwright test e2e/a11y.spec.ts",
+    "test:render": "playwright test e2e/render-smoke.spec.ts"
   },
   "dependencies": {
     "date-fns": "2.30.0",
@@ -22,6 +23,8 @@
     "recharts": "2.10.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
