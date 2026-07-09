@@ -19,6 +19,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from app.config import get_settings
 from app.services.llm import LLMError, get_provider_chain
 from app.services.nl2sql.guard import SqlGuardError, validate_sql
 from app.services.nl2sql.executor import SageExecutionError, execute_sage_sql
@@ -27,6 +28,11 @@ from . import intents as I
 from .decompose import llm_decompose
 
 logger = logging.getLogger(__name__)
+
+# Canonical attribution token for the platform's own data. Reads
+# settings.product_name so the internal-source name follows the brand from one
+# place; sage3.hybrid_executor and federation.catalog use the same setting.
+INTERNAL_SOURCE = get_settings().product_name
 
 MAX_ROWS = 200
 
@@ -38,7 +44,7 @@ class SubAnswer:
     rows: List[dict] = field(default_factory=list)
     sql: Optional[str] = None
     error: Optional[str] = None
-    source: str = "Retail IQ"   # domain/source attribution
+    source: str = INTERNAL_SOURCE   # domain/source attribution
 
 
 @dataclass
@@ -84,7 +90,7 @@ def _recompose(parts: List[SubAnswer]) -> str:
             lines.append(f"**{p.label}:** _unavailable ({p.error})_")
             continue
         val = _format_value(p.rows)
-        attrib = f"  _(source: {p.source})_" if (multi_source and p.source != "Retail IQ") else ""
+        attrib = f"  _(source: {p.source})_" if (multi_source and p.source != INTERNAL_SOURCE) else ""
         lines.append(f"**{p.label}:** {val}{attrib}")
     return "\n".join(lines)
 

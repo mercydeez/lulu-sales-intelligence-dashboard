@@ -16,6 +16,8 @@ import struct
 import time
 from urllib.parse import quote
 
+from app.config import get_settings
+
 PERIOD = 30   # seconds per code
 DIGITS = 6
 
@@ -62,8 +64,10 @@ def hash_backup_code(code: str) -> str:
     return hashlib.sha256(code.strip().replace(" ", "").lower().encode()).hexdigest()
 
 
-def provisioning_uri(secret: str, account: str, issuer: str = "Retail IQ") -> str:
-    """otpauth:// URI for QR enrollment in an authenticator app."""
+def provisioning_uri(secret: str, account: str, issuer: str | None = None) -> str:
+    """otpauth:// URI for QR enrollment in an authenticator app. The issuer
+    (shown in the authenticator) defaults to the product name."""
+    issuer = issuer or get_settings().product_name
     label = quote(f"{issuer}:{account}")
     return (f"otpauth://totp/{label}?secret={secret}"
             f"&issuer={quote(issuer)}&period={PERIOD}&digits={DIGITS}&algorithm=SHA1")

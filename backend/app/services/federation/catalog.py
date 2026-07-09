@@ -13,7 +13,7 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy import text
 
-from app.config import logger
+from app.config import get_settings, logger
 from app.services.database import async_session
 from app.services.data_sources import decrypt
 from . import policy
@@ -21,7 +21,7 @@ from .base import SourceAdapter, SourceDescriptor
 
 INTERNAL = SourceDescriptor(
     id="internal",
-    name="Retail IQ",
+    name=get_settings().product_name,
     engine="postgres",
     description="The platform's own live sales, inventory and forecast data for this tenant.",
     min_role="consumer",

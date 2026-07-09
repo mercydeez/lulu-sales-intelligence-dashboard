@@ -300,7 +300,7 @@ async def send_test_alert(user: dict = Depends(require_role("super_admin", "admi
     from app.services.alerting import send_alert, alerting_status
 
     result = await send_alert(
-        title="Retail IQ test alert",
+        title=f"{settings.product_name} test alert",
         message=f"Manual test alert triggered by {user.get('email', 'admin')}.",
         severity="critical",
         check="manual_test",

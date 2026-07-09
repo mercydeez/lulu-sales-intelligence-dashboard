@@ -11,6 +11,7 @@ import {
   Home, Inbox, Package, BarChart3, Database, Shield, ShoppingBag, type LucideIcon,
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/cn';
 import type { DomainGroup } from '@/lib/nav/adapter';
 import type { DomainKey } from '@/lib/nav/domains';
@@ -32,7 +33,7 @@ export function DomainRail({
       <Link
         href="/today"
         onClick={onNavigate}
-        aria-label="Retail IQ home"
+        aria-label={`${PRODUCT_NAME} home`}
         className="w-11 h-11 rounded-2xl sunset-gradient flex items-center justify-center shadow-sunset shrink-0 mb-2"
       >
         <ShoppingBag className="w-5 h-5 text-white" />

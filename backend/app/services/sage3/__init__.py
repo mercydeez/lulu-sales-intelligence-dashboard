@@ -1,5 +1,5 @@
 """
-Sage v3 — multi-agent LangGraph chatbot for Retail IQ.
+Sage v3 — multi-agent LangGraph chatbot for the platform.
 
 Extends (does not replace) the Sage v2 chatbot: each execution node is a thin
 wrapper over an existing service (nl2sql, rag, sage2, federation), with new

@@ -453,7 +453,7 @@ async def health_ready():
             from app.services.alerting import send_alert
             failing = [k for k, v in checks.items() if v not in ("ok", "current")]
             await send_alert(
-                title="Retail IQ readiness FAILED",
+                title=f"{settings.product_name} readiness FAILED",
                 message=f"/health/ready not ready; failing checks: {', '.join(failing) or 'unknown'}",
                 severity="critical",
                 check="health_ready",

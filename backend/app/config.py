@@ -52,10 +52,11 @@ class Settings(BaseSettings):
     debug: bool = True
     secret_key: str = "your-secret-key-change-in-production"
 
-    # Product branding — single source of truth for the product name. The final
-    # name is TBD, so this is a provisional placeholder; change it here (or via
-    # the PRODUCT_NAME env var) and it propagates everywhere on the backend.
-    product_name: str = "Retail IQ"
+    # Product branding — single source of truth for the product name
+    # (owner-confirmed: "Retail Intelligence"); change it here (or via the
+    # PRODUCT_NAME env var) and it propagates everywhere on the backend.
+    # "Meridian Hypermarket" is the fictional demo retailer, never the product.
+    product_name: str = "Retail Intelligence"
     
     # JWT
     jwt_secret_key: str = "super-secret-change-in-production-2026"

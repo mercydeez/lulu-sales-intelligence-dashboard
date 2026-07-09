@@ -13,6 +13,7 @@ import logging
 
 from app.services.llm import get_provider_chain
 from app.services.sage2 import answer_multipart
+from app.services.sage2.orchestrator import INTERNAL_SOURCE
 from ..state import AgentState, add_trace
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ async def hybrid_executor_node(state: AgentState) -> AgentState:
             if p.ok and p.sql:
                 state.setdefault("evidence", []).append(
                     {"kind": "sql", "label": p.label, "sql": p.sql, "row_count": len(p.rows)})
-            elif p.ok and p.source != "Retail IQ":
+            elif p.ok and p.source != INTERNAL_SOURCE:
                 state.setdefault("evidence", []).append(
                     {"kind": "source", "label": p.label, "source": p.source})
     add_trace(state, "hybrid_executor",

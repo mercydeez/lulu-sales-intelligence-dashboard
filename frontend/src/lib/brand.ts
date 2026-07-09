@@ -1,13 +1,15 @@
 /**
  * Product branding — single source of truth for the product name on the frontend.
  *
- * The final product name is still TBD, so PRODUCT_NAME below is a provisional
- * placeholder. Change it here (or set NEXT_PUBLIC_PRODUCT_NAME at build time)
- * and every user-facing surface updates from one place.
+ * The product is "Retail Intelligence" (owner-confirmed). Change it here (or
+ * set NEXT_PUBLIC_PRODUCT_NAME at build time) and every user-facing surface
+ * updates from one place. Keep in sync with backend settings.product_name.
+ * NOTE: "Meridian Hypermarket" is the fictional DEMO RETAILER (tenant data),
+ * never the product name.
  */
 
 export const PRODUCT_NAME: string =
-  process.env.NEXT_PUBLIC_PRODUCT_NAME?.trim() || 'Retail IQ';
+  process.env.NEXT_PUBLIC_PRODUCT_NAME?.trim() || 'Retail Intelligence';
 
 /** Short form for tight spaces (sidebar collapsed, favicons, etc.). */
 export const PRODUCT_NAME_SHORT: string =

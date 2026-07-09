@@ -9,9 +9,12 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.services.database import get_db
 from app.services import webhook_service as wh
 from app.routes.auth import get_current_user
+
+settings = get_settings()
 
 router = APIRouter()
 
@@ -98,6 +101,6 @@ async def test_webhooks(
     _require_admin(user)
     tenant_id = user.get("tenant_id") or 1
     attempted = await wh.dispatch_event(
-        tenant_id, "webhook.test", {"message": "Hello from Retail IQ"}
+        tenant_id, "webhook.test", {"message": f"Hello from {settings.product_name}"}
     )
     return {"dispatched_to": attempted}

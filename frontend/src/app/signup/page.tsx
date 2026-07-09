@@ -91,7 +91,7 @@ export default function SignupPage() {
         </div>
 
         <div className="relative z-10 text-white/70 text-xs">
-          Independent student project · synthetic data · © 2026 Meridian Hypermarket UAE
+          Independent student project · synthetic demo data (Meridian Hypermarket UAE) · © 2026 Retail Intelligence
         </div>
       </div>
 
