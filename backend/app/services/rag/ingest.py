@@ -101,14 +101,18 @@ async def ingest_document(
     sensitivity: str = "internal",
     visibility_roles: Optional[Sequence[str]] = None,
     store_scope: Optional[Sequence[int]] = None,
-    lang: str = "en",
+    lang: Optional[str] = None,   # None => auto-detect (RAG-2)
     parent_ref: Optional[str] = None,
 ) -> IngestResult:
-    """Chunk -> embed -> idempotent ACL-tagged upsert. Returns counts."""
+    """Chunk -> embed -> idempotent ACL-tagged upsert. Returns counts.
+    `lang=None` auto-detects (Arabic vs English) so retrieval can route the
+    right embedder — English-only embeddings silently fail on Arabic."""
     from sqlalchemy import text as sql
     from app.services.database import async_session
-    from app.services.embeddings import embed_texts, to_pgvector_literal
+    from app.services.embeddings import embed_texts, to_pgvector_literal, detect_lang
 
+    if lang is None:
+        lang = detect_lang(content)
     chunks = chunk_text(content, corpus)
     if not chunks:
         return IngestResult(0, 0, "")

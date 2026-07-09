@@ -47,6 +47,25 @@ class EmbeddingResult:
     semantic: bool = False
 
 
+def detect_lang(text: str) -> str:
+    """Cheap script-based language hint for ingest tagging + embedder routing
+    (RAG-2). Arabic content embedded by an English-only model (all-minilm)
+    silently fails to retrieve — so we tag `lang` at ingest and, when a
+    multilingual embedder is configured, route accordingly.
+
+    Returns 'ar' if the text is predominantly Arabic script, else 'en'.
+    Recommended multilingual embedders that fit the existing vector(384) schema:
+    `multilingual-e5-small` or `bge-small` (both 384d). bge-m3 (1024d) would need
+    a schema migration to vector(1024)."""
+    if not text:
+        return "en"
+    arabic = sum(1 for ch in text if "؀" <= ch <= "ۿ" or "ݐ" <= ch <= "ݿ")
+    letters = sum(1 for ch in text if ch.isalpha())
+    if letters and arabic / letters > 0.4:
+        return "ar"
+    return "en"
+
+
 def _l2_normalize(vec: List[float]) -> List[float]:
     norm = math.sqrt(sum(v * v for v in vec))
     if norm == 0.0:

@@ -59,3 +59,10 @@ def test_pgvector_literal_format():
     lit = to_pgvector_literal([0.5, -0.25, 1.0])
     assert lit.startswith("[") and lit.endswith("]")
     assert lit.count(",") == 2
+
+
+def test_detect_lang_arabic_vs_english():
+    from app.services.embeddings import detect_lang
+    assert detect_lang("increase dairy stock before Ramadan") == "en"
+    assert detect_lang("زيادة مخزون الألبان قبل رمضان") == "ar"
+    assert detect_lang("") == "en"
