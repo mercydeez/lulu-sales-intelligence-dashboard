@@ -21,7 +21,7 @@ services:
   # PostgreSQL Database
   # ===========================================================================
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15  # pgvector-enabled PG15 (semantic layer / RAG needs the `vector` type)
     container_name: app_db_prod
     restart: always
     environment:
@@ -265,7 +265,7 @@ services:
   # Uses the same postgres:15-alpine image so pg_dump matches the server version.
   # ===========================================================================
   backup:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15  # pgvector-enabled PG15 (semantic layer / RAG needs the `vector` type)
     container_name: app_backup_prod
     restart: always
     security_opt:

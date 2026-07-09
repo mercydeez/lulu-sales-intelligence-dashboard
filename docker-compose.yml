@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15  # pgvector-enabled PG15 (semantic layer / RAG needs the `vector` type)
     # container_name is parameterized so parallel checkouts of this repo don't
     # collide on a fixed name (the failure you hit booting a second working dir).
     # Default keeps the canonical `sales_db` so existing docs/scripts still work;
@@ -157,7 +157,7 @@ services:
   #   docker compose --profile backup run --rm backup \
   #     /bin/sh -c "SOURCE_DB=salesdb DRILL_SELF_SEED=0 sh /scripts/drill-restore.sh"
   backup:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15  # pgvector-enabled PG15 (semantic layer / RAG needs the `vector` type)
     container_name: ${PROJECT_PREFIX:-sales}_backup
     profiles: ["backup"]
     security_opt:
