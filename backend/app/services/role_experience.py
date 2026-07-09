@@ -124,6 +124,7 @@ _CONFIGS: Dict[Optional[str], Dict] = {
         "nav": [
             {"key": "overview", "tKey": "nav.overview", "label": "Overview", "href": "/today", "icon": "LayoutDashboard"},
             {"key": "briefing", "tKey": "nav.execBriefing", "label": "Executive Briefing", "href": "/briefing", "icon": "Sunrise"},
+            {"key": "role_workbench", "tKey": "nav.roleWorkbench", "label": "Role Workbench", "href": "/role-workbench", "icon": "ClipboardCheck"},
             {"key": "health", "tKey": "nav.businessHealth", "label": "Business Health", "href": "/value", "icon": "TrendingUp"},
             {"key": "decisions", "tKey": "nav.decisions", "label": "Decisions", "href": "/decisions", "icon": "Scale"},
             {"key": "growth", "tKey": "nav.growth", "label": "Growth", "href": "/analytics", "icon": "BarChart3"},
@@ -132,6 +133,7 @@ _CONFIGS: Dict[Optional[str], Dict] = {
         "quick_actions": [
             {"key": "ask", "label": "Ask Sage anything", "href": "/copilot", "icon": "Lightbulb"},
             {"key": "briefing", "label": "Read today's executive briefing", "href": "/briefing", "icon": "Sunrise"},
+            {"key": "role_workbench", "label": "Audit role workflows", "href": "/role-workbench", "icon": "ClipboardCheck"},
             {"key": "decisions", "label": "Review the decisions that need me", "href": "/decisions", "icon": "Scale"},
             {"key": "health", "label": "Open business health", "href": "/value", "icon": "TrendingUp"},
         ],
@@ -150,6 +152,7 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"key": "reorder", "label": "Reorder what's running low", "href": "/procurement", "icon": "Truck"},
             {"key": "alerts", "label": "Check today's alerts", "href": "/alerts", "icon": "Bell"},
             {"key": "briefing", "label": "Read today's briefing", "href": "/briefing", "icon": "Sunrise"},
+            {"key": "role_workbench", "label": "Open role workbench", "href": "/role-workbench", "icon": "ClipboardCheck"},
         ],
         "persona": {
             "name": None,  # filled with settings.chatbot_name at resolve time
@@ -190,6 +193,7 @@ _CONFIGS: Dict[Optional[str], Dict] = {
         ],
         "nav": [
             {"key": "today", "tKey": "nav.today", "label": "Today", "href": "/today", "icon": "Sunrise"},
+            {"key": "role_workbench", "tKey": "nav.roleWorkbench", "label": "Role Workbench", "href": "/role-workbench", "icon": "ClipboardCheck"},
             {"key": "my_work", "tKey": "nav.myWork", "label": "My Work", "href": "/decisions", "icon": "Scale"},
             {"key": "my_store", "tKey": "nav.myStore", "label": "My Store", "href": "/inventory", "icon": "Store"},
             {"key": "alerts", "tKey": "nav.alerts", "label": "Alerts", "href": "/alerts", "icon": "Bell"},
@@ -250,7 +254,8 @@ _CONFIGS: Dict[Optional[str], Dict] = {
         # curated 5. Backend RBAC for the admin-gated pages is opened to
         # regional_manager alongside super_admin (see admin/security/data_sources
         # routes). To restore the curated "Regional Coach" nav, put the 5-item
-        # manifest back here.
+        # manifest back here. (Role Workbench remains reachable via the full
+        # sidebar, so no curated entry is needed here.)
         "nav": None,
         "notifications": {"brief_hour_gst": 7, "quiet_hours": [22, 6], "tiers": ["T1 region brief", "T0 store critical / stuck transfer"]},
     },
@@ -307,6 +312,7 @@ _CONFIGS: Dict[Optional[str], Dict] = {
         ],
         "nav": [
             {"key": "today", "tKey": "nav.today", "label": "Today", "href": "/today", "icon": "Sunrise"},
+            {"key": "role_workbench", "tKey": "nav.roleWorkbench", "label": "Role Workbench", "href": "/role-workbench", "icon": "ClipboardCheck"},
             {"key": "po_queue", "tKey": "nav.poQueue", "label": "PO Queue", "href": "/approvals", "icon": "Inbox"},
             {"key": "buying", "tKey": "nav.buying", "label": "Buying", "href": "/procurement", "icon": "Truck"},
             {"key": "my_work", "tKey": "nav.myWork", "label": "My Work", "href": "/decisions", "icon": "Scale"},

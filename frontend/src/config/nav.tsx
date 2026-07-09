@@ -43,6 +43,7 @@ import {
   MapPin,
   Sunrise,
   Scale,
+  ClipboardCheck,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -58,6 +59,7 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   { label: 'Dashboard', tKey: 'nav.dashboard', href: '/', icon: <LayoutDashboard className="w-5 h-5" /> },
   { label: 'Briefing', tKey: 'nav.briefing', href: '/briefing', icon: <Sunrise className="w-5 h-5" /> },
+  { label: 'Role Workbench', tKey: 'nav.roleWorkbench', href: '/role-workbench', icon: <ClipboardCheck className="w-5 h-5" /> },
   { label: 'Decisions', tKey: 'nav.decisions', href: '/decisions', icon: <Scale className="w-5 h-5" /> },
   { label: 'Inventory', tKey: 'nav.inventory', href: '/inventory', icon: <Package className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Promotions', tKey: 'nav.promotions', href: '/promotions', icon: <Tag className="w-5 h-5" />, permission: 'can_manage_promotions' },
@@ -87,6 +89,7 @@ export const navItems: NavItem[] = [
 export const NAV_ICONS: Record<string, ReactNode> = {
   Sunrise: <Sunrise className="w-5 h-5" />,
   Scale: <Scale className="w-5 h-5" />,
+  ClipboardCheck: <ClipboardCheck className="w-5 h-5" />,
   Store: <Store className="w-5 h-5" />,
   Bell: <Bell className="w-5 h-5" />,
   Inbox: <Inbox className="w-5 h-5" />,
