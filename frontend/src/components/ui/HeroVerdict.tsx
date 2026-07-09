@@ -2,8 +2,9 @@ import { ReactNode } from 'react';
 import { Sparkles } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
-/** White text helper for use on the dark hero-mesh (avoids the global text-fill override). */
-const onMesh = (o = 1): React.CSSProperties => ({ color: `rgba(255,255,255,${o})`, WebkitTextFillColor: `rgba(255,255,255,${o})` });
+/** White text helper for use on the dark hero-mesh (avoids the global text-fill override).
+ *  Exported so callers composing slot content (aside/chips/cta) stay legible on the mesh. */
+export const onMesh = (o = 1): React.CSSProperties => ({ color: `rgba(255,255,255,${o})`, WebkitTextFillColor: `rgba(255,255,255,${o})` });
 
 export interface HeroVerdictProps {
   /** system/role identity, e.g. "Sage · Store Coach" */

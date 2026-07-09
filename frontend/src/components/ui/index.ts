@@ -42,7 +42,7 @@ export type { StatusBannerProps, StatusBannerVariant } from './StatusBanner';
 export { MetricStrip } from './MetricStrip';
 export type { MetricStripProps, MetricItem } from './MetricStrip';
 
-export { HeroVerdict } from './HeroVerdict';
+export { HeroVerdict, onMesh } from './HeroVerdict';
 export type { HeroVerdictProps } from './HeroVerdict';
 
 export { ConnectionBanner } from './ConnectionBanner';

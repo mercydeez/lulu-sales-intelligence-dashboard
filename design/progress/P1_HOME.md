@@ -1,9 +1,10 @@
 # P1 — Home (progress report)
 
-Branch: `feature/design-system-v3`. Phase: Executive Briefing / Home (all three
+Branch: `feature/design-system-v3`, merged into
+`prototype-evolution-accuracy-bullmq`. Phase: Executive Briefing / Home (all three
 Home surfaces: `/today`, `/briefing`, `/copilot`).
 
-## Status: foundation shipped; page adoption is the next step
+## Status: foundation shipped; `/briefing` adopted; `/today` + `/copilot` next
 
 P1 delivers "one Home system." That system is a small set of **shared components**
 every Home surface composes. This commit ships those components (additive,
@@ -27,18 +28,29 @@ Design compliance baked in: AI answers lead with the verdict; violet = AI
 provenance (never brand); confidence/tone never color-only; tabular numerals;
 white-on-mesh text handled so the hero stays legible; sentence case; RTL-safe.
 
-### ▶️ Next — adopt the foundation on the three surfaces (focused step)
-- **`/briefing`** — refactor the hero into `HeroVerdict`, sections onto `AiAnswerBlock`,
-  wrap in `HomeTemplate`, consume `useBriefing` (dedupe the fetch). The page already
-  embodies this anatomy; this makes it use the shared components literally.
-- **`/today`** — the zones resolve through the shared widget registry
-  (`components/copilot/registry`); the `verdict` zone adopts `HeroVerdict` + `useBriefing`
-  and the `kpis` zone adopts `MetricStrip`, editing the registered widgets (not the
-  page shell). Kept registry-safe.
+### ✅ Done — `/briefing` adopted onto the foundation (reference implementation)
+- **`useBriefing`** is now the page's single data source (inline fetch + local
+  interfaces deleted; hook types enriched to the full API shape — Season, Forecast,
+  Watch, Leak, `generated_at`, `kind`, `category`).
+- **Hero → `HeroVerdict`** — narration, typewriter, mood pill and the primary CTA
+  compose into the shared slots (`greeting`/`verdict`/`chips`/`aside`); `onMesh` is
+  now exported for slot composers.
+- **Numbers → `MetricStrip`** — revenue (trend + `AnimatedNumber`), volume (units),
+  forecast, at-risk (amber) as one aligned strip; `MetricStrip` now sizes its
+  large-screen columns from the item count. Units and AED stay on separate items.
+- **Sage's recommendation → `AiAnswerBlock`** — the focal decision keeps its urgency
+  card, but the AI suggestion inside it now uses the canonical anatomy
+  (verdict → scope → next step) with violet Sage provenance.
+- **Page shell → `HomeTemplate`** — hero → metrics → priority modules → footer, in
+  every state. **B06** (loading skeleton) and **B07** (empty, now on `HeroVerdict`)
+  standardized.
+
+### ▶️ Next — remaining Home surfaces (focused step)
+- **`/today`** — the `verdict` zone adopts `HeroVerdict` + `useBriefing` and the
+  `kpis` zone adopts `MetricStrip`, editing the registered widgets (not the page
+  shell). Kept registry-safe. Plus **B04** (experience-fallback state).
 - **`/copilot`** — wrap in `HomeTemplate`; feed widgets + ask box keep working, framed
   by the shared hero/answer grammar.
-- **States (B04/B06/B07):** Today experience-fallback, Briefing loading skeleton,
-  Briefing empty — standardized on the shared state components.
 
 Rationale for splitting the phase here: the three pages are 1,024 lines total and
 two are already polished; a rushed same-session rewrite risked regression. The

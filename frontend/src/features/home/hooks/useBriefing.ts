@@ -20,17 +20,38 @@ export interface BriefingHeadline {
   summary: string;
 }
 
+export interface BriefingChange {
+  title: string; detail?: string; severity: string; entity?: string; category?: string; href: string;
+}
+export interface BriefingDecision {
+  title: string; why: string; action: string; urgency: string; href: string; kind: string;
+}
+export interface BriefingWin { title: string; detail: string; kind: string }
+export interface BriefingSeason {
+  name: string; active: boolean; days_until: number; note: string; approx: boolean;
+}
+export interface BriefingForecast {
+  horizon_days: number; projected_revenue_aed: number; avg_daily_revenue_aed: number;
+}
+export interface BriefingWatch {
+  season: BriefingSeason | null; forecast: BriefingForecast | null; summary: string;
+}
+export interface BriefingLeak {
+  dead_stock_aed: number; stockout_loss_aed: number; total_aed: number; note: string;
+}
+
 export interface Briefing {
   date: string;
+  generated_at: string | null;
   tenant_name: string;
   greeting: string;
   tldr: string;
   headline: BriefingHeadline;
-  changes: Array<{ title: string; detail?: string; severity: string; entity?: string; href?: string }>;
-  decisions: Array<{ title: string; why: string; action: string; urgency: string; href?: string }>;
-  win: { title: string; detail: string } | null;
-  watch: { season: unknown | null; forecast: unknown | null; summary: string };
-  leak: { dead_stock_aed: number; stockout_loss_aed: number; total_aed: number; note: string };
+  changes: BriefingChange[];
+  decisions: BriefingDecision[];
+  win: BriefingWin | null;
+  watch: BriefingWatch;
+  leak: BriefingLeak;
   counts: { open_findings: number; decisions: number; reorder_risks: number };
   empty: boolean;
 }

@@ -23,15 +23,22 @@ const TREND = {
   flat: { Icon: Minus, cls: 'text-ink-muted' },
 };
 
+/** Static class names so the Tailwind JIT can see them (`cn` doesn't merge conflicts). */
+const LG_COLS: Record<number, string> = {
+  3: 'lg:grid-cols-3', 4: 'lg:grid-cols-4', 5: 'lg:grid-cols-5', 6: 'lg:grid-cols-6',
+};
+
 /**
  * Metric strip — orient quickly beneath a page header or hero. 3–6 items, shared
  * alignment, tabular numerals (COMPONENT_LIBRARY §4.4, DESIGN_SYSTEM §8.3).
- * Never mix units and AED in one item without clear separation.
+ * Never mix units and AED in one item without clear separation. Large-screen
+ * columns follow the item count so the strip always fills its row.
  */
 export function MetricStrip({ items, className, ...props }: MetricStripProps) {
+  const lgCols = LG_COLS[Math.min(Math.max(items.length, 3), 6)];
   return (
     <div
-      className={cn('grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3', className)}
+      className={cn('grid grid-cols-2 sm:grid-cols-3 gap-3', lgCols, className)}
       {...props}
     >
       {items.slice(0, 6).map((m) => {
