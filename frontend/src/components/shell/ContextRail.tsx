@@ -10,7 +10,7 @@ import { motion } from 'framer-motion';
 import { Settings } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/cn';
-import type { DomainGroup, FlatNavItem } from '@/lib/nav/adapter';
+import type { DomainGroup, FlatNavItem } from '@/lib/nav';
 
 /** Badge accent by route (mirrors the old sidebar). */
 const BADGE_TONE: Record<string, string> = {

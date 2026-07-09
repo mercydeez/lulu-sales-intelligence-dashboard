@@ -11,28 +11,12 @@
  * `ReactNode` so this stays JSX-free and unit-testable. Authorization is NEVER
  * decided here: an item only appears if it was already in the authorized input.
  */
-import type { ReactNode } from 'react';
-import {
-  DOMAINS, ROUTE_MAP, placementForHref, type DomainKey, type DomainDef,
-} from './domains';
+import { DOMAINS, ROUTE_MAP, placementForHref } from './registry';
+import type { DomainKey, DomainGroup, DomainSection, FlatNavItem } from './types';
 
-/** A single authorized nav destination, normalized from either source. */
-export interface FlatNavItem {
-  href: string;
-  label: string;
-  tKey?: string;
-  icon: ReactNode;
-}
-
-export interface DomainSection {
-  label: string;
-  pages: FlatNavItem[];
-}
-
-export interface DomainGroup extends DomainDef {
-  pages: FlatNavItem[];      // flat, ordered (used when the domain has no sections)
-  sections: DomainSection[]; // present when the domain groups pages under labels (e.g. Admin)
-}
+// Re-export the types adapter consumers relied on, so `./adapter` imports keep
+// working while call sites migrate to importing types from `@/lib/nav`.
+export type { FlatNavItem, DomainSection, DomainGroup } from './types';
 
 /**
  * Group authorized flat nav items into domains. Domains with no authorized pages

@@ -6,9 +6,13 @@ sequence.
 ## Status
 | Phase | State | Notes |
 |---|---|---|
-| **P0 Foundation** | ✅ **done** (awaiting review) | `feature/design-system-v3`; report: `design/progress/P0_FOUNDATION.md` |
-| P1 Home | ⏳ blocked on P0 review | do not start until P0 is reviewed |
+| **P0 Foundation** | ✅ **done + approved** | `feature/design-system-v3`; report: `design/progress/P0_FOUNDATION.md` |
+| **P0.5 Foundation hardening** | ✅ **done** | nav module split + `ARCHITECTURE.md` + `COMPONENT_GRAPH.md` + `features/` seed; report: `design/progress/P0_5_FOUNDATION_HARDENING.md` |
+| **P1 Home** | ▶️ **next** | Executive Briefing / Home |
 | P2 Workflows … P7 | ⏳ queued | one phase at a time |
+
+**Foundation docs (root):** `ARCHITECTURE.md` (system + backend-freeze + layers),
+`COMPONENT_GRAPH.md` (current component dependency graph).
 
 ## Approved architectural adjustment — **backend frozen**
 The backend (`role_experience.py`) is **not modified**. It stays the single source of authorization,

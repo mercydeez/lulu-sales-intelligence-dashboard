@@ -9,7 +9,7 @@ import Link from 'next/link';
 import { X, Settings } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/cn';
-import type { DomainGroup } from '@/lib/nav/adapter';
+import type { DomainGroup } from '@/lib/nav';
 
 const BADGE_TONE: Record<string, string> = {
   '/alerts': 'bg-rose-600', '/security': 'bg-rose-600',

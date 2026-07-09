@@ -1,8 +1,7 @@
 'use client';
 
-import { ReactNode, useMemo, useState } from 'react';
+import { ReactNode, useState } from 'react';
 import { MotionConfig } from 'framer-motion';
-import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useExperience } from '@/contexts/ExperienceContext';
 import { Topbar } from './Topbar';
@@ -14,49 +13,16 @@ import { useNavBadges } from './useNavBadges';
 import VerifyEmailBanner from './VerifyEmailBanner';
 import CommandPalette from '@/components/CommandPalette';
 import { PageTransition } from '@/components/ui';
-import { navItems, NAV_ICONS, type NavItem } from '@/config/nav';
-import { buildDomainNav, activeDomainKey, type FlatNavItem } from '@/lib/nav/adapter';
-
-/**
- * Build the flat, role-authorized nav list. Source of authorization:
- *  - the server experience manifest (`config.nav`) when present, or
- *  - the built-in nav, filtered by the same RBAC the old sidebar used.
- * Grouping into domains happens in the adapter — never here.
- */
-function useAuthorizedFlatNav(): FlatNavItem[] {
-  const { hasRole, hasPermission } = useAuth();
-  const { config } = useExperience();
-  return useMemo(() => {
-    if (config?.nav) {
-      return config.nav.map((m) => ({
-        href: m.href,
-        label: m.label,
-        tKey: m.tKey,
-        icon: NAV_ICONS[m.icon] ?? NAV_ICONS.LayoutDashboard,
-      }));
-    }
-    const canAccess = (item: NavItem) => {
-      if (item.roles && !hasRole(item.roles)) return false;
-      if (item.permission && !hasPermission(item.permission)) return false;
-      return true;
-    };
-    return navItems.filter(canAccess).map((item) => ({
-      href: item.href, label: item.label, tKey: item.tKey, icon: item.icon,
-    }));
-  }, [config?.nav, hasRole, hasPermission]);
-}
+import { useDomainNav } from '@/lib/nav';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
   const { loading: experienceLoading } = useExperience();
-  const pathname = usePathname() ?? '/';
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const badges = useNavBadges();
 
-  const flatNav = useAuthorizedFlatNav();
-  const groups = useMemo(() => buildDomainNav(flatNav), [flatNav]);
-  const activeKey = useMemo(() => activeDomainKey(pathname, groups), [pathname, groups]);
-  const activeGroup = groups.find((g) => g.key === activeKey) ?? null;
+  // All nav-building logic lives in the hook; the shell just renders it.
+  const { pathname, groups, activeKey, activeGroup } = useDomainNav();
 
   if (!isAuthenticated) return <>{children}</>;
 
