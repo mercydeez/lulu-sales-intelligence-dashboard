@@ -35,11 +35,25 @@ const ROUTES = [
 const MIN_CONTENT_CHARS = 40;
 
 async function login(page: Page, email: string) {
-  await page.goto('/login');
-  await page.locator('#email').fill(email);
-  await page.locator('#password').fill(DEMO_PASSWORD);
-  await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 15_000 });
+  // Retry the login itself: under parallel runs the shared per-IP rate limiter
+  // can 429 a login burst, leaving the page on /login. That's transient — a
+  // brief backoff drains the sliding window. This guards the SETUP only; the
+  // per-page paint assertion below is never retried, so real blank pages still
+  // fail loudly.
+  const attempts = 3;
+  for (let i = 1; i <= attempts; i++) {
+    await page.goto('/login');
+    await page.locator('#email').fill(email);
+    await page.locator('#password').fill(DEMO_PASSWORD);
+    await page.getByRole('button', { name: /sign in/i }).click();
+    try {
+      await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 15_000 });
+      return;
+    } catch (e) {
+      if (i === attempts) throw e;
+      await page.waitForTimeout(2_000 * i); // linear backoff: 2s, 4s
+    }
+  }
 }
 
 async function assertRenders(page: Page, route: string) {
