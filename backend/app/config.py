@@ -249,12 +249,19 @@ class Settings(BaseSettings):
     # BEHIND the primary, so nothing that reads its own write may use it.
     database_replica_url: Optional[str] = None
 
-    # E10-2: the isolation tiers this deployment can actually honour. A tenant
-    # sold 'dedicated_db' but served from the shared pool is a lie we refuse to
-    # tell: the app fails closed for any tenant on a tier not listed here, rather
-    # than silently downgrading them. Add a tier only when the infrastructure for
-    # it exists.
-    supported_isolation_tiers: List[str] = ["shared"]
+    # E10-2: the isolation tiers this deployment can PROVISION. `dedicated_schema`
+    # is now buildable (migration 068's provision_tenant_schema), so it is listed;
+    # actual serving is still gated on the provisioning control plane recording a
+    # tenant `active` (services/provisioning.py). `dedicated_db` stays out until an
+    # operator provisions a separate database + per-tenant routing.
+    supported_isolation_tiers: List[str] = ["shared", "dedicated_schema"]
+
+    # E10-2: whether an active dedicated_schema tenant's session is routed to their
+    # schema via search_path. OFF by default — routing raw tables to the tenant
+    # schema while the shared analytics views still bind to `public` would give a
+    # correct-looking-but-wrong dashboard. Enable only once the view stack is
+    # replicated per tenant (docs/product/ISOLATION_TIERS.md).
+    enable_dedicated_schema_routing: bool = False
 
     # E6-3: sales_stream_raw is partitioned by month. Maintenance creates the next
     # three months and DROPs whole partitions older than the retention window —

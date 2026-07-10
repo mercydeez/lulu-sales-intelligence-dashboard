@@ -36,6 +36,7 @@ from app.routes import uae_intelligence as uae_intelligence_routes
 from app.routes import public_api, api_keys, webhooks, procurement
 from app.routes import security as security_routes
 from app.routes import data_rights as data_rights_routes
+from app.routes import provisioning as provisioning_routes
 from app.routes import sso as sso_routes
 from app.routes import scim as scim_routes
 
@@ -89,6 +90,7 @@ ROUTERS: List[RouterSpec] = [
     (security_routes.router, "/api/security", ["Security"]),
     (public_api.router, "/api/public", ["Public API"]),
     (data_rights_routes.router, "/api/data-rights", ["Data Rights"]),
+    (provisioning_routes.router, "/api/admin", ["Provisioning"]),
     (sso_routes.router, "/api/sso", ["SSO"]),
     (scim_routes.router, "/api/scim", ["SCIM"]),
 

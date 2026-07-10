@@ -72,28 +72,27 @@ def test_a_schedule_records_the_hash_only_on_a_successful_import():
 # Honest scope.
 # --------------------------------------------------------------------------
 
-def test_only_implemented_transports_are_supported():
-    assert sch.SUPPORTED_SOURCE_KINDS == ("https",)
+def test_all_three_transports_are_supported():
+    # E2-2 completion (migration 067): sftp + imap are now implemented, not refused.
+    assert set(sch.SUPPORTED_SOURCE_KINDS) == {"https", "sftp", "imap"}
+    assert sch.UNSUPPORTED_SOURCE_KINDS == {}
 
 
-def test_the_unimplemented_transports_are_named_with_a_reason():
-    for kind in ("sftp", "email", "imap"):
-        assert kind in sch.UNSUPPORTED_SOURCE_KINDS
-        assert len(sch.UNSUPPORTED_SOURCE_KINDS[kind]) > 20, "say WHY, not just no"
+def test_the_database_admits_only_the_three_real_transports():
+    """Defence in depth: the CHECK still refuses anything we can't run
+    (widened in migration 067, verified in test_import_transports.py)."""
+    sql064 = _sql().lower()
+    assert "check (source_kind in ('https'))" in sql064  # 064's original narrower CHECK
+    # The widening + its own constraints are asserted in test_import_transports.py.
 
 
-def test_the_database_refuses_an_unimplemented_transport():
-    """Defence in depth: even a direct INSERT cannot create a schedule that would
-    never run."""
-    sql = _sql().lower()
-    assert "check (source_kind in ('https'))" in sql
-
-
-def test_creating_an_unsupported_schedule_answers_501_not_201():
+def test_creating_a_genuinely_unknown_transport_is_still_rejected():
     from app.routes import imports as routes
     code = _code_only(routes.create_schedule)
+    # 501 machinery is retained for any future not-yet-built kind…
     assert "status_code=501" in code
-    assert "source_kind_not_implemented" in code
+    # …and an unknown kind is 422'd.
+    assert "Unknown source_kind" in code
 
 
 def test_a_failed_run_must_record_why():

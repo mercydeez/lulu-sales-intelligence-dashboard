@@ -297,7 +297,13 @@ class ScheduleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     import_type: str
     source_kind: str = "https"
-    source_url: str = Field(..., max_length=2000)
+    # https: the file URL. sftp/imap: a human locator (e.g. "sftp://host/path");
+    # the real connection details live in source_config.
+    source_url: str = Field("", max_length=2000)
+    # sftp: {host, port?, username, password_env|private_key_env, path, known_hosts_env?}
+    # imap: {host, port?, username, password_env, mailbox?, subject_contains?, attachment_ext?, mark_seen?}
+    # Credentials are referenced by ENV-VAR NAME (…_env), never the secret itself.
+    source_config: Dict[str, object] = Field(default_factory=dict)
     mapping: Dict[str, str] = Field(default_factory=dict)
     interval_minutes: int = Field(1440, ge=15, le=10080)
     active: bool = True
@@ -342,33 +348,56 @@ async def create_schedule(body: ScheduleCreate, user: dict = Depends(get_current
     if body.import_type not in imp.import_types():
         raise HTTPException(status_code=422, detail="Unknown import type")
 
-    if body.source_kind in sched.UNSUPPORTED_SOURCE_KINDS:
+    # `email` is a friendly alias the UI may send; the stored transport is `imap`.
+    kind = "imap" if body.source_kind == "email" else body.source_kind
+    config = dict(body.source_config or {})
+
+    if kind in sched.UNSUPPORTED_SOURCE_KINDS:
         raise HTTPException(
             status_code=501,
-            detail={"error": "source_kind_not_implemented",
-                    "source_kind": body.source_kind,
-                    "message": sched.UNSUPPORTED_SOURCE_KINDS[body.source_kind],
+            detail={"error": "source_kind_not_implemented", "source_kind": kind,
+                    "message": sched.UNSUPPORTED_SOURCE_KINDS[kind],
                     "supported": list(sched.SUPPORTED_SOURCE_KINDS)})
-    if body.source_kind not in sched.SUPPORTED_SOURCE_KINDS:
-        raise HTTPException(status_code=422,
-                            detail=f"Unknown source_kind {body.source_kind!r}")
+    if kind not in sched.SUPPORTED_SOURCE_KINDS:
+        raise HTTPException(status_code=422, detail=f"Unknown source_kind {kind!r}")
 
-    from app.services.sage2.api_source import is_safe_url
-    if not is_safe_url(body.source_url):
-        raise HTTPException(
-            status_code=422,
-            detail="source_url must be http(s) to a public host — loopback, private "
-                   "and link-local addresses are refused")
+    if kind == "https":
+        from app.services.sage2.api_source import is_safe_url
+        if not is_safe_url(body.source_url):
+            raise HTTPException(
+                status_code=422,
+                detail="source_url must be http(s) to a public host — loopback, private "
+                       "and link-local addresses are refused")
+    else:
+        # sftp/imap: validate config now, and refuse a private/loopback host up front
+        # (checked again at every run) so the schedule can't reach internal infra.
+        host = config.get("host")
+        if not host or not config.get("username"):
+            raise HTTPException(status_code=422,
+                                detail=f"{kind} requires source_config.host and .username")
+        if kind == "sftp" and not config.get("path"):
+            raise HTTPException(status_code=422, detail="sftp requires source_config.path")
+        if kind == "sftp" and not (config.get("password_env") or config.get("private_key_env")):
+            raise HTTPException(status_code=422,
+                                detail="sftp requires source_config.password_env or .private_key_env")
+        if kind == "imap" and not config.get("password_env"):
+            raise HTTPException(status_code=422,
+                                detail="imap requires source_config.password_env")
+        try:
+            sched._assert_safe_host(str(host))
+        except sched.FetchError as e:
+            raise HTTPException(status_code=422, detail=str(e))
 
     async with async_session() as session:
         try:
             row = (await session.execute(text("""
                 INSERT INTO import_schedules (tenant_id, name, import_type, source_kind,
-                    source_url, mapping, interval_minutes, active, created_by)
-                VALUES (:t, :n, :ty, :sk, :url, CAST(:map AS JSONB), :iv, :act, :by)
+                    source_url, source_config, mapping, interval_minutes, active, created_by)
+                VALUES (:t, :n, :ty, :sk, :url, CAST(:cfg AS JSONB), CAST(:map AS JSONB), :iv, :act, :by)
                 RETURNING id, next_run_at
             """), {"t": tenant_id, "n": body.name, "ty": body.import_type,
-                   "sk": body.source_kind, "url": body.source_url,
+                   "sk": kind, "url": body.source_url or "",
+                   "cfg": json.dumps(config),
                    "map": json.dumps(body.mapping), "iv": body.interval_minutes,
                    "act": body.active, "by": user.get("email")})).mappings().fetchone()
             await session.commit()
@@ -410,7 +439,7 @@ async def run_schedule_now(schedule_id: int, user: dict = Depends(get_current_us
 
     async with async_session() as session:
         row = (await session.execute(text("""
-            SELECT id, tenant_id, name, import_type, source_kind, source_url,
+            SELECT id, tenant_id, name, import_type, source_kind, source_url, source_config,
                    mapping, interval_minutes, last_content_hash, consecutive_failures
               FROM import_schedules WHERE id = :sid AND tenant_id = :t
         """), {"sid": schedule_id, "t": tenant_id})).mappings().fetchone()

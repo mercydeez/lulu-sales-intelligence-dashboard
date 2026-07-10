@@ -301,14 +301,16 @@ async def login(request: Request, response: Response, login_data: LoginRequest):
         logger.warning(f"Login failed for {login_data.email}: {error}")
         raise HTTPException(status_code=401, detail=error)
 
-    # E10-2: refuse to open a session for a tenant whose isolation tier this
-    # deployment cannot deliver. Checked once, here, rather than on every request:
-    # no session means no access. Serving a tenant who bought a dedicated database
-    # out of the shared pool would be a compliance lie nobody notices until an audit.
-    # `isolation_tier` rides along on authenticate_user's existing query, so this
-    # costs no extra round-trip.
-    from app.services import isolation
-    isolation.assert_supported(user_data.get("isolation_tier"), user_data.get("tenant_id"))
+    # E10-2: refuse to open a session for a tenant whose isolation tier is not
+    # actually provisioned/active. Checked once, here — no session means no access.
+    # `shared` needs no provisioning (fast path, no query); a dedicated tenant is
+    # served only when the provisioning control plane records it active.
+    _iso_tier = user_data.get("isolation_tier") or "shared"
+    if _iso_tier != "shared":
+        from app.services import isolation
+        from app.services.database import async_session
+        async with async_session() as _iso_db:
+            await isolation.enforce_tenant_isolation(_iso_db, user_data.get("tenant_id") or 1)
 
     # Enforce 2FA for privileged roles when REQUIRE_MFA_FOR_ADMINS is on. Enable
     # this only after admins have enrolled (see docs/product/ACCOUNT_LIFECYCLE.md);

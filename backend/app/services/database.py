@@ -20,13 +20,31 @@ async def apply_tenant_guc(session: AsyncSession) -> None:
     """Bind the active tenant to this connection for RLS. Best-effort: never
     fail a request if the GUC can't be set (e.g. the function isn't installed
     yet on an un-migrated DB)."""
+    tid = tenant_context.get()
     try:
         await session.execute(
             text("SELECT set_config('app.tenant_id', :tid, false)"),
-            {"tid": str(tenant_context.get())},
+            {"tid": str(tid)},
         )
     except Exception:
         pass
+    await _apply_dedicated_routing(session, tid)
+
+
+async def _apply_dedicated_routing(session: AsyncSession, tenant_id) -> None:
+    """E10-2: route an active dedicated_schema tenant's session to their private
+    schema via search_path. OFF by default (enable_dedicated_schema_routing) — see
+    services/provisioning.py for why (the shared analytics views bind to `public`).
+    A no-op with zero cost when the flag is off, so the shared path is untouched."""
+    try:
+        from app.services import provisioning
+        if not provisioning.dedicated_routing_enabled():
+            return
+        if await provisioning.is_tier_active(session, int(tenant_id), "dedicated_schema"):
+            schema = provisioning.schema_name_for(int(tenant_id))
+            await session.execute(text(f"SET search_path = {schema}, public"))
+    except Exception:
+        pass  # never break a request on the routing path
 
 settings = get_settings()
 logger = logging.getLogger(__name__)

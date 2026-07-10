@@ -78,7 +78,35 @@ async def tenant_isolation_tier(db: AsyncSession, tenant_id: int) -> str:
     return (row.isolation_tier if row else None) or SHARED
 
 
+def _refuse(tier: str) -> None:
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "error": "isolation_tier_not_provisioned",
+            "isolation_tier": tier,
+            "message": (
+                f"This tenant is recorded as {tier!r} isolation ({describe(tier)}) "
+                f"but is not yet provisioned/active on it. Refusing to serve them "
+                f"from shared infrastructure they did not agree to — provision the "
+                f"tier first (E10-2 control plane, /api/admin/provisioning)."
+            ),
+            "supported": list(supported_tiers()),
+        },
+    )
+
+
 async def enforce_tenant_isolation(db: AsyncSession, tenant_id: int) -> str:
+    """Serve a tenant only on a tier this deployment actually delivers.
+
+    E10-2 completion: `shared` is always served; a dedicated tier is served ONLY
+    when the provisioning control plane records it `active` for this tenant — not
+    merely because the tenants.isolation_tier flag says so. This upgrades the old
+    "dedicated => always 503" to a governed "503 until provisioned active".
+    """
     tier = await tenant_isolation_tier(db, tenant_id)
-    assert_supported(tier, tenant_id)
-    return tier
+    if tier == SHARED:
+        return tier
+    from app.services import provisioning
+    if await provisioning.is_tier_active(db, tenant_id, tier):
+        return tier
+    _refuse(tier)

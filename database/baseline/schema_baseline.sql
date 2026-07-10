@@ -280,6 +280,21 @@ CREATE FUNCTION public.demo_tenant_id() RETURNS integer
     );
 $$;
 
+CREATE FUNCTION public.deprovision_tenant_schema(p_tenant_id integer, p_force boolean DEFAULT false) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_schema TEXT := format('tenant_%s', p_tenant_id);
+BEGIN
+    IF to_regclass(format('%I.stores', v_schema)) IS NULL AND NOT p_force THEN
+        RETURN FALSE;  -- nothing to drop
+    END IF;
+    -- CASCADE drops the tenant's isolated tables. Guarded by the caller: only ever
+    -- invoked for a tenant explicitly being deprovisioned.
+    EXECUTE format('DROP SCHEMA IF EXISTS %I CASCADE', v_schema);
+    RETURN TRUE;
+END $$;
+
 CREATE FUNCTION public.ensure_external_sales_partition(p_day date) RETURNS text
     LANGUAGE plpgsql
     AS $$
@@ -367,6 +382,31 @@ BEGIN
     RETURN NULL;  -- AFTER trigger
 END;
 $$;
+
+CREATE FUNCTION public.provision_tenant_schema(p_tenant_id integer) RETURNS text
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_schema TEXT := format('tenant_%s', p_tenant_id);
+    v_tbl    TEXT;
+    -- The tenant's own transactional/PII data. NOT the partitioned synthetic
+    -- stream (demo-only) and NOT the shared reference/control tables.
+    v_tables TEXT[] := ARRAY[
+        'stores', 'items', 'suppliers', 'sales_historical', 'inventory',
+        'purchase_orders', 'promotions', 'item_costs'
+    ];
+BEGIN
+    EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', v_schema);
+    FOREACH v_tbl IN ARRAY v_tables LOOP
+        -- Only clone tables that actually exist in public (schema evolves).
+        IF to_regclass(format('public.%I', v_tbl)) IS NOT NULL
+           AND to_regclass(format('%I.%I', v_schema, v_tbl)) IS NULL THEN
+            EXECUTE format('CREATE TABLE %I.%I (LIKE public.%I INCLUDING ALL)',
+                           v_schema, v_tbl, v_tbl);
+        END IF;
+    END LOOP;
+    RETURN v_schema;
+END $$;
 
 CREATE FUNCTION public.prune_sales_stream_partitions(p_retention_months integer) RETURNS TABLE(dropped text)
     LANGUAGE plpgsql
@@ -1339,11 +1379,13 @@ CREATE TABLE public.import_schedules (
     created_by text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    source_config jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT import_schedules_failure_has_reason CHECK (((last_status <> 'failed'::text) OR ((last_error IS NOT NULL) AND (length(btrim(last_error)) > 0)))),
     CONSTRAINT import_schedules_import_type_check CHECK ((import_type = ANY (ARRAY['stores'::text, 'items'::text, 'suppliers'::text, 'sales'::text, 'inventory'::text]))),
     CONSTRAINT import_schedules_interval_minutes_check CHECK (((interval_minutes >= 15) AND (interval_minutes <= 10080))),
     CONSTRAINT import_schedules_last_status_check CHECK ((last_status = ANY (ARRAY['ok'::text, 'failed'::text, 'skipped_unchanged'::text, 'skipped_quota'::text]))),
-    CONSTRAINT import_schedules_source_kind_check CHECK ((source_kind = 'https'::text))
+    CONSTRAINT import_schedules_source_kind_check CHECK ((source_kind = ANY (ARRAY['https'::text, 'sftp'::text, 'imap'::text]))),
+    CONSTRAINT import_schedules_transport_has_config CHECK (((source_kind = 'https'::text) OR ((source_config ? 'host'::text) AND (source_config ? 'username'::text))))
 );
 
 ALTER TABLE ONLY public.import_schedules FORCE ROW LEVEL SECURITY;
@@ -2956,6 +2998,35 @@ CREATE TABLE public.tenant_billing_profile (
     CONSTRAINT tenant_billing_profile_store_count_check CHECK (((store_count IS NULL) OR (store_count >= 0)))
 );
 
+CREATE TABLE public.tenant_provisioning (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    tier text NOT NULL,
+    status text DEFAULT 'requested'::text NOT NULL,
+    schema_name text,
+    db_ref text,
+    error text,
+    requested_by text,
+    requested_at timestamp with time zone DEFAULT now() NOT NULL,
+    activated_at timestamp with time zone,
+    deprovisioned_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tenant_provisioning_active_has_target CHECK (((status <> 'active'::text) OR (tier = 'shared'::text) OR ((tier = 'dedicated_schema'::text) AND (schema_name IS NOT NULL)) OR ((tier = 'dedicated_db'::text) AND (db_ref IS NOT NULL)))),
+    CONSTRAINT tenant_provisioning_failure_has_reason CHECK (((status <> 'failed'::text) OR ((error IS NOT NULL) AND (length(btrim(error)) > 0)))),
+    CONSTRAINT tenant_provisioning_status_check CHECK ((status = ANY (ARRAY['requested'::text, 'provisioning'::text, 'active'::text, 'failed'::text, 'deprovisioning'::text, 'deprovisioned'::text]))),
+    CONSTRAINT tenant_provisioning_tier_check CHECK ((tier = ANY (ARRAY['shared'::text, 'dedicated_schema'::text, 'dedicated_db'::text])))
+);
+
+CREATE SEQUENCE public.tenant_provisioning_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.tenant_provisioning_id_seq OWNED BY public.tenant_provisioning.id;
+
 CREATE TABLE public.tenant_scim_tokens (
     id integer NOT NULL,
     tenant_id integer NOT NULL,
@@ -3492,6 +3563,8 @@ ALTER TABLE ONLY public.tenant_admin_notes ALTER COLUMN id SET DEFAULT nextval('
 
 ALTER TABLE ONLY public.tenant_api_keys ALTER COLUMN id SET DEFAULT nextval('public.tenant_api_keys_id_seq'::regclass);
 
+ALTER TABLE ONLY public.tenant_provisioning ALTER COLUMN id SET DEFAULT nextval('public.tenant_provisioning_id_seq'::regclass);
+
 ALTER TABLE ONLY public.tenant_scim_tokens ALTER COLUMN id SET DEFAULT nextval('public.tenant_scim_tokens_id_seq'::regclass);
 
 ALTER TABLE ONLY public.tenant_sso_providers ALTER COLUMN id SET DEFAULT nextval('public.tenant_sso_providers_id_seq'::regclass);
@@ -3819,6 +3892,12 @@ ALTER TABLE ONLY public.tenant_api_keys
 
 ALTER TABLE ONLY public.tenant_billing_profile
     ADD CONSTRAINT tenant_billing_profile_pkey PRIMARY KEY (tenant_id);
+
+ALTER TABLE ONLY public.tenant_provisioning
+    ADD CONSTRAINT tenant_provisioning_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.tenant_provisioning
+    ADD CONSTRAINT tenant_provisioning_tenant_id_key UNIQUE (tenant_id);
 
 ALTER TABLE ONLY public.tenant_scim_tokens
     ADD CONSTRAINT tenant_scim_tokens_pkey PRIMARY KEY (id);
@@ -4249,6 +4328,8 @@ CREATE INDEX ix_suppliers_import_job ON public.suppliers USING btree (import_job
 CREATE INDEX ix_tenant_admin_notes_tenant ON public.tenant_admin_notes USING btree (tenant_id, created_at DESC);
 
 CREATE INDEX ix_tenant_api_keys_expires_at ON public.tenant_api_keys USING btree (expires_at) WHERE (expires_at IS NOT NULL);
+
+CREATE INDEX ix_tenant_provisioning_active ON public.tenant_provisioning USING btree (tenant_id) WHERE (status = 'active'::text);
 
 CREATE INDEX ix_tenant_status_events_tenant ON public.tenant_status_events USING btree (tenant_id, created_at DESC);
 
@@ -4793,6 +4874,9 @@ ALTER TABLE ONLY public.tenant_api_keys
 
 ALTER TABLE ONLY public.tenant_billing_profile
     ADD CONSTRAINT tenant_billing_profile_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.tenant_provisioning
+    ADD CONSTRAINT tenant_provisioning_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.tenant_scim_tokens
     ADD CONSTRAINT tenant_scim_tokens_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;

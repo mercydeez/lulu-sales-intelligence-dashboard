@@ -48,8 +48,11 @@ def _code_only(fn) -> str:
 # E10-2 — isolation tiers
 # ==========================================================================
 
-def test_only_shared_is_served_by_default():
-    assert _settings().supported_isolation_tiers == ["shared"]
+def test_provisionable_tiers_include_dedicated_schema():
+    """E10-2 completion: the schema-provisioning primitive exists (migration 068),
+    so dedicated_schema is now provisionable. dedicated_db stays operator-only.
+    Actual SERVING is still gated on the provisioning control plane (below)."""
+    assert _settings().supported_isolation_tiers == ["shared", "dedicated_schema"]
 
 
 def test_the_database_constrains_the_tier_to_known_values():
@@ -58,30 +61,32 @@ def test_the_database_constrains_the_tier_to_known_values():
     assert "default 'shared'" in sql
 
 
-def test_a_supported_tier_passes(monkeypatch):
+def test_a_provisionable_tier_passes_the_static_check(monkeypatch):
     monkeypatch.setattr(isolation, "get_settings", lambda: _settings())
-    isolation.assert_supported("shared")           # does not raise
+    isolation.assert_supported("shared")            # does not raise
+    isolation.assert_supported("dedicated_schema")  # now provisionable, does not raise
 
 
-def test_an_unprovisioned_tier_fails_closed(monkeypatch):
-    """The whole point. Not a warning, not a downgrade — a refusal."""
+def test_a_tier_this_deployment_cannot_provision_fails_closed(monkeypatch):
+    """dedicated_db is not in the provisionable set by default → refused."""
     monkeypatch.setattr(isolation, "get_settings", lambda: _settings())
     with pytest.raises(HTTPException) as ei:
         isolation.assert_supported("dedicated_db", tenant_id=7)
-
-    assert ei.value.status_code == 503, "503: they are entitled to an answer we cannot give"
+    assert ei.value.status_code == 503
     d = ei.value.detail
     assert d["error"] == "isolation_tier_not_provisioned"
     assert d["isolation_tier"] == "dedicated_db"
-    assert d["supported"] == ["shared"]
-    assert "did not agree to" in d["message"]
+    assert "did not agree to" in d["message"] or "not yet provisioned" in d["message"]
 
 
-def test_a_deployment_that_provisions_a_tier_may_serve_it(monkeypatch):
-    monkeypatch.setattr(
-        isolation, "get_settings",
-        lambda: _settings(supported_isolation_tiers=["shared", "dedicated_db"]))
-    isolation.assert_supported("dedicated_db")     # does not raise
+def test_the_real_gate_is_provisioning_active_not_the_static_list():
+    """enforce_tenant_isolation consults the provisioning control plane: a tenant
+    whose isolation_tier is dedicated_schema is served ONLY when provisioning is
+    active, even though dedicated_schema is in the provisionable list."""
+    from app.services import isolation as iso
+    code = _code_only(iso.enforce_tenant_isolation)
+    assert "provisioning.is_tier_active" in code
+    assert "_refuse(tier)" in code
 
 
 def test_a_missing_tier_is_treated_as_shared(monkeypatch):
@@ -90,22 +95,18 @@ def test_a_missing_tier_is_treated_as_shared(monkeypatch):
 
 
 def test_both_doors_are_closed():
-    """Login and API-key auth are the two ways into a tenant's data. Guarding one
-    and not the other would make the guarantee decorative.
-
-    They check differently on purpose: `login` already has the tier, because
-    authenticate_user's query carries it (no second round-trip); the API-key path
-    has only a tenant_id and must look it up.
-    """
+    """Login and API-key auth are the two ways into a tenant's data. Both now go
+    through the provisioning-aware enforce_tenant_isolation gate."""
     from app.routes import auth, public_api
 
-    assert "isolation.assert_supported(" in _code_only(auth.login)
+    assert "enforce_tenant_isolation" in _code_only(auth.login)
     assert "enforce_tenant_isolation" in _code_only(public_api.get_api_context)
 
 
-def test_the_login_tier_check_costs_no_extra_query():
-    """It was a `SELECT isolation_tier` per login until authenticate_user started
-    carrying the column."""
+def test_the_login_tier_check_is_free_for_shared_tenants():
+    """A `shared` tenant (the overwhelming majority) pays NO extra query — the
+    tier rides along on authenticate_user's existing JOIN and short-circuits.
+    Only a dedicated tenant pays the provisioning lookup."""
     from app.services import auth_service
 
     src = inspect.getsource(auth_service.AuthService.authenticate_user)
@@ -113,7 +114,9 @@ def test_the_login_tier_check_costs_no_extra_query():
     assert "LEFT JOIN tenants" in src
 
     from app.routes import auth
-    assert "async_session()" not in _code_only(auth.login)
+    code = _code_only(auth.login)
+    # shared short-circuits before any session is opened.
+    assert "if _iso_tier != 'shared':" in code
 
 
 def test_authenticate_user_actually_returns_the_tier():
@@ -137,9 +140,11 @@ def test_authenticate_user_actually_returns_the_tier():
 
 
 @pytest.mark.parametrize("tier,expect_raise", [("shared", False), ("dedicated_db", True),
-                                               ("dedicated_schema", True), (None, False)])
-def test_login_refuses_exactly_the_unprovisioned_tiers(monkeypatch, tier, expect_raise):
-    """The decision function, exercised over every value the column can hold."""
+                                               ("dedicated_schema", False), (None, False)])
+def test_static_check_admits_provisionable_tiers_refuses_the_rest(monkeypatch, tier, expect_raise):
+    """assert_supported guards the provisionable set (shared + dedicated_schema);
+    dedicated_db (operator-only) still raises. The provisioning-active gate is a
+    separate, stricter check exercised live in test_provisioning.py."""
     monkeypatch.setattr(isolation, "get_settings", lambda: _settings())
     if expect_raise:
         with pytest.raises(HTTPException) as ei:
@@ -153,7 +158,7 @@ def test_the_isolation_check_precedes_issuing_credentials():
     """Refusing after the token is minted would still hand out a session."""
     from app.routes import auth
     code = _code_only(auth.login)
-    assert code.index("assert_supported") < code.index("two_factor_enabled")
+    assert code.index("enforce_tenant_isolation") < code.index("two_factor_enabled")
 
 
 # ==========================================================================
