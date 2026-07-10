@@ -54,7 +54,7 @@ export function ChartFrame({
                 className="h-4 w-1 rounded-full"
                 style={{ background: accent }}
               />
-              <h3 className="text-base font-semibold text-ink truncate">{title}</h3>
+              <h3 className="text-lg font-semibold text-ink truncate">{title}</h3>
               {live && <LiveIndicator size="sm" />}
             </div>
             {subtitle && <p className="text-sm text-ink-muted mt-0.5 ps-3">{subtitle}</p>}

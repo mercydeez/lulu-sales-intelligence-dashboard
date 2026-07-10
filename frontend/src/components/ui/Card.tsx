@@ -28,7 +28,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
       <div
         ref={ref}
         className={cn(
-          'rounded-lg',
+          'rounded-xl',
           variant === 'glass' ? 'glass' : 'bg-surface border border-line shadow-card',
           hoverClasses[hover],
           paddingClasses[padding],
