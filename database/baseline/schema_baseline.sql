@@ -2175,6 +2175,65 @@ CREATE SEQUENCE public.payment_webhook_events_id_seq
 
 ALTER SEQUENCE public.payment_webhook_events_id_seq OWNED BY public.payment_webhook_events.id;
 
+CREATE TABLE public.pos_connections (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    vendor text NOT NULL,
+    status text DEFAULT 'disconnected'::text NOT NULL,
+    external_account_ref text,
+    credential_env text,
+    scopes text,
+    sync_cursor text,
+    connected_at timestamp with time zone,
+    last_sync_at timestamp with time zone,
+    last_sync_status text,
+    last_sync_error text,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT pos_connections_connected_has_account CHECK (((status <> 'connected'::text) OR (external_account_ref IS NOT NULL))),
+    CONSTRAINT pos_connections_status_check CHECK ((status = ANY (ARRAY['disconnected'::text, 'connecting'::text, 'connected'::text, 'error'::text])))
+);
+
+ALTER TABLE ONLY public.pos_connections FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.pos_connections_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.pos_connections_id_seq OWNED BY public.pos_connections.id;
+
+CREATE TABLE public.pos_sync_runs (
+    id bigint NOT NULL,
+    connection_id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    status text DEFAULT 'running'::text NOT NULL,
+    window_start date,
+    window_end date,
+    receipts_ingested integer DEFAULT 0 NOT NULL,
+    lines_ingested integer DEFAULT 0 NOT NULL,
+    aggregates_computed integer DEFAULT 0 NOT NULL,
+    error text,
+    CONSTRAINT pos_sync_runs_status_check CHECK ((status = ANY (ARRAY['running'::text, 'ok'::text, 'error'::text])))
+);
+
+ALTER TABLE ONLY public.pos_sync_runs FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.pos_sync_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.pos_sync_runs_id_seq OWNED BY public.pos_sync_runs.id;
+
 CREATE TABLE public.predictions (
     id integer NOT NULL,
     store_id integer NOT NULL,
@@ -3565,6 +3624,10 @@ ALTER TABLE ONLY public.payment_intents ALTER COLUMN id SET DEFAULT nextval('pub
 
 ALTER TABLE ONLY public.payment_webhook_events ALTER COLUMN id SET DEFAULT nextval('public.payment_webhook_events_id_seq'::regclass);
 
+ALTER TABLE ONLY public.pos_connections ALTER COLUMN id SET DEFAULT nextval('public.pos_connections_id_seq'::regclass);
+
+ALTER TABLE ONLY public.pos_sync_runs ALTER COLUMN id SET DEFAULT nextval('public.pos_sync_runs_id_seq'::regclass);
+
 ALTER TABLE ONLY public.predictions ALTER COLUMN id SET DEFAULT nextval('public.predictions_id_seq'::regclass);
 
 ALTER TABLE ONLY public.procurement_events ALTER COLUMN id SET DEFAULT nextval('public.procurement_events_id_seq'::regclass);
@@ -3815,6 +3878,15 @@ ALTER TABLE ONLY public.payment_webhook_events
 
 ALTER TABLE ONLY public.payment_webhook_events
     ADD CONSTRAINT payment_webhook_events_provider_event_ref_key UNIQUE (provider, event_ref);
+
+ALTER TABLE ONLY public.pos_connections
+    ADD CONSTRAINT pos_connections_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.pos_connections
+    ADD CONSTRAINT pos_connections_tenant_id_vendor_key UNIQUE (tenant_id, vendor);
+
+ALTER TABLE ONLY public.pos_sync_runs
+    ADD CONSTRAINT pos_sync_runs_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.predictions
     ADD CONSTRAINT predictions_pkey PRIMARY KEY (id);
@@ -4392,6 +4464,10 @@ CREATE INDEX ix_payment_intents_tenant ON public.payment_intents USING btree (te
 
 CREATE INDEX ix_payment_webhook_intent ON public.payment_webhook_events USING btree (intent_id);
 
+CREATE INDEX ix_pos_connections_tenant ON public.pos_connections USING btree (tenant_id, status);
+
+CREATE INDEX ix_pos_sync_runs_conn ON public.pos_sync_runs USING btree (connection_id, started_at DESC);
+
 CREATE INDEX ix_sales_historical_import_job ON public.sales_historical USING btree (import_job_id) WHERE (import_job_id IS NOT NULL);
 
 CREATE INDEX ix_stores_import_job ON public.stores USING btree (import_job_id) WHERE (import_job_id IS NOT NULL);
@@ -4762,6 +4838,15 @@ ALTER TABLE ONLY public.payment_intents
 ALTER TABLE ONLY public.payment_webhook_events
     ADD CONSTRAINT payment_webhook_events_intent_id_fkey FOREIGN KEY (intent_id) REFERENCES public.payment_intents(id) ON DELETE SET NULL;
 
+ALTER TABLE ONLY public.pos_connections
+    ADD CONSTRAINT pos_connections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.pos_sync_runs
+    ADD CONSTRAINT pos_sync_runs_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.pos_connections(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.pos_sync_runs
+    ADD CONSTRAINT pos_sync_runs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.predictions
     ADD CONSTRAINT predictions_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);
 
@@ -5081,6 +5166,10 @@ ALTER TABLE public.outcome_pricing_plans ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.payment_intents ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.pos_connections ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.pos_sync_runs ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.procurement_events ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.product_suppliers ENABLE ROW LEVEL SECURITY;
@@ -5164,6 +5253,10 @@ CREATE POLICY tenant_isolation ON public.online_prices USING ((tenant_id = publi
 CREATE POLICY tenant_isolation ON public.outcome_pricing_plans USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.payment_intents USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.pos_connections USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.pos_sync_runs USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.procurement_events USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 

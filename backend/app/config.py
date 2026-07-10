@@ -276,6 +276,13 @@ class Settings(BaseSettings):
     # explicit, operator-supplied https URL) is the consent to make egress calls.
     import_scheduler_enabled: bool = True
 
+    # E2-1: the POS connector nightly sync. On by default and inert with no
+    # connections — sync_all_connected finds nothing and sleeps. It runs in the
+    # singletons container (exactly one process), never per web worker.
+    pos_sync_enabled: bool = True
+    pos_sync_interval_seconds: int = 24 * 60 * 60   # nightly
+    pos_sync_startup_delay_seconds: int = 90        # let the app settle first
+
     # E8-3: turn plan quotas from a meter into a limit. Off by default — we meter
     # first and enforce once the numbers have been watched for a period. Was read
     # via a bare os.getenv in usage_metering, which kept it out of Settings and

@@ -116,6 +116,12 @@ async def _main() -> int:
         from app.services.partition_maintenance import partition_maintenance_loop
         _track("partition_maintenance", partition_maintenance_loop())
 
+    # E2-1: pull connected POS vendors nightly into the basket grain. Inert with no
+    # connections; single-instance here so a tenant's receipts aren't pulled N times.
+    if settings.pos_sync_enabled:
+        from app.services.pos_connectors import pos_sync_loop
+        _track("pos_sync", pos_sync_loop())
+
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
