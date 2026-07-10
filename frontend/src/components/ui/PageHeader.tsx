@@ -14,7 +14,7 @@ export function PageHeader({ title, description, icon, actions, eyebrow, classNa
     <div className={cn('flex flex-wrap items-start justify-between gap-4 mb-6', className)} {...props}>
       <div className="flex items-start gap-3">
         {icon && (
-          <div className="w-11 h-11 rounded-2xl sunset-gradient flex items-center justify-center text-white shrink-0 shadow-sunset">
+          <div className="w-11 h-11 rounded-xl bg-teal-50 text-teal-700 ring-1 ring-teal-100 dark:bg-teal-500/10 dark:text-teal-300 dark:ring-teal-500/20 flex items-center justify-center shrink-0">
             {icon}
           </div>
         )}
