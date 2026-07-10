@@ -37,7 +37,28 @@ interface Metrics {
     revenue_formula?: string;
     risk_days_caught?: number; revenue_protected_aed?: number; protected_formula?: string;
   };
+  // Forecasting v2 (E7-1): UAE-calendar accuracy vs the seasonal-naive baseline,
+  // with Ramadan-window accuracy reported separately and honestly.
+  forecasting_version?: string;
+  baseline_model?: string;
+  baseline_mape?: number | null; baseline_wape?: number | null;
+  selected_model_mape?: number | null; selected_model_wape?: number | null;
+  wape_improvement_vs_baseline_pct?: number | null;
+  ramadan_accuracy?: number | null; ramadan_mape?: number | null; ramadan_wape?: number | null;
+  ramadan_eval_days?: number; ramadan_accuracy_reason?: string;
+  calendar_feature_summary?: {
+    uses_uae_calendar?: boolean; uses_weather_features?: boolean; lunar_dates_approximate?: boolean;
+  };
+  methodology_note?: string;
 }
+
+// Human-readable reasons for an absent Ramadan number — never fabricate accuracy.
+const RAMADAN_REASON_LABEL: Record<string, string> = {
+  not_computed: 'Not yet computed — model metrics are still warming up.',
+  no_ramadan_dates_in_backtest_window:
+    'No Ramadan days fell inside the back-test window, so Ramadan-specific accuracy is not measured yet.',
+  insufficient_history: 'Not enough sales history to measure Ramadan accuracy.',
+};
 
 const MODEL_LABEL: Record<string, string> = {
   lightgbm: 'LightGBM (ML)', lstm: 'LSTM (Deep learning)', gru: 'GRU / RNN (Deep learning)',
@@ -175,6 +196,95 @@ export default function ForecastLabPage() {
                 </div>
               </div>
             )}
+
+            {/* Forecasting v2 (E7-1): UAE-calendar accuracy vs seasonal-naive baseline,
+                Ramadan window reported separately + honestly. Feeds E7-2 publication. */}
+            <Card variant="solid" padding="md" className="mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-base font-medium text-ink">Ramadan &amp; UAE-calendar accuracy</h3>
+                {data.forecasting_version && (
+                  <span className="text-[11px] font-mono uppercase tracking-wide text-ink-muted">
+                    {data.forecasting_version}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-ink-muted mb-4">
+                The selected model is scored against a seasonal-naive baseline on the same held-out
+                days. Ramadan accuracy is shown only when the back-test window actually contains
+                Ramadan dates — we never fabricate a seasonal number.
+              </p>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="bg-surface-2 rounded-lg p-4">
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Ramadan accuracy</div>
+                  {data.ramadan_accuracy != null ? (
+                    <>
+                      <div className="text-2xl font-semibold text-ink tabular-nums" style={{ color: accColor(data.ramadan_accuracy) }}>
+                        {data.ramadan_accuracy}%
+                      </div>
+                      <div className="text-xs text-ink-muted mt-1">
+                        over {data.ramadan_eval_days ?? 0} Ramadan day{data.ramadan_eval_days === 1 ? '' : 's'}
+                        {data.ramadan_mape != null && ` · MAPE ${data.ramadan_mape}%`}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-2xl font-semibold text-ink-muted tabular-nums">—</div>
+                      <div className="text-xs text-ink-muted mt-1">
+                        {RAMADAN_REASON_LABEL[data.ramadan_accuracy_reason || 'not_computed'] ||
+                          'Not measured yet.'}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="bg-surface-2 rounded-lg p-4">
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Selected model error</div>
+                  <div className="text-2xl font-semibold text-ink tabular-nums">
+                    {data.selected_model_wape != null ? `${data.selected_model_wape}%` : '—'}
+                  </div>
+                  <div className="text-xs text-ink-muted mt-1">WAPE (lower is better)</div>
+                </div>
+
+                <div className="bg-surface-2 rounded-lg p-4">
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Baseline error</div>
+                  <div className="text-2xl font-semibold text-ink tabular-nums">
+                    {data.baseline_wape != null ? `${data.baseline_wape}%` : '—'}
+                  </div>
+                  <div className="text-xs text-ink-muted mt-1">seasonal-naive WAPE</div>
+                </div>
+
+                <div className="bg-surface-2 rounded-lg p-4">
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Improvement vs baseline</div>
+                  {data.wape_improvement_vs_baseline_pct != null ? (
+                    <div
+                      className="text-2xl font-semibold tabular-nums"
+                      style={{ color: data.wape_improvement_vs_baseline_pct >= 0 ? '#639922' : '#e24b4a' }}
+                    >
+                      {data.wape_improvement_vs_baseline_pct >= 0 ? '+' : ''}
+                      {data.wape_improvement_vs_baseline_pct}%
+                    </div>
+                  ) : (
+                    <div className="text-2xl font-semibold text-ink-muted tabular-nums">—</div>
+                  )}
+                  <div className="text-xs text-ink-muted mt-1">error reduction</div>
+                </div>
+              </div>
+
+              {data.calendar_feature_summary && (
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {data.calendar_feature_summary.uses_uae_calendar && (
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-teal-50 text-teal-700">UAE calendar features</span>
+                  )}
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-2 text-ink-muted">
+                    Weather features: {data.calendar_feature_summary.uses_weather_features ? 'on' : 'neutral'}
+                  </span>
+                  {data.calendar_feature_summary.lunar_dates_approximate && (
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">Lunar dates approximate</span>
+                  )}
+                </div>
+              )}
+            </Card>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
               <Card variant="solid" padding="md">
