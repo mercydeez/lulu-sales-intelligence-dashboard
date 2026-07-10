@@ -115,6 +115,9 @@ async def lifespan(app: FastAPI):
         from app.services.database import async_session
         async with async_session() as _s:
             await DataSyncService.refresh_category_costs(_s)
+            # E2-3: on a fresh volume, migration 058's backfill ran before the
+            # seeder loaded inventory — seed any still-missing item costs now.
+            await DataSyncService.backfill_item_costs(_s)
     except Exception as e:
         logger.warning(f"Category cost refresh skipped: {e}")
 

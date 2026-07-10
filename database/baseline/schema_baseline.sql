@@ -10,6 +10,10 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public;
+
+COMMENT ON EXTENSION btree_gist IS 'support for indexing common datatypes in GiST';
+
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
@@ -300,6 +304,35 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.item_cost_at(p_tenant_id integer, p_item_id integer, p_date date) RETURNS numeric
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT c.unit_cost_aed
+      FROM item_costs c
+     WHERE c.tenant_id = p_tenant_id
+       AND c.item_id   = p_item_id
+       AND p_date     >= c.valid_from
+       AND (c.valid_until IS NULL OR p_date < c.valid_until)
+     LIMIT 1;
+$$;
+
+COMMENT ON FUNCTION public.item_cost_at(p_tenant_id integer, p_item_id integer, p_date date) IS 'The unit cost in effect for this item on this date, or NULL when none covers it. The exclusion constraint guarantees at most one match.';
+
+CREATE FUNCTION public.item_costs_sync_current() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    target_tenant INTEGER := COALESCE(NEW.tenant_id, OLD.tenant_id);
+    target_item   INTEGER := COALESCE(NEW.item_id,   OLD.item_id);
+BEGIN
+    UPDATE items
+       SET unit_cost_aed = item_cost_at(target_tenant, target_item, CURRENT_DATE)
+     WHERE id = target_item
+       AND tenant_id = target_tenant;
+    RETURN NULL;  -- AFTER trigger
+END;
+$$;
+
 CREATE FUNCTION public.refresh_analytics_views() RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -353,6 +386,29 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+CREATE FUNCTION public.set_item_cost(p_tenant_id integer, p_item_id integer, p_cost numeric, p_from date DEFAULT CURRENT_DATE, p_source character varying DEFAULT 'import'::character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    -- Any period already starting at/after p_from is superseded outright.
+    DELETE FROM item_costs
+     WHERE tenant_id = p_tenant_id AND item_id = p_item_id
+       AND valid_from >= p_from;
+
+    -- Close the period straddling p_from so the new one can start there.
+    UPDATE item_costs
+       SET valid_until = p_from
+     WHERE tenant_id = p_tenant_id AND item_id = p_item_id
+       AND valid_from < p_from
+       AND (valid_until IS NULL OR valid_until > p_from);
+
+    INSERT INTO item_costs (tenant_id, item_id, unit_cost_aed, valid_from, valid_until, source)
+    VALUES (p_tenant_id, p_item_id, p_cost, p_from, NULL, p_source);
+END;
+$$;
+
+COMMENT ON FUNCTION public.set_item_cost(p_tenant_id integer, p_item_id integer, p_cost numeric, p_from date, p_source character varying) IS 'Record a cost effective from p_from onward: closes the straddling period and supersedes any later ones. The only supported way to write item_costs.';
 
 CREATE FUNCTION public.update_updated_at_column() RETURNS trigger
     LANGUAGE plpgsql
@@ -1354,16 +1410,46 @@ CREATE SEQUENCE public.invoices_id_seq
 
 ALTER SEQUENCE public.invoices_id_seq OWNED BY public.invoices.id;
 
+CREATE TABLE public.item_costs (
+    id integer NOT NULL,
+    tenant_id integer DEFAULT 1 NOT NULL,
+    item_id integer NOT NULL,
+    unit_cost_aed numeric(12,4) NOT NULL,
+    valid_from date NOT NULL,
+    valid_until date,
+    source character varying(40) DEFAULT 'import'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT item_costs_range_ordered CHECK (((valid_until IS NULL) OR (valid_until > valid_from))),
+    CONSTRAINT item_costs_unit_cost_aed_check CHECK ((unit_cost_aed >= (0)::numeric))
+);
+
+COMMENT ON TABLE public.item_costs IS 'Effective-dated unit cost per (tenant, item). Source of truth for COGS/margin; items.unit_cost_aed is a trigger-maintained denormalisation of the open period.';
+
+COMMENT ON COLUMN public.item_costs.source IS 'Provenance: ''import'' (tenant-supplied), ''backfill_inventory'' (derived from the blended inventory.unit_cost at migration time), ''pos'' (connector). Never guess.';
+
+CREATE SEQUENCE public.item_costs_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.item_costs_id_seq OWNED BY public.item_costs.id;
+
 CREATE TABLE public.items (
     id integer NOT NULL,
     name character varying(100) NOT NULL,
     category character varying(50),
     unit_price_aed numeric(10,2) DEFAULT 10.00,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    tenant_id integer DEFAULT 1 NOT NULL
+    tenant_id integer DEFAULT 1 NOT NULL,
+    unit_cost_aed numeric(12,4)
 );
 
 ALTER TABLE ONLY public.items FORCE ROW LEVEL SECURITY;
+
+COMMENT ON COLUMN public.items.unit_cost_aed IS 'CURRENT unit cost in AED, denormalised from item_costs by trg_item_costs_sync_current. NULL = cost unknown: readers must return the `needs: cost` state, never a fabricated margin. For point-in-time cost use item_cost_at() / metric_margin_fact.';
 
 CREATE SEQUENCE public.items_id_seq
     AS integer
@@ -1481,6 +1567,25 @@ CREATE VIEW public.metric_category_wow WITH (security_invoker='true') AS
     per_cat.rev_prior,
     ((per_cat.rev_recent - per_cat.rev_prior) / NULLIF(per_cat.rev_prior, (0)::numeric)) AS change
    FROM per_cat;
+
+CREATE VIEW public.metric_margin_fact WITH (security_invoker='true') AS
+ SELECT s.tenant_id,
+    s.date,
+    s.store_id,
+    s.item_id,
+    i.category,
+    s.sales AS units,
+    i.unit_price_aed,
+    ((s.sales)::numeric * i.unit_price_aed) AS revenue_aed,
+    c.unit_cost_aed,
+    c.source AS cost_source,
+    ((s.sales)::numeric * c.unit_cost_aed) AS cogs_aed,
+    ((s.sales)::numeric * (i.unit_price_aed - c.unit_cost_aed)) AS gross_margin_aed
+   FROM ((public.sales_fact_view s
+     JOIN public.items i ON (((i.id = s.item_id) AND (i.tenant_id = s.tenant_id))))
+     LEFT JOIN public.item_costs c ON (((c.tenant_id = s.tenant_id) AND (c.item_id = s.item_id) AND (s.date >= c.valid_from) AND ((c.valid_until IS NULL) OR (s.date < c.valid_until)))));
+
+COMMENT ON VIEW public.metric_margin_fact IS 'E2-3: point-in-time COGS + gross margin. cogs_aed/gross_margin_aed are NULL where no cost period covers the sale date — readers must surface `needs: cost`, not zero.';
 
 CREATE VIEW public.metric_returns_wow WITH (security_invoker='true') AS
  WITH r AS (
@@ -2868,6 +2973,8 @@ ALTER TABLE ONLY public.invoice_lines ALTER COLUMN id SET DEFAULT nextval('publi
 
 ALTER TABLE ONLY public.invoices ALTER COLUMN id SET DEFAULT nextval('public.invoices_id_seq'::regclass);
 
+ALTER TABLE ONLY public.item_costs ALTER COLUMN id SET DEFAULT nextval('public.item_costs_id_seq'::regclass);
+
 ALTER TABLE ONLY public.items ALTER COLUMN id SET DEFAULT nextval('public.items_id_seq'::regclass);
 
 ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('public.notifications_id_seq'::regclass);
@@ -3075,6 +3182,12 @@ ALTER TABLE ONLY public.invoices
 
 ALTER TABLE ONLY public.invoices
     ADD CONSTRAINT invoices_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.item_costs
+    ADD CONSTRAINT item_costs_no_overlap EXCLUDE USING gist (tenant_id WITH =, item_id WITH =, daterange(valid_from, valid_until, '[)'::text) WITH &&);
+
+ALTER TABLE ONLY public.item_costs
+    ADD CONSTRAINT item_costs_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.items
     ADD CONSTRAINT items_pkey PRIMARY KEY (id);
@@ -3443,6 +3556,10 @@ CREATE INDEX idx_inventory_store ON public.inventory USING btree (store_id);
 
 CREATE INDEX idx_invoice_lines_invoice ON public.supplier_invoice_lines USING btree (invoice_id);
 
+CREATE INDEX idx_item_costs_lookup ON public.item_costs USING btree (tenant_id, item_id, valid_from DESC);
+
+CREATE INDEX idx_item_costs_tenant ON public.item_costs USING btree (tenant_id);
+
 CREATE INDEX idx_items_tenant ON public.items USING btree (tenant_id);
 
 CREATE UNIQUE INDEX idx_mv_daily_store ON public.mv_daily_sales_by_store USING btree (date, store_id);
@@ -3610,6 +3727,8 @@ CREATE UNIQUE INDEX uq_data_sources_one_active_per_tenant ON public.data_sources
 CREATE UNIQUE INDEX uq_scim_external_users_tenant_extid ON public.scim_external_users USING btree (tenant_id, external_id) WHERE (external_id IS NOT NULL);
 
 CREATE UNIQUE INDEX ux_subscriptions_tenant ON public.subscriptions USING btree (tenant_id);
+
+CREATE TRIGGER trg_item_costs_sync_current AFTER INSERT OR DELETE OR UPDATE ON public.item_costs FOR EACH ROW EXECUTE FUNCTION public.item_costs_sync_current();
 
 CREATE TRIGGER trg_sales_stream_raw_confine_synthetic BEFORE INSERT OR UPDATE ON public.sales_stream_raw FOR EACH ROW EXECUTE FUNCTION public.sales_stream_raw_confine_synthetic();
 
@@ -3797,6 +3916,12 @@ ALTER TABLE ONLY public.invoice_lines
 
 ALTER TABLE ONLY public.invoices
     ADD CONSTRAINT invoices_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.item_costs
+    ADD CONSTRAINT item_costs_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.item_costs
+    ADD CONSTRAINT item_costs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
 
 ALTER TABLE ONLY public.items
     ADD CONSTRAINT items_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
@@ -4090,6 +4215,8 @@ ALTER TABLE public.invoice_lines ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.item_costs ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.items ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.notification_preferences ENABLE ROW LEVEL SECURITY;
@@ -4159,6 +4286,8 @@ CREATE POLICY tenant_isolation ON public.invoice_lines USING ((EXISTS ( SELECT 1
   WHERE ((i.id = invoice_lines.invoice_id) AND (i.tenant_id = public.current_tenant_id())))));
 
 CREATE POLICY tenant_isolation ON public.invoices USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.item_costs USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.items USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 

@@ -62,9 +62,25 @@ class KPIResponse(BaseModel):
     sales_trend: str  # "up", "down", "stable"
     revenue_trend: str  # "up", "down", "stable"
 
+    # E2-3 margin (30d). NULL — never 0 — when the tenant has loaded no cost, so
+    # the UI shows `needs_cost` instead of a fabricated profit figure. The margin
+    # is computed only over the revenue we could actually cost (cost_coverage_pct).
+    gross_margin_month: Optional[float] = None
+    gross_margin_pct: Optional[float] = None
+    cost_coverage_pct: Optional[float] = None
+    needs_cost: Optional[str] = None
+
+
+# Kept identical to services/roi.py so every cost-gated surface says the same thing.
+_NEEDS_COST = "unit cost — import item costs, or an inventory file with a cost column"
+
 
 def _safe_defaults() -> dict:
     return {
+        "gross_margin_month": None,
+        "gross_margin_pct": None,
+        "cost_coverage_pct": None,
+        "needs_cost": _NEEDS_COST,
         "total_historical_records": 0,
         "total_streaming_records": 0,
         "total_sales_today": 0,
@@ -174,6 +190,36 @@ async def compute_and_cache_kpis(db: AsyncSession, allowed_stores: Optional[List
         else:
             revenue_trend = "stable"
 
+        # --- E2-3 margin (30d), from metric_margin_fact: each sale costed at the
+        # price that was in effect on ITS OWN date. cogs_aed is NULL where no cost
+        # period covers the sale, and those rows are excluded from both sums — so
+        # margin is over costed revenue only, never diluted by a silent zero.
+        margin_sql = """
+            SELECT COALESCE(SUM(m.gross_margin_aed), 0)::numeric AS gross_margin_month,
+                   COALESCE(SUM(m.revenue_aed), 0)::numeric      AS costed_revenue_month,
+                   COUNT(*) FILTER (WHERE m.cogs_aed IS NOT NULL) AS costed_rows
+            FROM metric_margin_fact m
+            WHERE m.tenant_id = :tenant_id
+              AND m.date >= :month_ago
+              AND m.cogs_aed IS NOT NULL
+        """
+        if allowed_stores:
+            margin_sql += " AND m.store_id = ANY(:allowed_stores)"
+        m = (await db.execute(text(margin_sql), params)).fetchone()
+
+        revenue_month = float(row.revenue_month or 0)
+        gross_margin_month = gross_margin_pct = cost_coverage_pct = None
+        needs_cost = _NEEDS_COST
+        if m and m.costed_rows:
+            costed_revenue = float(m.costed_revenue_month or 0)
+            if costed_revenue > 0:
+                gross_margin_month = round(float(m.gross_margin_month or 0), 2)
+                gross_margin_pct = round(100.0 * gross_margin_month / costed_revenue, 1)
+                cost_coverage_pct = (
+                    round(100.0 * costed_revenue / revenue_month, 1) if revenue_month > 0 else None
+                )
+                needs_cost = None
+
         response_data = {
             "total_historical_records": row.historical_count or 0,
             "total_streaming_records": row.streaming_count or 0,
@@ -183,7 +229,7 @@ async def compute_and_cache_kpis(db: AsyncSession, allowed_stores: Optional[List
             "average_daily_sales": float(row.avg_daily_sales or 0),
             "total_revenue_today": float(row.revenue_today or 0),
             "total_revenue_week": float(row.revenue_week or 0),
-            "total_revenue_month": float(row.revenue_month or 0),
+            "total_revenue_month": revenue_month,
             "average_daily_revenue": float(row.avg_daily_revenue or 0),
             "unique_stores": row.unique_stores or 0,
             "unique_items": row.unique_items or 0,
@@ -191,7 +237,11 @@ async def compute_and_cache_kpis(db: AsyncSession, allowed_stores: Optional[List
             "data_range_end": row.data_end,
             "last_stream_timestamp": row.last_stream,
             "sales_trend": sales_trend,
-            "revenue_trend": revenue_trend
+            "revenue_trend": revenue_trend,
+            "gross_margin_month": gross_margin_month,
+            "gross_margin_pct": gross_margin_pct,
+            "cost_coverage_pct": cost_coverage_pct,
+            "needs_cost": needs_cost,
         }
 
         # Cache result (serialize dates for caching)

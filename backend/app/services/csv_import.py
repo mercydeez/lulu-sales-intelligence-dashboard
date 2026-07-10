@@ -33,6 +33,10 @@ SCHEMAS: Dict[str, Dict] = {
             "name":           {"required": True,  "kind": "text", "hint": "Product / SKU name (unique)"},
             "category":       {"required": False, "kind": "text", "hint": "Category"},
             "unit_price_aed": {"required": False, "kind": "aed",  "hint": "Retail price in AED"},
+            # E2-3: cost unlocks margin / GMROI. Recorded as an effective-dated
+            # period in item_costs (valid from cost_from, or today) — not a scalar.
+            "unit_cost_aed":  {"required": False, "kind": "aed",  "hint": "Cost per unit in AED (unlocks margin)"},
+            "cost_from":      {"required": False, "kind": "date", "hint": "Date this cost took effect (YYYY-MM-DD)"},
         },
     },
     "sales": {
@@ -275,11 +279,24 @@ async def commit_import(db: AsyncSession, tenant_id: int, import_type: str,
 
     elif import_type == "items":
         for r in valid_rows:
-            await db.execute(_sql("""
+            item_id = (await db.execute(_sql("""
                 INSERT INTO items (name, category, unit_price_aed, tenant_id)
                 VALUES (:name, :cat, COALESCE(:price, 10.00), :t)
+                RETURNING id
             """), {"name": r["name"], "cat": r.get("category"),
-                   "price": r.get("unit_price_aed"), "t": tenant_id})
+                   "price": r.get("unit_price_aed"), "t": tenant_id})).scalar()
+
+            # E2-3: a supplied cost opens an effective-dated period in item_costs.
+            # set_item_cost closes the straddling period first — a plain INSERT would
+            # always collide with the open-ended current period. The trigger mirrors
+            # the result onto items.unit_cost_aed. No cost => the item simply has
+            # none, and every margin metric keeps saying `needs: cost`.
+            cost = r.get("unit_cost_aed")
+            if item_id and cost is not None:
+                await db.execute(_sql("""
+                    SELECT set_item_cost(:t, :iid, :cost, COALESCE(:vf, CURRENT_DATE), 'import')
+                """), {"t": tenant_id, "iid": item_id, "cost": cost,
+                       "vf": r.get("cost_from")})
             imported += 1
 
     elif import_type == "suppliers":

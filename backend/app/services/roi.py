@@ -19,6 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 DEAD_STOCK_DAYS = 60          # no sale in this many days (or zero velocity) = dead
 STOCKOUT_PROJECTION_DAYS = 30  # window for the stockout opportunity-loss estimate
 
+# The single `needs` string for every cost-dependent metric. Since E2-3 a tenant
+# can supply cost either as an effective-dated item cost (preferred) or the legacy
+# per-store inventory cost column.
+_NEEDS_COST = "unit cost — import item costs, or an inventory file with a cost column"
+
 
 def _money(v) -> float:
     return round(float(v or 0), 2)
@@ -28,20 +33,29 @@ def build_summary(raw: Dict, projection_days: int = STOCKOUT_PROJECTION_DAYS) ->
     """Assemble the ROI response from raw aggregates. Pure — no I/O.
 
     raw keys: inventory_retail_value, inventory_cost_value, has_cost,
-    dead_stock_value, dead_stock_count, stockout_daily_loss_aed, below_reorder_count,
-    avg_days_of_supply, total_skus, total_stock_units, revenue_90d, cogs_90d.
+    dead_stock_value, dead_stock_cost_value, dead_stock_count, stockout_daily_loss_aed,
+    below_reorder_count, avg_days_of_supply, total_skus, total_stock_units,
+    revenue_90d, cogs_90d, costed_revenue_90d.
     """
     has_cost = bool(raw.get("has_cost"))
     revenue_90d = _money(raw.get("revenue_90d"))
     stockout_daily = _money(raw.get("stockout_daily_loss_aed"))
 
-    # GMROI = gross margin / average inventory cost. Only honest with cost data.
+    # GMROI = gross margin / inventory at cost. Only honest with cost data.
+    #
+    # Margin is computed over COSTED revenue — the sales we could actually price a
+    # cost against — not total revenue. Subtracting a partial COGS from a full
+    # revenue would inflate margin by exactly the uncosted sales, which is the kind
+    # of quiet lie this codebase refuses to tell.
     gmroi: Optional[float] = None
     gross_margin_90d: Optional[float] = None
+    gross_margin_pct: Optional[float] = None
     inv_cost = _money(raw.get("inventory_cost_value"))
-    if has_cost and inv_cost > 0:
-        gross_margin_90d = _money(revenue_90d - _money(raw.get("cogs_90d")))
+    costed_revenue = _money(raw.get("costed_revenue_90d"))
+    if has_cost and inv_cost > 0 and costed_revenue > 0:
+        gross_margin_90d = _money(costed_revenue - _money(raw.get("cogs_90d")))
         gmroi = round(gross_margin_90d / inv_cost, 2)
+        gross_margin_pct = round(100.0 * gross_margin_90d / costed_revenue, 1)
 
     return {
         "currency": "AED",
@@ -53,12 +67,16 @@ def build_summary(raw: Dict, projection_days: int = STOCKOUT_PROJECTION_DAYS) ->
             "cash_tied_at_cost": {
                 "aed": inv_cost if has_cost else None,
                 "label": "Cash tied in inventory (at cost)",
-                "needs": None if has_cost else "unit cost — import inventory with a cost column",
+                "needs": None if has_cost else _NEEDS_COST,
             },
             "dead_stock": {
                 "aed": _money(raw.get("dead_stock_value")),
                 "count": int(raw.get("dead_stock_count") or 0),
                 "label": f"Dead stock (no sale in {DEAD_STOCK_DAYS}d)",
+                # What the dead stock actually COST you — the cash sunk, as opposed
+                # to the retail value you hoped to realise (E2-3).
+                "cost_aed": _money(raw.get("dead_stock_cost_value")) if has_cost else None,
+                "needs": None if has_cost else _NEEDS_COST,
             },
             "stockout_loss_estimate": {
                 "aed": _money(stockout_daily * projection_days),
@@ -70,8 +88,12 @@ def build_summary(raw: Dict, projection_days: int = STOCKOUT_PROJECTION_DAYS) ->
             "gmroi": {
                 "value": gmroi,
                 "gross_margin_90d_aed": gross_margin_90d,
+                "gross_margin_pct": gross_margin_pct,
+                # The revenue the margin is actually computed over. If this is below
+                # revenue_90d, some sales had no cost period — say so, don't hide it.
+                "costed_revenue_90d_aed": costed_revenue if has_cost else None,
                 "label": "GMROI (gross margin return on inventory)",
-                "needs": None if gmroi is not None else "unit cost — import inventory with a cost column",
+                "needs": None if gmroi is not None else _NEEDS_COST,
             },
             "days_of_supply_avg": {
                 "value": round(float(raw.get("avg_days_of_supply") or 0), 1),
@@ -84,6 +106,12 @@ def build_summary(raw: Dict, projection_days: int = STOCKOUT_PROJECTION_DAYS) ->
             "total_skus": int(raw.get("total_skus") or 0),
             "total_stock_units": int(raw.get("total_stock_units") or 0),
             "has_cost_data": has_cost,
+            # What fraction of revenue we could actually cost. < 100% means some
+            # sales fell outside every cost period — margin covers only the rest.
+            "cost_coverage_pct": (
+                round(100.0 * costed_revenue / revenue_90d, 1)
+                if has_cost and revenue_90d > 0 else None
+            ),
         },
         "headline": {
             "label": "Cash you could release + recover",
@@ -98,10 +126,10 @@ def build_summary(raw: Dict, projection_days: int = STOCKOUT_PROJECTION_DAYS) ->
 
 _METHOD = {
     "inventory_value_retail": "Σ on-hand units × retail price (AED)",
-    "cash_tied_at_cost": "Σ on-hand units × unit cost (AED)",
-    "dead_stock": "stock with no sale in 60 days, valued at retail",
+    "cash_tied_at_cost": "Σ on-hand units × unit cost, effective-dated (AED)",
+    "dead_stock": "stock with no sale in 60 days, valued at retail (and at cost)",
     "stockout_loss_estimate": "out-of-stock items × avg daily units × price, projected over the window",
-    "gmroi": "gross margin (90d) ÷ inventory at cost",
+    "gmroi": "gross margin (90d, cost as of each sale's date) ÷ inventory at cost",
     "days_of_supply_avg": "avg(on-hand ÷ avg daily units sold)",
 }
 
@@ -197,15 +225,28 @@ async def roi_summary(db: AsyncSession, tenant_id: int, allowed=None) -> Dict:
         sale_scope = "AND s.store_id = ANY(:allowed)"
         params["allowed"] = list(allowed)
 
+    # E2-3 cost basis: the effective-dated `items.unit_cost_aed` (current period,
+    # maintained from item_costs) is authoritative; we fall back to the legacy
+    # per-store `inventory.unit_cost` only where no cost period exists. GMROI's
+    # numerator (COGS, point-in-time) and denominator (inventory at cost) MUST
+    # share this basis or the ratio is meaningless.
     inv = (await db.execute(text(f"""
         SELECT
           COALESCE(SUM(i.current_stock * it.unit_price_aed), 0)            AS inventory_retail_value,
-          COALESCE(SUM(i.current_stock * i.unit_cost), 0)                 AS inventory_cost_value,
-          BOOL_OR(i.unit_cost > 0)                                        AS has_cost,
+          COALESCE(SUM(i.current_stock * COALESCE(it.unit_cost_aed, NULLIF(i.unit_cost, 0))), 0)
+                                                                          AS inventory_cost_value,
+          BOOL_OR(COALESCE(it.unit_cost_aed, NULLIF(i.unit_cost, 0)) > 0) AS has_cost,
           COALESCE(SUM(CASE WHEN i.current_stock > 0
                   AND (i.average_daily_sales = 0
                        OR i.last_sale_date < (CURRENT_DATE - {DEAD_STOCK_DAYS}))
                   THEN i.current_stock * it.unit_price_aed ELSE 0 END), 0) AS dead_stock_value,
+          -- Dead stock at COST is the cash actually sunk (retail value is what you
+          -- hoped to get). NULL-safe: contributes 0 only where a cost exists.
+          COALESCE(SUM(CASE WHEN i.current_stock > 0
+                  AND (i.average_daily_sales = 0
+                       OR i.last_sale_date < (CURRENT_DATE - {DEAD_STOCK_DAYS}))
+                  THEN i.current_stock * COALESCE(it.unit_cost_aed, NULLIF(i.unit_cost, 0))
+                  ELSE 0 END), 0)                                          AS dead_stock_cost_value,
           COALESCE(SUM(CASE WHEN i.current_stock > 0
                   AND (i.average_daily_sales = 0
                        OR i.last_sale_date < (CURRENT_DATE - {DEAD_STOCK_DAYS}))
@@ -234,17 +275,23 @@ async def roi_summary(db: AsyncSession, tenant_id: int, allowed=None) -> Dict:
     raw["revenue_90d"] = (rev or {}).get("revenue_90d", 0)
     raw["cogs_90d"] = 0
     if raw.get("has_cost"):
+        # E2-3: point-in-time COGS. metric_margin_fact joins each sale to the cost
+        # that was in effect ON ITS OWN DATE, so a mid-period supplier price change
+        # no longer rewrites history. Previously this averaged every store's current
+        # unit_cost and applied that one number to 90 days of past sales.
+        # cogs_aed is NULL where no cost period covers the sale — those rows are
+        # excluded from BOTH sums so the margin we report is over the sales we can
+        # actually cost, never diluted by a silent zero.
         cogs = (await db.execute(text(f"""
-            WITH item_cost AS (
-                SELECT item_id, AVG(NULLIF(unit_cost, 0)) AS cost
-                FROM inventory GROUP BY item_id
-            )
-            SELECT COALESCE(SUM(s.sales * ic.cost), 0) AS cogs_90d
-            FROM sales_fact_view s
-            JOIN items it ON it.id = s.item_id
-            JOIN item_cost ic ON ic.item_id = s.item_id
-            WHERE it.tenant_id = :tid AND s.date >= (CURRENT_DATE - 90) AND ic.cost IS NOT NULL {sale_scope}
+            SELECT COALESCE(SUM(m.cogs_aed), 0)    AS cogs_90d,
+                   COALESCE(SUM(m.revenue_aed), 0) AS costed_revenue_90d
+            FROM metric_margin_fact m
+            WHERE m.tenant_id = :tid
+              AND m.date >= (CURRENT_DATE - 90)
+              AND m.cogs_aed IS NOT NULL
+              {sale_scope.replace('s.store_id', 'm.store_id')}
         """), params)).mappings().fetchone()
         raw["cogs_90d"] = (cogs or {}).get("cogs_90d", 0)
+        raw["costed_revenue_90d"] = (cogs or {}).get("costed_revenue_90d", 0)
 
     return build_summary(raw)

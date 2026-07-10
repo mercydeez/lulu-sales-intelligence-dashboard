@@ -96,6 +96,46 @@ class DataSyncService:
         except Exception as e:
             logger.warning(f"Could not refresh CATEGORY_COSTS from items (using fallbacks): {e}")
 
+    @classmethod
+    async def backfill_item_costs(cls, session: AsyncSession) -> int:
+        """Seed item_costs for items that have a legacy inventory cost but no cost
+        period yet (E2-3). Idempotent; returns the number of items seeded.
+
+        Migration 058 does this too, but on a FRESH volume the migrations run before
+        db_seeder loads inventory, so there is nothing to backfill at that moment.
+        This runs from the lifespan after seeding, closing that gap. Items with no
+        cost anywhere are left alone — margin then honestly reports `needs: cost`.
+        """
+        try:
+            seeded = (await session.execute(text("""
+                WITH candidates AS (
+                    SELECT it.tenant_id, it.id AS item_id,
+                           ROUND(AVG(NULLIF(inv.unit_cost, 0))::numeric, 4) AS cost
+                      FROM items it
+                      JOIN inventory inv ON inv.item_id = it.id
+                     WHERE NOT EXISTS (
+                         SELECT 1 FROM item_costs c
+                          WHERE c.item_id = it.id AND c.tenant_id = it.tenant_id)
+                     GROUP BY it.tenant_id, it.id
+                    HAVING AVG(NULLIF(inv.unit_cost, 0)) > 0
+                )
+                INSERT INTO item_costs (tenant_id, item_id, unit_cost_aed, valid_from, source)
+                SELECT c.tenant_id, c.item_id, c.cost,
+                       COALESCE((SELECT MIN(date) FROM sales_historical), CURRENT_DATE)
+                           - INTERVAL '1 day',
+                       'backfill_inventory'
+                  FROM candidates c
+                RETURNING 1
+            """))).rowcount or 0
+            await session.commit()
+            if seeded:
+                logger.info(f"item_costs backfilled for {seeded} items (E2-3)")
+            return seeded
+        except Exception as e:
+            await session.rollback()
+            logger.warning(f"item_costs backfill skipped: {e}")
+            return 0
+
     @staticmethod
     async def get_inventory_from_sales(
         session: AsyncSession,

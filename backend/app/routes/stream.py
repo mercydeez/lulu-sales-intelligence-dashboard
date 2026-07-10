@@ -330,7 +330,14 @@ def generate_live_alert():
 
 
 def generate_inventory_update():
-    """Generate a random inventory update"""
+    """Generate a SYNTHETIC inventory update for the demo SSE feed.
+
+    Every field here is invented. It used to also emit
+    `unit_cost: random.uniform(10, 100)` — a fabricated money figure sitting in the
+    same payload as real-looking stock levels. Cost is never guessed (E2-3: it comes
+    from item_costs or it is absent), so the field is gone and the event now says
+    what it is.
+    """
     item = random.choice(MOCK_ITEMS)
     store = random.choice(MOCK_STORES)
     
@@ -358,7 +365,7 @@ def generate_inventory_update():
         "reorder_level": reorder_level,
         "max_stock": max_stock,
         "status": status,
-        "unit_cost": round(random.uniform(10, 100), 2),
+        "is_synthetic": True,
         "timestamp": datetime.now().isoformat(),
     }
 

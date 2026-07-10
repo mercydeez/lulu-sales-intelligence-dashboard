@@ -11,10 +11,11 @@ from app.services.roi import (
 
 _RAW = {
     "inventory_retail_value": 100000, "inventory_cost_value": 60000, "has_cost": True,
-    "dead_stock_value": 12000, "dead_stock_count": 8,
+    "dead_stock_value": 12000, "dead_stock_cost_value": 7000, "dead_stock_count": 8,
     "stockout_daily_loss_aed": 500, "below_reorder_count": 14,
     "avg_days_of_supply": 23.4, "total_skus": 50, "total_stock_units": 9000,
-    "revenue_90d": 240000, "cogs_90d": 150000,
+    # Full cost coverage: every dirham of revenue could be priced against a cost.
+    "revenue_90d": 240000, "cogs_90d": 150000, "costed_revenue_90d": 240000,
 }
 
 
@@ -40,12 +41,49 @@ def test_gmroi_computed_when_cost_present():
 
 
 def test_cost_metrics_null_with_needs_flag_when_no_cost():
-    raw = {**_RAW, "has_cost": False, "inventory_cost_value": 0, "cogs_90d": 0}
+    raw = {**_RAW, "has_cost": False, "inventory_cost_value": 0, "cogs_90d": 0,
+           "costed_revenue_90d": 0}
     s = build_summary(raw)
     assert s["metrics"]["cash_tied_at_cost"]["aed"] is None
     assert "cost" in s["metrics"]["cash_tied_at_cost"]["needs"]
     assert s["metrics"]["gmroi"]["value"] is None
     assert s["metrics"]["gmroi"]["needs"]
+    # E2-3: dead stock at cost is also withheld, and margin % is not invented.
+    assert s["metrics"]["dead_stock"]["cost_aed"] is None
+    assert s["metrics"]["gmroi"]["gross_margin_pct"] is None
+    assert s["context"]["cost_coverage_pct"] is None
+
+
+# --- E2-3: margin is computed over COSTED revenue, never total ---------------
+
+def test_margin_uses_costed_revenue_not_total_revenue():
+    """Half the revenue has no cost period. Subtracting a partial COGS from the
+    FULL revenue would inflate margin — the classic quiet lie. Margin must be
+    taken over the costed slice only."""
+    raw = {**_RAW, "revenue_90d": 240000, "costed_revenue_90d": 120000, "cogs_90d": 75000}
+    s = build_summary(raw)
+    # 120000 - 75000 = 45000 (NOT 240000 - 75000 = 165000)
+    assert s["metrics"]["gmroi"]["gross_margin_90d_aed"] == 45000
+    assert s["metrics"]["gmroi"]["gross_margin_pct"] == 37.5   # 45000/120000
+    assert s["metrics"]["gmroi"]["costed_revenue_90d_aed"] == 120000
+    # And the partial coverage is disclosed, not hidden.
+    assert s["context"]["cost_coverage_pct"] == 50.0
+
+
+def test_gmroi_withheld_when_cost_exists_but_no_sale_could_be_costed():
+    """has_cost is true (there is stock with a cost) but no SALE fell inside any
+    cost period — margin is unknowable, so it stays null rather than becoming 0."""
+    raw = {**_RAW, "costed_revenue_90d": 0, "cogs_90d": 0}
+    s = build_summary(raw)
+    assert s["metrics"]["gmroi"]["value"] is None
+    assert s["metrics"]["gmroi"]["gross_margin_90d_aed"] is None
+    assert s["metrics"]["gmroi"]["needs"]
+
+
+def test_dead_stock_reports_both_retail_and_cost():
+    s = build_summary(_RAW)
+    assert s["metrics"]["dead_stock"]["aed"] == 12000       # what you hoped to get
+    assert s["metrics"]["dead_stock"]["cost_aed"] == 7000   # what you actually sank
 
 
 def test_retail_value_always_present():
