@@ -16,7 +16,7 @@ export default function NotFound() {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.5, ease: EASE }}
       >
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient text-white shadow-glow-teal mb-6">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient text-white shadow-sunset mb-6">
           <Compass className="w-8 h-8" />
         </div>
         <p className="text-5xl font-bold text-ink tabular-nums">404</p>

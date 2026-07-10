@@ -200,7 +200,7 @@ export default function LoginPage() {
 
           {/* Mobile brand */}
           <div className="lg:hidden text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-glow-teal">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-sunset">
               <ShoppingBag className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-ink">{PRODUCT_NAME}</h1>
@@ -392,7 +392,7 @@ function SubmitButton({ isLoading, idle, busy }: { isLoading: boolean; idle: str
       whileHover={{ y: -2 }}
       whileTap={{ scale: 0.99 }}
       transition={{ type: 'spring', stiffness: 320, damping: 24 }}
-      className="sunset-gradient text-white w-full py-3.5 px-4 rounded-2xl font-semibold flex items-center justify-center gap-2 shadow-glow-teal disabled:opacity-60 disabled:cursor-not-allowed"
+      className="sunset-gradient text-white w-full py-3.5 px-4 rounded-2xl font-semibold flex items-center justify-center gap-2 shadow-soft disabled:opacity-60 disabled:cursor-not-allowed"
     >
       {isLoading ? (
         <><Loader2 className="w-5 h-5 animate-spin" /> {busy}</>
