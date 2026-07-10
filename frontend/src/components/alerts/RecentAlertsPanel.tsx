@@ -9,6 +9,13 @@ const severityIcon: Record<AlertSeverity, typeof AlertTriangle> = {
   info: TrendingUp,
 };
 
+/** Icon chip follows severity (color = meaning, mirroring severityBadgeVariant). */
+const severityChip: Record<AlertSeverity, string> = {
+  critical: 'bg-rose-50 text-rose-600',
+  warning: 'bg-amber-50 text-amber-600',
+  info: 'bg-violet-50 text-violet-600',
+};
+
 export interface RecentAlertsPanelProps {
   alerts: Alert[];
   loading: boolean;
@@ -37,8 +44,8 @@ export default function RecentAlertsPanel({ alerts, loading }: RecentAlertsPanel
             return (
               <div key={alert.id} className="p-4 hover:bg-surface-2/60 transition-colors">
                 <div className="flex items-start gap-3">
-                  <div className="p-1.5 rounded-lg bg-coral-50">
-                    <Icon className="w-4 h-4 text-coral-500" />
+                  <div className={`p-1.5 rounded-lg ${severityChip[alert.severity]}`}>
+                    <Icon className="w-4 h-4" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-ink text-sm truncate">{alert.title}</p>

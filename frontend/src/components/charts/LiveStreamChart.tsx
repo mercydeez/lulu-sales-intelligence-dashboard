@@ -15,7 +15,7 @@ import {
   ComposedChart
 } from 'recharts';
 import { Activity, Zap, Clock, ShoppingBag, Store, TrendingUp, Package, ArrowDown, ArrowUp, RefreshCw } from 'lucide-react';
-import { LiveIndicator } from '@/components/ui';
+import { Badge, LiveIndicator } from '@/components/ui';
 import { useEventStream } from '@/hooks/useEventStream';
 import { authFetch } from '@/contexts/AuthContext';
 import { shortStoreLabel } from '@/components/analytics/format';
@@ -255,23 +255,12 @@ export default function LiveStreamChart() {
         <div className={`glass-strong rounded-xl p-3 border shadow-elevated min-w-[200px] ${
           isReturn ? 'border-rose-200 bg-rose-50' : 'border-line'
         }`}>
-          {/* Transaction Type Badge */}
-          <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold mb-2 ${
-            isReturn
-              ? 'bg-rose-100 text-rose-700'
-              : 'bg-emerald-100 text-emerald-700'
-          }`}>
-            {isReturn ? (
-              <>
-                <RefreshCw className="w-3 h-3" />
-                RETURN
-              </>
-            ) : (
-              <>
-                <ArrowUp className="w-3 h-3" />
-                SALE
-              </>
-            )}
+          {/* Transaction type — shared Badge */}
+          <div className="mb-2">
+            <Badge variant={isReturn ? 'danger' : 'success'} size="sm">
+              {isReturn ? <RefreshCw className="w-3 h-3" /> : <ArrowUp className="w-3 h-3" />}
+              {isReturn ? 'Return' : 'Sale'}
+            </Badge>
           </div>
 
           <div className="flex items-center gap-2 mb-2">

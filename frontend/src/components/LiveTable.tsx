@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { Wifi, WifiOff, Clock, Timer, Zap } from 'lucide-react';
-import { LiveIndicator } from '@/components/ui';
+import { Badge, EmptyState, LiveIndicator } from '@/components/ui';
 import { useEventStream } from '@/hooks/useEventStream';
 import { authFetch } from '@/contexts/AuthContext';
 
@@ -141,9 +141,9 @@ export default function LiveTable() {
   return (
     <div className="glass rounded-2xl overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-coral-100 flex items-center justify-between bg-coral-50/60">
+      <div className="px-6 py-4 border-b border-line flex items-center justify-between bg-surface-2/70">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-teal-100">
+          <div className="p-2 rounded-xl bg-teal-50 ring-1 ring-teal-100">
             <Zap className="w-5 h-5 text-teal-600" />
           </div>
           <div>
@@ -154,10 +154,10 @@ export default function LiveTable() {
 
         <div className="flex items-center gap-4">
           {/* Next stream countdown */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-coral-50">
-            <Timer className="w-4 h-4 text-amber-600" />
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-2">
+            <Timer className="w-4 h-4 text-ink-muted" />
             <span className="text-sm text-ink-soft">
-              Next: <span className="font-mono text-amber-600">{nextStreamIn}s</span>
+              Next: <span className="font-mono text-ink tabular-nums">{nextStreamIn}s</span>
             </span>
           </div>
 
@@ -194,36 +194,37 @@ export default function LiveTable() {
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="min-w-full">
-          <thead className="bg-coral-50">
+          <thead className="bg-surface-2/70">
             <tr>
-              <th className="px-6 py-4 text-start text-xs font-semibold text-ink-muted uppercase tracking-wider">
+              <th className="px-4 py-3 text-start text-xs font-semibold text-ink-muted uppercase tracking-wide">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4" />
                   Timestamp
                 </div>
               </th>
-              <th className="px-6 py-4 text-start text-xs font-semibold text-ink-muted uppercase tracking-wider">
+              <th className="px-4 py-3 text-start text-xs font-semibold text-ink-muted uppercase tracking-wide">
                 Store
               </th>
-              <th className="px-6 py-4 text-start text-xs font-semibold text-ink-muted uppercase tracking-wider">
+              <th className="px-4 py-3 text-start text-xs font-semibold text-ink-muted uppercase tracking-wide">
                 Item
               </th>
-              <th className="px-6 py-4 text-start text-xs font-semibold text-ink-muted uppercase tracking-wider">
+              <th className="px-4 py-3 text-start text-xs font-semibold text-ink-muted uppercase tracking-wide">
                 Sales
               </th>
-              <th className="px-6 py-4 text-start text-xs font-semibold text-ink-muted uppercase tracking-wider">
+              <th className="px-4 py-3 text-start text-xs font-semibold text-ink-muted uppercase tracking-wide">
                 Status
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-coral-100">
+          <tbody className="divide-y divide-line">
             {sales.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-ink-muted">
-                  <div className="flex flex-col items-center gap-2">
-                    <Zap className="w-8 h-8 text-coral-200" />
-                    <span>Waiting for streaming data...</span>
-                  </div>
+                <td colSpan={5} className="px-4 py-2">
+                  <EmptyState
+                    icon={<Zap className="w-7 h-7" />}
+                    title="Waiting for streaming data"
+                    description="Live sales appear here the moment they happen."
+                  />
                 </td>
               </tr>
             ) : (
@@ -236,12 +237,12 @@ export default function LiveTable() {
                         ? 'bg-rose-50'
                         : 'bg-teal-50'
                       : index % 2 === 0
-                        ? 'bg-coral-50/40'
+                        ? 'bg-surface-2/40'
                         : 'bg-surface'
-                  } hover:bg-coral-50`}
+                  } hover:bg-teal-50/40`}
                 >
                   {/* Timestamp Column */}
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex flex-col">
                       <span className="text-sm font-medium text-ink">
                         {mounted ? formatTimestamp(sale.timestamp) : '--'}
@@ -259,13 +260,13 @@ export default function LiveTable() {
                   </td>
 
                   {/* Store Column */}
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        sale.sales < 0 ? 'bg-rose-100' : 'bg-violet-100'
+                        sale.sales < 0 ? 'bg-rose-100' : 'bg-surface-2'
                       }`}>
-                        <span className={`text-xs font-bold ${
-                          sale.sales < 0 ? 'text-rose-600' : 'text-violet-600'
+                        <span className={`text-xs font-bold tabular-nums ${
+                          sale.sales < 0 ? 'text-rose-600' : 'text-ink-soft'
                         }`}>{sale.store_id}</span>
                       </div>
                       <div className="text-sm font-medium text-ink">
@@ -275,47 +276,34 @@ export default function LiveTable() {
                   </td>
 
                   {/* Item Column */}
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="text-sm text-ink-soft">
                       {sale.item_name || `Item ${sale.item_id}`}
                     </div>
                   </td>
 
                   {/* Sales Column */}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-3 py-1.5 text-sm font-bold rounded-lg ${
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className={`px-3 py-1.5 text-sm font-bold tabular-nums rounded-lg ${
                       sale.sales < 0
                         ? 'bg-rose-100 text-rose-700'
                         : sale.isNew
                           ? 'bg-teal-100 text-teal-700'
-                          : 'bg-coral-50 text-ink'
+                          : 'bg-surface-2 text-ink'
                     }`}>
                       {sale.sales < 0 ? sale.sales : `+${sale.sales}`}
                     </span>
                   </td>
 
-                  {/* Status Column */}
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  {/* Status Column — shared Badge; the header's single LiveIndicator
+                      carries the pulse (a ping per row was ambient noise) */}
+                  <td className="px-4 py-3 whitespace-nowrap">
                     {sale.sales < 0 ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold bg-rose-100 text-rose-700 rounded-full">
-                        <span className="relative flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
-                        </span>
-                        Return
-                      </span>
+                      <Badge variant="danger" size="sm">Return</Badge>
                     ) : sale.is_streaming ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold bg-emerald-100 text-emerald-700 rounded-full">
-                        <span className="relative flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-                        </span>
-                        Live
-                      </span>
+                      <Badge variant="teal" size="sm">Live</Badge>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold bg-coral-50 text-ink-muted rounded-full">
-                        Historical
-                      </span>
+                      <Badge variant="neutral" size="sm">Historical</Badge>
                     )}
                   </td>
                 </tr>
@@ -326,7 +314,7 @@ export default function LiveTable() {
       </div>
 
       {/* Footer */}
-      <div className="px-6 py-3 border-t border-coral-100 bg-coral-50/40 flex items-center justify-between text-sm text-ink-muted">
+      <div className="px-6 py-3 border-t border-line bg-surface-2/40 flex items-center justify-between text-sm text-ink-muted">
         <span>Showing latest {sales.length} records</span>
         <span className="flex items-center gap-2">
           <Clock className="w-4 h-4" />

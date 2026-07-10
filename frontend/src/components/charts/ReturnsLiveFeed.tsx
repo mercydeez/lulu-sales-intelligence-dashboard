@@ -230,7 +230,7 @@ export default function ReturnsLiveFeed() {
 
       {/* Top Return Categories */}
       {stats?.by_category && stats.by_category.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-coral-100">
+        <div className="mt-4 pt-3 border-t border-line">
           <div className="text-xs text-ink-muted mb-2">Top Return Categories</div>
           <div className="flex flex-wrap gap-2">
             {stats.by_category.slice(0, 4).map((cat: { category: string; count: number; value: number }) => (
