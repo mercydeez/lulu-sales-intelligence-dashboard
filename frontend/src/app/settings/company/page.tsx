@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   Card, PageHeader, Button, Input, Select, Stagger, RevealItem,
-  SkeletonCard, ErrorState, useToast,
+  SkeletonCard, ErrorState, useToast, NoPermissionState,
 } from '@/components/ui';
 import { apiGet, apiPut, ApiError } from '@/lib/apiClient';
 import { Building2, ShieldAlert } from 'lucide-react';
@@ -93,12 +93,11 @@ export default function CompanyProfilePage() {
     return (
       <main className="min-h-screen p-4 md:p-8">
         <div className="max-w-3xl mx-auto">
-          <Card padding="lg" className="text-center">
-            <ShieldAlert className="w-8 h-8 text-amber-500 mx-auto mb-3" />
-            <h2 className="text-lg font-semibold text-ink">Admin access required</h2>
-            <p className="text-sm text-ink-muted mt-1">
-              Only a tenant administrator can manage the company legal &amp; billing profile.
-            </p>
+          <Card padding="none">
+            <NoPermissionState
+              title="Admin access required"
+              description="Only a tenant administrator can manage the company legal & billing profile."
+            />
           </Card>
         </div>
       </main>

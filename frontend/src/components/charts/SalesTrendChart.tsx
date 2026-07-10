@@ -174,15 +174,15 @@ export default function SalesTrendChart({ days = 30 }: SalesTrendChartProps) {
       <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-line">
         <div className="text-center">
           <div className="text-2xl font-bold text-ink tabular-nums">{formatNumber(totalHistorical)}</div>
-          <div className="text-xs text-ink-muted">Total Historical</div>
+          <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mt-1">Total Historical</div>
         </div>
         <div className="text-center">
           <div className="text-2xl font-bold tabular-nums" style={{ color: CHART.violet }}>{formatNumber(totalForecast)}</div>
-          <div className="text-xs text-ink-muted">7-Day Forecast</div>
+          <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mt-1">7-Day Forecast</div>
         </div>
         <div className="text-center">
           <div className="text-2xl font-bold tabular-nums" style={{ color: CHART.teal }}>{formatNumber(dailyAvg)}</div>
-          <div className="text-xs text-ink-muted">Daily Average</div>
+          <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mt-1">Daily Average</div>
         </div>
       </div>
     </Reveal>

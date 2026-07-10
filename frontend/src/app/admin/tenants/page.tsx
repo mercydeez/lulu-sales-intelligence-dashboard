@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   PageHeader, Button, Card, Badge, Select, Input, EmptyState,
-  SkeletonCard, useToast, Stagger, RevealItem,
+  SkeletonCard, useToast, Stagger, RevealItem, NoPermissionState,
 } from '@/components/ui';
 import type { BadgeVariant } from '@/components/ui';
 
@@ -113,9 +113,11 @@ export default function TenantConsolePage() {
     return (
       <main className="min-h-screen p-4 md:p-8">
         <div className="max-w-3xl mx-auto">
-          <Card padding="lg" className="text-center">
-            <Building2 className="w-8 h-8 text-amber-500 mx-auto mb-3" />
-            <h2 className="text-lg font-semibold text-ink">Super-admin access required</h2>
+          <Card padding="none">
+            <NoPermissionState
+              title="Super-admin access required"
+              description="Tenant management is limited to super-admins."
+            />
           </Card>
         </div>
       </main>

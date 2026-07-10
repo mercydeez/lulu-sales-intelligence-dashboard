@@ -17,9 +17,10 @@ export interface MetricStripProps extends HTMLAttributes<HTMLDivElement> {
   items: MetricItem[];
 }
 
+// Signal tokens (theme-adaptive) — same up/down vocabulary as StatCard.
 const TREND = {
-  up: { Icon: TrendingUp, cls: 'text-emerald-600' },
-  down: { Icon: TrendingDown, cls: 'text-rose-600' },
+  up: { Icon: TrendingUp, cls: 'text-[var(--signal-up)]' },
+  down: { Icon: TrendingDown, cls: 'text-[var(--signal-down)]' },
   flat: { Icon: Minus, cls: 'text-ink-muted' },
 };
 

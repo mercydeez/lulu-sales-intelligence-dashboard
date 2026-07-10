@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   PageHeader, Card, Badge, Button, Modal, EmptyState, SkeletonCard, ErrorState, Tabs, useToast,
+  NoPermissionState,
 } from '@/components/ui';
 import type { BadgeVariant } from '@/components/ui';
 import { apiGet, apiPost, ApiError } from '@/lib/apiClient';
@@ -96,9 +97,11 @@ export default function ActionDraftsPage() {
   if (!isOperator) {
     return (
       <main className="min-h-screen p-4 md:p-8"><div className="max-w-3xl mx-auto">
-        <Card padding="lg" className="text-center">
-          <Wand2 className="w-8 h-8 text-amber-500 mx-auto mb-3" />
-          <h2 className="text-lg font-semibold text-ink">Operator access required</h2>
+        <Card padding="none">
+          <NoPermissionState
+            title="Operator access required"
+            description="Action drafts are limited to operator roles. Ask a workspace admin if you need access."
+          />
         </Card>
       </div></main>
     );

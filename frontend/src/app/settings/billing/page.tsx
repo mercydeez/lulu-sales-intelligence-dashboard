@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   PageHeader, Card, Badge, Button, Modal, EmptyState, SkeletonCard, ErrorState,
-  Stagger, RevealItem,
+  Stagger, RevealItem, NoPermissionState,
 } from '@/components/ui';
 import type { BadgeVariant } from '@/components/ui';
 import { apiGet, apiPost, authFetch, ApiError } from '@/lib/apiClient';
@@ -91,10 +91,11 @@ export default function BillingPage() {
   if (!isAdmin) {
     return (
       <main className="min-h-screen p-4 md:p-8"><div className="max-w-3xl mx-auto">
-        <Card padding="lg" className="text-center">
-          <ShieldAlert className="w-8 h-8 text-amber-500 mx-auto mb-3" />
-          <h2 className="text-lg font-semibold text-ink">Admin access required</h2>
-          <p className="text-sm text-ink-muted mt-1">Only a tenant administrator can view billing.</p>
+        <Card padding="none">
+          <NoPermissionState
+            title="Admin access required"
+            description="Only a tenant administrator can view billing."
+          />
         </Card>
       </div></main>
     );

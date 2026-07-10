@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   PageHeader, Card, Badge, Button, Input, EmptyState, SkeletonCard, useToast, Stagger, RevealItem,
+  NoPermissionState,
 } from '@/components/ui';
 import { apiGet, apiPut, apiPost, ApiError } from '@/lib/apiClient';
 import { Scale, ShieldCheck, FileText } from 'lucide-react';
@@ -100,9 +101,11 @@ export default function OutcomePricingPage() {
   if (!isAdmin) {
     return (
       <main className="min-h-screen p-4 md:p-8"><div className="max-w-3xl mx-auto">
-        <Card padding="lg" className="text-center">
-          <Scale className="w-8 h-8 text-amber-500 mx-auto mb-3" />
-          <h2 className="text-lg font-semibold text-ink">Admin access required</h2>
+        <Card padding="none">
+          <NoPermissionState
+            title="Admin access required"
+            description="Outcome pricing is limited to tenant administrators."
+          />
         </Card>
       </div></main>
     );

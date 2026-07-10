@@ -55,18 +55,18 @@ export default function RevenueProjectionCard() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           <div>
-            <p className="text-sm text-ink-muted">Projected revenue</p>
-            <p className="text-2xl font-bold text-ink">
+            <p className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mb-1">Projected revenue</p>
+            <p className="text-2xl font-bold text-ink tabular-nums">
               AED {fmt(data!.projected_revenue)}
             </p>
           </div>
           <div>
-            <p className="text-sm text-ink-muted">Projected units</p>
-            <p className="text-2xl font-bold text-ink">{fmt(data!.projected_units)}</p>
+            <p className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mb-1">Projected units</p>
+            <p className="text-2xl font-bold text-ink tabular-nums">{fmt(data!.projected_units)}</p>
           </div>
           <div>
-            <p className="text-sm text-ink-muted">Avg / day</p>
-            <p className="text-2xl font-bold text-ink">
+            <p className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mb-1">Avg / day</p>
+            <p className="text-2xl font-bold text-ink tabular-nums">
               AED {fmt(data!.avg_daily_revenue)}
             </p>
           </div>

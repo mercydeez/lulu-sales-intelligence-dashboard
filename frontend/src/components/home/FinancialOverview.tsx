@@ -17,18 +17,18 @@ export default function FinancialOverview() {
       <Card variant="glass" padding="lg">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="text-center">
-            <p className="text-ink-muted text-sm mb-1">Monthly Revenue</p>
-            <p className="text-3xl font-bold text-ink">AED 2.4M</p>
+            <p className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mb-1">Monthly Revenue</p>
+            <p className="text-3xl font-bold text-ink tabular-nums">AED 2.4M</p>
             <p className="text-teal-600 text-sm font-medium">+12.5% vs last month</p>
           </div>
           <div className="text-center">
-            <p className="text-ink-muted text-sm mb-1">Gross Margin</p>
-            <p className="text-3xl font-bold text-ink">24.8%</p>
+            <p className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mb-1">Gross Margin</p>
+            <p className="text-3xl font-bold text-ink tabular-nums">24.8%</p>
             <p className="text-violet-600 text-sm font-medium">Target: 25%</p>
           </div>
           <div className="text-center">
-            <p className="text-ink-muted text-sm mb-1">Operating Costs</p>
-            <p className="text-3xl font-bold text-ink">AED 580K</p>
+            <p className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mb-1">Operating Costs</p>
+            <p className="text-3xl font-bold text-ink tabular-nums">AED 580K</p>
             <p className="text-coral-600 text-sm font-medium">-3.2% optimized</p>
           </div>
         </div>

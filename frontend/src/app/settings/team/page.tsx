@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   PageHeader, Card, Badge, Button, Input, Select, SkeletonCard, useToast, Stagger, RevealItem,
+  NoPermissionState,
 } from '@/components/ui';
 import type { BadgeVariant } from '@/components/ui';
 import { apiGet, apiPost, ApiError } from '@/lib/apiClient';
@@ -77,9 +78,11 @@ export default function TeamPage() {
   if (!isAdmin) {
     return (
       <main className="min-h-screen p-4 md:p-8"><div className="max-w-3xl mx-auto">
-        <Card padding="lg" className="text-center">
-          <ShieldAlert className="w-8 h-8 text-amber-500 mx-auto mb-3" />
-          <h2 className="text-lg font-semibold text-ink">Admin access required</h2>
+        <Card padding="none">
+          <NoPermissionState
+            title="Admin access required"
+            description="Only a tenant administrator can manage the team."
+          />
         </Card>
       </div></main>
     );

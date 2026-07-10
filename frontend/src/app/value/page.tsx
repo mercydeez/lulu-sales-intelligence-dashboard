@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { PageHeader, Card, Button, SkeletonCard, ErrorState, Stagger, RevealItem } from '@/components/ui';
+import { PageHeader, Card, Button, SkeletonCard, ErrorState, Stagger, RevealItem, NoPermissionState } from '@/components/ui';
 import { apiGet, authFetch, ApiError } from '@/lib/apiClient';
 import { TrendingUp, RefreshCw, Info, UploadCloud, Download, Sparkles, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
@@ -77,8 +77,11 @@ export default function ValuePage() {
   if (!isAdmin) {
     return (
       <main className="min-h-screen p-4 md:p-8"><div className="max-w-3xl mx-auto">
-        <Card padding="lg" className="text-center">
-          <h2 className="text-lg font-semibold text-ink">Operator access required</h2>
+        <Card padding="none">
+          <NoPermissionState
+            title="Operator access required"
+            description="Business-value tracking is limited to operator roles."
+          />
         </Card>
       </div></main>
     );
