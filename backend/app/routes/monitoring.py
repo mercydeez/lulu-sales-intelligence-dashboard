@@ -228,6 +228,57 @@ async def data_residency() -> Dict[str, Any]:
     return payload
 
 
+@router.get("/forecast-methodology")
+async def forecast_methodology() -> Dict[str, Any]:
+    """Public forecast methodology + measured accuracy (E7-2).
+
+    "Ramadan-accurate, and we show our error rate." Competitors publish claims;
+    this publishes the error bars. Unauthenticated on purpose — a prospect must be
+    able to check our arithmetic before trusting us with their data.
+
+    Anonymous by construction: unitless error rates, the baseline we score against,
+    and which calendar features are on. No revenue, no store, no tenant, no volume.
+
+    Honesty: Ramadan accuracy is reported ONLY when the back-test window actually
+    contained Ramadan dates; otherwise it comes back null with the reason. We do
+    not extrapolate a seasonal claim from a season we never measured. A cold cache
+    returns `warming`, not a stale or invented number.
+    """
+    s = get_settings()
+    if not getattr(s, "forecast_methodology_public", True):
+        raise HTTPException(status_code=404, detail="forecast_methodology_disabled")
+
+    from app.routes.analytics import model_metrics_cache_key
+    from app.services.cache import get_cached
+
+    cached = await get_cached(model_metrics_cache_key(s.demo_tenant_id, None, 14))
+
+    if not cached or cached.get("status") != "ready":
+        return {
+            "status": "warming",
+            "reason": "the reference models are still training; no number is published until they are",
+            "baseline_model": "seasonal_naive",
+            "checked_at": datetime.utcnow().isoformat() + "Z",
+        }
+
+    # A strict whitelist. Everything else in the model-metrics payload — revenue,
+    # per-store heatmaps, item accuracy — stays private by never being copied here.
+    fields = (
+        "forecasting_version", "baseline_model",
+        "baseline_mape", "baseline_wape",
+        "selected_model", "selected_model_mape", "selected_model_wape",
+        "wape_improvement_vs_baseline_pct",
+        "ramadan_accuracy", "ramadan_mape", "ramadan_wape",
+        "ramadan_eval_days", "ramadan_accuracy_reason",
+        "calendar_feature_summary", "methodology_note",
+    )
+    payload: Dict[str, Any] = {k: cached.get(k) for k in fields}
+    payload["status"] = "ready"
+    payload["dataset"] = "reference tenant (synthetic UAE retail history)"
+    payload["checked_at"] = datetime.utcnow().isoformat() + "Z"
+    return payload
+
+
 @router.get("/jwks.json")
 async def jwks() -> Dict[str, Any]:
     """Public JSON Web Key Set (E5-6). Publishes the RS256 **public** keys so any

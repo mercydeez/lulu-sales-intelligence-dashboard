@@ -224,6 +224,12 @@ class Settings(BaseSettings):
     # rejects any synthetic row carrying a different tenant_id. Keep in sync with
     # the `demo` tenant seeded by migration 010.
     demo_tenant_id: int = 1
+
+    # E7-2: publish the forecast methodology + accuracy at /methodology and
+    # GET /api/monitoring/forecast-methodology (unauthenticated). The payload is
+    # anonymous by construction — error rates and feature flags, never a tenant's
+    # revenue. Set false to withhold it (the endpoint then 404s).
+    forecast_methodology_public: bool = True
     # Nightly wipe of generated sales so the demo never drifts into a fake all-time
     # high. Rows younger than the retention window survive so the live stream stays
     # populated right after a reset.

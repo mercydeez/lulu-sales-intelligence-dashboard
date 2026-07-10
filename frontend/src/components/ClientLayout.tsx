@@ -24,7 +24,10 @@ const publicPaths = [
 //   verification before it runs.
 // - /trust is the public data-residency/compliance statement (public API,
 //   evaluated by prospects who aren't logged in).
-const openPaths = ['/status', '/verify-email', '/trust'];
+// - /methodology publishes our measured forecast error rate (E7-2). A prospect
+//   must be able to check our arithmetic before trusting us with their data, so
+//   it cannot sit behind a login.
+const openPaths = ['/status', '/verify-email', '/trust', '/methodology'];
 
 export default function ClientLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
