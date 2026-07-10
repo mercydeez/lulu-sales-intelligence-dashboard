@@ -161,9 +161,17 @@ class Settings(BaseSettings):
     forecast_trainer_enabled: bool = True
     forecast_trainer_startup_delay_seconds: int = 60  # let the API settle before first train
     
-    # Rate Limiting
+    # Rate Limiting (E0-7: per-identity sliding windows, one bucket per request).
+    # Scope precedence in the middleware: API key > authenticated user > IP.
+    # rate_limit_requests is the ANONYMOUS per-IP bucket — the strictest, because
+    # unauthenticated abuse has no identity to bill. Authenticated users get their
+    # own per-user_id bucket (so one hot user can't starve an office NAT'd behind
+    # one IP, and IP rotation no longer resets an authed abuser's budget); API
+    # keys get a per-key bucket.
     rate_limit_requests: int = 100  # requests per minute
     rate_limit_window: int = 60  # seconds
+    rate_limit_user_requests: int = 600      # per authenticated user_id / window
+    rate_limit_api_key_requests: int = 300   # per API key (sha256 of the raw key)
     
     # Observability (Track B) — env-gated, optional. No DSN/key => no-op, so the
     # stack runs with zero external services. Drop in when you add the accounts.

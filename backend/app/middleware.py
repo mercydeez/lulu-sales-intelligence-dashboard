@@ -73,18 +73,34 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
-    Redis-based rate limiting middleware for distributed deployments.
-    Falls back to in-memory limiting if Redis is unavailable.
-    Uses a sliding window algorithm per client IP.
+    Redis-based rate limiting for distributed deployments, with an in-memory
+    fallback. Sliding window, ONE bucket per request, scoped by identity (E0-7):
+
+        API key  >  authenticated user  >  anonymous IP
+
+    Per-IP alone was evadable by IP rotation, and in the other direction one hot
+    authenticated user exhausted the shared bucket for everyone NAT'd behind the
+    same IP. Identity resolution never touches the DB:
+      * API keys are identified by sha256 of the raw key (the same primitive
+        api_key_service persists) — a fabricated key just burns its own bucket
+        and still 401s at the route.
+      * Users are identified by the signature-VERIFIED user_id claim. An
+        unverified claim read would let an attacker mint unlimited buckets (and
+        escape the IP bucket) by forging user_ids; a raw-token hash would let
+        them reset the budget on every /auth/refresh. Tokens that don't verify
+        fall back to the anonymous IP bucket.
     """
-    
-    def __init__(self, app, requests_limit: int = None, window_seconds: int = None):
+
+    def __init__(self, app, requests_limit: int = None, window_seconds: int = None,
+                 user_requests_limit: int = None, api_key_requests_limit: int = None):
         super().__init__(app)
         self.requests_limit = requests_limit or settings.rate_limit_requests
         self.window_seconds = window_seconds or settings.rate_limit_window
+        self.user_requests_limit = user_requests_limit or settings.rate_limit_user_requests
+        self.api_key_requests_limit = api_key_requests_limit or settings.rate_limit_api_key_requests
         # In-memory fallback
         self._fallback_requests: Dict[str, list] = defaultdict(list)
-    
+
     def _get_client_ip(self, request: Request) -> str:
         """Extract client IP. X-Forwarded-For / X-Real-IP are honored ONLY when
         trust_proxy_headers is set — otherwise they're spoofable and a client
@@ -97,18 +113,53 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if real_ip:
                 return real_ip
         return request.client.host if request.client else "unknown"
-    
-    async def _check_rate_limit_redis(self, client_ip: str) -> tuple[bool, int, int]:
+
+    def _resolve_identity(self, request: Request) -> tuple[str, str, int]:
+        """Resolve (scope, identity, limit) for this request. Cheap and DB-free;
+        runs before route dependencies, so it reads raw headers/cookies itself."""
+        auth = request.headers.get("authorization", "")
+        bearer = auth[7:].strip() if auth[:7].lower() == "bearer " else None
+
+        # 1. API key — X-API-Key header, or an lsk_-prefixed bearer (public_api
+        #    accepts both). Identity = sha256(raw key): no verification, no DB.
+        api_key = request.headers.get("x-api-key") or (
+            bearer if bearer and bearer.startswith("lsk_") else None
+        )
+        if api_key:
+            digest = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+            return "key", digest, self.api_key_requests_limit
+
+        # 2. Authenticated user — bearer JWT or the httpOnly access cookie.
+        #    MUST be signature-verified (see class docstring); quiet on failure.
+        token = bearer
+        if not token:
+            cookies = getattr(request, "cookies", None)
+            if isinstance(cookies, dict):
+                token = cookies.get("access_token")
+        if token:
+            try:
+                from app.services.jwt_keys import get_key_provider
+                claims = get_key_provider().verify(token)
+                user_id = claims.get("user_id")
+                if user_id is not None:
+                    return "user", str(user_id), self.user_requests_limit
+            except Exception:
+                pass  # unverifiable token → anonymous bucket
+
+        # 3. Anonymous — the strict per-IP bucket.
+        return "ip", self._get_client_ip(request), self.requests_limit
+
+    async def _check_rate_limit_redis(self, bucket: str, limit: int) -> tuple[bool, int, int]:
         """Check rate limit using Redis sliding window. Returns (allowed, remaining, retry_after)."""
         try:
             from app.services.redis_client import redis_client
             if not redis_client:
                 raise Exception("Redis not available")
-            
-            key = f"ratelimit:{client_ip}"
+
+            key = f"ratelimit:{bucket}"
             current_time = time.time()
             window_start = current_time - self.window_seconds
-            
+
             pipe = redis_client.pipeline()
             # Remove old entries
             pipe.zremrangebyscore(key, 0, window_start)
@@ -118,13 +169,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             pipe.zcard(key)
             # Set TTL on key
             pipe.expire(key, self.window_seconds + 1)
-            
+
             results = await pipe.execute()
             request_count = results[2]
-            
-            remaining = max(0, self.requests_limit - request_count)
-            
-            if request_count > self.requests_limit:
+
+            remaining = max(0, limit - request_count)
+
+            if request_count > limit:
                 # Get oldest request to calculate retry-after
                 oldest = await redis_client.zrange(key, 0, 0, withscores=True)
                 if oldest:
@@ -132,52 +183,56 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 else:
                     retry_after = self.window_seconds
                 return False, 0, max(1, retry_after)
-            
+
             return True, remaining, 0
-            
-        except Exception as e:
+
+        except Exception:
             # Fallback to in-memory
-            return self._check_rate_limit_memory(client_ip)
-    
-    def _check_rate_limit_memory(self, client_ip: str) -> tuple[bool, int, int]:
+            return self._check_rate_limit_memory(bucket, limit)
+
+    def _check_rate_limit_memory(self, bucket: str, limit: int) -> tuple[bool, int, int]:
         """Fallback in-memory rate limiting."""
         current_time = time.time()
         cutoff = current_time - self.window_seconds
-        self._fallback_requests[client_ip] = [
-            t for t in self._fallback_requests[client_ip] if t > cutoff
+        self._fallback_requests[bucket] = [
+            t for t in self._fallback_requests[bucket] if t > cutoff
         ]
-        
-        if len(self._fallback_requests[client_ip]) >= self.requests_limit:
-            oldest = min(self._fallback_requests[client_ip])
+
+        if len(self._fallback_requests[bucket]) >= limit:
+            oldest = min(self._fallback_requests[bucket])
             retry_after = int(self.window_seconds - (current_time - oldest))
             return False, 0, max(1, retry_after)
-        
-        self._fallback_requests[client_ip].append(current_time)
-        remaining = self.requests_limit - len(self._fallback_requests[client_ip])
+
+        self._fallback_requests[bucket].append(current_time)
+        remaining = limit - len(self._fallback_requests[bucket])
         return True, remaining, 0
-    
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip rate limiting for health checks and docs
         skip_paths = ["/health", "/docs", "/openapi.json", "/redoc"]
         if request.url.path in skip_paths:
             return await call_next(request)
-        
-        client_ip = self._get_client_ip(request)
+
+        scope, identity, limit = self._resolve_identity(request)
+        bucket = f"{scope}:{identity}"
         try:
-            allowed, remaining, retry_after = await self._check_rate_limit_redis(client_ip)
+            allowed, remaining, retry_after = await self._check_rate_limit_redis(bucket, limit)
         except Exception:
             # Redis path failed unexpectedly — fall back to in-memory limiting
-            allowed, remaining, retry_after = self._check_rate_limit_memory(client_ip)
-        
+            allowed, remaining, retry_after = self._check_rate_limit_memory(bucket, limit)
+
         if not allowed:
             request_id = getattr(request.state, 'request_id', 'unknown')
-            logger.warning(f"[{request_id}] Rate limit exceeded for IP: {client_ip}")
+            logger.warning(f"[{request_id}] Rate limit exceeded for {scope}: {identity}")
 
             try:
                 from app.services.security_events import record_event
-                await record_event("rate_limited", request=request, ip_address=client_ip,
-                                   detail=f"Rate limit exceeded ({self.requests_limit}/{self.window_seconds}s)",
-                                   evidence={"limit": self.requests_limit, "window_s": self.window_seconds})
+                # identity is a user_id / key hash / IP — never a raw credential.
+                await record_event("rate_limited", request=request,
+                                   ip_address=self._get_client_ip(request),
+                                   detail=f"Rate limit exceeded ({limit}/{self.window_seconds}s, scope={scope})",
+                                   evidence={"limit": limit, "window_s": self.window_seconds,
+                                             "scope": scope, "identity": identity})
             except Exception:
                 pass
 
@@ -190,16 +245,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 },
                 headers={
                     "Retry-After": str(retry_after),
-                    "X-RateLimit-Limit": str(self.requests_limit),
+                    "X-RateLimit-Limit": str(limit),
                     "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Scope": scope,
                 }
             )
-        
+
         response = await call_next(request)
-        response.headers["X-RateLimit-Limit"] = str(self.requests_limit)
+        response.headers["X-RateLimit-Limit"] = str(limit)
         response.headers["X-RateLimit-Remaining"] = str(remaining)
         response.headers["X-RateLimit-Window"] = str(self.window_seconds)
-        
+        response.headers["X-RateLimit-Scope"] = scope
         return response
 
 
