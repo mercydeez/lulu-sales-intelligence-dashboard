@@ -45,6 +45,58 @@ async def get_uplift_baseline(
         return baseline
 
 
+@router.get("/measure/window")
+async def measure_uplift_window(
+    item_ids: str = Query(..., description="Comma-separated item ids that were promoted"),
+    store_ids: str = Query(..., description="Comma-separated store ids the promo ran in"),
+    start: date = Query(..., description="Promo start (YYYY-MM-DD)"),
+    end: date = Query(..., description="Promo end, inclusive (YYYY-MM-DD)"),
+    current_user: dict = Depends(get_current_user),
+):
+    """Measure an ad-hoc promo window: observed uplift vs a matched pre-promo
+    baseline, plus whether the category peers paid for it (E7-5).
+
+    Works without a stored promotion — useful for a promo run outside the product."""
+    from app.routes.auth import get_accessible_store_ids
+    from app.services.promotion_uplift import measure_promotion_uplift
+
+    def _ids(raw: str) -> List[int]:
+        try:
+            return [int(x) for x in raw.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=422, detail="ids must be comma-separated integers")
+
+    tenant_id = current_user.get("tenant_id") or 1
+    allowed = get_accessible_store_ids(current_user)
+    async with async_session() as session:
+        return await measure_promotion_uplift(
+            session, tenant_id, item_ids=_ids(item_ids), store_ids=_ids(store_ids),
+            start=start, end=end, allowed=allowed,
+        )
+
+
+@router.get("/{promotion_id}/uplift")
+async def get_promotion_uplift(
+    promotion_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Did this promotion work — and did its category peers pay for the lift? (E7-5)
+
+    Returns an explicit `insufficient_baseline` state rather than a number when the
+    matched pre-promo window has no sales, and reports cannibalisation as a flag
+    with its basis, never as a causal claim."""
+    from app.routes.auth import get_accessible_store_ids
+    from app.services.promotion_uplift import measure_promotion_by_id
+
+    tenant_id = current_user.get("tenant_id") or 1
+    allowed = get_accessible_store_ids(current_user)
+    async with async_session() as session:
+        result = await measure_promotion_by_id(session, tenant_id, promotion_id, allowed=allowed)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+    return result
+
+
 # =============================================================================
 # PYDANTIC MODELS
 # =============================================================================
@@ -589,18 +641,19 @@ async def create_promotion(
                     discount_value, discount_cap, minimum_purchase,
                     start_date, end_date, status,
                     applies_to_all_stores, applies_to_all_items,
-                    created_by, created_at, updated_at
+                    created_by, tenant_id, created_at, updated_at
                 ) VALUES (
                     :name, :description, :promo_code, :promotion_type,
                     :discount_value, :discount_cap, :minimum_purchase,
                     :start_date, :end_date, :status,
                     :applies_to_all_stores, FALSE,
-                    :created_by, NOW(), NOW()
+                    :created_by, :tenant_id, NOW(), NOW()
                 )
                 RETURNING id
             """)
-            
+
             result = await session.execute(insert_query, {
+                "tenant_id": current_user.get("tenant_id") or 1,  # migration 060
                 "name": promotion.name,
                 "description": promotion.description,
                 "promo_code": promo_code,
@@ -732,7 +785,13 @@ async def update_promotion(
             set_parts.append("updated_at = NOW()")
             updates["promo_id"] = promotion_id
             
-            query = text(f"UPDATE promotions SET {', '.join(set_parts)} WHERE id = :promo_id RETURNING id")
+            # Tenant filter, not just the role check above: `can_manage_promotions`
+            # says WHAT you may do, never WHOSE data (migration 060).
+            updates["tenant_id"] = current_user.get("tenant_id") or 1
+            query = text(
+                f"UPDATE promotions SET {', '.join(set_parts)} "
+                "WHERE id = :promo_id AND tenant_id = :tenant_id RETURNING id"
+            )
             result = await session.execute(query, updates)
             row = result.scalar_one_or_none()
             
@@ -774,14 +833,18 @@ async def delete_promotion(
     
     async with async_session() as session:
         try:
-            # Soft delete: set status to 'cancelled'
+            # Soft delete: set status to 'cancelled'. Tenant-filtered — the role
+            # check above says WHAT you may do, never WHOSE data (migration 060).
             query = text("""
-                UPDATE promotions 
-                SET status = 'cancelled', updated_at = NOW() 
-                WHERE id = :promo_id 
+                UPDATE promotions
+                SET status = 'cancelled', updated_at = NOW()
+                WHERE id = :promo_id AND tenant_id = :tenant_id
                 RETURNING id
             """)
-            result = await session.execute(query, {"promo_id": promotion_id})
+            result = await session.execute(query, {
+                "promo_id": promotion_id,
+                "tenant_id": current_user.get("tenant_id") or 1,
+            })
             row = result.scalar_one_or_none()
             
             if not row:

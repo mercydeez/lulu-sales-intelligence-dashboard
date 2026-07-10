@@ -1828,6 +1828,8 @@ CREATE TABLE public.promotion_items (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE ONLY public.promotion_items FORCE ROW LEVEL SECURITY;
+
 CREATE SEQUENCE public.promotion_items_id_seq
     AS integer
     START WITH 1
@@ -1844,6 +1846,8 @@ CREATE TABLE public.promotion_stores (
     store_id integer NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE ONLY public.promotion_stores FORCE ROW LEVEL SECURITY;
 
 CREATE SEQUENCE public.promotion_stores_id_seq
     AS integer
@@ -1880,8 +1884,13 @@ CREATE TABLE public.promotions (
     approved_by integer,
     approved_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    tenant_id integer DEFAULT 1 NOT NULL
 );
+
+ALTER TABLE ONLY public.promotions FORCE ROW LEVEL SECURITY;
+
+COMMENT ON COLUMN public.promotions.tenant_id IS 'Owning tenant. Added by migration 060: the write endpoints previously scoped on role alone, so any promotions manager could edit another tenant''s promotion by id.';
 
 CREATE SEQUENCE public.promotions_id_seq
     AS integer
@@ -3667,6 +3676,10 @@ CREATE INDEX idx_promotions_dates ON public.promotions USING btree (start_date, 
 
 CREATE INDEX idx_promotions_status ON public.promotions USING btree (status);
 
+CREATE INDEX idx_promotions_tenant ON public.promotions USING btree (tenant_id);
+
+CREATE INDEX idx_promotions_window ON public.promotions USING btree (tenant_id, start_date, end_date);
+
 CREATE INDEX idx_purchase_orders_supplier ON public.purchase_orders USING btree (supplier_id);
 
 CREATE INDEX idx_purchase_orders_tenant ON public.purchase_orders USING btree (tenant_id);
@@ -4072,6 +4085,9 @@ ALTER TABLE ONLY public.promotions
 ALTER TABLE ONLY public.promotions
     ADD CONSTRAINT promotions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id);
 
+ALTER TABLE ONLY public.promotions
+    ADD CONSTRAINT promotions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
 ALTER TABLE ONLY public.purchase_order_lines
     ADD CONSTRAINT purchase_order_lines_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE CASCADE;
 
@@ -4335,6 +4351,12 @@ ALTER TABLE public.procurement_events ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.product_suppliers ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.promotion_items ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.promotion_stores ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.promotions ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.purchase_order_lines ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.purchase_orders ENABLE ROW LEVEL SECURITY;
@@ -4406,6 +4428,16 @@ CREATE POLICY tenant_isolation ON public.outcome_pricing_plans USING ((tenant_id
 CREATE POLICY tenant_isolation ON public.procurement_events USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.product_suppliers USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.promotion_items USING ((EXISTS ( SELECT 1
+   FROM public.promotions p
+  WHERE ((p.id = promotion_items.promotion_id) AND (p.tenant_id = public.current_tenant_id())))));
+
+CREATE POLICY tenant_isolation ON public.promotion_stores USING ((EXISTS ( SELECT 1
+   FROM public.promotions p
+  WHERE ((p.id = promotion_stores.promotion_id) AND (p.tenant_id = public.current_tenant_id())))));
+
+CREATE POLICY tenant_isolation ON public.promotions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.purchase_order_lines USING ((EXISTS ( SELECT 1
    FROM public.purchase_orders po
