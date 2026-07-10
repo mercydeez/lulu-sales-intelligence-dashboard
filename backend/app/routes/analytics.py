@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List
 from pydantic import BaseModel
 
-from app.services.database import get_db
+from app.services.database import get_db, get_read_db
 from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE_TTL
 from app.models.sales import Sale, Store, Item
 from app.config import logger
@@ -77,7 +77,7 @@ class AnalyticsSummary(BaseModel):
 async def get_sales_trend(
     days: int = Query(30, ge=7, le=365, description="Number of days for trend"),
     include_forecast: bool = Query(True, description="Include forecast data"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -214,7 +214,7 @@ async def compute_and_cache_store_distribution(db: AsyncSession, allowed_stores,
 
 @router.get("/stores")
 async def get_store_distribution(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -243,7 +243,7 @@ async def get_store_distribution(
 @router.get("/top-items")
 async def get_top_items(
     limit: int = Query(10, ge=5, le=50),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -304,7 +304,7 @@ async def get_top_items(
 
 @router.get("/categories")
 async def get_category_breakdown(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -364,7 +364,7 @@ async def get_category_breakdown(
 
 @router.get("/streaming-trend")
 async def get_streaming_trend(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -413,7 +413,7 @@ async def get_streaming_trend(
 
 @router.get("/summary")
 async def get_analytics_summary(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -511,7 +511,7 @@ async def _compute_analytics_summary(db: AsyncSession, allowed_stores):
 
 @router.get("/returns-by-category")
 async def get_returns_by_category(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -562,7 +562,7 @@ async def get_returns_by_category(
 
 @router.get("/returns-by-store")
 async def get_returns_by_store(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -614,7 +614,7 @@ async def get_returns_by_store(
 
 @router.get("/returns-summary")
 async def get_returns_summary(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -980,7 +980,7 @@ async def get_root_cause(
     min_abs_delta: Optional[float] = Query(None, description="Drop contributors whose |delta| is below this"),
     store_id: Optional[int] = Query(None, description="Optional single-store filter"),
     category: Optional[str] = Query(None, description="Optional single-category filter"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     current_user: dict = Depends(get_current_user),
 ):
     """Decompose the change in a metric between the current and comparison periods.

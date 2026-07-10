@@ -86,6 +86,12 @@ async def get_api_context(
     # Bind the tenant for this request so RLS + helpers scope correctly.
     tenant_context.set(ctx["tenant_id"])
 
+    # E10-2: the login path refuses an unsupported isolation tier; an API key is
+    # the other way into the same data, so it refuses here too. Closing one door
+    # and leaving the other open would make the guarantee decorative.
+    from app.services import isolation
+    await isolation.enforce_tenant_isolation(db, ctx["tenant_id"])
+
     # E8-3: every authenticated public call is one metered `api_request`. This is
     # the only place the dimension can be counted exactly once per request, and it
     # was previously advertised in the usage summary while nothing ever recorded

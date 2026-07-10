@@ -3082,8 +3082,12 @@ CREATE TABLE public.tenants (
     status_reason text,
     status_changed_at timestamp with time zone,
     status_changed_by integer,
+    isolation_tier text DEFAULT 'shared'::text NOT NULL,
+    CONSTRAINT tenants_isolation_tier_check CHECK ((isolation_tier = ANY (ARRAY['shared'::text, 'dedicated_schema'::text, 'dedicated_db'::text]))),
     CONSTRAINT tenants_status_check CHECK (((status)::text = ANY ((ARRAY['trial'::character varying, 'onboarding'::character varying, 'active'::character varying, 'payment_pending'::character varying, 'past_due'::character varying, 'suspended'::character varying, 'cancelled'::character varying, 'deletion_requested'::character varying, 'deleted'::character varying])::text[])))
 );
+
+COMMENT ON COLUMN public.tenants.isolation_tier IS 'Isolation the tenant was sold. Only ''shared'' is implemented; the app refuses to serve a tenant on any other tier rather than silently downgrade them.';
 
 CREATE SEQUENCE public.tenants_id_seq
     AS integer
@@ -4247,6 +4251,8 @@ CREATE INDEX ix_tenant_admin_notes_tenant ON public.tenant_admin_notes USING btr
 CREATE INDEX ix_tenant_api_keys_expires_at ON public.tenant_api_keys USING btree (expires_at) WHERE (expires_at IS NOT NULL);
 
 CREATE INDEX ix_tenant_status_events_tenant ON public.tenant_status_events USING btree (tenant_id, created_at DESC);
+
+CREATE INDEX ix_tenants_isolation_tier ON public.tenants USING btree (isolation_tier) WHERE (isolation_tier <> 'shared'::text);
 
 CREATE INDEX ix_usage_events_tenant_type_time ON public.usage_events USING btree (tenant_id, event_type, created_at DESC);
 

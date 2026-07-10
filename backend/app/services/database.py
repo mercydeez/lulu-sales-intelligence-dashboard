@@ -136,10 +136,15 @@ async def init_db(max_retries: int = 30, retry_delay: float = 3.0):
 
 
 async def close_db():
-    """Close database connections — owner engine and the RLS engine if it exists."""
+    """Close database connections — owner engine, the RLS engine and the read
+    replica engine, each if it exists."""
     await engine.dispose()
     if rls_engine is not None:
         await rls_engine.dispose()
+    # Defined below; guarded because close_db can run before it is bound if
+    # startup failed early.
+    if globals().get("replica_engine") is not None:
+        await replica_engine.dispose()
 
 
 async def resolve_request_tenant(request: Request) -> int:
@@ -208,4 +213,69 @@ async def get_db(
             await session.rollback()
             raise
         finally:
+            await session.close()
+
+
+# ---------------------------------------------------------------------------
+# E10-7 — read-replica routing.
+#
+# A replica is BEHIND the primary. That is not a detail, it is the contract: any
+# endpoint that reads what the same request (or the user's last click) just wrote
+# can return stale data from a replica, and the user sees their own write vanish.
+#
+# So `get_read_db` is opt-in per route, and only for reads that tolerate lag:
+# analytics, reports, history — aggregates over days of data, where a few hundred
+# milliseconds of replication delay is invisible. Never for a read-after-write,
+# never for auth, never for anything a mutation returns.
+#
+# With DATABASE_REPLICA_URL unset, `read_session` IS `rls_session`, so the
+# dependency is a no-op and every route behaves exactly as before. Nothing here
+# is dormant: the routing is live, it simply has one node to route to.
+# ---------------------------------------------------------------------------
+
+def _derive_replica_url(raw: str) -> str:
+    """Accept a plain postgres:// URL and force the asyncpg driver, as with the
+    primary. A replica misconfigured onto psycopg2 would fail at first query."""
+    if raw.startswith("postgresql+asyncpg://") or raw.startswith("postgres+asyncpg://"):
+        return raw
+    for prefix in ("postgresql://", "postgres://"):
+        if raw.startswith(prefix):
+            return "postgresql+asyncpg://" + raw[len(prefix):]
+    return raw
+
+
+if settings.database_replica_url:
+    replica_engine = create_async_engine(
+        _derive_replica_url(settings.database_replica_url), **_engine_kwargs
+    )
+    read_session = async_sessionmaker(
+        replica_engine, class_=AsyncSession, expire_on_commit=False,
+        autocommit=False, autoflush=False,
+    )
+    logger.info("📖 Read replica configured — lag-tolerant reads routed to DATABASE_REPLICA_URL")
+else:
+    replica_engine = None
+    read_session = rls_session
+
+
+def replica_configured() -> bool:
+    return replica_engine is not None
+
+
+async def get_read_db(
+    _tenant: int = Depends(resolve_request_tenant),
+) -> AsyncGenerator[AsyncSession, None]:
+    """A session for reads that tolerate replication lag.
+
+    Never commits: a replica is read-only, and a route that writes through this
+    dependency is a bug we would rather surface as an error than silently apply
+    to the primary. Rolls back on exit so no transaction is left open.
+    """
+    async with read_session() as session:
+        try:
+            await apply_tenant_guc(session)
+            yield session
+        finally:
+            # Read-only: discard the (empty) transaction rather than commit it.
+            await session.rollback()
             await session.close()

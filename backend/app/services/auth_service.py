@@ -367,10 +367,16 @@ class AuthService:
             from sqlalchemy import text
             result = await session.execute(
                 text("""
-                    SELECT id, email, password_hash, first_name, last_name, role, status,
-                           job_title, department, failed_login_attempts, locked_until,
-                           two_factor_enabled, two_factor_secret, tenant_id, email_verified
-                    FROM users WHERE email = :email
+                    SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.role,
+                           u.status, u.job_title, u.department, u.failed_login_attempts,
+                           u.locked_until, u.two_factor_enabled, u.two_factor_secret,
+                           u.tenant_id, u.email_verified,
+                           -- E10-2: carried out of this query so /login can check the
+                           -- tenant's isolation tier without a second round-trip.
+                           COALESCE(t.isolation_tier, 'shared') AS isolation_tier
+                    FROM users u
+                    LEFT JOIN tenants t ON t.id = u.tenant_id
+                    WHERE u.email = :email
                 """),
                 {"email": email.lower()}
             )
@@ -478,6 +484,11 @@ class AuthService:
                 "tenant_id": user.get('tenant_id'),
                 "two_factor_enabled": bool(user.get('two_factor_enabled')),
                 "email_verified": bool(user.get('email_verified')),
+                # E10-2: /login refuses a tenant whose isolation tier this
+                # deployment cannot deliver. Omitting it here makes that check read
+                # None -> 'shared' and silently pass, which is the exact failure the
+                # tier exists to prevent.
+                "isolation_tier": user.get('isolation_tier') or 'shared',
                 "permissions": permissions
             }
 

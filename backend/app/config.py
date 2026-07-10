@@ -232,6 +232,18 @@ class Settings(BaseSettings):
     # revenue. Set false to withhold it (the endpoint then 404s).
     forecast_methodology_public: bool = True
 
+    # E10-7: lag-tolerant reads (analytics, reports, history) route here. Unset =>
+    # every read goes to the primary and get_read_db is a no-op. A replica is
+    # BEHIND the primary, so nothing that reads its own write may use it.
+    database_replica_url: Optional[str] = None
+
+    # E10-2: the isolation tiers this deployment can actually honour. A tenant
+    # sold 'dedicated_db' but served from the shared pool is a lie we refuse to
+    # tell: the app fails closed for any tenant on a tier not listed here, rather
+    # than silently downgrading them. Add a tier only when the infrastructure for
+    # it exists.
+    supported_isolation_tiers: List[str] = ["shared"]
+
     # E6-3: sales_stream_raw is partitioned by month. Maintenance creates the next
     # three months and DROPs whole partitions older than the retention window —
     # instant, and it returns the disk, where a DELETE would bloat the table.
