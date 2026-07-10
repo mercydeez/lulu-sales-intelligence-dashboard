@@ -24,9 +24,10 @@ security = HTTPBearer(auto_error=False)
 # as httpOnly cookies. The cookies let the browser authenticate without exposing
 # the token to JS — closing the "tokens in localStorage are XSS-exfiltratable"
 # gap. Cookies ignore port, so a cookie set by the API (:8000) is also sent to
-# the web app (:3000) on the same host. State-changing browser requests still
-# carry the Bearer header, so they stay CSRF-exempt (see CSRFMiddleware); a
-# cookie-only POST without the header is subject to double-submit CSRF.
+# the web app (:3000) on the same host. Since E0-5 the browser uses the cookie as
+# its ONLY transport (no localStorage tokens), so state-changing browser requests
+# go through the double-submit CSRF path (X-CSRF-Token header); API clients using
+# the Authorization: Bearer header remain CSRF-exempt (see CSRFMiddleware).
 # =============================================================================
 
 ACCESS_COOKIE = "access_token"

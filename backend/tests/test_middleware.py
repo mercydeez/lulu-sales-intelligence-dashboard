@@ -12,6 +12,7 @@ from app.middleware import (
     RateLimitMiddleware,
     SecurityHeadersMiddleware,
     BodySizeLimitMiddleware,
+    CSRFMiddleware,
 )
 
 
@@ -207,6 +208,80 @@ class TestRateLimitIdentityScoping:
         assert blocked.status_code == 429
         assert blocked.headers["X-RateLimit-Limit"] == "1"  # the user limit, not the IP one
         assert "Retry-After" in blocked.headers
+
+
+# =============================================================================
+# CSRFMiddleware — double-submit protection for cookie-auth mutations (E0-5)
+# =============================================================================
+
+def _csrf_request(method: str, path: str = "/api/kpis",
+                  cookies: dict = None, headers: dict = None):
+    request = MagicMock()
+    request.method = method
+    request.url.path = path
+    request.cookies = cookies or {}
+    request.headers = headers or {}
+    request.state = MagicMock()
+    return request
+
+
+class TestCSRFMiddleware:
+
+    @pytest.mark.asyncio
+    async def test_get_mints_the_csrf_cookie(self):
+        mw = CSRFMiddleware(MagicMock())
+        resp = JSONResponse({"ok": True})
+        with patch.object(resp, "set_cookie") as set_cookie:
+            async def _next(_req):
+                return resp
+            out = await mw.dispatch(_csrf_request("GET"), _next)
+        assert out.status_code == 200
+        set_cookie.assert_called_once()
+        assert set_cookie.call_args.kwargs.get("key") == "csrf_token"
+        assert set_cookie.call_args.kwargs.get("httponly") is False  # JS must read it
+
+    @pytest.mark.asyncio
+    async def test_cookie_auth_mutation_without_header_is_blocked(self):
+        """A cookie-auth POST with no X-CSRF-Token is a classic CSRF shape → 403."""
+        mw = CSRFMiddleware(MagicMock())
+        req = _csrf_request("POST", cookies={"csrf_token": "abc", "access_token": "j.w.t"})
+        called = False
+        async def _next(_req):
+            nonlocal called; called = True
+            return JSONResponse({"ok": True})
+        out = await mw.dispatch(req, _next)
+        assert out.status_code == 403
+        assert called is False  # the handler never ran
+
+    @pytest.mark.asyncio
+    async def test_cookie_auth_mutation_with_matching_header_passes(self):
+        mw = CSRFMiddleware(MagicMock())
+        req = _csrf_request("POST",
+                            cookies={"csrf_token": "match", "access_token": "j.w.t"},
+                            headers={"x-csrf-token": "match"})
+        async def _next(_req):
+            return JSONResponse({"ok": True})
+        out = await mw.dispatch(req, _next)
+        assert out.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_mismatched_token_is_blocked(self):
+        mw = CSRFMiddleware(MagicMock())
+        req = _csrf_request("POST",
+                            cookies={"csrf_token": "cookieval"},
+                            headers={"x-csrf-token": "different"})
+        out = await mw.dispatch(req, lambda _r: JSONResponse({"ok": True}))
+        assert out.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_bearer_auth_is_exempt(self):
+        """API clients using the Authorization header don't need CSRF."""
+        mw = CSRFMiddleware(MagicMock())
+        req = _csrf_request("POST", headers={"authorization": "Bearer j.w.t"})
+        async def _next(_req):
+            return JSONResponse({"ok": True})
+        out = await mw.dispatch(req, _next)
+        assert out.status_code == 200
 
 
 # =============================================================================

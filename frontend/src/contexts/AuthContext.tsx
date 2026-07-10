@@ -39,9 +39,12 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Token storage keys
-const ACCESS_TOKEN_KEY = 'app_access_token';
-const REFRESH_TOKEN_KEY = 'app_refresh_token';
+// Only the user PROFILE is persisted (for cache scoping, E0-6). Access/refresh
+// tokens are httpOnly cookies the browser manages — never in localStorage (E0-5).
+// The two legacy token keys remain only so clearAuth can purge them from browsers
+// that stored them before E0-5.
+const LEGACY_ACCESS_TOKEN_KEY = 'app_access_token';
+const LEGACY_REFRESH_TOKEN_KEY = 'app_refresh_token';
 const USER_KEY = 'app_user';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -52,39 +55,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     error: null
   });
 
-  // Load auth state from storage on mount
+  // Restore the session on mount from the httpOnly cookie (E0-5) — there is no
+  // token in localStorage to gate on anymore. Validate with credentials only; on
+  // success rehydrate the profile from the stored copy or, if absent, from
+  // /api/auth/me (a fresh browser after login-elsewhere, or a cleared profile).
   useEffect(() => {
     const loadAuthState = async () => {
       try {
-        const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
-        const storedUser = localStorage.getItem(USER_KEY);
+        let response = await fetch(`${API_URL}/api/auth/validate`, { credentials: 'include' });
 
-        if (accessToken && storedUser) {
-          // Validate token with backend
-          const response = await fetch(`${API_URL}/api/auth/validate`, {
-            credentials: 'include',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`
-            }
-          });
+        // Access cookie expired but the refresh cookie may still be valid.
+        if (!response.ok) {
+          const refreshed = await refreshTokenInternal();
+          if (!refreshed) { clearAuth(); return; }
+          response = await fetch(`${API_URL}/api/auth/validate`, { credentials: 'include' });
+          if (!response.ok) { clearAuth(); return; }
+        }
 
-          if (response.ok) {
-            const user = JSON.parse(storedUser);
-            setState({
-              user,
-              isAuthenticated: true,
-              isLoading: false,
-              error: null
-            });
-          } else {
-            // Try to refresh token
-            const refreshed = await refreshTokenInternal();
-            if (!refreshed) {
-              clearAuth();
-            }
+        const stored = localStorage.getItem(USER_KEY);
+        let user = stored ? JSON.parse(stored) : null;
+        if (!user) {
+          const me = await fetch(`${API_URL}/api/auth/me`, { credentials: 'include' });
+          if (me.ok) {
+            user = await me.json();
+            localStorage.setItem(USER_KEY, JSON.stringify(user));
           }
+        }
+
+        if (user) {
+          setState({ user, isAuthenticated: true, isLoading: false, error: null });
         } else {
-          setState(prev => ({ ...prev, isLoading: false }));
+          clearAuth();
         }
       } catch (error) {
         console.error('Auth load error:', error);
@@ -96,8 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const clearAuth = () => {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     clearApiCache(); // never let one user's cached data outlive their session (M2)
     setState({
@@ -124,8 +125,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const signupResponse: LoginResponse = body;
       clearApiCache();
-      localStorage.setItem(ACCESS_TOKEN_KEY, signupResponse.access_token);
-      localStorage.setItem(REFRESH_TOKEN_KEY, signupResponse.refresh_token);
+      // Tokens are set as httpOnly cookies by the backend — persist only the
+      // profile (used for cache scoping, E0-6), never the tokens (E0-5).
       localStorage.setItem(USER_KEY, JSON.stringify(signupResponse.user));
       setState({ user: signupResponse.user, isAuthenticated: true, isLoading: false, error: null });
       return true;
@@ -136,11 +137,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Persist tokens + user from a successful auth response and flip to logged-in.
+  // Flip to logged-in from a successful auth response. Tokens arrived as httpOnly
+  // cookies (Set-Cookie); we persist ONLY the profile for cache scoping (E0-5/E0-6).
   const establishSession = (loginResponse: LoginResponse) => {
     clearApiCache(); // drop any cache from a previous session before this user's data lands (M2)
-    localStorage.setItem(ACCESS_TOKEN_KEY, loginResponse.access_token);
-    localStorage.setItem(REFRESH_TOKEN_KEY, loginResponse.refresh_token);
     localStorage.setItem(USER_KEY, JSON.stringify(loginResponse.user));
     setState({ user: loginResponse.user, isAuthenticated: true, isLoading: false, error: null });
   };
@@ -203,14 +203,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async (): Promise<void> => {
     try {
-      // Always hit the endpoint so the httpOnly cookies get cleared + the token
-      // blacklisted, even in a cookie-only session where localStorage is empty.
-      const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
-      await fetch(`${API_URL}/api/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {},
-      });
+      // Route through authFetch so the httpOnly cookies are sent and the CSRF
+      // double-submit header is attached — logout is a state-changing POST and
+      // is no longer Bearer-exempt. This clears the cookies + blacklists the token.
+      await clientAuthFetch(`${API_URL}/api/auth/logout`, { method: 'POST' });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
@@ -219,25 +215,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshTokenInternal = async (): Promise<boolean> => {
-    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-    if (!refreshToken) return false;
-
     try {
+      // The refresh token is an httpOnly cookie — send NO body (the endpoint
+      // requires a token field, so `{}` would 422; it falls back to the cookie
+      // when the body is absent). Rotated cookies come back as Set-Cookie.
       const response = await fetch(`${API_URL}/api/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ refresh_token: refreshToken })
       });
 
       if (!response.ok) return false;
 
       const data: LoginResponse = await response.json();
 
-      localStorage.setItem(ACCESS_TOKEN_KEY, data.access_token);
-      localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+      // Persist ONLY the profile — tokens live in the refreshed httpOnly cookies.
       localStorage.setItem(USER_KEY, JSON.stringify(data.user));
 
       setState({
@@ -361,14 +352,6 @@ export function withAuth<P extends object>(
   };
 }
 
-// Utility function to get auth header
-export function getAuthHeader(): Record<string, string> {
-  const token = typeof window !== 'undefined' 
-    ? localStorage.getItem(ACCESS_TOKEN_KEY) 
-    : null;
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
-}
-
 // Module-level authenticated fetch for non-React callers — the single API
-// client (auth header + 401 refresh-retry + redirect-on-failure).
+// client (httpOnly-cookie auth + CSRF header + 401 refresh-retry + redirect).
 export const authFetch = clientAuthFetch;

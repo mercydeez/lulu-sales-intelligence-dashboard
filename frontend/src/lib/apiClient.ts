@@ -1,11 +1,13 @@
 /**
  * Single frontend API client (Phase 2.7).
  *
- * One place for: base URL, bearer auth, 401 -> refresh -> retry, an
- * authorization-scoped response cache (keyed by user + tenant + role + accessible
- * stores/regions, so no cached response outlives the permissions it was fetched
- * under — GAP M2, E0-6), and parsing of the backend's JSON error envelope into a
- * typed ApiError (GAP M3).
+ * One place for: base URL, httpOnly-COOKIE auth (E0-5 — no token ever touches
+ * localStorage; the browser sends the httpOnly access/refresh cookies via
+ * credentials:'include' and cannot read them, so an XSS can't exfiltrate them
+ * at rest), CSRF double-submit on state-changing requests, 401 -> refresh ->
+ * retry, an authorization-scoped response cache (keyed by user + tenant + role +
+ * accessible stores/regions — GAP M2, E0-6), and parsing of the backend's JSON
+ * error envelope into a typed ApiError (GAP M3).
  *
  * Auth endpoints (login/refresh/logout) stay in AuthContext; everything else
  * should go through here. `authFetch` is exposed for callers that need the raw
@@ -14,9 +16,18 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-const ACCESS_TOKEN_KEY = 'app_access_token';
-const REFRESH_TOKEN_KEY = 'app_refresh_token';
+// Only the user PROFILE is kept in localStorage (for cache scoping, E0-6). The
+// access/refresh tokens are httpOnly cookies the browser manages — JS never
+// reads or writes them. The two token keys remain here ONLY so clearSession can
+// purge them from browsers that stored them before E0-5.
+const LEGACY_ACCESS_TOKEN_KEY = 'app_access_token';
+const LEGACY_REFRESH_TOKEN_KEY = 'app_refresh_token';
 const USER_KEY = 'app_user';
+
+// The double-submit CSRF pair: the backend sets a JS-readable `csrf_token` cookie
+// on GET /api/* responses; we echo it back in this header on every mutation.
+const CSRF_COOKIE = 'csrf_token';
+const CSRF_HEADER = 'X-CSRF-Token';
 
 const DEFAULT_TIMEOUT_MS = 10000;
 
@@ -45,21 +56,41 @@ function readStorage(key: string): string | null {
   return localStorage.getItem(key);
 }
 
-export function getAccessToken(): string | null {
-  return readStorage(ACCESS_TOKEN_KEY);
-}
-
-function setTokens(accessToken: string, refreshToken: string): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-}
-
 function clearSession(): void {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  // Tokens live in httpOnly cookies now; still purge legacy localStorage tokens
+  // from any browser that stored them before E0-5, plus the profile.
+  localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+  localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+}
+
+/** Read the double-submit CSRF token the backend set as a JS-readable cookie. */
+export function getCsrfToken(): string | null {
+  if (typeof document === 'undefined') return null;
+  const m = document.cookie.match(new RegExp(`(?:^|; )${CSRF_COOKIE}=([^;]+)`));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+/** Headers a state-changing request must carry: the CSRF token, when present. */
+function csrfHeaders(method: string): Record<string, string> {
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return {};
+  const token = getCsrfToken();
+  return token ? { [CSRF_HEADER]: token } : {};
+}
+
+/** Mint the csrf_token cookie if we don't have one yet (a mutation fired before
+ *  any API GET would otherwise 403). A cheap authenticated GET sets it. */
+async function ensureCsrfToken(): Promise<void> {
+  if (getCsrfToken()) return;
+  try {
+    await fetch(`${API_URL}/api/auth/validate`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+  } catch {
+    /* offline / network — the caller's own request will surface the error */
+  }
 }
 
 // ============================================================================
@@ -157,18 +188,18 @@ async function refreshAccessToken(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
-    const refreshToken = readStorage(REFRESH_TOKEN_KEY);
-    if (!refreshToken) return false;
     try {
+      // The refresh token rides along as an httpOnly cookie — send NO body
+      // (RefreshRequest requires a token, so `{}` would 422; the endpoint falls
+      // back to the cookie when the body is absent). /api/auth/refresh is
+      // CSRF-exempt. The rotated access/refresh cookies come back as Set-Cookie.
       const res = await fetch(`${API_URL}/api/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken }),
       });
       if (!res.ok) return false;
       const data = await res.json();
-      setTokens(data.access_token, data.refresh_token);
+      // Only the profile is persisted (for cache scoping) — never the tokens.
       if (typeof window !== 'undefined' && data.user) {
         localStorage.setItem(USER_KEY, JSON.stringify(data.user));
       }
@@ -213,37 +244,57 @@ async function parseError(res: Response): Promise<ApiError> {
 }
 
 /**
- * Authenticated fetch returning the raw Response. Adds the bearer token and,
- * on a 401, refreshes once and retries. Use for streaming/blob responses; for
- * JSON use the typed helpers below. Does not cache.
+ * Authenticated fetch returning the raw Response. Auth is the httpOnly cookie
+ * (credentials:'include'); state-changing requests carry the CSRF double-submit
+ * header. On 401 it refreshes once and retries; on a CSRF 403 it mints the token
+ * and retries once. Use for streaming/blob responses; JSON callers use the typed
+ * helpers below. Does not cache.
  */
 export async function authFetch(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<Response> {
   const url = buildUrl(endpoint);
-  const send = (token: string | null): Promise<Response> =>
+  const method = (options.method || 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    await ensureCsrfToken();
+  }
+  const send = (): Promise<Response> =>
     fetch(url, {
       ...options,
       credentials: 'include',
       headers: {
         ...options.headers,
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...csrfHeaders(method),
       },
     });
 
-  let res = await send(getAccessToken());
+  let res = await send();
   if (res.status === 401) {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
-      res = await send(getAccessToken());
+      res = await send();
     } else if (typeof window !== 'undefined') {
       clearSession();
       clearApiCache();
       window.location.href = '/login';
     }
+  } else if (res.status === 403 && (await isCsrfFailure(res))) {
+    await ensureCsrfToken();
+    res = await send();
   }
   return res;
+}
+
+/** Whether a 403 is a CSRF-token failure (so we retry) vs a real authz denial. */
+async function isCsrfFailure(res: Response): Promise<boolean> {
+  try {
+    const body = await res.clone().json();
+    const msg = String(body?.message || body?.detail || '').toLowerCase();
+    return msg.includes('csrf');
+  } catch {
+    return false;
+  }
 }
 
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -274,7 +325,7 @@ export async function apiRequest<T>(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  const send = (token: string | null): Promise<Response> =>
+  const send = (): Promise<Response> =>
     fetch(url, {
       ...rest,
       method,
@@ -283,22 +334,28 @@ export async function apiRequest<T>(
       headers: {
         'Content-Type': 'application/json',
         ...rest.headers,
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...csrfHeaders(method),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
 
   try {
-    let res = await send(getAccessToken());
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+      await ensureCsrfToken();
+    }
+    let res = await send();
     if (res.status === 401) {
       const refreshed = await refreshAccessToken();
       if (refreshed) {
-        res = await send(getAccessToken());
+        res = await send();
       } else if (typeof window !== 'undefined') {
         clearSession();
         clearApiCache();
         window.location.href = '/login';
       }
+    } else if (res.status === 403 && (await isCsrfFailure(res))) {
+      await ensureCsrfToken();
+      res = await send();
     }
 
     if (!res.ok) throw await parseError(res);

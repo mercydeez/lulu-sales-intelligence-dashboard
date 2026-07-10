@@ -207,9 +207,12 @@ class TestTokenTypeConfusion:
 
 
 # =============================================================================
-# 6. httpOnly cookie auth (P1.3) — the cookie helpers set/clear secure auth
-#    cookies. Tokens are returned in the body (Bearer) AND set as httpOnly
-#    cookies so the browser need not keep them in XSS-exfiltratable localStorage.
+# 6. httpOnly cookie auth (P1.3 / E0-5) — the cookie helpers set/clear secure
+#    auth cookies. Since E0-5 the httpOnly cookie is the ONLY browser transport:
+#    the frontend no longer keeps tokens in XSS-exfiltratable localStorage, and
+#    state-changing cookie-auth requests carry the CSRF double-submit header.
+#    (Tokens are still in the login/refresh JSON body for API clients; the
+#    at-rest theft channel is what E0-5 closes — see e2e/xss-theft.spec.ts.)
 # =============================================================================
 
 def _set_cookie_headers(response: Response) -> list[str]:

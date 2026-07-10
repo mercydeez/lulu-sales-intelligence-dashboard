@@ -55,6 +55,10 @@ const DEMOTED: StoredUser = {
 beforeEach(() => {
   localStorage.clear();
   clearApiCache();
+  // Give the client a CSRF token so ensureCsrfToken() doesn't fire an extra
+  // bootstrap GET on mutations (E0-5) — these tests assert cache behaviour, not
+  // the CSRF handshake, so we isolate them from it.
+  document.cookie = 'csrf_token=test-csrf';
 });
 
 afterEach(() => {
