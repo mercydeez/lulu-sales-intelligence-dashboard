@@ -28,6 +28,21 @@ projection, or a promise. Where a scenario failed, the failure is the headline.
 > workers (Redis-backed), and the startup advisory lock serializing all four workers'
 > boot DDL with no duplicate-key crash. See `docs/production/RUNTIME_PROCESSES.md`
 > for the process model and the fix's design.
+>
+> **`WEB_CONCURRENCY=8` was tested and REGRESSED — do not raise it on this box.**
+> Same run, 8 workers (with dev Postgres `max_connections` raised to 200 to give it
+> a fair chance): **29 % success**, TCP-level `connection refused` / `no route to
+> host` failures, then the backend container **exited (code 3)** under sustained
+> load. Cause is memory, not CPU: the app process is ~700 MB (pandas/langchain/torch
+> at import), and 8 gunicorn workers without `--preload` ≈ **5.6 GB on a 7.7 GB
+> Docker VM** already running Postgres, the 631 MB `singletons` container, worker and
+> frontend → VM memory exhaustion → fork failures → arbiter halt. Compounding it, the
+> mix is DB-bound (Sage/analytics over ~917 k rows), so Postgres — not the API — is
+> the bottleneck past ~4 workers. **4 workers is the sweet spot for this hardware**
+> (98 %, p95 1.24 s). Scaling past that means Postgres capacity / the read replica
+> (E10-7) and cutting Sage's per-query cost, plus `gunicorn --preload` to share the
+> import footprint — NOT more API workers. `WEB_CONCURRENCY` default stays 4 (dev) / 2
+> (prod).
 
 ---
 
