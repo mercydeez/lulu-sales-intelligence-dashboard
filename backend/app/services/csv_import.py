@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
 # Canonical schema per import type. `key` = canonical field; `kind` drives validation.
@@ -378,6 +378,7 @@ def validate_rows(import_type: str, headers: List[str], rows: List[Dict[str, str
 
     valid: List[Dict] = []
     errors: List[Dict] = []
+    rejected: List[Dict] = []   # the ORIGINAL rows, so the operator can fix + re-upload
     for i, row in enumerate(rows, start=1):
         cleaned: Dict[str, object] = {}
         row_errors: List[Dict] = []
@@ -400,15 +401,173 @@ def validate_rows(import_type: str, headers: List[str], rows: List[Dict[str, str
                 cleaned[field] = val
         if row_errors:
             errors.extend(row_errors)
+            reasons = "; ".join(f"{e['field']}: {e['message']}" for e in row_errors)
+            rejected.append({**row, "_row": i, "_reason": reasons})
         else:
+            # Carry the source row number so commit-time skips can be reported against
+            # the operator's own spreadsheet. Stripped before any INSERT.
+            cleaned["__row"] = i
+            cleaned["__source"] = row
             valid.append(cleaned)
 
     return {
         "valid": valid,
         "errors": errors[:200],  # cap returned errors; summary keeps the true count
+        # Every rejected row, uncapped — the route decides what to persist/serve.
+        "rejected": rejected,
         "summary": {"total": len(rows), "valid": len(valid),
                     "errors": len(rows) - len(valid), "error_fields": len(errors)},
     }
+
+
+# --- E1-5: data-quality report ----------------------------------------------
+#
+# Trust: the product admits what it cannot see. The scorecard grades the FILE, not
+# the customer, and every finding names the exact rows so it can be fixed. Anomalies
+# are WARNINGS — a legitimate promo spike must never silently drop a row.
+
+_MAX_REPORT_ITEMS = 50        # per finding list, in the response
+_MIN_GROUP_FOR_ANOMALY = 5    # a 2-row group has no meaningful spread
+_ANOMALY_Z = 3.5              # modified z-score threshold (Iglewicz & Hoaglin)
+
+
+def _grade(pct: float) -> str:
+    if pct >= 99: return "A"
+    if pct >= 95: return "B"
+    if pct >= 90: return "C"
+    if pct >= 80: return "D"
+    return "F"
+
+
+def _median(xs: List[float]) -> float:
+    s = sorted(xs)
+    n = len(s)
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
+def build_quality_report(import_type: str, valid_rows: List[Dict],
+                         errors: List[Dict], total_rows: int) -> Dict:
+    """Grade an upload. Pure — same inputs, same report, in preview and at commit.
+
+    * missing_days   — gaps INSIDE the file's own date range per store. A file
+                       covering one week must not be marked down for the other 51.
+    * duplicate_keys — the same (store, item, date) more than once: double-counted
+                       revenue if committed.
+    * unit_anomalies — robust modified z-score (median/MAD, not mean/stdev, so one
+                       huge outlier can't hide the rest). Warnings only.
+    """
+    report: Dict = {
+        "missing_days": [], "missing_days_count": 0,
+        "duplicate_keys": [], "duplicate_keys_count": 0,
+        "unit_anomalies": [], "unit_anomalies_count": 0,
+        "scorecard": {},
+    }
+
+    valid_count = len(valid_rows)
+    completeness = (valid_count / total_rows * 100.0) if total_rows else 0.0
+
+    uniqueness = continuity = plausibility = 100.0
+
+    if import_type == "sales" and valid_rows:
+        # --- duplicates on the natural key -----------------------------------
+        seen: Dict[tuple, List[int]] = {}
+        for r in valid_rows:
+            key = (str(r.get("store", "")).lower(), str(r.get("item", "")).lower(), r.get("date"))
+            seen.setdefault(key, []).append(r.get("__row"))
+        dupes = {k: v for k, v in seen.items() if len(v) > 1}
+        report["duplicate_keys_count"] = len(dupes)
+        report["duplicate_keys"] = [
+            {"store": k[0], "item": k[1], "date": k[2], "occurrences": len(v), "rows": v[:10]}
+            for k, v in list(dupes.items())[:_MAX_REPORT_ITEMS]
+        ]
+        dup_extra = sum(len(v) - 1 for v in dupes.values())
+        uniqueness = max(0.0, (1 - dup_extra / valid_count) * 100.0)
+
+        # --- continuity: gaps within each store's own covered range -----------
+        by_store: Dict[str, set] = {}
+        for r in valid_rows:
+            d = r.get("date")
+            if d:
+                by_store.setdefault(str(r.get("store", "")), set()).add(date.fromisoformat(d))
+        expected = covered = 0
+        for store, days in by_store.items():
+            lo, hi = min(days), max(days)
+            span = (hi - lo).days + 1
+            expected += span
+            covered += len(days)
+            gaps = [lo + timedelta(days=i) for i in range(span) if (lo + timedelta(days=i)) not in days]
+            if gaps:
+                report["missing_days_count"] += len(gaps)
+                if len(report["missing_days"]) < _MAX_REPORT_ITEMS:
+                    report["missing_days"].append({
+                        "store": store,
+                        "from": lo.isoformat(), "to": hi.isoformat(),
+                        "missing_count": len(gaps),
+                        "missing": [g.isoformat() for g in gaps[:10]],
+                    })
+        continuity = (covered / expected * 100.0) if expected else 100.0
+
+        # --- unit anomalies (warnings) ---------------------------------------
+        groups: Dict[tuple, List[Dict]] = {}
+        for r in valid_rows:
+            groups.setdefault((str(r.get("store", "")).lower(), str(r.get("item", "")).lower()), []).append(r)
+        flagged = 0
+        for (store, item), rs in groups.items():
+            if len(rs) < _MIN_GROUP_FOR_ANOMALY:
+                continue
+            units = [float(r.get("units") or 0) for r in rs]
+            med = _median(units)
+            devs = [abs(u - med) for u in units]
+            mad = _median(devs)
+
+            # MAD collapses to 0 whenever more than half the values are identical
+            # (7 days of exactly 10 units, then a 9999 spike). Guarding on `mad == 0`
+            # would swallow precisely the outlier we exist to find. Iglewicz &
+            # Hoaglin's fallback is the mean absolute deviation.
+            if mad > 0:
+                scale = mad / 0.6745
+            else:
+                mean_ad = sum(devs) / len(devs)
+                if mean_ad == 0:
+                    continue  # every value identical — nothing is anomalous
+                scale = 1.253314 * mean_ad
+
+            for r, u in zip(rs, units):
+                z = (u - med) / scale
+                if abs(z) > _ANOMALY_Z:
+                    flagged += 1
+                    if len(report["unit_anomalies"]) < _MAX_REPORT_ITEMS:
+                        report["unit_anomalies"].append({
+                            "row": r.get("__row"), "store": store, "item": item,
+                            "date": r.get("date"), "units": r.get("units"),
+                            "median_units": round(med, 2), "z": round(z, 1),
+                        })
+        report["unit_anomalies_count"] = flagged
+        plausibility = max(0.0, (1 - flagged / valid_count) * 100.0)
+
+    overall = round((completeness + uniqueness + continuity + plausibility) / 4.0, 1)
+    report["scorecard"] = {
+        "completeness_pct": round(completeness, 1),   # rows that validated
+        "uniqueness_pct": round(uniqueness, 1),       # no double-counted keys
+        "continuity_pct": round(continuity, 1),       # no gaps inside the covered range
+        "plausibility_pct": round(plausibility, 1),   # no unexplained unit spikes
+        "overall_pct": overall,
+        "grade": _grade(overall),
+        "anomalies_are_warnings": True,
+    }
+    return report
+
+
+def rejected_rows_csv(headers: List[str], rejected: List[Dict]) -> str:
+    """Render rejected rows back as CSV — the operator's own columns, plus why each
+    row failed — so the file can be fixed and re-uploaded directly."""
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([*headers, "_row", "_reason"])
+    for r in rejected:
+        w.writerow([*(r.get(h, "") for h in headers), r.get("_row", ""), r.get("_reason", "")])
+    return buf.getvalue()
 
 
 # --- persistence (async; tenant-scoped) ------------------------------------
@@ -424,12 +583,53 @@ async def _resolve_maps(db: AsyncSession, tenant_id: int) -> Tuple[Dict[str, int
     return ({r.n: r.id for r in stores}, {r.n: r.id for r in items})
 
 
+_MAX_REJECTED_STORED = 5_000   # bound import_jobs.notes; the report says what was cut
+
+
+def _as_date(v) -> Optional[date]:
+    """Bind a date-kind value to a DATE column.
+
+    `_coerce` renders dates as ISO strings (the JSON API needs them that way), but
+    asyncpg binds DATE parameters strictly and rejects a str with
+    "'str' object has no attribute 'toordinal'". Every date that reaches an INSERT
+    must come through here — the sales and inventory imports were silently broken
+    for exactly this reason.
+    """
+    if v is None or v == "":
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    return date.fromisoformat(str(v))
+
+
+def _strip_markers(r: Dict) -> Dict:
+    """Drop the bookkeeping keys validate_rows attaches (__row / __source) so they
+    never reach an INSERT."""
+    return {k: v for k, v in r.items() if not k.startswith("__")}
+
+
+def _record_skip(bucket: List[Dict], cleaned_row: Dict, reason: str) -> None:
+    """Capture the operator's ORIGINAL row (not our cleaned view) so the downloadable
+    file has their columns, their values, and the reason we couldn't use it."""
+    if len(bucket) >= _MAX_REJECTED_STORED:
+        return
+    source = cleaned_row.get("__source") or _strip_markers(cleaned_row)
+    bucket.append({**source, "_row": cleaned_row.get("__row"), "_reason": reason})
+
+
 async def commit_import(db: AsyncSession, tenant_id: int, import_type: str,
                         valid_rows: List[Dict]) -> Dict:
     """Persist validated rows into the canonical tables, tenant-scoped. Upserts
     stores/items by name; resolves store/item names → ids for sales/inventory
-    (unresolved rows are skipped and reported). Caller commits."""
+    (unresolved rows are skipped and reported). Caller commits.
+
+    Returns `skipped_rows`: the ORIGINAL source rows that could not be resolved,
+    with the reason — so the operator can download, fix and re-upload exactly
+    those rows instead of guessing (E1-5)."""
     imported, skipped, skip_reasons = 0, 0, []
+    skipped_rows: List[Dict] = []
 
     if import_type == "stores":
         for r in valid_rows:
@@ -457,9 +657,7 @@ async def commit_import(db: AsyncSession, tenant_id: int, import_type: str,
             if item_id and cost is not None:
                 # _coerce renders dates as ISO strings; asyncpg binds a DATE
                 # parameter strictly and rejects a str. Hand it a real date.
-                vf = r.get("cost_from")
-                if isinstance(vf, str) and vf:
-                    vf = date.fromisoformat(vf)
+                vf = _as_date(r.get("cost_from"))
                 await db.execute(_sql("""
                     SELECT set_item_cost(:t, :iid, :cost, COALESCE(:vf, CURRENT_DATE), 'import')
                 """), {"t": tenant_id, "iid": item_id, "cost": cost, "vf": vf})
@@ -481,14 +679,16 @@ async def commit_import(db: AsyncSession, tenant_id: int, import_type: str,
             iid = item_map.get(str(r["item"]).lower())
             if not sid or not iid:
                 skipped += 1
+                reason = (f"unresolved {'store' if not sid else 'item'}: "
+                          f"{r['store'] if not sid else r['item']}")
                 if len(skip_reasons) < 50:
-                    skip_reasons.append(f"unresolved {'store' if not sid else 'item'}: "
-                                        f"{r['store'] if not sid else r['item']}")
+                    skip_reasons.append(reason)
+                _record_skip(skipped_rows, r, reason)
                 continue
             await db.execute(_sql("""
                 INSERT INTO sales_historical (date, store_id, item_id, sales, tenant_id)
                 VALUES (:d, :s, :i, :u, :t)
-            """), {"d": r["date"], "s": sid, "i": iid, "u": r["units"], "t": tenant_id})
+            """), {"d": _as_date(r["date"]), "s": sid, "i": iid, "u": r["units"], "t": tenant_id})
             imported += 1
 
     elif import_type == "inventory":
@@ -498,8 +698,10 @@ async def commit_import(db: AsyncSession, tenant_id: int, import_type: str,
             iid = item_map.get(str(r["item"]).lower())
             if not sid or not iid:
                 skipped += 1
+                reason = f"unresolved {'store' if not sid else 'item'}"
                 if len(skip_reasons) < 50:
-                    skip_reasons.append(f"unresolved {'store' if not sid else 'item'}")
+                    skip_reasons.append(reason)
+                _record_skip(skipped_rows, r, reason)
                 continue
             await db.execute(_sql("""
                 INSERT INTO inventory (store_id, item_id, current_stock, unit_cost,
@@ -514,7 +716,8 @@ async def commit_import(db: AsyncSession, tenant_id: int, import_type: str,
                     last_sale_date = EXCLUDED.last_sale_date
             """), {"s": sid, "i": iid, "cs": r["current_stock"],
                    "uc": r.get("unit_cost"), "rp": r.get("reorder_point"),
-                   "ads": r.get("average_daily_sales"), "lsd": r.get("last_sale_date")})
+                   "ads": r.get("average_daily_sales"), "lsd": _as_date(r.get("last_sale_date"))})
             imported += 1
 
-    return {"imported": imported, "skipped": skipped, "skip_reasons": skip_reasons[:50]}
+    return {"imported": imported, "skipped": skipped, "skip_reasons": skip_reasons[:50],
+            "skipped_rows": skipped_rows}

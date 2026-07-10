@@ -146,7 +146,12 @@ async def validate(body: ImportRequest, user: dict = Depends(get_current_user)):
     if len(rows) > imp.MAX_ROWS:
         raise HTTPException(status_code=413, detail=f"Too many rows (max {imp.MAX_ROWS})")
     result = imp.validate_rows(body.import_type, headers, rows, body.mapping)
-    return {"summary": result["summary"], "errors": result["errors"]}
+    # E1-5: the scorecard is built from the FULL error/valid sets, not the capped
+    # `errors` slice we return — otherwise a 10,000-error file would grade like a
+    # 200-error one.
+    quality = imp.build_quality_report(body.import_type, result["valid"],
+                                       result["errors"], result["summary"]["total"])
+    return {"summary": result["summary"], "errors": result["errors"], "quality": quality}
 
 
 @router.post("/commit")
@@ -164,12 +169,25 @@ async def commit(body: ImportRequest, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=422,
                             detail="No valid rows to import — fix the errors and retry")
 
+    # Same pure builder as /validate, so the preview scorecard equals the persisted one.
+    quality = imp.build_quality_report(body.import_type, result["valid"],
+                                       result["errors"], result["summary"]["total"])
+
     async with async_session() as session:
         try:
             persist = await imp.commit_import(session, tenant_id, body.import_type, result["valid"])
             error_rows = result["summary"]["errors"]
             status = ("completed" if (persist["skipped"] == 0 and error_rows == 0)
                       else "partial")
+
+            # Unresolved rows come from two places with different shapes: rows that
+            # failed VALIDATION (bad date, negative units) and rows that failed
+            # RESOLUTION at commit (store/item name not in the catalogue). The
+            # operator wants one file with both.
+            rejected = (result["rejected"] + persist["skipped_rows"])[:imp._MAX_REJECTED_STORED]
+            quality["rejected_row_count"] = len(result["rejected"]) + persist["skipped"]
+            quality["rejected_rows_stored"] = len(rejected)
+
             job = (await session.execute(text("""
                 INSERT INTO import_jobs (tenant_id, import_type, filename, status,
                     total_rows, imported_rows, skipped_rows, error_rows, mapping, notes, created_by)
@@ -179,7 +197,11 @@ async def commit(body: ImportRequest, user: dict = Depends(get_current_user)):
             """), {"t": tenant_id, "ty": body.import_type, "fn": body.filename, "st": status,
                    "total": len(rows), "imp": persist["imported"], "skip": persist["skipped"],
                    "err": error_rows, "map": json.dumps(body.mapping),
-                   "notes": json.dumps({"skip_reasons": persist["skip_reasons"]}),
+                   "notes": json.dumps({
+                       "skip_reasons": persist["skip_reasons"],
+                       "quality": quality,
+                       "rejected": {"headers": headers, "rows": rejected},
+                   }, default=str),
                    "by": user.get("email")})).fetchone()
             await session.commit()
         except Exception as e:
@@ -204,10 +226,16 @@ async def commit(body: ImportRequest, user: dict = Depends(get_current_user)):
     from app.services.webhook_service import dispatch_event_background
     dispatch_event_background(tenant_id, "import.completed",
                              {"job_id": job.id, "import_type": body.import_type,
-                              "imported": persist["imported"], "skipped": persist["skipped"]})
+                              "imported": persist["imported"], "skipped": persist["skipped"],
+                              "quality_grade": quality["scorecard"]["grade"],
+                              "quality_pct": quality["scorecard"]["overall_pct"]})
 
+    # `skipped_rows` is the raw payload for the download endpoint — not part of the
+    # HTTP response (it can be 5,000 rows).
+    persist.pop("skipped_rows", None)
     return {"job_id": job.id, "status": status, **persist,
-            "total_rows": len(rows), "error_rows": result["summary"]["errors"]}
+            "total_rows": len(rows), "error_rows": result["summary"]["errors"],
+            "quality": quality}
 
 
 @router.get("")
@@ -218,8 +246,43 @@ async def list_jobs(user: dict = Depends(get_current_user)):
     async with async_session() as session:
         rows = (await session.execute(text("""
             SELECT id, import_type, filename, status, total_rows, imported_rows,
-                   skipped_rows, error_rows, created_by, created_at
+                   skipped_rows, error_rows, created_by, created_at,
+                   -- so the UI knows whether to offer the download, without
+                   -- shipping the whole rejected payload in the list response.
+                   COALESCE(jsonb_array_length(notes -> 'rejected' -> 'rows'), 0) AS rejected_rows,
+                   notes -> 'quality' -> 'scorecard' AS scorecard
             FROM import_jobs WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 100
         """), {"t": tenant_id})).mappings().all()
     return {"jobs": [{**dict(r), "created_at": r["created_at"].isoformat() if r["created_at"] else None}
                      for r in rows]}
+
+
+@router.get("/{job_id}/unresolved.csv", response_class=PlainTextResponse)
+async def download_unresolved(job_id: int, user: dict = Depends(get_current_user)):
+    """The rows we could not use, as CSV — the operator's own columns plus why each
+    one failed (E1-5). Fix them in place and re-upload just this file.
+
+    Trust: the product admits what it can't see. A silent skip is a lie of omission.
+    """
+    _require_operator(user)
+    tenant_id = user.get("tenant_id") or 1
+    async with async_session() as session:
+        row = (await session.execute(text("""
+            SELECT filename, notes FROM import_jobs
+             WHERE id = :id AND tenant_id = :t
+        """), {"id": job_id, "t": tenant_id})).mappings().fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Import job not found")
+
+    notes = row["notes"] or {}
+    if isinstance(notes, str):
+        notes = json.loads(notes)
+    rejected = (notes.get("rejected") or {})
+    rows_out = rejected.get("rows") or []
+    if not rows_out:
+        raise HTTPException(status_code=404, detail="This import had no unresolved rows")
+
+    csv_text = imp.rejected_rows_csv(rejected.get("headers") or [], rows_out)
+    return PlainTextResponse(csv_text, media_type="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="unresolved-job-{job_id}.csv"'})

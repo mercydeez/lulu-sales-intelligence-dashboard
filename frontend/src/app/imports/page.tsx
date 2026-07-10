@@ -14,8 +14,84 @@ interface Field { key: string; required: boolean; kind: string; hint: string; }
 interface SchemaT { import_type: string; target: string; fields: Field[]; }
 interface ValidationSummary { total: number; valid: number; errors: number; error_fields?: number; }
 interface RowError { row: number; field: string; message: string; }
+
+// E1-5 — the file's own report card. The product admits what it can't see.
+interface Scorecard {
+  completeness_pct: number; uniqueness_pct: number; continuity_pct: number;
+  plausibility_pct: number; overall_pct: number; grade: string;
+  anomalies_are_warnings: boolean;
+}
+interface Quality {
+  scorecard: Scorecard;
+  missing_days_count: number;
+  missing_days: { store: string; from: string; to: string; missing_count: number; missing: string[] }[];
+  duplicate_keys_count: number;
+  duplicate_keys: { store: string; item: string; date: string; occurrences: number; rows: number[] }[];
+  unit_anomalies_count: number;
+  unit_anomalies: { row: number; store: string; item: string; date: string; units: number; median_units: number; z: number }[];
+  rejected_row_count?: number;
+}
+
+const GRADE_TONE: Record<string, BadgeVariant> = {
+  A: 'success', B: 'success', C: 'amber', D: 'amber', F: 'danger',
+};
+
+function QualityScorecard({ quality }: { quality: Quality }) {
+  const s = quality.scorecard;
+  const metric = (label: string, pct: number, hint: string) => (
+    <div key={label} className="rounded-lg bg-surface-2/60 p-3">
+      <div className="text-[11px] font-mono uppercase tracking-wide text-ink-muted">{label}</div>
+      <div className="text-lg font-semibold text-ink tabular-nums">{pct}%</div>
+      <div className="text-[11px] text-ink-muted">{hint}</div>
+    </div>
+  );
+
+  return (
+    <div className="mt-4 border-t border-line/60 pt-4">
+      <div className="flex items-center gap-2 mb-3">
+        <h4 className="text-sm font-semibold text-ink-soft uppercase tracking-wide">Data quality</h4>
+        <Badge variant={GRADE_TONE[s.grade] ?? 'amber'}>Grade {s.grade} · {s.overall_pct}%</Badge>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+        {metric('Completeness', s.completeness_pct, 'rows that validated')}
+        {metric('Uniqueness', s.uniqueness_pct, 'no double-counted keys')}
+        {metric('Continuity', s.continuity_pct, 'no gaps in the covered range')}
+        {metric('Plausibility', s.plausibility_pct, 'no unexplained spikes')}
+      </div>
+
+      <ul className="text-xs text-ink-soft space-y-1">
+        {quality.missing_days_count > 0 && (
+          <li>
+            <span className="text-amber-600">{quality.missing_days_count} missing day(s)</span>
+            {' '}inside the range your file covers — e.g.{' '}
+            {quality.missing_days[0]?.store}: {quality.missing_days[0]?.missing.slice(0, 3).join(', ')}
+          </li>
+        )}
+        {quality.duplicate_keys_count > 0 && (
+          <li>
+            <span className="text-rose-500">{quality.duplicate_keys_count} duplicate (store, product, date) key(s)</span>
+            {' '}— these would double-count revenue if imported.
+          </li>
+        )}
+        {quality.unit_anomalies_count > 0 && (
+          <li>
+            <span className="text-amber-600">{quality.unit_anomalies_count} unusual unit value(s)</span>
+            {' '}— a warning, not a rejection. These rows still import.
+          </li>
+        )}
+        {quality.missing_days_count === 0 && quality.duplicate_keys_count === 0
+          && quality.unit_anomalies_count === 0 && (
+          <li className="text-teal-700">No gaps, duplicates or unit anomalies found.</li>
+        )}
+      </ul>
+    </div>
+  );
+}
 interface Job { id: number; import_type: string; status: string; total_rows: number;
-  imported_rows: number; skipped_rows: number; error_rows: number; created_at: string | null; }
+  imported_rows: number; skipped_rows: number; error_rows: number; created_at: string | null;
+  // E1-5 — the list carries enough to offer the download without shipping the payload.
+  rejected_rows?: number; scorecard?: Scorecard | null; }
 
 const TYPE_LABEL: Record<string, string> = {
   stores: 'Stores', items: 'Products / SKUs', sales: 'Sales history',
@@ -52,7 +128,10 @@ export default function ImportsPage() {
   const [sample, setSample] = useState<Record<string, string>[]>([]);
   const [rowCount, setRowCount] = useState(0);
   const [mapping, setMapping] = useState<Record<string, string>>({});
-  const [validation, setValidation] = useState<{ summary: ValidationSummary; errors: RowError[] } | null>(null);
+  const [validation, setValidation] = useState<{ summary: ValidationSummary; errors: RowError[]; quality?: Quality } | null>(null);
+  // E1-5: what the finished import produced — so the done card can offer the
+  // unresolved-rows download and show the same scorecard the preview showed.
+  const [lastJob, setLastJob] = useState<{ id: number; rejected: number; quality?: Quality } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const schema = schemas.find((s) => s.import_type === importType);
@@ -129,9 +208,10 @@ export default function ImportsPage() {
   const commit = async () => {
     setBusy(true);
     try {
-      const res = await apiPost<{ imported: number; skipped: number }>(
+      const res = await apiPost<{ job_id: number; imported: number; skipped: number; quality?: Quality }>(
         '/api/imports/commit', { import_type: importType, mapping, ...sourceBody(), filename });
       show(`Imported ${res.imported} row(s)${res.skipped ? `, skipped ${res.skipped}` : ''}`, { variant: 'success' });
+      setLastJob({ id: res.job_id, rejected: res.quality?.rejected_row_count ?? 0, quality: res.quality });
       setStep('done');
       await loadMeta();
     } catch (e) {
@@ -139,7 +219,22 @@ export default function ImportsPage() {
     } finally { setBusy(false); }
   };
 
-  const reset = () => { setStep('upload'); setCsvText(''); setFileB64(''); setFilename(''); setHeaders([]); setSample([]); setValidation(null); };
+  const reset = () => { setStep('upload'); setCsvText(''); setFileB64(''); setFilename(''); setHeaders([]); setSample([]); setValidation(null); setLastJob(null); };
+
+  /** The rows we couldn't use — the operator's own columns plus why (E1-5). */
+  const downloadUnresolved = async (jobId: number) => {
+    try {
+      const { authFetch } = (await import('@/lib/apiClient'));
+      const res = await authFetch(`/api/imports/${jobId}/unresolved.csv`);
+      if (!res.ok) { show('No unresolved rows for that import', { variant: 'error' }); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `unresolved-job-${jobId}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch { /* ignore */ }
+  };
 
   const downloadSample = async (format: 'csv' | 'xlsx' = 'csv') => {
     try {
@@ -267,6 +362,7 @@ export default function ImportsPage() {
                     ))}
                   </ul>
                 )}
+                {validation.quality && <QualityScorecard quality={validation.quality} />}
               </Card>
             )}
 
@@ -281,11 +377,32 @@ export default function ImportsPage() {
         )}
 
         {step === 'done' && (
-          <Card padding="lg" className="text-center">
-            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-3" />
-            <h3 className="text-lg font-semibold text-ink">Import complete</h3>
-            <p className="text-sm text-ink-muted mt-1 mb-4">Your data is live. See the Value screen for the impact in AED.</p>
-            <Button onClick={reset}>Import another file</Button>
+          <Card padding="lg">
+            <div className="text-center">
+              <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-3" />
+              <h3 className="text-lg font-semibold text-ink">Import complete</h3>
+              <p className="text-sm text-ink-muted mt-1 mb-4">Your data is live. See the Value screen for the impact in AED.</p>
+            </div>
+
+            {lastJob?.quality && <QualityScorecard quality={lastJob.quality} />}
+
+            {/* A silent skip is a lie of omission — say how many rows we couldn't
+                use, and hand them back so they can be fixed and re-uploaded. */}
+            {!!lastJob && lastJob.rejected > 0 && (
+              <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                We couldn&apos;t use {lastJob.rejected} row(s). Download them, fix the reason
+                shown on each line, and re-upload just that file.
+              </div>
+            )}
+
+            <div className="flex items-center justify-center gap-2 flex-wrap mt-4">
+              {!!lastJob && lastJob.rejected > 0 && (
+                <Button variant="secondary" onClick={() => downloadUnresolved(lastJob.id)}>
+                  <AlertTriangle className="w-4 h-4 me-1.5" /> Download unresolved rows
+                </Button>
+              )}
+              <Button onClick={reset}>Import another file</Button>
+            </div>
           </Card>
         )}
 
@@ -304,7 +421,17 @@ export default function ImportsPage() {
                       {j.created_at ? ` · ${new Date(j.created_at).toLocaleString()}` : ''}
                     </p>
                   </div>
-                  <Badge variant={JOB_TONE[j.status] ?? 'neutral'}>{j.status}</Badge>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!!j.scorecard?.grade && (
+                      <Badge variant={GRADE_TONE[j.scorecard.grade] ?? 'amber'}>Grade {j.scorecard.grade}</Badge>
+                    )}
+                    {!!j.rejected_rows && (
+                      <Button variant="secondary" size="sm" onClick={() => downloadUnresolved(j.id)}>
+                        {j.rejected_rows} unresolved
+                      </Button>
+                    )}
+                    <Badge variant={JOB_TONE[j.status] ?? 'neutral'}>{j.status}</Badge>
+                  </div>
                 </div>
               ))}
             </div>
