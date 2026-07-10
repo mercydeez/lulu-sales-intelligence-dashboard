@@ -2,7 +2,7 @@
 Stream API Routes - SSE Streaming and Latest Data
 Matches README: GET /stream/sales, GET /api/latest, GET /stream/alerts
 """
-from fastapi import APIRouter, Request, Depends, Query
+from fastapi import APIRouter, Request, Depends, Query, HTTPException
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -150,25 +150,40 @@ async def generate_returns(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Generate bulk return records immediately for visibility in charts.
-    This creates immediate return data that will show in all return graphs.
+    Generate bulk SYNTHETIC return records for visibility in charts. Demo only.
+
+    This is the second synthetic writer besides `services/data_generator.py`, and it
+    is reachable by any authenticated user. Under E0-8 it must obey the same rules:
+    demo mode only, demo tenant's stores/items only, every row stamped `is_synthetic`.
+    (It previously selected stores/items with no tenant filter at all, so a user of one
+    tenant could inject fabricated returns onto another tenant's stores.)
     """
     import random
     import uuid
     from datetime import date, timedelta, datetime as _datetime
     from app.models.sales import SalesStreamRaw, STREAM_ID_OFFSET
     from app.services.redis_client import publish_sale
-    
-    # Get stores and items
-    stores_result = await db.execute(select(Store))
+    from app.config import get_settings
+
+    settings = get_settings()
+    if not (settings.demo_mode and settings.live_generator_enabled):
+        raise HTTPException(
+            status_code=403,
+            detail="Synthetic returns can only be generated in demo mode.",
+        )
+
+    demo_tenant = settings.demo_tenant_id
+
+    # Scope to the demo tenant — never another tenant's stores/items.
+    stores_result = await db.execute(select(Store).where(Store.tenant_id == demo_tenant))
     stores = list(stores_result.scalars().all())
-    
-    items_result = await db.execute(select(Item))
+
+    items_result = await db.execute(select(Item).where(Item.tenant_id == demo_tenant))
     items = list(items_result.scalars().all())
-    
+
     if not stores or not items:
         return {"error": "No stores or items found", "generated": 0}
-    
+
     generated_returns = []
     today = date.today()
     
@@ -191,6 +206,8 @@ async def generate_returns(
             store_id=store.id,
             item_id=item.id,
             sales=return_value,
+            tenant_id=demo_tenant,
+            is_synthetic=True,
         )
 
         db.add(sale)
@@ -206,6 +223,8 @@ async def generate_returns(
             'category': item.category,
             'sales': sale.sales,
             'is_streaming': True,
+            'tenant_id': demo_tenant,
+            'is_synthetic': True,
             'created_at': sale.created_at.isoformat() if sale.created_at else datetime.now().isoformat(),
             'timestamp': return_ts.isoformat(),
             'transaction_type': 'return',

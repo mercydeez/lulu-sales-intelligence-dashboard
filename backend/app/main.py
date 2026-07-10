@@ -13,6 +13,7 @@ from app.config import get_settings, logger
 from app.services.database import init_db, close_db
 from app.services.redis_client import init_redis, close_redis
 from app.services.data_generator import DataGenerator
+from app.services.demo_reset import run_demo_reset_loop
 from app.services.employee_seeder import initialize_employee_system
 from app.services.migration_runner import run_migrations
 from app.services.db_seeder import run_seed
@@ -120,22 +121,50 @@ async def lifespan(app: FastAPI):
     # ── Background tasks — gated; only started tasks are tracked/cancelled. ──
     started_tasks: list[tuple[str, asyncio.Task]] = []
 
-    # The synthetic generator writes fake sales — DEMO ONLY.
+    def _track(name: str, coro) -> None:
+        """Start a background task and make sure a crash is loud, not silent.
+
+        Without the callback a task that raises (e.g. the generator refusing an
+        empty demo-tenant scope) fails invisibly until shutdown re-raises it.
+        """
+        task = asyncio.create_task(coro)
+
+        def _on_done(t: asyncio.Task) -> None:
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc is not None:
+                logger.error(f"Background task '{name}' failed: {exc!r}")
+
+        task.add_done_callback(_on_done)
+        started_tasks.append((name, task))
+
+    # The synthetic generator writes fake sales — DEMO ONLY. It self-confines to
+    # settings.demo_tenant_id and refuses to start if that tenant owns no stores
+    # (E0-8); migration 057 enforces the same rule in Postgres.
     if settings.demo_mode and settings.live_generator_enabled:
         generator = DataGenerator()
-        started_tasks.append(("data_generator", asyncio.create_task(generator.start())))
-        logger.info("Data generator started (DEMO_MODE + LIVE_GENERATOR_ENABLED)")
+        _track("data_generator", generator.start())
+        logger.info(
+            "Data generator started (DEMO_MODE + LIVE_GENERATOR_ENABLED), "
+            f"confined to tenant {settings.demo_tenant_id}"
+        )
     else:
         logger.info("Data generator NOT started (demo/live-generator disabled)")
 
+    # Nightly wipe of the generator's output so the demo never drifts (E0-8).
+    if settings.demo_mode and settings.demo_reset_enabled:
+        _track("demo_reset", run_demo_reset_loop())
+        logger.info(f"Demo reset loop started (nightly at {settings.demo_reset_hour_utc}:00 UTC)")
+
     if settings.run_cache_warmer:
-        started_tasks.append(("cache_warmer", asyncio.create_task(run_cache_warmer())))
+        _track("cache_warmer", run_cache_warmer())
         logger.info("Cache warmer started")
     else:
         logger.info("Cache warmer disabled (RUN_CACHE_WARMER=false)")
 
     if settings.run_forecast_trainer:
-        started_tasks.append(("forecast_trainer", asyncio.create_task(run_forecast_trainer())))
+        _track("forecast_trainer", run_forecast_trainer())
         logger.info("Forecast trainer started")
     else:
         logger.info("Forecast trainer disabled (RUN_FORECAST_TRAINER=false)")
@@ -152,6 +181,10 @@ async def lifespan(app: FastAPI):
         try:
             await t
         except asyncio.CancelledError:
+            pass
+        except Exception:
+            # Already reported by _track's done-callback; a crashed background
+            # task must not derail the rest of shutdown.
             pass
     await close_db()  # disposes the owner engine AND the RLS engine if present
     await close_redis()

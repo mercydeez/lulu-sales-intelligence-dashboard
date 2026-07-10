@@ -203,6 +203,18 @@ class Settings(BaseSettings):
     live_generator_enabled: Optional[bool] = None  # run the synthetic sale generator
     allow_demo_users: Optional[bool] = None        # seed/permit demo logins
 
+    # E0-8: the ONE tenant synthetic data may touch. The generator scopes every
+    # store/item lookup to it, stamps it on each row, and migration 057's trigger
+    # rejects any synthetic row carrying a different tenant_id. Keep in sync with
+    # the `demo` tenant seeded by migration 010.
+    demo_tenant_id: int = 1
+    # Nightly wipe of generated sales so the demo never drifts into a fake all-time
+    # high. Rows younger than the retention window survive so the live stream stays
+    # populated right after a reset.
+    demo_reset_enabled: Optional[bool] = None
+    demo_reset_hour_utc: int = 22               # 02:00 Asia/Dubai (UTC+4)
+    demo_reset_retain_hours: int = 48
+
     # One-shot / background work run from the API lifespan. In production these
     # belong in dedicated processes (backend/app/commands/*), so in a real prod
     # (demo_mode off) they resolve off and validate_security() rejects
@@ -316,6 +328,8 @@ class Settings(BaseSettings):
         self.sample_data_enabled = auto(self.sample_data_enabled, True, self.demo_mode)
         self.live_generator_enabled = auto(self.live_generator_enabled, True, self.demo_mode)
         self.allow_demo_users = auto(self.allow_demo_users, True, False)
+        # Only ever resets the demo tenant, so it tracks demo_mode in both directions.
+        self.demo_reset_enabled = auto(self.demo_reset_enabled, self.demo_mode, self.demo_mode)
 
         # Startup work — on in dev for single-box convenience; in prod only under demo_mode.
         self.run_migrations_on_startup = auto(self.run_migrations_on_startup, True, self.demo_mode)
@@ -473,6 +487,16 @@ class Settings(BaseSettings):
             if is_prod:
                 raise RuntimeError(f"CRITICAL: {msg}")
             issues.append(f"WARNING: {msg}")
+
+        # --- The demo reset is destructive; it must never run outside demo mode ---
+        if self.demo_reset_enabled and not self.demo_mode:
+            msg = "DEMO_RESET_ENABLED requires DEMO_MODE=true — it deletes generated sales."
+            if is_prod:
+                raise RuntimeError(f"CRITICAL: {msg}")
+            issues.append(f"WARNING: {msg}")
+
+        if self.demo_tenant_id < 1:
+            raise RuntimeError("CRITICAL: DEMO_TENANT_ID must be a positive tenant id.")
 
         # --- Sample data requires demo mode ---
         if self.sample_data_enabled and not self.demo_mode:

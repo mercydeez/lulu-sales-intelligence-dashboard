@@ -573,6 +573,46 @@ Closes the audit's "no automated backup/restore test exists — disqualifying" g
 - **Residual (per-deploy ops, not code):** set `BACKUP_S3_URL`/managed snapshots on the live deploy;
   run + log the first quarterly live drill against the real pilot DB.
 
+### E0-6 — Cache is authorization-scoped, not just user-scoped ✅ done
+The response cache in `lib/apiClient.ts` was keyed on `user.id` alone. The backend scopes every
+response by **(tenant, role, accessible stores/regions)** — all of which can change while `user.id`
+stays constant (a role switch, a tenant switch, a permission grant/revoke). The cache would then
+serve the privileged answer to the narrower question. A live data-leak bug, not a theoretical one.
+- ✅ Key is now a fingerprint of the whole authorization scope: `id|tenant|role|stores|regions`.
+  Store/region lists are sorted, so the same scope in a different order still hits cache.
+- ✅ Second layer: the cache **flushes on identity change**, so a *revert* to a previous role starts
+  cold rather than replaying entries cached before the permission change that prompted the switch.
+- ✅ Third: a response is cached only if the scope that keyed the request is still live at write
+  time — a 401-refresh handing back a different role mid-flight can't poison the cache.
+- ✅ `apiClient.cache.test.ts` (9) proves it, **and was verified to fail 5/9 against the old
+  user-id-only key** — the tests catch the actual bug rather than just describing the fix.
+- Note: built on the existing hand-rolled cache rather than adopting TanStack Query. The blueprint
+  named TanStack as the means; the acceptance criterion was the leak. Adopting TanStack is now a
+  pure refactor with a regression test already in place.
+
+### E0-8 — Synthetic sales confined to the demo tenant ✅ done
+`data_generator.py` had **zero tenant awareness**: it picked `store_id = random.randint(1, 10)` and
+never set `tenant_id`, so rows landed on tenant 1 only because `sales_stream_raw.tenant_id` carries
+`DEFAULT 1`. Nothing enforced it. Once a real tenant is provisioned those id ranges stop meaning what
+the generator assumed, and any writer passing an explicit tenant_id fabricates revenue inside a
+paying customer's numbers.
+- ✅ **Three independent layers**, because a process-level flag is not a row-level guarantee:
+  1. config — `validate_security()` already refused the generator outside `DEMO_MODE`; it now also
+     refuses `DEMO_RESET_ENABLED` outside it and rejects a non-positive `DEMO_TENANT_ID`.
+  2. generator — loads the demo tenant's **actual** store/item ids (`_load_tenant_scope`), refuses to
+     start if that tenant owns none, refuses to build a row outside that scope, and stamps
+     `tenant_id` + `is_synthetic=True` on every insert.
+  3. postgres — migration `057_krishna_demo_tenant_guard.sql` adds `sales_stream_raw.is_synthetic`
+     and a BEFORE INSERT/UPDATE trigger that **raises** if a synthetic row carries any tenant_id but
+     the demo tenant's. This is the layer that actually holds; 1 and 2 a future writer can bypass.
+- ✅ **Nightly reset**: `services/demo_reset.py` deletes synthetic rows older than
+  `DEMO_RESET_RETAIN_HOURS` (default 48), scheduled from the lifespan at `DEMO_RESET_HOUR_UTC`
+  (22:00 UTC = 02:00 Asia/Dubai). It re-verifies the target tenant is slugged `demo` **in the DB**
+  before deleting, and only ever touches rows the generator marked `is_synthetic`.
+- ✅ Manual path: `python -m app.commands.demo_reset [--retain-hours N]`.
+- ✅ `test_demo_tenant_guard.py` (12) covers both Python layers; the trigger is exercised by the
+  `migrations` CI job against a real database.
+
 ## Deferred (needs a decision or an external service)
 - **Billing** — Stripe/Telr subscriptions + metering (maps onto `tenants.plan` + API-key metering).
 - **Notifications** — WhatsApp/email/Slack (Twilio/Resend/Slack); the worker's webhook dispatcher

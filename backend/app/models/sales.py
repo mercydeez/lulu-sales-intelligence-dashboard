@@ -83,17 +83,24 @@ class SalesHistorical(Base):
 
 
 class SalesStreamRaw(Base):
-    """Streaming sales data - append-only with UUID deduplication"""
+    """Streaming sales data - append-only with UUID deduplication.
+
+    `is_synthetic` marks rows fabricated by the demo generator. Migration 057
+    enforces at the DB level that a synthetic row may only carry the demo
+    tenant's id, so a generator bug cannot inflate a real tenant's revenue.
+    """
     __tablename__ = "sales_stream_raw"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     event_id = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     store_id = Column(Integer, ForeignKey("stores.id"), nullable=False)
     item_id = Column(Integer, ForeignKey("items.id"), nullable=False)
     sales = Column(Integer, nullable=False)
+    tenant_id = Column(Integer, nullable=False, default=1)
+    is_synthetic = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     store = relationship("Store", back_populates="streaming_sales")
     item = relationship("Item", back_populates="streaming_sales")
 

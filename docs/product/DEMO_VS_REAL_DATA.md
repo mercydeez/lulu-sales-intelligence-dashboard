@@ -17,7 +17,8 @@
 2. **Units ≠ AED.** Volume metrics are in units; value metrics are in AED (derived). Never mixed on one axis. (See CLAUDE.md "Units vs currency" trap and `routes/kpis.py` as the reference implementation.)
 3. **Derived ≠ captured.** AED revenue is derived from a price table, not captured at a point of sale. Phrase it as derived/estimated.
 4. **Demo data is opt-in in production.** Synthetic seed + generator only run when `DEMO_MODE=true` (and the generator additionally requires `LIVE_GENERATOR_ENABLED=true`). A real-tenant production deployment shows real or empty data — never auto-generated synthetic sales.
-5. **Disclosure travels with the answer.** When Sage answers from demo data, the answer says so. When data is stale, freshness is shown.
+5. **Synthetic writes are confined to the demo tenant, by the database.** Every generated sale is stamped `tenant_id = DEMO_TENANT_ID` and `is_synthetic = true`, and migration 057's trigger on `sales_stream_raw` *rejects* a synthetic row carrying any other tenant_id. The `DEMO_MODE` flag is a process-level intent; the trigger is the guarantee. The generator additionally draws only store/item ids that the demo tenant actually owns, and refuses to start if it owns none. Generated rows are wiped nightly (`DEMO_RESET_HOUR_UTC`, retaining `DEMO_RESET_RETAIN_HOURS`) so the demo never drifts into a fabricated all-time high.
+6. **Disclosure travels with the answer.** When Sage answers from demo data, the answer says so. When data is stale, freshness is shown.
 
 ## Current state (be honest)
 
