@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.database import get_db
 from app.services.briefing import generate_briefing, build_briefing_html
+from app.services.cache import get_cached, set_cached, generate_cache_key
 from app.routes.auth import get_current_user, get_accessible_store_ids
 
 router = APIRouter(tags=["Briefing"])
@@ -23,10 +24,19 @@ router = APIRouter(tags=["Briefing"])
 async def get_briefing(user: dict = Depends(get_current_user),
                        db: AsyncSession = Depends(get_db)):
     """The daily executive briefing: headline movement, what changed, what to
-    decide, the win, what's coming, and the cost of inaction — all in AED."""
+    decide, the win, what's coming, and the cost of inaction — all in AED.
+    Cached 60s per (tenant, store-scope, role): the brief is assembled from
+    minute-scale aggregates, and the home tab should paint in ms."""
     tenant_id = user.get("tenant_id") or 1
     allowed = get_accessible_store_ids(user)
-    return await generate_briefing(db, tenant_id, allowed)
+    key = generate_cache_key(
+        "briefing", stores=sorted(allowed or []), role=user.get("role") or "")
+    cached = await get_cached(key)
+    if cached is not None:
+        return cached
+    result = await generate_briefing(db, tenant_id, allowed)
+    await set_cached(key, result, 60)
+    return result
 
 
 @router.get("/print")

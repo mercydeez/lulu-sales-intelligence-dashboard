@@ -418,9 +418,27 @@ async def get_analytics_summary(
 ):
     """
     Get comprehensive analytics summary for executive dashboard.
+    Four full-history aggregate scans live below (~1s cold) — served through
+    the tenant-scoped cache with the caller's store scope + role folded into
+    the key, so the analytics tab paints in ms and a cached payload can never
+    be served across differently-scoped users (same doctrine as the RAG
+    answer cache, services/rag/cache.py).
     """
     allowed_stores = get_accessible_store_ids(current_user)
-    
+    key = generate_cache_key(
+        "analytics_summary",
+        stores=sorted(allowed_stores or []),
+        role=current_user.get("role") or "",
+    )
+    cached = await get_cached(key)
+    if cached is not None:
+        return cached
+    result = await _compute_analytics_summary(db, allowed_stores)
+    await set_cached(key, result, CACHE_TTL['analytics'])
+    return result
+
+
+async def _compute_analytics_summary(db: AsyncSession, allowed_stores):
     # Get sales trend (last 30 days)
     trend_query = select(
         Sale.date,
