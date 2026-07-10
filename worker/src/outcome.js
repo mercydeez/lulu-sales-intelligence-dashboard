@@ -9,10 +9,27 @@ export function entityKey(rule, entityType, entityId) {
   return `${rule}:${entityType ?? "global"}:${entityId ?? "all"}`;
 }
 
-// Rules whose metric is "higher = worse" (returns / return-rate spikes). The rest
-// (revenue drop, category slump, laggard growth) are "lower = worse". Used only to
-// decide unchanged vs worsened while a finding is STILL firing.
-const HIGHER_IS_WORSE = new Set(["return_spike", "high_return_rate"]);
+// Rules whose metric is "higher = worse" (returns / return-rate spikes, and the
+// E3-5 rules whose metric_value counts damage upward). The rest — revenue drop,
+// category slump, laggard growth, category share shift, price margin ratio — are
+// "lower = worse". Used only to decide unchanged vs worsened while a finding is
+// STILL firing.
+//
+// Getting a rule's side wrong INVERTS its outcome: a supplier going from 3 days
+// late to 14 would be reported as "improved". Every new rule must be classified
+// here deliberately, and measure.test.js pins each one.
+const HIGHER_IS_WORSE = new Set([
+  "return_spike",
+  "high_return_rate",
+  // E3-5:
+  "stockout",            // faster-selling item out of stock = worse
+  "dead_stock_growth",   // growth ratio climbing = worse
+  "forecast_miss",       // WAPE climbing = worse
+  "supplier_late",       // more days overdue = worse
+  "zero_sales_sku",      // more AED stranded on the shelf = worse
+  // NOT here (lower = worse): price_anomaly (margin ratio; negative is worst),
+  // category_share_shift (percentage points; more negative is worst).
+]);
 
 // Given the at-detection metric (`before`) and the current metric (`after`, or null
 // when the rule no longer fires), classify the outcome:

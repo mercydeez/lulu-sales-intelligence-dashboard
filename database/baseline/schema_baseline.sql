@@ -1552,6 +1552,43 @@ CREATE VIEW public.metric_category_return_rate WITH (security_invoker='true') AS
     avg(r.rate) OVER (PARTITION BY r.tenant_id) AS mean_rate
    FROM r;
 
+CREATE VIEW public.metric_category_share WITH (security_invoker='true') AS
+ WITH windows AS (
+         SELECT metric_sales_fact.tenant_id,
+            metric_sales_fact.category,
+            COALESCE(sum(metric_sales_fact.revenue_aed) FILTER (WHERE (metric_sales_fact.date >= (CURRENT_DATE - '7 days'::interval))), (0)::numeric) AS rev_recent,
+            COALESCE(sum(metric_sales_fact.revenue_aed) FILTER (WHERE ((metric_sales_fact.date >= (CURRENT_DATE - '14 days'::interval)) AND (metric_sales_fact.date < (CURRENT_DATE - '7 days'::interval)))), (0)::numeric) AS rev_prior
+           FROM public.metric_sales_fact
+          WHERE ((metric_sales_fact.date >= (CURRENT_DATE - '14 days'::interval)) AND (metric_sales_fact.category IS NOT NULL))
+          GROUP BY metric_sales_fact.tenant_id, metric_sales_fact.category
+        ), totals AS (
+         SELECT windows.tenant_id,
+            sum(windows.rev_recent) AS tot_recent,
+            sum(windows.rev_prior) AS tot_prior
+           FROM windows
+          GROUP BY windows.tenant_id
+        )
+ SELECT w.tenant_id,
+    w.category,
+    w.rev_recent,
+    w.rev_prior,
+        CASE
+            WHEN (t.tot_recent > (0)::numeric) THEN round((w.rev_recent / t.tot_recent), 4)
+            ELSE NULL::numeric
+        END AS share_recent,
+        CASE
+            WHEN (t.tot_prior > (0)::numeric) THEN round((w.rev_prior / t.tot_prior), 4)
+            ELSE NULL::numeric
+        END AS share_prior,
+        CASE
+            WHEN ((t.tot_recent > (0)::numeric) AND (t.tot_prior > (0)::numeric)) THEN round((((w.rev_recent / t.tot_recent) - (w.rev_prior / t.tot_prior)) * (100)::numeric), 2)
+            ELSE NULL::numeric
+        END AS shift_pp
+   FROM (windows w
+     JOIN totals t ON ((t.tenant_id = w.tenant_id)));
+
+COMMENT ON VIEW public.metric_category_share IS 'E3-5: share of chain revenue, recent 7d vs prior 7d, in percentage POINTS (shift_pp). A category can grow in AED and still lose share.';
+
 CREATE VIEW public.metric_category_wow WITH (security_invoker='true') AS
  WITH per_cat AS (
          SELECT metric_sales_fact.tenant_id,
@@ -1567,6 +1604,83 @@ CREATE VIEW public.metric_category_wow WITH (security_invoker='true') AS
     per_cat.rev_prior,
     ((per_cat.rev_recent - per_cat.rev_prior) / NULLIF(per_cat.rev_prior, (0)::numeric)) AS change
    FROM per_cat;
+
+CREATE VIEW public.metric_inventory_state WITH (security_invoker='true') AS
+ SELECT st.tenant_id,
+    inv.store_id,
+    st.name AS store_name,
+    inv.item_id,
+    it.name AS item_name,
+    it.category,
+    inv.current_stock,
+    inv.reorder_point,
+    inv.average_daily_sales,
+    inv.last_sale_date,
+    ((inv.current_stock)::numeric * it.unit_price_aed) AS stock_retail_aed,
+    (CURRENT_DATE - inv.last_sale_date) AS days_since_last_sale,
+    (inv.current_stock <= 0) AS is_out_of_stock,
+    ((inv.current_stock > 0) AND (inv.current_stock <= inv.reorder_point)) AS is_below_reorder
+   FROM ((public.inventory inv
+     JOIN public.stores st ON ((st.id = inv.store_id)))
+     JOIN public.items it ON (((it.id = inv.item_id) AND (it.tenant_id = st.tenant_id))));
+
+COMMENT ON VIEW public.metric_inventory_state IS 'E3-5: current stock posture per store-item. There is no stock-level history, so a true stockout-days streak is not derivable — days_since_last_sale is what the data supports.';
+
+CREATE VIEW public.metric_dead_stock_growth WITH (security_invoker='true') AS
+ WITH sold AS (
+         SELECT metric_sales_fact.tenant_id,
+            metric_sales_fact.store_id,
+            metric_sales_fact.item_id,
+            sum(metric_sales_fact.units) FILTER (WHERE (metric_sales_fact.date >= (CURRENT_DATE - '30 days'::interval))) AS units_recent,
+            sum(metric_sales_fact.units) FILTER (WHERE ((metric_sales_fact.date >= (CURRENT_DATE - '60 days'::interval)) AND (metric_sales_fact.date < (CURRENT_DATE - '30 days'::interval)))) AS units_prior
+           FROM public.metric_sales_fact
+          WHERE (metric_sales_fact.date >= (CURRENT_DATE - '60 days'::interval))
+          GROUP BY metric_sales_fact.tenant_id, metric_sales_fact.store_id, metric_sales_fact.item_id
+        )
+ SELECT s.tenant_id,
+    count(*) FILTER (WHERE ((COALESCE(sold.units_recent, (0)::bigint) <= 0) AND (s.current_stock > 0))) AS dead_skus_recent,
+    count(*) FILTER (WHERE ((COALESCE(sold.units_prior, (0)::bigint) <= 0) AND (s.current_stock > 0))) AS dead_skus_prior,
+    COALESCE(sum(s.stock_retail_aed) FILTER (WHERE ((COALESCE(sold.units_recent, (0)::bigint) <= 0) AND (s.current_stock > 0))), (0)::numeric) AS dead_value_recent_aed,
+    COALESCE(sum(s.stock_retail_aed) FILTER (WHERE ((COALESCE(sold.units_prior, (0)::bigint) <= 0) AND (s.current_stock > 0))), (0)::numeric) AS dead_value_prior_aed
+   FROM (public.metric_inventory_state s
+     LEFT JOIN sold ON (((sold.tenant_id = s.tenant_id) AND (sold.store_id = s.store_id) AND (sold.item_id = s.item_id))))
+  GROUP BY s.tenant_id;
+
+CREATE VIEW public.metric_forecast_miss WITH (security_invoker='true') AS
+ WITH daily AS (
+         SELECT metric_sales_fact.tenant_id,
+            metric_sales_fact.store_id,
+            metric_sales_fact.date,
+            sum(metric_sales_fact.units) AS units
+           FROM public.metric_sales_fact
+          WHERE (metric_sales_fact.date >= (CURRENT_DATE - '21 days'::interval))
+          GROUP BY metric_sales_fact.tenant_id, metric_sales_fact.store_id, metric_sales_fact.date
+        ), paired AS (
+         SELECT d.tenant_id,
+            d.store_id,
+            d.date,
+            d.units AS actual,
+            b.units AS naive
+           FROM (daily d
+             JOIN daily b ON (((b.tenant_id = d.tenant_id) AND (b.store_id = d.store_id) AND (b.date = (d.date - 7)))))
+          WHERE (d.date >= (CURRENT_DATE - '7 days'::interval))
+        )
+ SELECT p.tenant_id,
+    p.store_id,
+    st.name AS store_name,
+    sum(p.actual) AS actual_units,
+    sum(p.naive) AS naive_units,
+    sum(abs((p.actual - p.naive))) AS abs_error_units,
+        CASE
+            WHEN (sum(p.actual) > (0)::numeric) THEN round((sum(abs((p.actual - p.naive))) / sum(p.actual)), 4)
+            ELSE NULL::numeric
+        END AS wape,
+    count(*) AS days_compared
+   FROM (paired p
+     JOIN public.stores st ON ((st.id = p.store_id)))
+  GROUP BY p.tenant_id, p.store_id, st.name;
+
+COMMENT ON VIEW public.metric_forecast_miss IS 'E3-5: WAPE of the last 7 days against the seasonal-naive (t-7) baseline the app publishes. wape is NULL, never 0, when there were no actual units to divide by.';
 
 CREATE VIEW public.metric_margin_fact WITH (security_invoker='true') AS
  SELECT s.tenant_id,
@@ -1586,6 +1700,28 @@ CREATE VIEW public.metric_margin_fact WITH (security_invoker='true') AS
      LEFT JOIN public.item_costs c ON (((c.tenant_id = s.tenant_id) AND (c.item_id = s.item_id) AND (s.date >= c.valid_from) AND ((c.valid_until IS NULL) OR (s.date < c.valid_until)))));
 
 COMMENT ON VIEW public.metric_margin_fact IS 'E2-3: point-in-time COGS + gross margin. cogs_aed/gross_margin_aed are NULL where no cost period covers the sale date — readers must surface `needs: cost`, not zero.';
+
+CREATE VIEW public.metric_price_anomaly WITH (security_invoker='true') AS
+ SELECT m.tenant_id,
+    m.item_id,
+    i.name AS item_name,
+    m.category,
+    sum(m.units) AS units_30d,
+    round(sum(m.revenue_aed), 2) AS revenue_30d_aed,
+    round(sum(m.cogs_aed), 2) AS cogs_30d_aed,
+    round(sum(m.gross_margin_aed), 2) AS margin_30d_aed,
+        CASE
+            WHEN (sum(m.revenue_aed) > (0)::numeric) THEN round((sum(m.gross_margin_aed) / sum(m.revenue_aed)), 4)
+            ELSE NULL::numeric
+        END AS margin_ratio,
+    max(m.unit_price_aed) AS unit_price_aed,
+    max(m.unit_cost_aed) AS unit_cost_aed
+   FROM (public.metric_margin_fact m
+     JOIN public.items i ON (((i.id = m.item_id) AND (i.tenant_id = m.tenant_id))))
+  WHERE ((m.date >= (CURRENT_DATE - '30 days'::interval)) AND (m.cogs_aed IS NOT NULL) AND (m.units > 0))
+  GROUP BY m.tenant_id, m.item_id, i.name, m.category;
+
+COMMENT ON VIEW public.metric_price_anomaly IS 'E3-5: 30d margin per item, only for items whose sales fall inside a cost period. Items without cost are ABSENT — never assume a missing row means a healthy margin.';
 
 CREATE VIEW public.metric_returns_wow WITH (security_invoker='true') AS
  WITH r AS (
@@ -1621,6 +1757,68 @@ CREATE VIEW public.metric_store_wow WITH (security_invoker='true') AS
     avg(((per_store.rev_recent - per_store.rev_prior) / NULLIF(per_store.rev_prior, (0)::numeric))) OVER (PARTITION BY per_store.tenant_id) AS chain_avg_change,
     (avg(((per_store.rev_recent - per_store.rev_prior) / NULLIF(per_store.rev_prior, (0)::numeric))) OVER (PARTITION BY per_store.tenant_id) - ((per_store.rev_recent - per_store.rev_prior) / NULLIF(per_store.rev_prior, (0)::numeric))) AS gap_pp
    FROM per_store;
+
+CREATE TABLE public.purchase_orders (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    supplier_id integer NOT NULL,
+    po_number character varying(40) NOT NULL,
+    status character varying(20) DEFAULT 'draft'::character varying NOT NULL,
+    total_amount numeric(14,2) DEFAULT 0 NOT NULL,
+    currency character varying(8) DEFAULT 'AED'::character varying NOT NULL,
+    source character varying(30) DEFAULT 'manual'::character varying NOT NULL,
+    notes text,
+    created_by integer,
+    approved_by integer,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    approved_at timestamp with time zone,
+    sent_at timestamp with time zone,
+    received_at timestamp with time zone
+);
+
+ALTER TABLE ONLY public.purchase_orders FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.suppliers (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    name character varying(200) NOT NULL,
+    contact_email character varying(255),
+    contact_phone character varying(40),
+    lead_time_days integer DEFAULT 7 NOT NULL,
+    status character varying(20) DEFAULT 'active'::character varying NOT NULL,
+    notes text,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE ONLY public.suppliers FORCE ROW LEVEL SECURITY;
+
+CREATE VIEW public.metric_supplier_overdue WITH (security_invoker='true') AS
+ SELECT po.tenant_id,
+    po.supplier_id,
+    sp.name AS supplier_name,
+    count(*) AS overdue_pos,
+    round(sum(po.total_amount), 2) AS overdue_value_aed,
+    max((CURRENT_DATE - ((po.sent_at)::date + COALESCE(sp.lead_time_days, 7)))) AS max_days_overdue,
+    round(avg((CURRENT_DATE - ((po.sent_at)::date + COALESCE(sp.lead_time_days, 7)))), 1) AS avg_days_overdue
+   FROM (public.purchase_orders po
+     JOIN public.suppliers sp ON ((sp.id = po.supplier_id)))
+  WHERE (((po.status)::text = ANY ((ARRAY['sent'::character varying, 'approved'::character varying])::text[])) AND (po.sent_at IS NOT NULL) AND (((po.sent_at)::date + COALESCE(sp.lead_time_days, 7)) < CURRENT_DATE))
+  GROUP BY po.tenant_id, po.supplier_id, sp.name;
+
+CREATE VIEW public.metric_zero_sales_sku WITH (security_invoker='true') AS
+ SELECT s.tenant_id,
+    s.store_id,
+    s.store_name,
+    s.item_id,
+    s.item_name,
+    s.category,
+    s.current_stock,
+    s.stock_retail_aed,
+    s.days_since_last_sale
+   FROM public.metric_inventory_state s
+  WHERE ((s.current_stock > 0) AND (NOT (EXISTS ( SELECT 1
+           FROM public.metric_sales_fact m
+          WHERE ((m.tenant_id = s.tenant_id) AND (m.store_id = s.store_id) AND (m.item_id = s.item_id) AND (m.date >= (CURRENT_DATE - '30 days'::interval)) AND (m.units > 0))))));
 
 CREATE MATERIALIZED VIEW public.mv_daily_sales_by_store AS
  SELECT sales_fact_view.date,
@@ -1925,26 +2123,6 @@ CREATE SEQUENCE public.purchase_order_lines_id_seq
     CACHE 1;
 
 ALTER SEQUENCE public.purchase_order_lines_id_seq OWNED BY public.purchase_order_lines.id;
-
-CREATE TABLE public.purchase_orders (
-    id integer NOT NULL,
-    tenant_id integer NOT NULL,
-    supplier_id integer NOT NULL,
-    po_number character varying(40) NOT NULL,
-    status character varying(20) DEFAULT 'draft'::character varying NOT NULL,
-    total_amount numeric(14,2) DEFAULT 0 NOT NULL,
-    currency character varying(8) DEFAULT 'AED'::character varying NOT NULL,
-    source character varying(30) DEFAULT 'manual'::character varying NOT NULL,
-    notes text,
-    created_by integer,
-    approved_by integer,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    approved_at timestamp with time zone,
-    sent_at timestamp with time zone,
-    received_at timestamp with time zone
-);
-
-ALTER TABLE ONLY public.purchase_orders FORCE ROW LEVEL SECURITY;
 
 CREATE SEQUENCE public.purchase_orders_id_seq
     AS integer
@@ -2491,20 +2669,6 @@ CREATE SEQUENCE public.supplier_invoices_id_seq
     CACHE 1;
 
 ALTER SEQUENCE public.supplier_invoices_id_seq OWNED BY public.supplier_invoices.id;
-
-CREATE TABLE public.suppliers (
-    id integer NOT NULL,
-    tenant_id integer NOT NULL,
-    name character varying(200) NOT NULL,
-    contact_email character varying(255),
-    contact_phone character varying(40),
-    lead_time_days integer DEFAULT 7 NOT NULL,
-    status character varying(20) DEFAULT 'active'::character varying NOT NULL,
-    notes text,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
-);
-
-ALTER TABLE ONLY public.suppliers FORCE ROW LEVEL SECURITY;
 
 CREATE SEQUENCE public.suppliers_id_seq
     AS integer
