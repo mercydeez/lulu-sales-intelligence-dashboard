@@ -2,7 +2,7 @@
 Monitoring Routes
 Provides endpoints for metrics, health checks, and system status.
 """
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Response, HTTPException
 from datetime import datetime
 from typing import Dict, Any
 
@@ -209,6 +209,22 @@ async def public_status() -> Dict[str, Any]:
             await cache_set(cache_key, payload, expire=60)
         except Exception:
             pass
+    return payload
+
+
+@router.get("/residency")
+async def data_residency() -> Dict[str, Any]:
+    """Public data-residency posture (E5-3) for a `/trust`-style page. Reports the
+    configured region, backup region, cross-border policy, external-AI caveat, and
+    log retention — region ids + booleans only, NO secrets. Honest: it reports
+    exactly what the operator configured, never an unbacked compliance claim.
+    Returns 404 when the operator has disabled the public statement."""
+    s = get_settings()
+    if not getattr(s, "data_residency_statement_enabled", True):
+        raise HTTPException(status_code=404, detail="residency_statement_disabled")
+    from app.services.data_residency import residency_posture
+    payload = residency_posture(s)
+    payload["checked_at"] = datetime.utcnow().isoformat() + "Z"
     return payload
 
 

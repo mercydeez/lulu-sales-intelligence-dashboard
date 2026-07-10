@@ -265,6 +265,19 @@ class Settings(BaseSettings):
     scim_allow_reactivation: bool = True        # allow active:false -> true
     scim_audit_enabled: bool = True             # record SCIM security events
 
+    # --- E5-3 UAE data residency / region hosting (Krishna security) -------
+    # Where tenant data physically lives. `data_region` is a free-form region id
+    # (e.g. "me-central-1" AWS UAE, or "uae-north" Azure). When
+    # `data_residency_required` is true, production/staging boot FAILS unless the
+    # region matches the approved UAE list. See docs/runbooks/DATA_RESIDENCY.md.
+    data_region: str = ""                       # e.g. "me-central-1" | "uae-north"
+    data_residency_required: bool = False       # enforce UAE region at boot (prod)
+    approved_data_regions: str = "me-central-1,me-central,uae-north,uae-central,uae,ae"
+    backup_region: str = ""                      # region of the offsite backup target
+    cross_border_transfer_allowed: bool = False  # is any egress out of region permitted
+    log_retention_days: int = 30                 # documented retention for app/audit logs
+    data_residency_statement_enabled: bool = True  # expose the public /residency posture
+
     model_config = {"env_file": ".env", "case_sensitive": False}
 
     @model_validator(mode="after")
@@ -459,6 +472,36 @@ class Settings(BaseSettings):
             issues.append(
                 "WARNING: ENABLE_EXTERNAL_AI is true but no external AI key is configured."
             )
+
+        # --- E5-3 UAE data residency guardrails ---
+        if self.data_residency_required:
+            approved = [r.strip().lower() for r in self.approved_data_regions.split(",") if r.strip()]
+            region = (self.data_region or "").strip().lower()
+            region_ok = bool(region) and any(a in region for a in approved)
+            if is_prod and not region_ok:
+                raise RuntimeError(
+                    "CRITICAL: DATA_RESIDENCY_REQUIRED is set but DATA_REGION "
+                    f"('{self.data_region or 'unset'}') is not an approved UAE region "
+                    f"({self.approved_data_regions}). Set DATA_REGION or clear the requirement."
+                )
+            if not region_ok:
+                issues.append("WARNING: data residency required but DATA_REGION is not an approved UAE region.")
+            if self.backup_region:
+                b = self.backup_region.strip().lower()
+                if not any(a in b for a in approved):
+                    msg = f"BACKUP_REGION '{self.backup_region}' is outside the approved UAE region set."
+                    if is_prod:
+                        raise RuntimeError(f"CRITICAL: {msg}")
+                    issues.append(f"WARNING: {msg}")
+            if self.cross_border_transfer_allowed:
+                issues.append(
+                    "WARNING: CROSS_BORDER_TRANSFER_ALLOWED=true while data residency is required."
+                )
+            if self.enable_external_ai:
+                issues.append(
+                    "WARNING: ENABLE_EXTERNAL_AI=true may send tenant data OUT of the UAE "
+                    "region while data residency is required."
+                )
 
         return issues
 

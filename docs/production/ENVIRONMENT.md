@@ -110,3 +110,27 @@ Enterprise identity-lifecycle provisioning, OFF by default. Full setup + securit
 | `SCIM_DEACTIVATE_REVOKES_TOKENS` | bool | true | Revoke sessions on deactivate |
 | `SCIM_ALLOW_REACTIVATION` | bool | true | Allow `active:false` → `true` |
 | `SCIM_AUDIT_ENABLED` | bool | true | Record SCIM security events |
+
+## E5-3 UAE data residency / region hosting
+
+Where tenant data physically lives and the guardrail that enforces it at boot.
+Set `DATA_RESIDENCY_REQUIRED=true` on a B2G/UAE deployment: the API then **refuses
+to start** unless `DATA_REGION` is one of `APPROVED_DATA_REGIONS`
+(`app/config.py::validate_security`). The public posture is exposed, secret-free, at
+`GET /api/monitoring/residency` and summarised in `/health/deep` under
+`checks.data_residency` (informational — it never flips readiness). Full procedure,
+PDPL alignment, and the compliance evidence checklist: `docs/runbooks/DATA_RESIDENCY.md`.
+
+| Variable | Type | Default | Notes |
+|---|---|---|---|
+| `DATA_REGION` | str | "" | Region tenant data lives in (e.g. `me-central-1`, `uae-north`) |
+| `DATA_RESIDENCY_REQUIRED` | bool | false | Enforce an approved region at boot (set true in prod) |
+| `APPROVED_DATA_REGIONS` | str | `me-central-1,me-central,uae-north,uae-central,uae,ae` | Comma-separated approved region tokens (substring match, case-insensitive) |
+| `BACKUP_REGION` | str | "" | Region of the offsite backup target; warned if outside the approved set |
+| `CROSS_BORDER_TRANSFER_ALLOWED` | bool | false | Whether any egress out of region is permitted (keep false for residency) |
+| `LOG_RETENTION_DAYS` | int | 30 | Documented retention for app/audit logs |
+| `DATA_RESIDENCY_STATEMENT_ENABLED` | bool | true | Expose the public `/api/monitoring/residency` posture (404 when false) |
+
+> External AI (`ENABLE_EXTERNAL_AI=true`) sends prompts to a third-party LLM that may
+> process data outside the region — the posture reports this honestly as
+> `external_ai_may_leave_region`. Keep it off under a strict-residency contract.

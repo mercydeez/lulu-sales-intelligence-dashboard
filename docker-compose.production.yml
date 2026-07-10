@@ -160,6 +160,17 @@ services:
       WORKER_HEARTBEAT_STALE_SECONDS: ${WORKER_HEARTBEAT_STALE_SECONDS:-120}
       BACKUP_MANIFEST_PATH: ${BACKUP_MANIFEST_PATH:-/backups/latest.json}
       BACKUP_STALE_AFTER_HOURS: ${BACKUP_STALE_AFTER_HOURS:-30}
+      # E5-3 UAE data residency. When DATA_RESIDENCY_REQUIRED=true the API refuses
+      # to boot unless DATA_REGION is an approved UAE region (docs/runbooks/
+      # DATA_RESIDENCY.md). Deploy this compose on an in-country host (AWS
+      # me-central-1 / Azure UAE North) with in-region backups.
+      DATA_REGION: ${DATA_REGION:-}
+      DATA_RESIDENCY_REQUIRED: ${DATA_RESIDENCY_REQUIRED:-false}
+      APPROVED_DATA_REGIONS: ${APPROVED_DATA_REGIONS:-me-central-1,me-central,uae-north,uae-central,uae,ae}
+      BACKUP_REGION: ${BACKUP_REGION:-}
+      CROSS_BORDER_TRANSFER_ALLOWED: ${CROSS_BORDER_TRANSFER_ALLOWED:-false}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
+      DATA_RESIDENCY_STATEMENT_ENABLED: ${DATA_RESIDENCY_STATEMENT_ENABLED:-true}
     # Read-only view of the E0-1 backup volume so /health can report backup
     # freshness (it never writes backups).
     volumes:
@@ -286,6 +297,10 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
+      # E5-3 residency: keep the offsite bucket in the same UAE region as the data.
+      # Default to AWS_DEFAULT_REGION so a single AWS_DEFAULT_REGION=me-central-1
+      # keeps backups in-country. Reported by the residency posture as backup_region.
+      BACKUP_REGION: ${BACKUP_REGION:-${AWS_DEFAULT_REGION:-}}
       # Dead-man's-switch: pinged only on a verified success (wire to E0-2 monitor).
       BACKUP_HEARTBEAT_URL: ${BACKUP_HEARTBEAT_URL:-}
     # Best-effort install of aws-cli + curl for offsite/heartbeat; the scheduler

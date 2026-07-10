@@ -209,6 +209,15 @@ def check_backup(settings=None, now: Optional[datetime] = None) -> dict:
         return {**out, "status": "unknown"}
 
 
+def _residency_check(settings=None) -> dict:
+    """E5-3 residency posture for /health/deep. Lazy import to avoid any cycle."""
+    try:
+        from app.services.data_residency import residency_health_check
+        return residency_health_check(settings)
+    except Exception:
+        return {"status": "unknown"}
+
+
 def check_alerting(settings=None) -> dict:
     """Config-only alerting status. Imports lazily to avoid a heavy import at
     module load. NEVER includes the webhook URL."""
@@ -228,6 +237,7 @@ async def full_health(engine, redis, settings=None, now: Optional[datetime] = No
         "worker_heartbeat": await check_worker_heartbeat(redis, now, s.worker_heartbeat_stale_seconds),
         "backup": check_backup(s, now),
         "alerting": check_alerting(s),
+        "data_residency": _residency_check(s),
     }
     return {
         "status": aggregate_status(checks),
