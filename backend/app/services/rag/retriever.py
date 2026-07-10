@@ -99,11 +99,22 @@ async def search_documents(
             return []
 
         rows = (await s.execute(text("""
-            SELECT id, title, chunk_no, content
+            SELECT id, title, chunk_no, content, corpus, created_at
             FROM documents WHERE id = ANY(:ids)
         """), {"ids": fused_ids})).mappings().all()
     by_id = {r["id"]: dict(r) for r in rows}
-    return [by_id[i] for i in fused_ids if i in by_id]
+    # Arm membership feeds source-confidence scoring (rag/confidence.py):
+    # a chunk found by BOTH keyword and semantic arms is corroborated evidence.
+    fts_set, vec_set = set(fts_ids), set(vec_ids)
+    out = []
+    for i in fused_ids:
+        if i not in by_id:
+            continue
+        c = by_id[i]
+        c["in_fts"] = i in fts_set
+        c["in_vec"] = i in vec_set
+        out.append(c)
+    return out
 
 
 def _cite(c: dict) -> str:

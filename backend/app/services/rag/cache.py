@@ -66,12 +66,15 @@ async def answer_cache_get(query: str, acl_filter_hash: str, tenant_id: int) -> 
 
 
 async def answer_cache_set(query: str, acl_filter_hash: str, tenant_id: int,
-                           answer: str, citations: List[str], ttl: int = _ANS_TTL) -> None:
+                           answer: str, citations: List[str], ttl: int = _ANS_TTL,
+                           confidence: float = 1.0) -> None:
     """Cache a VERIFIED answer scoped to this authorization. Callers must only
-    cache answers that PASSED the output guardrails (grounded + cited)."""
+    cache answers that PASSED the output guardrails (grounded + cited).
+    `confidence` (stage-4 score) rides along so a cache hit reports the same
+    evidence strength as the original answer."""
     from app.services.redis_client import cache_set
     await cache_set(
         answer_key(query, acl_filter_hash, tenant_id),
-        {"answer": answer, "citations": list(citations)},
+        {"answer": answer, "citations": list(citations), "confidence": confidence},
         expire=ttl,
     )

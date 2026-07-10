@@ -1,6 +1,7 @@
 # RAG & Guardrails — production architecture & framework
 
-> Brainstorm + framework (planning doc, no code yet). Cross-team.
+> Originally the planning doc; the pipeline is now IMPLEMENTED — see §0.5 for
+> the stage→module map and `services/rag/pipeline.py` for the orchestrator.
 > Builds on `SAGE_GROUNDED_INTELLIGENCE.md` (four-tier answering) and
 > `STAGE1_SEMANTIC_LAYER.md` (pgvector foundation). This doc goes deep on the
 > **RAG pipeline** and the **guardrail system** (all types), and on the one thing
@@ -25,6 +26,30 @@ So the honest framing: **RAG is one lane in a router**, used for:
 
 Numbers always come from SQL (the existing `nl2sql` guard path). **RAG narrates;
 it never computes.** Keeping that boundary is 80% of "accuracy."
+
+---
+
+## 0.5 Zero-hallucination pipeline — implementation map (10 stages, all live)
+
+One call runs the whole thing: `rag/pipeline.py::answer_grounded()`.
+
+| # | Stage | Module | Notes |
+|---|-------|--------|-------|
+| 1 | Ingest + normalize | `rag/ingest.py` | content-hash dedup; **versioning**: re-ingest supersedes stale chunks of the same doc |
+| 2 | Hybrid retrieval | `rag/retriever.py` + `fusion.py` | BM25 ∪ vector, RRF; RBAC filter BEFORE scoring |
+| 3 | ANN + rerank | `idx_documents_embedding` (HNSW) + `rag/rerank.py` | two-stage: ANN candidates → lexical cross-scorer |
+| 4 | Source confidence | `rag/confidence.py` | freshness × trust × cross-arm consistency × overlap; floor 0.30 filters weak evidence |
+| 5 | Constrained generation | `rag/pipeline.py` | context-only prompt (LLM) or extractive top-chunk; no external knowledge |
+| 6 | Citation-backed | `rag/rerank.py::assemble_context` | every answer carries its citations; enforcement rail vetoes uncited output |
+| 7 | Hallucination fallback | `rag/pipeline.py` | aggregate confidence < **0.45** → honest "insufficient evidence", never a guess; refusals not cached |
+| 8 | Continuous evals | `rag/evaluation.py` + red-team tests | recall/MRR gates, 6 injections blocked, 53 tests in CI |
+| 9 | Caching + memory | `rag/cache.py` | answer + embedding cache keyed by tenant+role+store filter_hash (never leaks across scopes) |
+| 10 | Observability | `rag/observability.py` | per-answer `RagTrace`: stage latencies, arm counts, trips, refusals |
+
+Guardrails (`services/guardrails/`) wrap both ends: INPUT rails run before
+stage 2 (injection block, PII redaction), OUTPUT rails after stage 5
+(faithfulness, citation enforcement, PII leak, numeric sanity) — a vetoed
+answer degrades to the stage-7 refusal, never to an unchecked reply.
 
 ---
 

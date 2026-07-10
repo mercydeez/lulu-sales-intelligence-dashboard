@@ -88,8 +88,9 @@ def content_hash(tenant_id: int, corpus: str, text: str) -> str:
 @dataclass
 class IngestResult:
     chunks_written: int
-    chunks_skipped: int   # already present (idempotent)
+    chunks_skipped: int      # already present (idempotent)
     model: str
+    chunks_superseded: int = 0   # stale chunks of an older version removed
 
 
 async def ingest_document(
@@ -103,10 +104,18 @@ async def ingest_document(
     store_scope: Optional[Sequence[int]] = None,
     lang: Optional[str] = None,   # None => auto-detect (RAG-2)
     parent_ref: Optional[str] = None,
+    replace: bool = True,
 ) -> IngestResult:
     """Chunk -> embed -> idempotent ACL-tagged upsert. Returns counts.
     `lang=None` auto-detects (Arabic vs English) so retrieval can route the
-    right embedder — English-only embeddings silently fail on Arabic."""
+    right embedder — English-only embeddings silently fail on Arabic.
+
+    Versioning (`replace=True`, zero-hallucination stage 1): after the new
+    version's chunks land, chunks of the SAME source doc (tenant + parent_ref)
+    whose content_hash is no longer part of the new version are deleted —
+    retrieval can never serve a stale paragraph of an updated policy next to
+    the new one. Unchanged chunks keep their rows (and embeddings) untouched.
+    Set replace=False for append-only corpora (e.g. changelog streams)."""
     from sqlalchemy import text as sql
     from app.services.database import async_session
     from app.services.embeddings import embed_texts, to_pgvector_literal, detect_lang
@@ -147,5 +156,17 @@ async def ingest_document(
                 "vec": to_pgvector_literal(vec), "model": emb.model,
             })
             written += 1
+
+        superseded = 0
+        if replace:
+            hashes = [content_hash(tenant_id, corpus, c) for c in chunks]
+            res = await s.execute(sql("""
+                DELETE FROM documents
+                 WHERE tenant_id = :t AND parent_ref = :pref
+                   AND content_hash IS NOT NULL
+                   AND NOT (content_hash = ANY(:hashes))
+            """), {"t": tenant_id, "pref": pref, "hashes": hashes})
+            superseded = res.rowcount or 0
         await s.commit()
-    return IngestResult(chunks_written=written, chunks_skipped=skipped, model=emb.model)
+    return IngestResult(chunks_written=written, chunks_skipped=skipped,
+                        model=emb.model, chunks_superseded=superseded)
