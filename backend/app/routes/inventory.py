@@ -507,16 +507,20 @@ async def get_inventory_analytics(
 @router.get("/reorder-suggestions")
 async def get_reorder_suggestions(
     store_id: Optional[int] = None,
-    lead_time_days: int = Query(7, ge=1, le=60),
+    lead_time_days: int = Query(7, ge=1, le=60, description="Fallback when the supplier's own lead time is unknown"),
     cover_target_days: int = Query(7, ge=0, le=60),
     limit: int = Query(20, ge=1, le=100),
+    service_level: float = Query(0.95, ge=0.50, le=0.9999,
+                                 description="Target chance of not stocking out within a lead time (E7-6)"),
     current_user: dict = Depends(get_current_user),
 ):
-    """Forecast-driven reorder list (B1.7): the forecasting engine projects each
-    item's demand, days-of-cover is computed against the derived on-hand stock,
-    and items that will stock out within the supplier lead time are surfaced with
-    a recommended order quantity. This is the forecast → action wire for
-    inventory."""
+    """Forecast-driven reorder list (B1.7 + E7-6): the forecasting engine projects
+    each item's demand, safety stock is sized from the OBSERVED demand variability
+    at the requested service level, and items at or below their reorder point are
+    surfaced with a recommended order quantity plus the formula that produced it.
+
+    Where an item has too little history to measure σ, no safety stock is claimed —
+    the suggestion falls back to days-of-cover and says so (`needs`)."""
     from app.routes.auth import get_accessible_store_ids
     from app.services.forecast_service import reorder_suggestions
 
@@ -531,7 +535,7 @@ async def get_reorder_suggestions(
             return await reorder_suggestions(
                 session, tenant_id=tenant_id, allowed=allowed, store_id=store_id,
                 lead_time_days=lead_time_days, cover_target_days=cover_target_days,
-                limit=limit,
+                limit=limit, service_level=service_level,
             )
         except Exception as e:
             logger.error(f"Error computing reorder suggestions: {e}")

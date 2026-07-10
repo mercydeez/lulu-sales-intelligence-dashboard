@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, timedelta
+from statistics import NormalDist
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy import text
@@ -35,6 +36,21 @@ from app.services.predictor import SeasonalTrendModel, SalesPredictor, MIN_TRAIN
 # stream, so keep the TTL short.
 FORECAST_TTL = 900  # 15 minutes
 DEFAULT_HORIZON = 14
+
+# --- E7-6: safety stock ------------------------------------------------------
+# Detecting a stockout is a report. Preventing one is a product.
+#
+#   safety_stock  = z(service_level) × σ_daily_demand × √lead_time
+#   reorder_point = avg_daily_demand × lead_time + safety_stock
+#
+# σ is the observed standard deviation of daily units for that store-item. With
+# fewer than MIN_SIGMA_DAYS observations there is no meaningful spread, so safety
+# stock is NOT invented — it comes back null with a reason, and the suggestion
+# falls back to the plain days-of-cover trigger, saying so.
+DEFAULT_SERVICE_LEVEL = 0.95      # a 95% chance of not stocking out in a lead time
+MIN_SIGMA_DAYS = 14               # days of history needed before σ means anything
+SIGMA_LOOKBACK_DAYS = 90
+_NEEDS_SIGMA = "demand variability — needs at least 14 days of sales history for this item"
 MODEL_VERSION = SalesPredictor.MODEL_VERSION
 
 
@@ -147,6 +163,89 @@ async def revenue_projection(
 # ---------------------------------------------------------------------------
 # 2. Inventory reorder suggestions (forecast → days-of-cover → reorder qty)
 # ---------------------------------------------------------------------------
+def service_level_z(service_level: float) -> float:
+    """The z multiplier for a target service level. Exact, from the stdlib normal
+    quantile — no lookup table to drift, no dependency to add.
+
+    z(0.95) = 1.6449: hold enough extra stock that demand exceeds it in only 5% of
+    lead times. Clamped to a sane range: a 100% service level implies infinite stock.
+    """
+    sl = min(max(float(service_level), 0.50), 0.9999)
+    return NormalDist().inv_cdf(sl)
+
+
+async def _demand_variability(
+    db: AsyncSession, tenant_id: int, allowed: Optional[Sequence[int]],
+) -> Dict[Tuple[int, int], Dict]:
+    """σ and mean of DAILY units per (store, item) over the lookback window.
+
+    Reads metric_sales_fact — the one place `units` is defined (E6-1) — so the
+    safety-stock math and the KPI numbers can never disagree. Returns {} on any
+    failure: a missing σ degrades to "no safety stock", never to a guessed one.
+    """
+    scope = ""
+    params: Dict = {"tid": tenant_id}
+    if allowed:
+        scope = "AND s.store_id = ANY(:allowed)"
+        params["allowed"] = list(allowed)
+
+    try:
+        # SIGMA_LOOKBACK_DAYS is interpolated, not bound: with a bound parameter
+        # Postgres resolves `CURRENT_DATE - $n` through the `date - date -> integer`
+        # overload and the comparison becomes `date >= integer`. It is a module
+        # constant, never user input.
+        #
+        # A savepoint so a failure here cannot poison the caller's transaction
+        # (ADR-009): this is an optional enrichment, not the request's purpose.
+        async with db.begin_nested():
+            rows = (await db.execute(text(f"""
+                SELECT s.store_id, s.item_id,
+                       AVG(s.units)::float          AS mu,
+                       STDDEV_SAMP(s.units)::float  AS sigma,
+                       COUNT(*)                     AS observations
+                  FROM metric_sales_fact s
+                 WHERE s.tenant_id = :tid
+                   AND s.date >= (CURRENT_DATE - INTERVAL '{SIGMA_LOOKBACK_DAYS} days')
+                   {scope}
+                 GROUP BY s.store_id, s.item_id
+            """), params)).mappings().all()
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning(f"demand variability unavailable, safety stock withheld: {e}")
+        return {}
+
+    return {
+        (r["store_id"], r["item_id"]): {
+            "mu": r["mu"] or 0.0,
+            # STDDEV_SAMP is NULL for a single row; a constant series gives 0.0.
+            "sigma": r["sigma"],
+            "observations": r["observations"],
+        }
+        for r in rows
+    }
+
+
+async def _lead_times_by_item(db: AsyncSession, tenant_id: int) -> Dict[int, int]:
+    """Per-item supplier lead time. A blanket 7 days is a guess; the supplier's own
+    number is a fact. Falls back to the caller's default where no supplier is known."""
+    try:
+        # Savepoint: an optional enrichment must never abort the caller's
+        # transaction (ADR-009).
+        async with db.begin_nested():
+            rows = (await db.execute(text("""
+                SELECT ps.item_id,
+                       MIN(COALESCE(ps.lead_time_days, sp.lead_time_days)) AS lead_time_days
+                  FROM product_suppliers ps
+                  JOIN suppliers sp ON sp.id = ps.supplier_id
+                 WHERE sp.tenant_id = :tid
+                   AND COALESCE(ps.lead_time_days, sp.lead_time_days) IS NOT NULL
+                 GROUP BY ps.item_id
+            """), {"tid": tenant_id})).mappings().all()
+        return {r["item_id"]: int(r["lead_time_days"]) for r in rows}
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning(f"per-item lead times unavailable, using the default: {e}")
+        return {}
+
+
 async def reorder_suggestions(
     db: AsyncSession,
     tenant_id: int = 1,
@@ -156,6 +255,7 @@ async def reorder_suggestions(
     cover_target_days: int = 7,
     limit: int = 20,
     scan: int = 80,
+    service_level: float = DEFAULT_SERVICE_LEVEL,
 ) -> Dict:
     """Forecast-driven reorder list: for each in-scope item, forecast daily
     demand, compute days-of-cover against the derived on-hand quantity, and flag
@@ -164,7 +264,7 @@ async def reorder_suggestions(
     """
     cache_key = generate_cache_key(
         f"forecast_reorder_t{tenant_id}_{_scope_suffix(allowed)}"
-        f"_s{store_id}_lt{lead_time_days}_ct{cover_target_days}_l{limit}"
+        f"_s{store_id}_lt{lead_time_days}_ct{cover_target_days}_l{limit}_sl{service_level}"
     )
     cached = await get_cached(cache_key)
     if cached:
@@ -176,11 +276,18 @@ async def reorder_suggestions(
     )
     items = inv.get("items", [])
 
+    z = service_level_z(service_level)
+    variability = await _demand_variability(db, tenant_id, allowed)
+    item_lead_times = await _lead_times_by_item(db, tenant_id)
+
     predictor = SalesPredictor()
-    horizon = max(1, lead_time_days + cover_target_days)
     suggestions: List[Dict] = []
 
     for it in items:
+        # The supplier's own lead time beats a blanket default.
+        lt = item_lead_times.get(it["item_id"], lead_time_days)
+        horizon = max(1, lt + cover_target_days)
+
         try:
             preds = await predictor.predict(it["store_id"], it["item_id"], days=horizon)
         except Exception:
@@ -196,12 +303,45 @@ async def reorder_suggestions(
         qty = max(0, int(it.get("quantity", 0)))
         daily_demand = max(daily_demand, 0.01)
         days_of_cover = qty / daily_demand
-        demand_over_lead = daily_demand * lead_time_days
-        needs_reorder = days_of_cover < lead_time_days or qty <= it.get("reorder_level", 0)
+        demand_over_lead = daily_demand * lt
+
+        # --- safety stock (E7-6) -------------------------------------------
+        v = variability.get((it["store_id"], it["item_id"]))
+        sigma = v["sigma"] if v else None
+        observations = v["observations"] if v else 0
+        safety_stock: Optional[int] = None
+        reorder_point: Optional[int] = None
+        needs: Optional[str] = None
+        formula: Optional[str] = None
+
+        if sigma is not None and observations >= MIN_SIGMA_DAYS:
+            ss = z * float(sigma) * math.sqrt(lt)
+            safety_stock = int(math.ceil(ss))
+            reorder_point = int(math.ceil(demand_over_lead + ss))
+            formula = (
+                f"safety stock = z({service_level:.2f})={z:.2f} × σ={float(sigma):.2f} "
+                f"× √{lt}d = {safety_stock} units; "
+                f"reorder point = {daily_demand:.2f}/d × {lt}d + {safety_stock} = {reorder_point} units"
+            )
+        else:
+            # No spread, no safety stock. We say so rather than invent one.
+            needs = _NEEDS_SIGMA
+
+        # Trigger on the reorder point when we have one; otherwise the old
+        # days-of-cover rule, and the payload admits which was used.
+        if reorder_point is not None:
+            needs_reorder = qty <= reorder_point
+            trigger = "reorder_point"
+        else:
+            needs_reorder = days_of_cover < lt or qty <= it.get("reorder_level", 0)
+            trigger = "days_of_cover"
         if not needs_reorder:
             continue
 
-        recommended_qty = max(0, int(math.ceil(daily_demand * horizon - qty)))
+        # Order back up to the demand over (lead + cover) plus the buffer.
+        target = daily_demand * horizon + (safety_stock or 0)
+        recommended_qty = max(0, int(math.ceil(target - qty)))
+
         suggestions.append({
             "store_id": it["store_id"],
             "store_name": it.get("store_name"),
@@ -212,10 +352,20 @@ async def reorder_suggestions(
             "reorder_level": it.get("reorder_level", 0),
             "forecast_daily_demand": round(daily_demand, 2),
             "days_of_cover": round(days_of_cover, 1),
-            "lead_time_days": lead_time_days,
+            "lead_time_days": lt,
             "forecast_demand_lead_time": round(demand_over_lead, 1),
             "recommended_order_qty": recommended_qty,
-            "urgency": "critical" if days_of_cover < lead_time_days / 2 else "warning",
+            "urgency": "critical" if days_of_cover < lt / 2 else "warning",
+            # E7-6: the buffer, where it came from, and why we ordered.
+            "service_level": service_level,
+            "service_level_z": round(z, 3),
+            "demand_sigma": round(float(sigma), 2) if sigma is not None else None,
+            "sigma_observations": observations,
+            "safety_stock": safety_stock,
+            "reorder_point": reorder_point,
+            "trigger": trigger,
+            "formula": formula,
+            "needs": needs,
         })
 
     suggestions.sort(key=lambda s: s["days_of_cover"])
@@ -224,9 +374,19 @@ async def reorder_suggestions(
     result = {
         "lead_time_days": lead_time_days,
         "cover_target_days": cover_target_days,
+        "service_level": service_level,
+        "service_level_z": round(z, 3),
+        "sigma_lookback_days": SIGMA_LOOKBACK_DAYS,
         "model_version": MODEL_VERSION,
         "count": len(suggestions),
         "critical_count": sum(1 for s in suggestions if s["urgency"] == "critical"),
+        "with_safety_stock": sum(1 for s in suggestions if s["safety_stock"] is not None),
+        "methodology": (
+            "safety stock = z(service level) × σ(daily demand) × √(lead time); "
+            "reorder point = forecast daily demand × lead time + safety stock. "
+            "σ is measured over the last 90 days; where an item has under 14 days of "
+            "history no safety stock is claimed and the days-of-cover rule is used instead."
+        ),
         "suggestions": suggestions,
     }
     await set_cached(cache_key, result, FORECAST_TTL)

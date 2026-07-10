@@ -40,6 +40,9 @@ class SupplierCreate(BaseModel):
 class GenerateRequest(BaseModel):
     lead_time_days: int = Field(7, ge=1, le=60)
     cover_target_days: int = Field(7, ge=0, le=60)
+    # E7-6: the chance of not stocking out within a lead time. Higher = more safety
+    # stock ordered. 1.0 would imply infinite stock, so it is capped.
+    service_level: float = Field(0.95, ge=0.50, le=0.9999)
 
 
 class StatusRequest(BaseModel):
@@ -106,7 +109,7 @@ async def generate_from_forecast(body: GenerateRequest, user: dict = Depends(get
     return await proc.generate_draft_pos_from_reorder(
         db, _tenant(user), allowed=get_accessible_store_ids(user),
         lead_time_days=body.lead_time_days, cover_target_days=body.cover_target_days,
-        created_by=user.get("id"),
+        created_by=user.get("id"), service_level=body.service_level,
     )
 
 

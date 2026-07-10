@@ -164,15 +164,22 @@ async def generate_draft_pos_from_reorder(
     lead_time_days: int = 7,
     cover_target_days: int = 7,
     created_by: Optional[int] = None,
+    service_level: float = 0.95,
 ) -> Dict:
     """Forecast → action: pull the reorder suggestions, aggregate the needed
     quantity per item across stores, map each item to its preferred supplier,
     and create one draft PO per supplier. Items already on an open PO are skipped
-    so repeated runs don't duplicate orders."""
+    so repeated runs don't duplicate orders.
+
+    E7-6: the suggested quantities already carry safety stock sized at
+    `service_level`, so a drafted PO buys the buffer rather than only the
+    shortfall — that is the step from "detect stockout" to "prevent stockout".
+    Every draft still passes through the existing human approval gate
+    (approval_rules); nothing here auto-orders."""
     reorder = await reorder_suggestions(
         db, tenant_id=tenant_id, allowed=allowed,
         lead_time_days=lead_time_days, cover_target_days=cover_target_days,
-        limit=500, scan=500,
+        limit=500, scan=500, service_level=service_level,
     )
     suggestions = reorder.get("suggestions", [])
     if not suggestions:
