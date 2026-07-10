@@ -19,8 +19,18 @@ from app.services import csv_import as imp
 from app.services import import_scheduler as sch
 
 
-MIGRATION = (pathlib.Path(__file__).resolve().parents[2]
-             / "database" / "migrations" / "064_krishna_import_schedules.sql")
+def _find_migration(name: str) -> pathlib.Path:
+    """Robust to the repo layout (backend/ + database/ siblings) AND the container
+    layout (both under /app)."""
+    here = pathlib.Path(__file__).resolve()
+    for base in here.parents:
+        cand = base / "database" / "migrations" / name
+        if cand.is_file():
+            return cand
+    return here.parents[2] / "database" / "migrations" / name
+
+
+MIGRATION = _find_migration("064_krishna_import_schedules.sql")
 
 
 def _sql() -> str:

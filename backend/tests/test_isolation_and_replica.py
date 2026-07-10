@@ -23,8 +23,18 @@ from fastapi import HTTPException
 from app.services import isolation
 
 
-MIGRATION = (pathlib.Path(__file__).resolve().parents[2]
-             / "database" / "migrations" / "066_krishna_isolation_tiers.sql")
+def _find_migration(name: str) -> pathlib.Path:
+    """Robust to the repo layout (backend/ + database/ siblings) AND the container
+    layout (both under /app)."""
+    here = pathlib.Path(__file__).resolve()
+    for base in here.parents:
+        cand = base / "database" / "migrations" / name
+        if cand.is_file():
+            return cand
+    return here.parents[2] / "database" / "migrations" / name
+
+
+MIGRATION = _find_migration("066_krishna_isolation_tiers.sql")
 ROUTES_DIR = pathlib.Path(__file__).resolve().parents[1] / "app" / "routes"
 
 

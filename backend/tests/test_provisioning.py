@@ -19,8 +19,18 @@ import pytest
 from app.services import provisioning as prov
 
 
-MIGRATION = (pathlib.Path(__file__).resolve().parents[2]
-             / "database" / "migrations" / "068_krishna_tenant_provisioning.sql")
+def _find_migration(name: str) -> pathlib.Path:
+    """Locate a migration by walking up — robust to the repo layout (backend/ and
+    database/ siblings) AND the container layout (both under /app)."""
+    here = pathlib.Path(__file__).resolve()
+    for base in here.parents:
+        cand = base / "database" / "migrations" / name
+        if cand.is_file():
+            return cand
+    return here.parents[2] / "database" / "migrations" / name
+
+
+MIGRATION = _find_migration("068_krishna_tenant_provisioning.sql")
 
 
 def _code(fn) -> str:
