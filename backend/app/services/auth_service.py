@@ -22,7 +22,12 @@ settings = get_settings()
 # =============================================================================
 
 SECRET_KEY = settings.jwt_secret_key
-ALGORITHM = "HS256"
+# ALGORITHM is the *active* signing algorithm (HS256 by default, RS256 when
+# JWT_ALGORITHM=RS256). Kept as a module constant for backward compatibility with
+# callers/tests that import it; all real signing/verification goes through the key
+# provider (services/jwt_keys.py), which also accepts legacy HS256 tokens during a
+# rotation window. See E5-6 / docs/runbooks/JWT_KEY_ROTATION.md.
+ALGORITHM = (getattr(settings, "jwt_algorithm", "HS256") or "HS256").upper()
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 REMEMBER_ME_REFRESH_TOKEN_EXPIRE_DAYS = 30
@@ -140,6 +145,20 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
 # JWT TOKEN UTILITIES
 # =============================================================================
 
+def _sign(claims: dict) -> str:
+    """Sign claims with the active key (RS256 with a `kid` header, or legacy
+    HS256). Single choke point so every token issued shares one policy."""
+    from app.services.jwt_keys import get_key_provider
+    return get_key_provider().sign(claims)
+
+
+def _verify(token: str) -> dict:
+    """Verify a token against the current keyset (RS256 by `kid`, or legacy
+    HS256 while the fallback is enabled). Raises JWTError on any failure."""
+    from app.services.jwt_keys import get_key_provider
+    return get_key_provider().verify(token)
+
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token. Carries `iat` so a password reset can revoke all
     access tokens issued before the reset (see revoke_user_sessions)."""
@@ -147,7 +166,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     now = datetime.now(timezone.utc)
     expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire, "iat": now, "type": "access", "jti": secrets.token_hex(8)})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return _sign(to_encode)
 
 
 def create_refresh_token(data: dict, remember_me: bool = False) -> str:
@@ -161,7 +180,7 @@ def create_refresh_token(data: dict, remember_me: bool = False) -> str:
         "jti": secrets.token_hex(8),
         "remember_me": remember_me,
     })
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return _sign(to_encode)
 
 
 def decode_token(token: str, expected_type: Optional[str] = "access") -> Optional[TokenData]:
@@ -173,7 +192,7 @@ def decode_token(token: str, expected_type: Optional[str] = "access") -> Optiona
     `None` to skip the check.
     """
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = _verify(token)
         if expected_type is not None and payload.get("type") != expected_type:
             logger.warning(
                 f"Rejected token: expected type '{expected_type}', got '{payload.get('type')}'"
@@ -201,15 +220,12 @@ def decode_token(token: str, expected_type: Optional[str] = "access") -> Optiona
 
 def create_mfa_challenge(user_id: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=5)
-    return jwt.encode(
-        {"user_id": user_id, "type": "mfa_challenge", "exp": expire},
-        SECRET_KEY, algorithm=ALGORITHM,
-    )
+    return _sign({"user_id": user_id, "type": "mfa_challenge", "exp": expire})
 
 
 def decode_mfa_challenge(token: str) -> Optional[int]:
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = _verify(token)
         if payload.get("type") != "mfa_challenge":
             return None
         return payload.get("user_id")
@@ -221,15 +237,14 @@ def create_password_reset_token(user_id: int) -> str:
     """Short-lived (30 min) single-purpose reset token. Distinct `type` so it can't
     be used as an access token; bound to the user."""
     expire = datetime.now(timezone.utc) + timedelta(minutes=30)
-    return jwt.encode(
-        {"user_id": user_id, "type": "pwd_reset", "exp": expire, "jti": secrets.token_hex(8)},
-        SECRET_KEY, algorithm=ALGORITHM,
+    return _sign(
+        {"user_id": user_id, "type": "pwd_reset", "exp": expire, "jti": secrets.token_hex(8)}
     )
 
 
 def decode_password_reset_token(token: str) -> Optional[int]:
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = _verify(token)
         if payload.get("type") != "pwd_reset":
             return None
         return payload.get("user_id")
@@ -239,15 +254,12 @@ def decode_password_reset_token(token: str) -> Optional[int]:
 
 def create_email_verify_token(user_id: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(days=3)
-    return jwt.encode(
-        {"user_id": user_id, "type": "email_verify", "exp": expire},
-        SECRET_KEY, algorithm=ALGORITHM,
-    )
+    return _sign({"user_id": user_id, "type": "email_verify", "exp": expire})
 
 
 def decode_email_verify_token(token: str) -> Optional[int]:
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = _verify(token)
         if payload.get("type") != "email_verify":
             return None
         return payload.get("user_id")
@@ -622,7 +634,7 @@ class AuthService:
 
         # Already validated as a refresh token above; decode again only to read
         # the remember_me claim used to preserve the rotated token's lifetime.
-        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = _verify(refresh_token)
 
         # Reject already-used (rotated) or logged-out refresh tokens
         if await is_token_blacklisted(refresh_token):

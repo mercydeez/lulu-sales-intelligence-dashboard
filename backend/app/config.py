@@ -60,7 +60,23 @@ class Settings(BaseSettings):
     
     # JWT
     jwt_secret_key: str = "super-secret-change-in-production-2026"
-    
+
+    # --- E5-6 JWT signing: RS256 (asymmetric) + vault-sourced keys + rotation ----
+    # jwt_algorithm: "HS256" (legacy symmetric shared secret) or "RS256" (private
+    # key signs, public key verifies — smaller key-compromise blast radius). The
+    # private key comes from an inline PEM (JWT_PRIVATE_KEY) or, preferably, a file
+    # a secret vault writes (JWT_PRIVATE_KEY_PATH). Verification keys live in
+    # JWT_PUBLIC_KEYS_DIR as "<kid>.pem" so multiple keys coexist during rotation;
+    # the active signing key id is JWT_ACTIVE_KID. See services/jwt_keys.py and
+    # docs/runbooks/JWT_KEY_ROTATION.md. Defaults keep HS256 so existing
+    # deployments/tests are unaffected until they opt in.
+    jwt_algorithm: str = "HS256"                 # "HS256" | "RS256"
+    jwt_private_key: str = ""                    # inline RS256 private key PEM (or use the path)
+    jwt_private_key_path: str = ""               # file path a vault writes the private PEM to
+    jwt_public_keys_dir: str = ""                # dir of "<kid>.pem" public keys (rotation set)
+    jwt_active_kid: str = ""                     # key id stamped into the signing header
+    jwt_allow_hs256_fallback: bool = True        # accept legacy HS256 tokens during cutover
+
     # CORS
     cors_origins: str = "http://localhost:3000,http://frontend:3000"
 
@@ -374,6 +390,50 @@ class Settings(BaseSettings):
             if is_prod:
                 raise RuntimeError(msg)
             issues.append(msg)
+
+        # --- E5-6 JWT signing algorithm / keys ---
+        algo = (self.jwt_algorithm or "HS256").upper()
+        if algo not in ("HS256", "RS256"):
+            msg = f"CRITICAL: JWT_ALGORITHM '{self.jwt_algorithm}' is not supported (use HS256 or RS256)."
+            if is_prod:
+                raise RuntimeError(msg)
+            issues.append(msg)
+        elif algo == "RS256":
+            # RS256 needs a resolvable private key + an active key id. Verify the
+            # key actually loads so a bad mount fails CLOSED at boot, not at first login.
+            private_present = bool((self.jwt_private_key or "").strip() or (self.jwt_private_key_path or "").strip())
+            if not private_present or not (self.jwt_active_kid or "").strip():
+                msg = ("CRITICAL: JWT_ALGORITHM=RS256 requires a private key "
+                       "(JWT_PRIVATE_KEY or JWT_PRIVATE_KEY_PATH) and JWT_ACTIVE_KID.")
+                if is_prod:
+                    raise RuntimeError(msg)
+                issues.append(msg)
+            else:
+                try:
+                    from app.services.jwt_keys import KeyProvider
+                    kp = KeyProvider.from_settings(self)
+                    if not kp.has_signing_key():
+                        raise ValueError("private key/active kid did not resolve")
+                    kp.sign({"probe": 1})  # proves the PEM is a usable RS256 signer
+                except Exception as e:
+                    msg = f"CRITICAL: RS256 signing key failed to load/sign: {e}"
+                    if is_prod:
+                        raise RuntimeError(msg)
+                    issues.append(msg)
+            if self.jwt_allow_hs256_fallback:
+                issues.append(
+                    "WARNING: JWT_ALLOW_HS256_FALLBACK=true — legacy HS256 tokens are still "
+                    "accepted. Turn it off after the rotation window to drop symmetric trust."
+                )
+        elif is_prod:
+            # HS256 + a strong secret is still a VALID prod config, so this is a
+            # log-only nudge (not an "issue") — it must not fail the secure-config
+            # bar. RS256 is recommended to shrink the key-compromise blast radius.
+            import logging
+            logging.getLogger("sales_dashboard").warning(
+                "JWT_ALGORITHM=HS256 in production — consider migrating to RS256 "
+                "(docs/runbooks/JWT_KEY_ROTATION.md) to reduce key-compromise blast radius."
+            )
 
         # --- App secret ---
         if self.secret_key.lower() in _INSECURE_SECRETS:

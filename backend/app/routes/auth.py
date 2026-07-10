@@ -883,12 +883,13 @@ async def get_current_user_from_ticket(
     if not ticket:
         raise HTTPException(status_code=401, detail="Missing stream ticket")
     
-    # Verify that it's a valid ticket token
-    from jose import jwt, JWTError
-    from app.services.auth_service import SECRET_KEY, ALGORITHM
-    
+    # Verify that it's a valid ticket token (RS256/HS256 via the key provider —
+    # E5-6; no direct symmetric-secret decode here).
+    from jose import JWTError
+    from app.services.jwt_keys import get_key_provider
+
     try:
-        payload = jwt.decode(ticket, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = get_key_provider().verify(ticket)
         if not payload.get("ticket"):
             raise HTTPException(status_code=401, detail="Invalid stream ticket")
     except JWTError:

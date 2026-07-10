@@ -228,6 +228,18 @@ async def data_residency() -> Dict[str, Any]:
     return payload
 
 
+@router.get("/jwks.json")
+async def jwks() -> Dict[str, Any]:
+    """Public JSON Web Key Set (E5-6). Publishes the RS256 **public** keys so any
+    downstream verifier (worker, public API, another service) can validate tokens
+    WITHOUT holding the private signing key — the whole point of moving off the
+    shared HS256 secret. Contains public key material only; returns an empty set
+    when running legacy HS256 (a symmetric secret is never published). Safe to
+    cache; keys change only on rotation."""
+    from app.services.jwt_keys import get_key_provider
+    return get_key_provider().public_jwks()
+
+
 @router.get("/stats")
 async def system_stats(current_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """

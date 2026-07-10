@@ -30,6 +30,8 @@ Set any env var explicitly (`true`/`false`) to override the auto default in eith
 | `USE_RLS_ROLE=false` without `ALLOW_INSECURE_NO_RLS=true` | raise |
 | Self-hosted Redis (`REDIS_SELF_HOSTED=true`) with no password in `REDIS_URL` | raise |
 | Default/dev password in `RLS_/SAGE_/WORKER_DATABASE_URL` | raise |
+| `JWT_ALGORITHM=RS256` with a missing/unloadable private key or no `JWT_ACTIVE_KID` | raise |
+| `JWT_ALGORITHM=HS256` in production (valid, but legacy symmetric) | log-only nudge → RS256 |
 | `EXPOSE_API_DOCS=true` | warn (protect it at the proxy) |
 | `DEBUG=true` | warn |
 | `ENABLE_EXTERNAL_AI=true` with no key | warn |
@@ -134,3 +136,26 @@ PDPL alignment, and the compliance evidence checklist: `docs/runbooks/DATA_RESID
 > External AI (`ENABLE_EXTERNAL_AI=true`) sends prompts to a third-party LLM that may
 > process data outside the region — the posture reports this honestly as
 > `external_ai_may_leave_region`. Keep it off under a strict-residency contract.
+
+## E5-6 JWT signing (RS256 + rotation)
+
+Controls how access/refresh/challenge tokens are signed. `HS256` (default) uses the
+symmetric `JWT_SECRET_KEY`. `RS256` signs with a private key held only by the API and
+verifies with a public key that can be published (`GET /api/monitoring/jwks.json`),
+shrinking the key-compromise blast radius. In production, RS256 boot **fails closed**
+if the private key or active kid is missing/unloadable (`validate_security`). Generate
+keys with `python scripts/generate_jwt_keys.py --kid <kid>`. Full rotation + vault
+procedure: `docs/runbooks/JWT_KEY_ROTATION.md`.
+
+| Variable | Type | Default | Notes |
+|---|---|---|---|
+| `JWT_ALGORITHM` | str | HS256 | `HS256` (legacy symmetric) or `RS256` (asymmetric, recommended in prod) |
+| `JWT_PRIVATE_KEY` | str | "" | Inline RS256 private-key PEM (prefer the file path; avoid inline in files) |
+| `JWT_PRIVATE_KEY_PATH` | str | "" | Path to the private-key PEM a secret vault writes (Vault/AWS SM/k8s secret) |
+| `JWT_PUBLIC_KEYS_DIR` | str | "" | Directory of `<kid>.pem` public keys — holds old+new during rotation |
+| `JWT_ACTIVE_KID` | str | "" | Key id stamped into the signing header; required for RS256 |
+| `JWT_ALLOW_HS256_FALLBACK` | bool | true | Accept legacy HS256 tokens during cutover; set **false** once they've all expired |
+
+> The active private key's own public half is derived automatically, so it need not
+> also be dropped into `JWT_PUBLIC_KEYS_DIR`. HS256 with a strong `JWT_SECRET_KEY`
+> remains a valid prod config; RS256 is the recommended hardening.

@@ -127,6 +127,15 @@ services:
       ENVIRONMENT: production
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT secret required}
       SECRET_KEY: ${SECRET_KEY:?App secret required}
+      # E5-6 JWT signing. Set JWT_ALGORITHM=RS256 and inject the private key from a
+      # secret vault as a mounted file (JWT_PRIVATE_KEY_PATH); publish "<kid>.pem"
+      # public keys into JWT_PUBLIC_KEYS_DIR. Mount them via the jwt_keys volume
+      # below. Defaults keep HS256 so an un-provisioned deploy still boots.
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_PRIVATE_KEY_PATH: ${JWT_PRIVATE_KEY_PATH:-}
+      JWT_PUBLIC_KEYS_DIR: ${JWT_PUBLIC_KEYS_DIR:-}
+      JWT_ACTIVE_KID: ${JWT_ACTIVE_KID:-}
+      JWT_ALLOW_HS256_FALLBACK: ${JWT_ALLOW_HS256_FALLBACK:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_JSON: ${LOG_JSON:-true}
       # Tenant isolation: connect the request path as the non-owner app_rw role.
@@ -175,6 +184,12 @@ services:
     # freshness (it never writes backups).
     volumes:
       - postgres_backups:/backups:ro
+      # E5-6: mount the vault-provisioned JWT keys read-only. Point this host path
+      # at where your secret vault writes active.key (private) + public/<kid>.pem.
+      # Set JWT_PRIVATE_KEY_PATH=/run/secrets/jwt/active.key and
+      # JWT_PUBLIC_KEYS_DIR=/run/secrets/jwt/public to match. No-op if the source
+      # path is empty (HS256 mode). See docs/runbooks/JWT_KEY_ROTATION.md.
+      - ${JWT_KEYS_HOST_DIR:-./secrets/jwt}:/run/secrets/jwt:ro
     depends_on:
       postgres:
         condition: service_healthy
