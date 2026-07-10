@@ -46,6 +46,8 @@ export default function ImportsPage() {
   const [importType, setImportType] = useState('items');
   const [filename, setFilename] = useState('');
   const [csvText, setCsvText] = useState('');
+  // Excel workbooks travel base64 (E1-3); exactly one of csvText / fileB64 is set.
+  const [fileB64, setFileB64] = useState('');
   const [headers, setHeaders] = useState<string[]>([]);
   const [sample, setSample] = useState<Record<string, string>[]>([]);
   const [rowCount, setRowCount] = useState(0);
@@ -67,20 +69,40 @@ export default function ImportsPage() {
   }, []);
   useEffect(() => { if (isOperator) loadMeta(); }, [isOperator, loadMeta]);
 
+  // A CSV is sent as text; an Excel workbook is sent base64 (E1-3). The backend
+  // sniffs the real format from the file's magic bytes and parses both into the
+  // same rows, so the map/validate/commit path is literally identical.
+  const isExcelName = (n: string) => /\.(xlsx|xls)$/i.test(n);
+
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setFilename(file.name);
-    const text = await file.text();
-    setCsvText(text);
+    if (isExcelName(file.name)) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let bin = '';
+      // Chunked: String.fromCharCode(...bigArray) blows the argument limit.
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      }
+      setFileB64(btoa(bin));
+      setCsvText('');
+    } else {
+      setCsvText(await file.text());
+      setFileB64('');
+    }
   };
 
+  /** Whichever source the user picked — exactly one is ever set. */
+  const sourceBody = () => (fileB64 ? { file_b64: fileB64 } : { csv_text: csvText });
+  const hasSource = Boolean(csvText || fileB64);
+
   const analyze = async () => {
-    if (!csvText) { show('Choose a CSV file first', { variant: 'error' }); return; }
+    if (!hasSource) { show('Choose a CSV or Excel file first', { variant: 'error' }); return; }
     setBusy(true);
     try {
       const res = await apiPost<{ headers: string[]; sample: Record<string, string>[]; row_count: number }>(
-        '/api/imports/analyze', { csv_text: csvText });
+        '/api/imports/analyze', sourceBody());
       setHeaders(res.headers);
       setSample(res.sample);
       setRowCount(res.row_count);
@@ -98,7 +120,7 @@ export default function ImportsPage() {
   const validate = async () => {
     setBusy(true);
     try {
-      setValidation(await apiPost('/api/imports/validate', { import_type: importType, mapping, csv_text: csvText }));
+      setValidation(await apiPost('/api/imports/validate', { import_type: importType, mapping, ...sourceBody() }));
     } catch (e) {
       show(e instanceof ApiError ? e.message : 'Validation failed', { variant: 'error' });
     } finally { setBusy(false); }
@@ -108,7 +130,7 @@ export default function ImportsPage() {
     setBusy(true);
     try {
       const res = await apiPost<{ imported: number; skipped: number }>(
-        '/api/imports/commit', { import_type: importType, mapping, csv_text: csvText, filename });
+        '/api/imports/commit', { import_type: importType, mapping, ...sourceBody(), filename });
       show(`Imported ${res.imported} row(s)${res.skipped ? `, skipped ${res.skipped}` : ''}`, { variant: 'success' });
       setStep('done');
       await loadMeta();
@@ -117,17 +139,17 @@ export default function ImportsPage() {
     } finally { setBusy(false); }
   };
 
-  const reset = () => { setStep('upload'); setCsvText(''); setFilename(''); setHeaders([]); setSample([]); setValidation(null); };
+  const reset = () => { setStep('upload'); setCsvText(''); setFileB64(''); setFilename(''); setHeaders([]); setSample([]); setValidation(null); };
 
-  const downloadSample = async () => {
+  const downloadSample = async (format: 'csv' | 'xlsx' = 'csv') => {
     try {
       const { authFetch } = (await import('@/lib/apiClient'));
-      const res = await authFetch(`/api/imports/sample/${importType}`);
+      const res = await authFetch(`/api/imports/sample/${importType}?format=${format}`);
       if (!res.ok) return;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = `sample-${importType}.csv`;
+      a.href = url; a.download = `sample-${importType}.${format}`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     } catch { /* ignore */ }
@@ -151,7 +173,7 @@ export default function ImportsPage() {
       <div className="max-w-4xl mx-auto">
         <PageHeader
           title="Import data"
-          description="Upload your sales, inventory, products or stores as CSV. Map your columns, we validate every row, then it's live."
+          description="Upload your sales, inventory, products or stores as CSV or Excel. Map your columns, we validate every row, then it's live."
           icon={<UploadCloud className="w-5 h-5" />}
         />
 
@@ -162,8 +184,11 @@ export default function ImportsPage() {
                 {schemas.map((s) => <option key={s.import_type} value={s.import_type}>{TYPE_LABEL[s.import_type] ?? s.import_type}</option>)}
               </Select>
               <div>
-                <label className="block text-sm font-medium text-ink-soft mb-2">CSV file</label>
-                <input type="file" accept=".csv,text/csv" onChange={onFile}
+                <label className="block text-sm font-medium text-ink-soft mb-2">CSV or Excel file</label>
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                  onChange={onFile}
                   className="block w-full text-sm text-ink-soft file:me-3 file:py-2 file:px-3 file:rounded-lg file:border file:border-line file:bg-surface-2 file:text-ink hover:file:bg-surface-3" />
               </div>
             </div>
@@ -178,11 +203,14 @@ export default function ImportsPage() {
               </div>
             )}
             <div className="flex items-center gap-2 flex-wrap">
-              <Button onClick={analyze} disabled={busy || !csvText}>
+              <Button onClick={analyze} disabled={busy || !hasSource}>
                 <FileSpreadsheet className="w-4 h-4 me-1.5" /> {busy ? 'Reading…' : 'Continue'}
               </Button>
-              <Button variant="secondary" onClick={downloadSample}>
+              <Button variant="secondary" onClick={() => downloadSample('csv')}>
                 <FileSpreadsheet className="w-4 h-4 me-1.5" /> Download sample CSV
+              </Button>
+              <Button variant="secondary" onClick={() => downloadSample('xlsx')}>
+                <FileSpreadsheet className="w-4 h-4 me-1.5" /> Download sample Excel
               </Button>
             </div>
             <p className="text-xs text-ink-muted mt-3">

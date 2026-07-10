@@ -12,6 +12,10 @@ pydantic-settings==2.1.0
 python-dotenv==1.0.0
 email-validator==2.1.0
 pandas==2.1.4
+# Excel import (E1-3). openpyxl reads .xlsx; xlrd 2.x reads ONLY legacy .xls.
+# Used directly (not via pandas.read_excel) so the parser stays pure + streamable.
+openpyxl==3.1.2
+xlrd==2.0.1
 numpy==1.26.3
 # Forecasting (ML tier) — small CPU wheel
 lightgbm==4.3.0

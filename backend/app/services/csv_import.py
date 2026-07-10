@@ -120,6 +120,25 @@ def sample_csv(import_type: str) -> Optional[str]:
     return SAMPLES.get(import_type)
 
 
+def sample_xlsx(import_type: str) -> Optional[bytes]:
+    """Build the .xlsx sample from the SAME SAMPLES text (E1-3), so the Excel and
+    CSV samples can never drift apart. Generated on the fly; nothing on disk."""
+    text = SAMPLES.get(import_type)
+    if text is None:
+        return None
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = import_type[:31]  # Excel caps sheet names at 31 chars
+    for row in csv.reader(io.StringIO(text)):
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def import_types() -> List[str]:
     return list(SCHEMAS.keys())
 
@@ -138,6 +157,66 @@ def schema_for(import_type: str) -> Optional[Dict]:
     }
 
 
+# --- messy-header tolerance (E1-3) -----------------------------------------
+# Real retailer exports carry non-breaking spaces, stray BOMs, trailing unnamed
+# columns and duplicate header names. Both parsers run headers through this so a
+# .xlsx and a .csv of the same sheet map identically.
+
+_INVISIBLE = "﻿ ​"  # BOM, non-breaking space, zero-width space
+
+
+def normalize_headers(raw: List[str]) -> List[str]:
+    """Clean + de-duplicate header names, dropping trailing empty columns.
+
+    Duplicate names are suffixed (`name`, `name_2`) rather than silently collapsed —
+    the row dict is keyed by header, so two columns called `name` would otherwise
+    make the second overwrite the first and lose a column of the customer's data.
+    """
+    cleaned: List[str] = []
+    for h in raw:
+        h = "" if h is None else str(h)
+        for ch in _INVISIBLE:
+            h = h.replace(ch, " ")
+        cleaned.append(" ".join(h.split()))  # collapse internal whitespace + trim
+
+    while cleaned and cleaned[-1] == "":       # Excel loves trailing blank columns
+        cleaned.pop()
+
+    seen: Dict[str, int] = {}
+    out: List[str] = []
+    for h in cleaned:
+        if h in seen:
+            seen[h] += 1
+            out.append(f"{h}_{seen[h]}")
+        else:
+            seen[h] = 1
+            out.append(h)
+    return out
+
+
+def _cell_to_text(v) -> str:
+    """Render a spreadsheet cell exactly as the CSV path would see it.
+
+    Excel hands back typed values: dates as datetime, whole numbers as floats
+    (42.0), and money as floats with binary noise (6.5000000000000002). Getting
+    this wrong silently fails validation or shifts values, so it is done once here
+    rather than left to _coerce.
+    """
+    if v is None:
+        return ""
+    if isinstance(v, datetime):
+        return v.date().isoformat()
+    if isinstance(v, date):
+        return v.isoformat()
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, float):
+        if v.is_integer():
+            return str(int(v))
+        return f"{v:.6f}".rstrip("0").rstrip(".")  # kill float noise
+    return str(v).strip()
+
+
 def parse_csv(text: str, sample: Optional[int] = None) -> Tuple[List[str], List[Dict[str, str]]]:
     """Parse CSV text → (headers, rows-as-dicts). Tolerates a BOM and quoted fields.
     `sample` caps the number of rows returned (for preview)."""
@@ -147,7 +226,7 @@ def parse_csv(text: str, sample: Optional[int] = None) -> Tuple[List[str], List[
     rows = list(reader)
     if not rows:
         return [], []
-    headers = [h.strip() for h in rows[0]]
+    headers = normalize_headers(rows[0])
     out: List[Dict[str, str]] = []
     for r in rows[1:]:
         if not any(cell.strip() for cell in r):
@@ -156,6 +235,89 @@ def parse_csv(text: str, sample: Optional[int] = None) -> Tuple[List[str], List[
         out.append(record)
         if sample and len(out) >= sample:
             break
+    return headers, out
+
+
+# Magic bytes — never trust the client's declared file type.
+_XLSX_MAGIC = b"PK\x03\x04"          # zip container (OOXML)
+_XLS_MAGIC = b"\xd0\xcf\x11\xe0"     # OLE2 compound document (legacy BIFF)
+
+
+def sniff_workbook_kind(data: bytes) -> Optional[str]:
+    """'xlsx' | 'xls' | None, from the file's own bytes."""
+    if data.startswith(_XLSX_MAGIC):
+        return "xlsx"
+    if data.startswith(_XLS_MAGIC):
+        return "xls"
+    return None
+
+
+def _iter_xlsx_rows(data: bytes):
+    """Stream rows from the first worksheet. read_only keeps a crafted 'zip bomb'
+    from being materialised in memory all at once."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    try:
+        ws = wb[wb.sheetnames[0]]
+        for row in ws.iter_rows(values_only=True):
+            yield list(row)
+    finally:
+        wb.close()
+
+
+def _iter_xls_rows(data: bytes):
+    """Legacy .xls via xlrd (2.x reads .xls only)."""
+    import xlrd
+
+    book = xlrd.open_workbook(file_contents=data)
+    sheet = book.sheet_by_index(0)
+    for idx in range(sheet.nrows):
+        out = []
+        for cell in sheet.row(idx):
+            if cell.ctype == xlrd.XL_CELL_DATE:
+                out.append(datetime(*xlrd.xldate_as_tuple(cell.value, book.datemode)))
+            elif cell.ctype == xlrd.XL_CELL_EMPTY:
+                out.append(None)
+            else:
+                out.append(cell.value)
+        yield out
+
+
+def parse_workbook(data: bytes, sample: Optional[int] = None) -> Tuple[List[str], List[Dict[str, str]]]:
+    """Parse .xlsx/.xls bytes → the SAME (headers, rows) contract as parse_csv, so
+    validate_rows / commit_import never learn there was a spreadsheet (E1-3).
+
+    Raises ValueError on an unrecognised container or a workbook over MAX_ROWS —
+    rows are counted while streaming rather than after materialising everything.
+    """
+    kind = sniff_workbook_kind(data)
+    if kind == "xlsx":
+        row_iter = _iter_xlsx_rows(data)
+    elif kind == "xls":
+        row_iter = _iter_xls_rows(data)
+    else:
+        raise ValueError("Not a recognised Excel file (.xlsx or .xls)")
+
+    headers: List[str] = []
+    out: List[Dict[str, str]] = []
+    for raw_row in row_iter:
+        if not headers:
+            headers = normalize_headers([_cell_to_text(c) for c in raw_row])
+            if not headers:
+                return [], []
+            continue
+
+        cells = [_cell_to_text(c) for c in raw_row]
+        if not any(c.strip() for c in cells):
+            continue  # blank row — Excel exports trail hundreds of these
+        out.append({headers[i]: (cells[i] if i < len(cells) else "") for i in range(len(headers))})
+
+        if sample and len(out) >= sample:
+            break
+        if not sample and len(out) > MAX_ROWS:
+            raise ValueError(f"Workbook exceeds the {MAX_ROWS:,}-row limit")
+
     return headers, out
 
 
@@ -293,10 +455,14 @@ async def commit_import(db: AsyncSession, tenant_id: int, import_type: str,
             # none, and every margin metric keeps saying `needs: cost`.
             cost = r.get("unit_cost_aed")
             if item_id and cost is not None:
+                # _coerce renders dates as ISO strings; asyncpg binds a DATE
+                # parameter strictly and rejects a str. Hand it a real date.
+                vf = r.get("cost_from")
+                if isinstance(vf, str) and vf:
+                    vf = date.fromisoformat(vf)
                 await db.execute(_sql("""
                     SELECT set_item_cost(:t, :iid, :cost, COALESCE(:vf, CURRENT_DATE), 'import')
-                """), {"t": tenant_id, "iid": item_id, "cost": cost,
-                       "vf": r.get("cost_from")})
+                """), {"t": tenant_id, "iid": item_id, "cost": cost, "vf": vf})
             imported += 1
 
     elif import_type == "suppliers":

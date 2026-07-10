@@ -1,17 +1,21 @@
 """
-CSV import API (real-data ingestion). Mounted at /api/imports.
+Spreadsheet import API (real-data ingestion). Mounted at /api/imports.
 
 Flow: analyze (detect headers) → validate (map + check every row) → commit (persist).
-The retailer's CSV text is sent in the JSON body (the frontend reads the file with
-FileReader). Operator-gated, tenant-scoped. Commits run in one transaction, are
-audited, and metered as `import` usage. Units-vs-AED is enforced by the validators.
-"""
-import json
-from typing import Dict, List, Optional
+A CSV arrives as `csv_text`; an Excel workbook arrives base64-encoded as `file_b64`
+(E1-3 — UAE reality: it's rarely a CSV). Both are parsed into the SAME
+(headers, rows) shape, so validate/commit never learn which it was.
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+Operator-gated, tenant-scoped. Commits run in one transaction, are audited, and
+metered as `import` usage. Units-vs-AED is enforced by the validators.
+"""
+import base64
+import json
+from typing import Dict, List, Optional, Tuple
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import PlainTextResponse, Response
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import text
 
 from app.services.database import async_session
@@ -30,15 +34,58 @@ def _require_operator(user: dict) -> None:
     raise HTTPException(status_code=403, detail="Operator role required")
 
 
-class AnalyzeRequest(BaseModel):
-    csv_text: str = Field(..., max_length=8_000_000)
+# Base64 inflates ~33%, so this caps a raw workbook near 8 MB — comfortably inside
+# BodySizeLimitMiddleware's 10 MB default while covering a 50k-row sheet (xlsx is
+# zip-compressed).
+_MAX_B64 = 11_000_000
 
 
-class ImportRequest(BaseModel):
+class _SourceMixin(BaseModel):
+    """A CSV body OR a base64 workbook — exactly one of them."""
+    csv_text: Optional[str] = Field(None, max_length=8_000_000)
+    file_b64: Optional[str] = Field(None, max_length=_MAX_B64)
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self):
+        if not self.csv_text and not self.file_b64:
+            raise ValueError("Provide csv_text or file_b64")
+        return self
+
+
+class AnalyzeRequest(_SourceMixin):
+    pass
+
+
+class ImportRequest(_SourceMixin):
     import_type: str
     mapping: Dict[str, str]
-    csv_text: str = Field(..., max_length=8_000_000)
     filename: Optional[str] = None
+
+
+def _parse_source(body: _SourceMixin, sample: Optional[int] = None) -> Tuple[List[str], List[Dict[str, str]]]:
+    """Turn either body shape into the one (headers, rows) contract.
+
+    The file's own magic bytes decide the format — a client-declared type is never
+    trusted, and a mislabelled .csv renamed to .xlsx fails loudly instead of
+    producing mojibake rows.
+    """
+    if body.file_b64:
+        try:
+            data = base64.b64decode(body.file_b64, validate=True)
+        except Exception:
+            raise HTTPException(status_code=422, detail="file_b64 is not valid base64")
+        if imp.sniff_workbook_kind(data) is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Not a recognised Excel file. Upload .xlsx or .xls, or send CSV text.",
+            )
+        try:
+            return imp.parse_workbook(data, sample=sample)
+        except ValueError as e:
+            # Row-limit / corrupt-container errors are the caller's problem, not a 500.
+            code = 413 if "row limit" in str(e).lower() or "exceeds" in str(e).lower() else 422
+            raise HTTPException(status_code=code, detail=str(e))
+    return imp.parse_csv(body.csv_text or "", sample=sample)
 
 
 @router.get("/types")
@@ -48,10 +95,27 @@ async def list_types(user: dict = Depends(get_current_user)):
     return {"types": [imp.schema_for(t) for t in imp.import_types()]}
 
 
-@router.get("/sample/{import_type}", response_class=PlainTextResponse)
-async def download_sample(import_type: str, user: dict = Depends(get_current_user)):
-    """A ready-made UAE sample CSV to try the wizard before using real data."""
+_XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.get("/sample/{import_type}")
+async def download_sample(
+    import_type: str,
+    format: str = Query("csv", pattern="^(csv|xlsx)$"),
+    user: dict = Depends(get_current_user),
+):
+    """A ready-made UAE sample to try the wizard before using real data.
+
+    `?format=xlsx` builds the workbook from the same sample text, so the Excel and
+    CSV samples can never drift apart (E1-3)."""
     _require_operator(user)
+    if format == "xlsx":
+        blob = imp.sample_xlsx(import_type)
+        if blob is None:
+            raise HTTPException(status_code=404, detail="No sample for that type")
+        return Response(blob, media_type=_XLSX_MEDIA, headers={
+            "Content-Disposition": f'attachment; filename="sample-{import_type}.xlsx"'})
+
     csv = imp.sample_csv(import_type)
     if csv is None:
         raise HTTPException(status_code=404, detail="No sample for that type")
@@ -61,12 +125,12 @@ async def download_sample(import_type: str, user: dict = Depends(get_current_use
 
 @router.post("/analyze")
 async def analyze(body: AnalyzeRequest, user: dict = Depends(get_current_user)):
-    """Detect the CSV's headers and return a small sample for the mapping step."""
+    """Detect the file's headers and return a small sample for the mapping step."""
     _require_operator(user)
-    headers, rows = imp.parse_csv(body.csv_text, sample=5)
+    headers, rows = _parse_source(body, sample=5)
     if not headers:
-        raise HTTPException(status_code=422, detail="No CSV header row found")
-    _, all_rows = imp.parse_csv(body.csv_text)
+        raise HTTPException(status_code=422, detail="No header row found")
+    _, all_rows = _parse_source(body)
     if len(all_rows) > imp.MAX_ROWS:
         raise HTTPException(status_code=413, detail=f"Too many rows (max {imp.MAX_ROWS})")
     return {"headers": headers, "sample": rows, "row_count": len(all_rows)}
@@ -78,7 +142,7 @@ async def validate(body: ImportRequest, user: dict = Depends(get_current_user)):
     _require_operator(user)
     if body.import_type not in imp.import_types():
         raise HTTPException(status_code=422, detail="Unknown import type")
-    headers, rows = imp.parse_csv(body.csv_text)
+    headers, rows = _parse_source(body)
     if len(rows) > imp.MAX_ROWS:
         raise HTTPException(status_code=413, detail=f"Too many rows (max {imp.MAX_ROWS})")
     result = imp.validate_rows(body.import_type, headers, rows, body.mapping)
@@ -92,7 +156,7 @@ async def commit(body: ImportRequest, user: dict = Depends(get_current_user)):
     if body.import_type not in imp.import_types():
         raise HTTPException(status_code=422, detail="Unknown import type")
     tenant_id = user.get("tenant_id") or 1
-    headers, rows = imp.parse_csv(body.csv_text)
+    headers, rows = _parse_source(body)
     if len(rows) > imp.MAX_ROWS:
         raise HTTPException(status_code=413, detail=f"Too many rows (max {imp.MAX_ROWS})")
     result = imp.validate_rows(body.import_type, headers, rows, body.mapping)
