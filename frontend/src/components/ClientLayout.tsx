@@ -7,15 +7,24 @@ import { useExperience } from '@/contexts/ExperienceContext';
 import { AppShell } from '@/components/shell';
 import { initTelemetry, identify, resetIdentity, track } from '@/lib/telemetry';
 
-// Pages that don't require authentication. /signup must be here or the guard
-// bounces signed-out visitors (its entire audience) back to /login — the
-// login page links to it via "Create your workspace".
-const publicPaths = ['/login', '/signup', '/forgot-password', '/reset-password', '/dev'];
+// Signed-out account-lifecycle pages (redirect authed users to home, let
+// signed-out visitors through). Each is the destination of a link or an email
+// that its audience opens while logged out — omitting one bounces that entire
+// audience to /login. `/accept-invite` activates a brand-new account from an
+// emailed token; `/signup` is linked from login as "Create your workspace".
+const publicPaths = [
+  '/login', '/signup', '/accept-invite', '/forgot-password', '/reset-password', '/dev',
+];
 
-// Truly open pages: reachable signed-in or out, no redirect in either
-// direction, rendered without the shell. The status page must stay reachable
-// even when auth (and the API behind it) is down — that's its whole job.
-const openPaths = ['/status'];
+// Truly open pages: reachable signed-in OR out, no redirect in either
+// direction, rendered without the shell.
+// - /status must stay reachable even when auth (and the API) is down.
+// - /verify-email runs an emailed token: clicked post-registration (signed
+//   out) or after an email change (signed in) — a redirect either way aborts
+//   verification before it runs.
+// - /trust is the public data-residency/compliance statement (public API,
+//   evaluated by prospects who aren't logged in).
+const openPaths = ['/status', '/verify-email', '/trust'];
 
 export default function ClientLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
