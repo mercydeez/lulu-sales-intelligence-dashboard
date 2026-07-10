@@ -2728,6 +2728,69 @@ CREATE SEQUENCE public.tenants_id_seq
 
 ALTER SEQUENCE public.tenants_id_seq OWNED BY public.tenants.id;
 
+CREATE TABLE public.transaction_lines (
+    id bigint NOT NULL,
+    transaction_id bigint NOT NULL,
+    line_no integer NOT NULL,
+    item_id integer NOT NULL,
+    qty numeric(10,3) NOT NULL,
+    unit_price_aed numeric(10,2) NOT NULL,
+    discount_aed numeric(10,2) DEFAULT 0 NOT NULL,
+    line_total_aed numeric(12,2) NOT NULL,
+    CONSTRAINT ck_transaction_lines_total CHECK ((abs((line_total_aed - ((qty * unit_price_aed) - discount_aed))) <= 0.01))
+);
+
+ALTER TABLE ONLY public.transaction_lines FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.transaction_lines IS 'E2-5 basket grain (lines). qty is UNITS (negative = return); *_aed columns are money. No tenant_id: scoped through its parent transaction, matching the house pattern used by purchase_order_lines / goods_receipt_lines / supplier_invoice_lines (migration 020).';
+
+CREATE SEQUENCE public.transaction_lines_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.transaction_lines_id_seq OWNED BY public.transaction_lines.id;
+
+CREATE TABLE public.transactions (
+    id bigint NOT NULL,
+    tenant_id integer DEFAULT 1 NOT NULL,
+    store_id integer NOT NULL,
+    txn_time timestamp with time zone NOT NULL,
+    txn_date date NOT NULL,
+    source character varying(40) DEFAULT 'pos'::character varying NOT NULL,
+    txn_ref character varying(120) NOT NULL,
+    register_id character varying(40),
+    cashier_employee_id integer,
+    customer_ref character varying(80),
+    payment_method character varying(30),
+    status character varying(20) DEFAULT 'completed'::character varying NOT NULL,
+    total_aed numeric(12,2) DEFAULT 0 NOT NULL,
+    discount_total_aed numeric(12,2) DEFAULT 0 NOT NULL,
+    tax_total_aed numeric(12,2),
+    is_synthetic boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT transactions_status_check CHECK (((status)::text = ANY ((ARRAY['completed'::character varying, 'voided'::character varying, 'refunded'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.transactions FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.transactions IS 'E2-5 basket grain (header). Created unfilled; the POS connector (E2-1) writes here where the source supports line detail. Revenue stays sourced from the DAILY grain (sales_fact_view / sales_rollup_daily) — this is a parallel grain, never UNIONed in, or a connected POS would double-count. See ADR-010. Unrelated to inventory_transactions, employee_transactions and basket_associations.';
+
+COMMENT ON COLUMN public.transactions.txn_date IS 'Store-local calendar day of txn_time. A plain column because timestamptz::date is not IMMUTABLE and so cannot be a generated/indexed expression.';
+
+COMMENT ON COLUMN public.transactions.customer_ref IS 'Opaque loyalty/customer identifier from the POS. Never store PII here.';
+
+CREATE SEQUENCE public.transactions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.transactions_id_seq OWNED BY public.transactions.id;
+
 CREATE TABLE public.usage_events (
     id bigint NOT NULL,
     tenant_id integer NOT NULL,
@@ -3049,6 +3112,10 @@ ALTER TABLE ONLY public.tenant_webhooks ALTER COLUMN id SET DEFAULT nextval('pub
 
 ALTER TABLE ONLY public.tenants ALTER COLUMN id SET DEFAULT nextval('public.tenants_id_seq'::regclass);
 
+ALTER TABLE ONLY public.transaction_lines ALTER COLUMN id SET DEFAULT nextval('public.transaction_lines_id_seq'::regclass);
+
+ALTER TABLE ONLY public.transactions ALTER COLUMN id SET DEFAULT nextval('public.transactions_id_seq'::regclass);
+
 ALTER TABLE ONLY public.usage_events ALTER COLUMN id SET DEFAULT nextval('public.usage_events_id_seq'::regclass);
 
 ALTER TABLE ONLY public.user_feedback ALTER COLUMN id SET DEFAULT nextval('public.user_feedback_id_seq'::regclass);
@@ -3342,6 +3409,12 @@ ALTER TABLE ONLY public.tenants
 ALTER TABLE ONLY public.tenants
     ADD CONSTRAINT tenants_slug_key UNIQUE (slug);
 
+ALTER TABLE ONLY public.transaction_lines
+    ADD CONSTRAINT transaction_lines_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.transactions
+    ADD CONSTRAINT transactions_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.basket_associations
     ADD CONSTRAINT unique_item_pair UNIQUE (item_a_id, item_b_id);
 
@@ -3392,6 +3465,12 @@ ALTER TABLE ONLY public.scim_groups
 
 ALTER TABLE ONLY public.tenant_sso_providers
     ADD CONSTRAINT uq_tenant_sso_providers_tenant_name UNIQUE (tenant_id, name);
+
+ALTER TABLE ONLY public.transaction_lines
+    ADD CONSTRAINT uq_transaction_lines_line_no UNIQUE (transaction_id, line_no);
+
+ALTER TABLE ONLY public.transactions
+    ADD CONSTRAINT uq_transactions_source_ref UNIQUE (tenant_id, source, txn_ref);
 
 ALTER TABLE ONLY public.usage_events
     ADD CONSTRAINT usage_events_pkey PRIMARY KEY (id);
@@ -3663,6 +3742,16 @@ CREATE INDEX idx_tenant_sso_providers_enabled ON public.tenant_sso_providers USI
 CREATE INDEX idx_tenant_sso_providers_tenant ON public.tenant_sso_providers USING btree (tenant_id);
 
 CREATE INDEX idx_tenant_webhooks_tenant ON public.tenant_webhooks USING btree (tenant_id);
+
+CREATE INDEX idx_transaction_lines_item ON public.transaction_lines USING btree (item_id);
+
+CREATE INDEX idx_transaction_lines_txn ON public.transaction_lines USING btree (transaction_id);
+
+CREATE INDEX idx_transactions_scan ON public.transactions USING btree (tenant_id, store_id, txn_date);
+
+CREATE INDEX idx_transactions_tenant ON public.transactions USING btree (tenant_id);
+
+CREATE INDEX idx_transactions_time ON public.transactions USING btree (tenant_id, txn_time);
 
 CREATE INDEX idx_transfers_from ON public.stock_transfers USING btree (from_store_id);
 
@@ -4157,6 +4246,21 @@ ALTER TABLE ONLY public.tenant_webhooks
 ALTER TABLE ONLY public.tenants
     ADD CONSTRAINT tenants_status_changed_by_fkey FOREIGN KEY (status_changed_by) REFERENCES public.users(id);
 
+ALTER TABLE ONLY public.transaction_lines
+    ADD CONSTRAINT transaction_lines_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);
+
+ALTER TABLE ONLY public.transaction_lines
+    ADD CONSTRAINT transaction_lines_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES public.transactions(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.transactions
+    ADD CONSTRAINT transactions_cashier_employee_id_fkey FOREIGN KEY (cashier_employee_id) REFERENCES public.employees(id);
+
+ALTER TABLE ONLY public.transactions
+    ADD CONSTRAINT transactions_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id);
+
+ALTER TABLE ONLY public.transactions
+    ADD CONSTRAINT transactions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
 ALTER TABLE ONLY public.usage_events
     ADD CONSTRAINT usage_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -4333,6 +4437,12 @@ CREATE POLICY tenant_isolation ON public.tenant_billing_profile USING ((tenant_i
 
 CREATE POLICY tenant_isolation ON public.tenant_webhooks USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
+CREATE POLICY tenant_isolation ON public.transaction_lines USING ((EXISTS ( SELECT 1
+   FROM public.transactions t
+  WHERE ((t.id = transaction_lines.transaction_id) AND (t.tenant_id = public.current_tenant_id())))));
+
+CREATE POLICY tenant_isolation ON public.transactions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
 CREATE POLICY tenant_isolation ON public.usage_events USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.user_feedback USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
@@ -4344,6 +4454,10 @@ CREATE POLICY tenant_isolation ON public.value_realizations USING ((tenant_id = 
 CREATE POLICY tenant_isolation ON public.webhook_deliveries USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 ALTER TABLE public.tenant_webhooks ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.transaction_lines ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.usage_events ENABLE ROW LEVEL SECURITY;
 

@@ -131,3 +131,42 @@ Format: **Context → Decision → Consequences (good & bad)**. Status is one of
 **Consequences.**
 - 👍 Each change is measured/justified rather than cargo-culted; verified against the live stack with 92 passing tests.
 - 👎 A few "production-grade" ideals (CSP nonces, down-migrations, ML forecasting) are explicitly deferred rather than half-done.
+
+---
+
+## ADR-010 · Basket grain lives beside the daily grain, not inside it
+**Status:** Accepted (E2-5, migration 059)
+
+**Context.** Every sale is stored as a daily aggregate — `sales_historical` / `sales_stream_raw`
+carry `(date, store, item, units)` and are unified by `sales_fact_view`. That grain cannot answer
+"what else was in the basket?", "when do returns spike?", "which register voids the most?", or
+"did this promo cannibalise the item beside it?". Shrink, promo-cannibalisation and customer
+intelligence all need line grain. The blueprint (E2-5) wants the schema in place *before* the POS
+connector (E2-1) so the connector has somewhere to write, and so E10-8 (waste/expiry) has a base.
+
+**Decision.** Create `transactions` + `transaction_lines` as a **standalone, parallel grain**.
+Do **not** union or aggregate them into `sales_fact_view`, `metric_*`, `sage_*` or the `mv_*`
+matviews. Leave them empty until a real source fills them.
+
+**Why not bridge them now.**
+- The E2-1 connector will land *daily aggregates* in `external_sales` → `sales_rollup_daily`.
+  If `transactions` also fed `sales_fact_view`, the first connected POS would **double-count every
+  dirham** — the same sale arriving down two paths.
+- Bridging would force changes to migration-007's dependents (`mv_*`, `metric_*`, `sage_*`), which
+  the whole revenue surface reads. That is a large, reversible-only-with-pain change to make on
+  speculation, before a single real basket exists.
+- An empty table costs nothing. A wrong aggregation costs trust in every number on the dashboard.
+
+**Consequences.**
+- 👍 Revenue keeps exactly one source of truth (the daily grain). The connector can start writing
+  line detail without any downstream number moving.
+- 👍 Ingest is idempotent by construction: `UNIQUE (tenant_id, source, txn_ref)` means replaying a
+  POS export cannot duplicate a receipt.
+- 👎 Basket-level questions cannot be answered until a source fills the tables — the schema exists,
+  the intelligence does not. That is stated plainly rather than faked.
+- 🔁 Revisit when a real POS source lands: decide then whether the daily grain is *derived from*
+  the basket grain (one source of truth) rather than sitting alongside it.
+
+**Naming.** Three existing tables sound related and are not: `inventory_transactions` (stock
+movements), `employee_transactions` (synthetic demo rows, tenant-unscoped), `basket_associations`
+(the *output* of market-basket analysis). Nothing backfills this grain from them.
