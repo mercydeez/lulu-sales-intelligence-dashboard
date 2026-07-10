@@ -4,9 +4,11 @@ E-invoicing submission (UAE SaaS Phase 5 — completing the readiness fields).
 Builds on the e_invoice_* columns added in migration 044. UAE e-invoicing is being
 phased in; this provides the SUBMISSION LIFECYCLE (submit → accepted/rejected) behind
 a provider abstraction. A built-in 'mock' clearing house works with no external
-service (auto-accepts a well-formed invoice) so the flow is demoable today; real
-gateways (ZATCA-style / a UAE FTA-accredited provider) are recognised but gated until
-their credentials are configured — added later with no schema change.
+service (auto-accepts a well-formed invoice, tagged MOCK-) so the flow is demoable
+today. Real gateways (ZATCA-style / a UAE FTA-accredited provider) are recognised
+but NOT integrated: submit_einvoice refuses them — even when their API key is set —
+rather than fake an 'accepted' clearance. Wiring a real gateway is a later change
+(no schema change) that adds it to IMPLEMENTED_PROVIDERS.
 
 Pure helpers (payload build, provider check, validation) unit-test with no DB.
 
@@ -29,6 +31,12 @@ MOCK_PROVIDER = "mock"
 GATEWAY_PROVIDERS = {"zatca", "uae_fta"}
 ALL_PROVIDERS = {MOCK_PROVIDER} | GATEWAY_PROVIDERS
 
+# Providers with an ACTUAL submission implementation. A real gateway being
+# recognised + key-configured does NOT mean we can submit to it — the outbound
+# integration/accreditation is not built. Only 'mock' actually clears an invoice.
+# submit_einvoice refuses anything outside this set rather than faking acceptance.
+IMPLEMENTED_PROVIDERS = {MOCK_PROVIDER}
+
 
 def is_provider_available(provider: str) -> bool:
     if provider == MOCK_PROVIDER:
@@ -36,6 +44,12 @@ def is_provider_available(provider: str) -> bool:
     if provider in GATEWAY_PROVIDERS:
         return bool(os.getenv(f"{provider.upper()}_API_KEY"))
     return False
+
+
+def is_provider_implemented(provider: str) -> bool:
+    """Whether we can actually submit to this provider (vs. merely recognise it).
+    Real UAE gateways are recognised but not yet integrated/accredited."""
+    return provider in IMPLEMENTED_PROVIDERS
 
 
 def validate_submittable(invoice: Dict) -> Tuple[bool, Optional[str]]:
@@ -74,11 +88,26 @@ def build_einvoice_payload(invoice: Dict, lines: Optional[List[Dict]] = None) ->
 
 async def submit_einvoice(db: AsyncSession, invoice_id: int, *,
                           provider: str = MOCK_PROVIDER) -> Tuple[Optional[Dict], Optional[str]]:
-    """Submit an issued invoice to an e-invoicing provider. With 'mock' this
-    auto-accepts a well-formed invoice; a real gateway would call out and record the
-    returned status. Caller commits. Returns (result, None) or (None, error)."""
+    """Submit an issued invoice to an e-invoicing provider. Only the 'mock'
+    clearing house is actually implemented; it accepts a well-formed invoice and
+    tags the clearance MOCK- so it can never be mistaken for a real one.
+
+    A real gateway ('zatca'/'uae_fta') is REFUSED even when its API key is set —
+    the outbound integration/accreditation is not built, and marking a tax invoice
+    'accepted' without a real clearing response would be a fabricated compliance
+    record. Caller commits. Returns (result, None) or (None, error)."""
     if not is_provider_available(provider):
         return None, f"E-invoicing provider '{provider}' is not configured"
+
+    # Honesty gate: recognised + key-configured is NOT integrated. Never fake a
+    # real gateway's acceptance.
+    if not is_provider_implemented(provider):
+        return None, (
+            f"E-invoicing provider '{provider}' is recognised but not yet "
+            "integrated/accredited — no submission was performed and the invoice "
+            "was not cleared. Use 'mock' for demos; a real gateway requires the "
+            "outbound integration and UAE-FTA accreditation to be completed first."
+        )
 
     inv = (await db.execute(text("""
         SELECT id, tenant_id, invoice_number, status, currency, issued_at, created_at,
@@ -97,11 +126,13 @@ async def submit_einvoice(db: AsyncSession, invoice_id: int, *,
 
     import json
     payload = build_einvoice_payload(dict(inv))
+    payload["clearing"] = "mock"  # provenance stamped into the stored payload
     now = datetime.now(timezone.utc)
 
-    # Mock clearing house: a valid payload is accepted immediately.
+    # Mock clearing house: a valid payload is accepted immediately. The external id
+    # is MOCK-tagged so a mock clearance is never confused with a real FTA one.
     new_status = "accepted"
-    external_id = f"EI-{inv['invoice_number']}"
+    external_id = f"MOCK-EI-{inv['invoice_number']}"
 
     await db.execute(text("""
         UPDATE invoices
@@ -116,4 +147,4 @@ async def submit_einvoice(db: AsyncSession, invoice_id: int, *,
     return {"invoice_id": invoice_id, "tenant_id": inv["tenant_id"],
             "invoice_number": inv["invoice_number"],
             "e_invoice_status": new_status, "e_invoice_provider": provider,
-            "e_invoice_external_id": external_id}, None
+            "e_invoice_external_id": external_id, "mock": True}, None
