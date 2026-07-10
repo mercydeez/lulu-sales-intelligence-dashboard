@@ -3114,7 +3114,12 @@ CREATE TABLE public.value_realizations (
     confirmed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT value_realizations_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'dismissed'::text])))
+    dispute_reason text,
+    disputed_at timestamp with time zone,
+    disputed_by text,
+    CONSTRAINT value_realizations_dispute_keeps_amount CHECK (((status <> 'disputed'::text) OR (confirmed_value_aed IS NOT NULL))),
+    CONSTRAINT value_realizations_dispute_needs_reason CHECK (((status <> 'disputed'::text) OR ((dispute_reason IS NOT NULL) AND (length(btrim(dispute_reason)) > 0)))),
+    CONSTRAINT value_realizations_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'dismissed'::text, 'disputed'::text])))
 );
 
 CREATE SEQUENCE public.value_realizations_id_seq
@@ -3985,6 +3990,8 @@ CREATE INDEX ix_tenant_status_events_tenant ON public.tenant_status_events USING
 CREATE INDEX ix_usage_events_tenant_type_time ON public.usage_events USING btree (tenant_id, event_type, created_at DESC);
 
 CREATE INDEX ix_user_feedback_tenant_time ON public.user_feedback USING btree (tenant_id, created_at DESC);
+
+CREATE INDEX ix_value_realizations_disputed ON public.value_realizations USING btree (tenant_id, disputed_at DESC) WHERE (status = 'disputed'::text);
 
 CREATE INDEX ix_value_realizations_tenant ON public.value_realizations USING btree (tenant_id, status, confirmed_at DESC);
 

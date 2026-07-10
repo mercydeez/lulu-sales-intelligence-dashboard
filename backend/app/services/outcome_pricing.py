@@ -160,10 +160,11 @@ async def list_realizations(db: AsyncSession, tenant_id: int) -> List[Dict]:
     rows = (await db.execute(text("""
         SELECT v.id, v.finding_id, v.estimated_value_aed, v.confirmed_value_aed,
                v.status, v.note, v.confirmed_by, v.confirmed_at,
+               v.dispute_reason, v.disputed_at, v.disputed_by,
                f.title, f.entity_type, f.entity_id, f.entity_name, f.metric_before, f.metric_after
         FROM value_realizations v JOIN findings f ON f.id = v.finding_id
         WHERE v.tenant_id = :t
-        ORDER BY (v.status = 'pending') DESC, v.updated_at DESC
+        ORDER BY (v.status = 'pending') DESC, (v.status = 'disputed') DESC, v.updated_at DESC
         LIMIT 200
     """), {"t": tenant_id})).mappings().all()
     out = []
@@ -172,6 +173,10 @@ async def list_realizations(db: AsyncSession, tenant_id: int) -> List[Dict]:
         for k in ("estimated_value_aed", "confirmed_value_aed", "metric_before", "metric_after"):
             d[k] = _money(d[k]) if d.get(k) is not None else None
         d["confirmed_at"] = d["confirmed_at"].isoformat() if d.get("confirmed_at") else None
+        d["disputed_at"] = d["disputed_at"].isoformat() if d.get("disputed_at") else None
+        # A disputed line still shows the amount that WAS billed — the customer is
+        # contesting a specific number, and hiding it would make the dispute unarguable.
+        d["billable"] = d["status"] == "confirmed"
         # Ground pending rows with real entity economics + a conservative suggestion.
         if d["status"] == "pending":
             d["valuation"] = await valuation_context(db, tenant_id, d.get("entity_type"), d.get("entity_id"))
@@ -198,13 +203,94 @@ async def set_realization(db: AsyncSession, tenant_id: int, realization_id: int,
     return dict(row) if row else None
 
 
-async def confirmed_value_total(db: AsyncSession, tenant_id: int) -> Dict:
+async def dispute_realization(db: AsyncSession, tenant_id: int, realization_id: int, *,
+                              reason: str, user: str) -> Optional[Dict]:
+    """E8-5: the customer contests a value they previously confirmed.
+
+    Only a `confirmed` row can be disputed — a pending or dismissed line was never
+    billed, so there is nothing to contest. `confirmed_value_aed` is left intact so
+    resolving the dispute restores the original agreed figure rather than a
+    re-keyed one, and so the customer can see exactly which number they are arguing
+    with. The row leaves the billable total the instant this commits.
+    """
+    reason = (reason or "").strip()
+    if not reason:
+        return None
+
     row = (await db.execute(text("""
-        SELECT COALESCE(SUM(confirmed_value_aed), 0) AS total, COUNT(*) AS n
+        UPDATE value_realizations
+           SET status = 'disputed', dispute_reason = :reason,
+               disputed_by = :by, disputed_at = now(), updated_at = now()
+         WHERE id = :id AND tenant_id = :t AND status = 'confirmed'
+         RETURNING id, status, confirmed_value_aed, dispute_reason
+    """), {"reason": reason, "by": user, "id": realization_id, "t": tenant_id})
+    ).mappings().fetchone()
+    await db.commit()
+    return dict(row) if row else None
+
+
+async def resolve_dispute(db: AsyncSession, tenant_id: int, realization_id: int, *,
+                          resolution: str, note: Optional[str], user: str) -> Optional[Dict]:
+    """Close a dispute. `resolution` is about the DISPUTE, not the value:
+
+      accepted -> the customer was right; the line becomes `dismissed` and is never
+                  billed. The confirmed amount is cleared, because we have agreed
+                  it was not real.
+      rejected -> the value stands; the line returns to `confirmed` and re-enters
+                  the billable total at its original amount.
+
+    Naming it after the dispute rather than the value is deliberate: "resolve →
+    confirmed" reads as if the customer's objection produced a confirmation.
+    """
+    if resolution not in ("accepted", "rejected"):
+        return None
+
+    if resolution == "accepted":
+        set_clause = ("status = 'dismissed', confirmed_value_aed = NULL, "
+                      "confirmed_at = NULL, confirmed_by = NULL")
+    else:
+        set_clause = "status = 'confirmed', confirmed_at = COALESCE(confirmed_at, now())"
+
+    row = (await db.execute(text(f"""
+        UPDATE value_realizations
+           SET {set_clause},
+               note = COALESCE(:note, note),
+               dispute_reason = NULL, disputed_at = NULL, disputed_by = NULL,
+               updated_at = now()
+         WHERE id = :id AND tenant_id = :t AND status = 'disputed'
+         RETURNING id, status, confirmed_value_aed
+    """), {"note": note, "id": realization_id, "t": tenant_id})).mappings().fetchone()
+    await db.commit()
+    if not row:
+        return None
+    out = dict(row)
+    out["resolution"] = resolution
+    out["resolved_by"] = user
+    return out
+
+
+async def confirmed_value_total(db: AsyncSession, tenant_id: int) -> Dict:
+    """Billable value, and the disputed value deliberately kept out of it.
+
+    `status = 'confirmed'` already excludes disputes; the second aggregate exists so
+    the statement can SAY what it excluded. An invoice that is quietly short by the
+    disputed amount is how a billing dispute becomes a trust problem.
+    """
+    row = (await db.execute(text("""
+        SELECT
+          COALESCE(SUM(confirmed_value_aed) FILTER (WHERE status = 'confirmed'), 0) AS total,
+          COUNT(*)                          FILTER (WHERE status = 'confirmed')     AS n,
+          COALESCE(SUM(confirmed_value_aed) FILTER (WHERE status = 'disputed'), 0)  AS disputed_total,
+          COUNT(*)                          FILTER (WHERE status = 'disputed')      AS disputed_n
         FROM value_realizations
-        WHERE tenant_id = :t AND status = 'confirmed' AND confirmed_value_aed IS NOT NULL
+        WHERE tenant_id = :t AND confirmed_value_aed IS NOT NULL
     """), {"t": tenant_id})).mappings().fetchone()
-    return {"confirmed_value_aed": _money(row["total"]), "confirmed_count": int(row["n"])}
+    return {
+        "confirmed_value_aed": _money(row["total"]),
+        "confirmed_count": int(row["n"]),
+        "disputed_value_aed": _money(row["disputed_total"]),
+        "disputed_count": int(row["disputed_n"]),
+    }
 
 
 async def statement(db: AsyncSession, tenant_id: int) -> Dict:
@@ -213,4 +299,8 @@ async def statement(db: AsyncSession, tenant_id: int) -> Dict:
     stmt = build_statement(totals["confirmed_value_aed"], plan)
     stmt["confirmed_count"] = totals["confirmed_count"]
     stmt["plan_active"] = plan["active"]
+    # Disclose the exclusion rather than let the total silently shrink (E8-5).
+    stmt["disputed_value_aed"] = totals["disputed_value_aed"]
+    stmt["disputed_count"] = totals["disputed_count"]
+    stmt["disputed_value_excluded"] = totals["disputed_count"] > 0
     return stmt

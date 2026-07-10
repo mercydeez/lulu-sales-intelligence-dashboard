@@ -35,6 +35,17 @@ class RealizationUpdate(BaseModel):
     note: Optional[str] = None
 
 
+class DisputeRequest(BaseModel):
+    # A dispute nobody can read is a dispute nobody can resolve.
+    reason: str = Field(..., min_length=3, max_length=2000)
+
+
+class DisputeResolution(BaseModel):
+    # About the DISPUTE, not the value: accepted => the customer was right.
+    resolution: str = Field(..., pattern="^(accepted|rejected)$")
+    note: Optional[str] = None
+
+
 @router.get("/plan")
 async def get_plan(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     _require_admin(user)
@@ -68,6 +79,11 @@ async def set_realization(realization_id: int, body: RealizationUpdate,
     _require_admin(user)
     if body.status == "confirmed" and (body.confirmed_value_aed is None):
         raise HTTPException(status_code=422, detail="A confirmed value (AED) is required to confirm")
+    if body.status == "disputed":
+        # A dispute needs a reason and a state machine; it is not a status you set.
+        raise HTTPException(
+            status_code=422,
+            detail="Use POST /realizations/{id}/dispute to contest a confirmed value")
     row = await svc.set_realization(db, user.get("tenant_id") or 1, realization_id,
                                     confirmed_value_aed=body.confirmed_value_aed,
                                     status=body.status, note=body.note,
@@ -80,6 +96,64 @@ async def set_realization(realization_id: int, body: RealizationUpdate,
                        actor_email=user.get("email"),
                        detail=f"Realization {realization_id} {body.status}",
                        evidence={"value_aed": body.confirmed_value_aed})
+    return row
+
+
+@router.post("/realizations/{realization_id}/dispute")
+async def dispute_realization(realization_id: int, body: DisputeRequest,
+                              user: dict = Depends(get_current_user),
+                              db: AsyncSession = Depends(get_db)):
+    """E8-5: contest a confirmed value. Raised by the party being billed.
+
+    Succeeds only from `confirmed` — a pending or dismissed line was never billed,
+    so there is nothing to contest, and we return 409 rather than silently doing
+    nothing. The disputed amount leaves the billable total immediately.
+    """
+    _require_admin(user)
+    tenant_id = user.get("tenant_id") or 1
+    row = await svc.dispute_realization(db, tenant_id, realization_id,
+                                        reason=body.reason,
+                                        user=user.get("email") or "operator")
+    if row is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Only a confirmed realization can be disputed (it may already be "
+                   "disputed, dismissed, or still pending)")
+    from app.services.security_events import record_event
+    await record_event("value_realization_disputed", category="audit", severity="medium",
+                       tenant_id=tenant_id, actor_user_id=user.get("id"),
+                       actor_email=user.get("email"),
+                       detail=f"Realization {realization_id} disputed",
+                       evidence={"reason": body.reason,
+                                 "value_aed": row.get("confirmed_value_aed")})
+    return row
+
+
+@router.post("/realizations/{realization_id}/resolve-dispute")
+async def resolve_dispute(realization_id: int, body: DisputeResolution,
+                          user: dict = Depends(get_current_user),
+                          db: AsyncSession = Depends(get_db)):
+    """Close a dispute. Vendor-side only.
+
+    The tenant admin raises a dispute against their own invoice; the operator who
+    issues that invoice resolves it. Letting the billed party also decide the
+    outcome would make the dispute state decorative.
+    """
+    if user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Super-admin access required")
+    tenant_id = user.get("tenant_id") or 1
+    row = await svc.resolve_dispute(db, tenant_id, realization_id,
+                                    resolution=body.resolution, note=body.note,
+                                    user=user.get("email") or "operator")
+    if row is None:
+        raise HTTPException(status_code=409, detail="No open dispute on this realization")
+    from app.services.security_events import record_event
+    await record_event("value_realization_dispute_resolved", category="audit", severity="medium",
+                       tenant_id=tenant_id, actor_user_id=user.get("id"),
+                       actor_email=user.get("email"),
+                       detail=f"Realization {realization_id} dispute {body.resolution}",
+                       evidence={"resolution": body.resolution,
+                                 "resulting_status": row.get("status")})
     return row
 
 
