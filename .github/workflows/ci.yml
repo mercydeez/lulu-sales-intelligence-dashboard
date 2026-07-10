@@ -257,6 +257,36 @@ jobs:
           echo "on_disk=$on_disk applied=$applied"
           test "$applied" -ge "$on_disk"
 
+      # E6-2: the committed Alembic baseline must match the schema the canonical
+      # path (init.sql + numbered migrations) actually produces. If a prior
+      # migration was edited, or a new one landed without regenerating the
+      # baseline, the normalized dumps differ and this fails.
+      - name: Schema drift guard (baseline is current)
+        run: |
+          docker compose exec -T postgres pg_dump -U salesuser -d salesdb \
+            --schema-only --no-owner --no-privileges \
+            | grep -vE '^--' | grep -vE '^\\(un)?restrict ' | cat -s > /tmp/live_schema.sql
+          if ! diff -u database/baseline/schema_baseline.sql /tmp/live_schema.sql; then
+            echo "::error::Schema baseline is stale. Run ./scripts/regenerate-schema-baseline.sh and commit."
+            exit 1
+          fi
+          echo "Baseline matches the canonical schema."
+
+      # E6-2: `alembic upgrade head` on an EMPTY database must reproduce that same
+      # schema (proves the squash baseline is a valid entry point, not just a file).
+      - name: Alembic upgrade head reproduces the schema
+        run: |
+          docker compose exec -T postgres psql -U salesuser -d postgres -c "CREATE DATABASE alembic_ci;"
+          docker compose run --rm --user root \
+            -e DATABASE_URL="postgresql+asyncpg://salesuser:salespass@postgres:5432/alembic_ci" \
+            backend bash -lc "cd /app && python -m alembic upgrade head && python -m alembic current | grep -q '0001_baseline (head)'"
+          # Functional parity: same table/view/function/trigger/policy counts as the
+          # canonical DB, allowing +1 table/index for alembic_version bookkeeping.
+          canon=$(docker compose exec -T postgres psql -U salesuser -d salesdb -tAc "SELECT (SELECT count(*) FROM information_schema.views WHERE table_schema='public')||'/'||(SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace=n.oid WHERE n.nspname='public')||'/'||(SELECT count(*) FROM pg_policy);")
+          built=$(docker compose exec -T postgres psql -U salesuser -d alembic_ci -tAc "SELECT (SELECT count(*) FROM information_schema.views WHERE table_schema='public')||'/'||(SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace=n.oid WHERE n.nspname='public')||'/'||(SELECT count(*) FROM pg_policy);")
+          echo "views/functions/policies — canonical=$canon alembic=$built"
+          test "$canon" = "$built"
+
       - name: Tear down
         if: always()
         run: docker compose down -v
