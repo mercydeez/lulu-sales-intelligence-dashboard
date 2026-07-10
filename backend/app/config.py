@@ -232,6 +232,12 @@ class Settings(BaseSettings):
     # revenue. Set false to withhold it (the endpoint then 404s).
     forecast_methodology_public: bool = True
 
+    # E8-3: turn plan quotas from a meter into a limit. Off by default — we meter
+    # first and enforce once the numbers have been watched for a period. Was read
+    # via a bare os.getenv in usage_metering, which kept it out of Settings and
+    # therefore out of every test that overrides configuration.
+    enforce_usage_quotas: bool = False
+
     # E6-6: the public API's version lifecycle (services/api_versioning.py).
     # Both dates are UNSET, which is what makes /api/public/v1 "current" — the
     # deprecation machinery is live, it simply has nothing to announce. Setting

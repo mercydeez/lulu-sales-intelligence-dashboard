@@ -47,7 +47,11 @@ async def export_my_tenant(
                        actor_user_id=user.get("id"), actor_email=user.get("email"),
                        detail=f"Tenant {tenant_id} data export generated",
                        evidence={"tables": list(data.get("tables", {}).keys())})
-    # Usage metering (Phase 3): count this export against the billing-period quota.
+    # Usage metering (Phase 3): counted against the billing-period quota, but
+    # deliberately NOT enforced (E8-3). Data portability is a right the tenant has
+    # over their own data (GDPR Art. 20, UAE PDPL) — we may bill for it, we may not
+    # refuse it because a meter is full. Every other export surface calls
+    # enforce_quota; this one only records.
     from app.services.usage_metering import record_usage
     await record_usage(tenant_id, "export", metadata={"kind": "data_rights"})
     # Force a download with a stable filename.

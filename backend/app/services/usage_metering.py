@@ -1,22 +1,38 @@
 """
-Billing-period usage metering + soft quotas (UAE SaaS Phase 3).
+Billing-period usage metering + quotas (UAE SaaS Phase 3, enforcement E8-3).
 
 Moves metering from the Track-5 *lifetime* totals to the CURRENT BILLING PERIOD —
 the calendar month in Asia/Dubai. Events are appended to `usage_events` (migration
 043); the summary counts them in-period and meters them against per-plan limits.
 
-Enforcement is SOFT and OFF by default (meter now, enforce when the operator turns
-it on) so the demo/MVP and existing tests are unaffected: set ENFORCE_USAGE_QUOTAS=
-true to make `check_quota` return not-allowed once a non-unlimited limit is exceeded.
-Enterprise (None limit) is always unlimited. UAE manual/enterprise plans stay custom.
+Enforcement is OFF by default (`ENFORCE_USAGE_QUOTAS`), so the demo/MVP and the
+existing tests are unaffected. When on, `enforce_quota` raises 429 once a
+non-unlimited plan limit is consumed. Enterprise (None limit) is always
+unlimited; UAE manual/enterprise plans stay custom.
+
+WHAT EACH DIMENSION COUNTS (E8-3 — these definitions are the contract):
+  sage_messages  one message sent to Sage.
+  imports        one import JOB, not one imported row. A 5,000-row CSV is 1.
+  exports        one generated export/download.
+  forecast_jobs  one forecast computed *on demand through the public API*. A
+                 dashboard panel re-rendering its projection is NOT a job — the
+                 free limit of 50/month would otherwise be spent by a few days of
+                 ordinary browsing, and we would be billing for our own re-renders.
+  api_requests   one authenticated call to /api/public/v1/*.
+
+FAIL-OPEN, FAIL-CLOSED: a metering *infrastructure* failure (DB down, table
+missing) must never block a paid action — `enforce_quota` allows the request.
+An actual over-quota is a business decision and does block. The two are
+deliberately not the same code path.
 
 LEGAL/BILLING: this is metering, not invoicing. No money moves here.
 """
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional, Tuple
+
+from fastapi import HTTPException
 
 try:  # py3.9+ stdlib; Asia/Dubai is a fixed +04:00 (no DST) so a fallback is exact.
     from zoneinfo import ZoneInfo
@@ -50,6 +66,18 @@ USAGE_LIMITS: Dict[str, Dict[str, Optional[int]]] = {
     "enterprise": {"sage_messages": None,   "forecast_jobs": None,  "exports": None, "imports": None, "api_requests": None},
 }
 _DEFAULT_PLAN = "free"
+
+# Dimensions that actually REFUSE a request when enforcement is on. Everything
+# else is metered and billed, but never blocked.
+#
+# `exports` is metered-only on purpose. Both of today's export surfaces are legal
+# rights rather than product features — data portability (GDPR Art. 20 / UAE PDPL)
+# and security-event evidence an admin may owe a regulator. We may bill for them;
+# refusing them because a meter is full is not a position we want to defend. When
+# a genuinely discretionary export ships, enforce it there and add it here.
+ENFORCED_DIMENSIONS: frozenset = frozenset(
+    {"sage_messages", "imports", "forecast_jobs", "api_requests"}
+)
 
 
 def usage_limits_for_plan(plan: Optional[str]) -> Dict[str, Optional[int]]:
@@ -119,7 +147,14 @@ async def usage_summary(db: AsyncSession, tenant_id: int) -> Dict:
     period = current_period()
     counts = await _period_counts(db, tenant_id, period)
     limits = usage_limits_for_plan(plan)
-    meters = {dim: _meter(counts[dim], limits[dim]) for dim in METERED_EVENTS}
+    on = _enforcement_on()
+    meters = {}
+    for dim in METERED_EVENTS:
+        m = _meter(counts[dim], limits[dim])
+        # Per-dimension truth: a limit that never refuses must not be rendered as
+        # a hard cap. `exports` is billed, not blocked — see ENFORCED_DIMENSIONS.
+        m["enforced"] = on and dim in ENFORCED_DIMENSIONS and limits[dim] is not None
+        meters[dim] = m
     return {
         "tenant_id": tenant_id,
         "plan": plan,
@@ -129,12 +164,16 @@ async def usage_summary(db: AsyncSession, tenant_id: int) -> Dict:
         "timezone": period["timezone"],
         "usage": meters,
         "any_over_quota": any(m["over_quota"] for m in meters.values()),
-        "enforced": _enforcement_on(),
+        "enforced": on,
+        "enforced_dimensions": sorted(ENFORCED_DIMENSIONS) if on else [],
     }
 
 
 def _enforcement_on() -> bool:
-    return os.getenv("ENFORCE_USAGE_QUOTAS", "false").strip().lower() in ("1", "true", "yes", "on")
+    """Typed config, not a bare os.getenv — so the flag is visible in Settings,
+    validated once, and overridable in tests the same way every other flag is."""
+    from app.config import get_settings
+    return bool(get_settings().enforce_usage_quotas)
 
 
 async def check_quota(db: AsyncSession, tenant_id: int, event_type: str) -> Tuple[bool, Dict]:
@@ -143,6 +182,11 @@ async def check_quota(db: AsyncSession, tenant_id: int, event_type: str) -> Tupl
     allowed is False only when enforcement is ON, the plan limit is not unlimited,
     and the in-period usage already meets/exceeds the limit. Enterprise (None) and
     enforcement-off are always allowed."""
+    allowed, meter, _plan = await _check(db, tenant_id, event_type)
+    return allowed, meter
+
+
+async def _check(db: AsyncSession, tenant_id: int, event_type: str) -> Tuple[bool, Dict, str]:
     dim = EVENT_TO_DIM.get(event_type, event_type)
     plan_row = (await db.execute(
         text("SELECT plan FROM tenants WHERE id = :tid"), {"tid": tenant_id}
@@ -154,5 +198,66 @@ async def check_quota(db: AsyncSession, tenant_id: int, event_type: str) -> Tupl
     used = counts.get(dim, 0)
     meter = _meter(used, limit)
     if not _enforcement_on() or limit is None:
-        return True, meter
-    return used < limit, meter
+        return True, meter, plan
+    return used < limit, meter, plan
+
+
+def seconds_until_period_reset(now: Optional[datetime] = None) -> int:
+    """How long until the quota refills — i.e. until the next billing period."""
+    now = now or datetime.now(timezone.utc)
+    end = current_period(now)["end"]
+    return max(1, int((end - now).total_seconds()))
+
+
+def quota_exceeded_error(dimension: str, plan: str, meter: Dict,
+                         now: Optional[datetime] = None) -> HTTPException:
+    """A 429 that tells the caller exactly which meter tripped and when it resets.
+
+    'Upgrade to continue' with no number is useless to a machine and infuriating
+    to a human, so both get the meter and the reset instant.
+    """
+    period = current_period(now)
+    retry_after = seconds_until_period_reset(now)
+    resets_at = period["end"].isoformat()
+    return HTTPException(
+        status_code=429,
+        headers={
+            "Retry-After": str(retry_after),
+            "X-Quota-Dimension": dimension,
+            "X-Quota-Limit": str(meter["limit"]),
+            "X-Quota-Remaining": str(meter["remaining"]),
+            "X-Quota-Reset": resets_at,
+        },
+        detail={
+            "error": "quota_exceeded",
+            "dimension": dimension,
+            "plan": plan,
+            "used": meter["used"],
+            "limit": meter["limit"],
+            "remaining": meter["remaining"],
+            "period": period["label"],
+            "resets_at": resets_at,
+            "message": (
+                f"Your {plan} plan allows {meter['limit']} {dimension.replace('_', ' ')} "
+                f"per billing period, and {meter['used']} have been used. "
+                f"The quota resets on {resets_at}."
+            ),
+        },
+    )
+
+
+async def enforce_quota(db: AsyncSession, tenant_id: int, event_type: str) -> Optional[Dict]:
+    """Raise 429 if this tenant has consumed its plan's quota for `event_type`.
+
+    Fails OPEN on an infrastructure error: if we cannot read the meter, we do not
+    know the tenant is over, and refusing a paid action on a guess is worse than
+    letting one extra request through. Only a *measured* over-quota refuses.
+    """
+    try:
+        allowed, meter, plan = await _check(db, tenant_id, event_type)
+    except Exception:
+        return None  # metering is broken; the product keeps working
+
+    if not allowed:
+        raise quota_exceeded_error(EVENT_TO_DIM.get(event_type, event_type), plan, meter)
+    return meter

@@ -57,14 +57,38 @@ def test_current_period_december_rolls_to_january():
     assert now < p["end"]
 
 
+def _reload_settings(monkeypatch, value=None):
+    """E8-3 moved the flag from a bare os.getenv into Settings, which is lru_cached
+    — so an env change only lands after the cache is cleared. That is the whole
+    reason it moved: a cached, typed flag is one an operator can trust, and a test
+    that flips os.environ mid-process was only ever passing by accident."""
+    from app.config import get_settings
+    if value is None:
+        monkeypatch.delenv("ENFORCE_USAGE_QUOTAS", raising=False)
+    else:
+        monkeypatch.setenv("ENFORCE_USAGE_QUOTAS", value)
+    get_settings.cache_clear()
+    return get_settings
+
+
 def test_enforcement_off_by_default(monkeypatch):
-    monkeypatch.delenv("ENFORCE_USAGE_QUOTAS", raising=False)
-    assert _enforcement_on() is False
+    get_settings = _reload_settings(monkeypatch, None)
+    try:
+        assert _enforcement_on() is False
+    finally:
+        get_settings.cache_clear()
 
 
 def test_enforcement_on_when_flag_set(monkeypatch):
-    for val in ("true", "1", "yes", "on", "TRUE"):
-        monkeypatch.setenv("ENFORCE_USAGE_QUOTAS", val)
-        assert _enforcement_on() is True
-    monkeypatch.setenv("ENFORCE_USAGE_QUOTAS", "false")
-    assert _enforcement_on() is False
+    from app.config import get_settings
+    try:
+        for val in ("true", "1", "yes", "on", "TRUE"):
+            _reload_settings(monkeypatch, val)
+            assert _enforcement_on() is True, f"{val!r} should enable enforcement"
+        _reload_settings(monkeypatch, "false")
+        assert _enforcement_on() is False
+    finally:
+        # Never leave a cached Settings carrying a test's env behind for the
+        # next test in the session.
+        monkeypatch.delenv("ENFORCE_USAGE_QUOTAS", raising=False)
+        get_settings.cache_clear()

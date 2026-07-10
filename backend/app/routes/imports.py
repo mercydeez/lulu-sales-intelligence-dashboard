@@ -161,6 +161,14 @@ async def commit(body: ImportRequest, user: dict = Depends(get_current_user)):
     if body.import_type not in imp.import_types():
         raise HTTPException(status_code=422, detail="Unknown import type")
     tenant_id = user.get("tenant_id") or 1
+
+    # E8-3: check the plan quota BEFORE parsing/validating a possibly-huge file —
+    # refusing after ten seconds of work is the same 429 with a worse experience.
+    from app.services.usage_metering import enforce_quota
+    from app.services.database import async_session
+    async with async_session() as _s:
+        await enforce_quota(_s, tenant_id, "import")
+
     headers, rows = _parse_source(body)
     if len(rows) > imp.MAX_ROWS:
         raise HTTPException(status_code=413, detail=f"Too many rows (max {imp.MAX_ROWS})")
@@ -217,8 +225,12 @@ async def commit(body: ImportRequest, user: dict = Depends(get_current_user)):
                        evidence={"import_type": body.import_type, "imported": persist["imported"],
                                  "skipped": persist["skipped"], "job_id": job.id})
     from app.services.usage_metering import record_usage
-    await record_usage(tenant_id, "import", quantity=persist["imported"],
-                       metadata={"import_type": body.import_type})
+    # ONE import job, not one per row. The plan limit is "20 imports/month"; metering
+    # rows here made a single 5,000-row CSV read as 5,000 imports and would have
+    # bricked the free tier the moment enforcement was switched on (E8-3).
+    await record_usage(tenant_id, "import", quantity=1,
+                       metadata={"import_type": body.import_type,
+                                 "rows_imported": persist["imported"]})
     from app.services.notifications import notify
     await notify(tenant_id, type="export", severity="low",
                  title=f"Import completed: {persist['imported']} {body.import_type} rows",

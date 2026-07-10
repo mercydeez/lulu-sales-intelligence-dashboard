@@ -85,6 +85,18 @@ async def get_api_context(
 
     # Bind the tenant for this request so RLS + helpers scope correctly.
     tenant_context.set(ctx["tenant_id"])
+
+    # E8-3: every authenticated public call is one metered `api_request`. This is
+    # the only place the dimension can be counted exactly once per request, and it
+    # was previously advertised in the usage summary while nothing ever recorded
+    # it — a limit of 10,000 next to a permanent 0.
+    #
+    # Enforce BEFORE recording: a refused request must not consume the quota that
+    # refused it. `/versions` never reaches here, so discovery stays free.
+    from app.services.usage_metering import enforce_quota, record_usage
+    await enforce_quota(db, ctx["tenant_id"], "api_request")
+    await record_usage(ctx["tenant_id"], "api_request",
+                       metadata={"path": request.url.path})
     return ctx
 
 
@@ -141,9 +153,17 @@ async def public_projection(
 ):
     """Tenant-scoped forward revenue projection."""
     _require_scope(ctx, "read")
+    # E8-3: a `forecast_job` is a forecast computed on demand for an external
+    # caller. The dashboard's own projection panel is NOT a job — metering our own
+    # re-renders would spend a free tenant's 50/month in a few days of browsing.
+    from app.services.usage_metering import enforce_quota, record_usage
+    await enforce_quota(db, ctx["tenant_id"], "forecast_job")
+
     from app.services.forecast_service import revenue_projection
     horizon = max(7, min(horizon, 60))
-    return await revenue_projection(db, tenant_id=ctx["tenant_id"], allowed=None, horizon=horizon)
+    result = await revenue_projection(db, tenant_id=ctx["tenant_id"], allowed=None, horizon=horizon)
+    await record_usage(ctx["tenant_id"], "forecast_job", metadata={"horizon": horizon})
+    return result
 
 
 @router.get("/v1/inventory/reorder-suggestions")

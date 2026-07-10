@@ -67,22 +67,17 @@ def _scoped_session(user: dict, session_id: str) -> str:
 
 
 async def _meter_sage_message(tenant_id: int, intent) -> None:
-    """Soft-enforce the billing-period Sage quota then meter the message (Phase 3).
-    Raises 429 ONLY when ENFORCE_USAGE_QUOTAS is on and the plan is over limit;
-    otherwise best-effort — never breaks the chat on a metering error."""
-    from app.services.usage_metering import record_usage, check_quota
+    """Enforce the billing-period Sage quota, then meter the message (Phase 3, E8-3).
+
+    Raises 429 ONLY when ENFORCE_USAGE_QUOTAS is on and the plan's limit is spent;
+    a metering *infrastructure* failure never breaks the chat (enforce_quota fails
+    open). The 429 body carries the meter and the reset instant — "upgrade to
+    continue" with no number tells a machine nothing.
+    """
+    from app.services.usage_metering import record_usage, enforce_quota
     from app.services.database import async_session
-    try:
-        async with async_session() as _s:
-            allowed, _ = await check_quota(_s, tenant_id, "sage_message")
-        if not allowed:
-            raise HTTPException(
-                status_code=429,
-                detail="Monthly Sage message limit reached for your plan. Upgrade to continue.")
-    except HTTPException:
-        raise
-    except Exception:
-        pass
+    async with async_session() as _s:
+        await enforce_quota(_s, tenant_id, "sage_message")
     await record_usage(tenant_id, "sage_message",
                        metadata={"intent": str(intent) if intent is not None else None})
 

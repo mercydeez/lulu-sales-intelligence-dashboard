@@ -151,6 +151,13 @@ async def export_events(
         f"FROM security_events WHERE {' AND '.join(where)} "
         "ORDER BY occurred_at DESC LIMIT 10000"), p)).mappings().all()
 
+    # E8-3: meter the export so the `exports` dimension reflects reality. NOT
+    # enforced — this is compliance evidence an admin may owe a regulator, and a
+    # billing meter is not a reason to withhold it (same stance as /data-rights/export).
+    from app.services.usage_metering import record_usage
+    await record_usage(_tenant(user), "export",
+                       metadata={"kind": "security_events", "format": fmt, "rows": len(rows)})
+
     label = category or "events"
     if fmt == "json":
         body = json.dumps([{**dict(r), "occurred_at": r["occurred_at"].isoformat()}
