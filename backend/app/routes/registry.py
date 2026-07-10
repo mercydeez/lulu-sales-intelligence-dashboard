@@ -37,6 +37,7 @@ from app.routes import public_api, api_keys, webhooks, procurement
 from app.routes import security as security_routes
 from app.routes import data_rights as data_rights_routes
 from app.routes import provisioning as provisioning_routes
+from app.routes import payments as payments_routes
 from app.routes import sso as sso_routes
 from app.routes import scim as scim_routes
 
@@ -91,6 +92,7 @@ ROUTERS: List[RouterSpec] = [
     (public_api.router, "/api/public", ["Public API"]),
     (data_rights_routes.router, "/api/data-rights", ["Data Rights"]),
     (provisioning_routes.router, "/api/admin", ["Provisioning"]),
+    (payments_routes.router, "/api/payments", ["Payments"]),
     (sso_routes.router, "/api/sso", ["SSO"]),
     (scim_routes.router, "/api/scim", ["SCIM"]),
 

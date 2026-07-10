@@ -354,6 +354,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         "/stream/",        # SSE endpoints
         "/api/ai/",        # AI streaming
         "/api/public/",    # Public API — authenticated by per-tenant API key, not cookies
+        "/api/payments/webhook/",  # Payment gateway webhooks — authenticated by
+                                   # HMAC signature (verify_webhook_signature), not a
+                                   # session; an external gateway cannot send a CSRF token.
     )
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

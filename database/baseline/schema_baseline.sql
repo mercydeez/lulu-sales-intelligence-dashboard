@@ -2121,6 +2121,60 @@ CREATE SEQUENCE public.password_reset_tokens_id_seq
 
 ALTER SEQUENCE public.password_reset_tokens_id_seq OWNED BY public.password_reset_tokens.id;
 
+CREATE TABLE public.payment_intents (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    invoice_id integer,
+    provider text NOT NULL,
+    amount_aed numeric(12,2) NOT NULL,
+    currency text DEFAULT 'AED'::text NOT NULL,
+    status text DEFAULT 'created'::text NOT NULL,
+    external_ref text,
+    checkout_url text,
+    settled_by_event_id integer,
+    failure_reason text,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payment_intents_amount_aed_check CHECK ((amount_aed >= (0)::numeric)),
+    CONSTRAINT payment_intents_paid_has_event CHECK (((status <> 'paid'::text) OR (settled_by_event_id IS NOT NULL))),
+    CONSTRAINT payment_intents_status_check CHECK ((status = ANY (ARRAY['created'::text, 'pending'::text, 'paid'::text, 'failed'::text, 'cancelled'::text, 'expired'::text])))
+);
+
+ALTER TABLE ONLY public.payment_intents FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.payment_intents_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.payment_intents_id_seq OWNED BY public.payment_intents.id;
+
+CREATE TABLE public.payment_webhook_events (
+    id integer NOT NULL,
+    provider text NOT NULL,
+    event_ref text,
+    signature_verified boolean DEFAULT false NOT NULL,
+    intent_id integer,
+    result text,
+    payload jsonb,
+    processed boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE SEQUENCE public.payment_webhook_events_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.payment_webhook_events_id_seq OWNED BY public.payment_webhook_events.id;
+
 CREATE TABLE public.predictions (
     id integer NOT NULL,
     store_id integer NOT NULL,
@@ -3507,6 +3561,10 @@ ALTER TABLE ONLY public.online_prices ALTER COLUMN id SET DEFAULT nextval('publi
 
 ALTER TABLE ONLY public.password_reset_tokens ALTER COLUMN id SET DEFAULT nextval('public.password_reset_tokens_id_seq'::regclass);
 
+ALTER TABLE ONLY public.payment_intents ALTER COLUMN id SET DEFAULT nextval('public.payment_intents_id_seq'::regclass);
+
+ALTER TABLE ONLY public.payment_webhook_events ALTER COLUMN id SET DEFAULT nextval('public.payment_webhook_events_id_seq'::regclass);
+
 ALTER TABLE ONLY public.predictions ALTER COLUMN id SET DEFAULT nextval('public.predictions_id_seq'::regclass);
 
 ALTER TABLE ONLY public.procurement_events ALTER COLUMN id SET DEFAULT nextval('public.procurement_events_id_seq'::regclass);
@@ -3748,6 +3806,15 @@ ALTER TABLE ONLY public.password_reset_tokens
 
 ALTER TABLE ONLY public.password_reset_tokens
     ADD CONSTRAINT password_reset_tokens_token_key UNIQUE (token);
+
+ALTER TABLE ONLY public.payment_intents
+    ADD CONSTRAINT payment_intents_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.payment_webhook_events
+    ADD CONSTRAINT payment_webhook_events_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.payment_webhook_events
+    ADD CONSTRAINT payment_webhook_events_provider_event_ref_key UNIQUE (provider, event_ref);
 
 ALTER TABLE ONLY public.predictions
     ADD CONSTRAINT predictions_pkey PRIMARY KEY (id);
@@ -4319,6 +4386,12 @@ CREATE INDEX ix_notifications_tenant_user_time ON public.notifications USING btr
 
 CREATE INDEX ix_notifications_unread ON public.notifications USING btree (tenant_id, created_at DESC) WHERE (read_at IS NULL);
 
+CREATE INDEX ix_payment_intents_external ON public.payment_intents USING btree (provider, external_ref);
+
+CREATE INDEX ix_payment_intents_tenant ON public.payment_intents USING btree (tenant_id, status);
+
+CREATE INDEX ix_payment_webhook_intent ON public.payment_webhook_events USING btree (intent_id);
+
 CREATE INDEX ix_sales_historical_import_job ON public.sales_historical USING btree (import_job_id) WHERE (import_job_id IS NOT NULL);
 
 CREATE INDEX ix_stores_import_job ON public.stores USING btree (import_job_id) WHERE (import_job_id IS NOT NULL);
@@ -4680,6 +4753,15 @@ ALTER TABLE ONLY public.outcome_pricing_plans
 ALTER TABLE ONLY public.password_reset_tokens
     ADD CONSTRAINT password_reset_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.payment_intents
+    ADD CONSTRAINT payment_intents_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.payment_intents
+    ADD CONSTRAINT payment_intents_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.payment_webhook_events
+    ADD CONSTRAINT payment_webhook_events_intent_id_fkey FOREIGN KEY (intent_id) REFERENCES public.payment_intents(id) ON DELETE SET NULL;
+
 ALTER TABLE ONLY public.predictions
     ADD CONSTRAINT predictions_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);
 
@@ -4997,6 +5079,8 @@ ALTER TABLE public.online_prices ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.outcome_pricing_plans ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.payment_intents ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.procurement_events ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.product_suppliers ENABLE ROW LEVEL SECURITY;
@@ -5078,6 +5162,8 @@ CREATE POLICY tenant_isolation ON public.notifications USING ((tenant_id = publi
 CREATE POLICY tenant_isolation ON public.online_prices USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.outcome_pricing_plans USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.payment_intents USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.procurement_events USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
