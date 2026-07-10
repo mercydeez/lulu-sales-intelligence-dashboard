@@ -165,14 +165,17 @@ async def get_promotions_summary(
             
         except Exception as e:
             logger.error(f"Promotions summary error: {e}")
+            # Honest degradation: zeros labeled unavailable — never the old
+            # hardcoded fake numbers (12 active / 45 ended / AED 125,750...).
             return {
-                "active_promotions": 12,
-                "scheduled_promotions": 5,
-                "ended_promotions": 45,
-                "draft_promotions": 3,
-                "total_discounts_given": 125750.00,
-                "total_redemptions": 8547,
-                "currency": "AED"
+                "active_promotions": 0,
+                "scheduled_promotions": 0,
+                "ended_promotions": 0,
+                "draft_promotions": 0,
+                "total_discounts_given": 0,
+                "total_redemptions": 0,
+                "currency": "AED",
+                "data_basis": "unavailable"
             }
 
 

@@ -41,7 +41,8 @@ export function CategoryPerformancePanel({ categories, loading }: CategoryPerfor
                 </div>
                 <div className="flex justify-between text-sm text-ink-muted mb-2">
                   <span>{formatCurrency(cat.total_revenue)}</span>
-                  <span>~{cat.avg_discount.toFixed(0)}% avg discount</span>
+                  {/* avg_discount is null outside demo mode (no promotion-event source) — never invented */}
+                  <span>{cat.avg_discount != null ? `~${cat.avg_discount.toFixed(0)}% avg discount` : 'discount data unavailable'}</span>
                 </div>
                 <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
                   <div

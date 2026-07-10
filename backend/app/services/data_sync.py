@@ -4,13 +4,13 @@ Generates inventory, promotions, and alerts data based on live sales data
 Optimized with internal caching for expensive queries
 """
 import asyncio
-import random
+import zlib
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.database import async_session
-from app.config import logger
+from app.config import logger, get_settings
 
 # Simple in-memory cache for expensive queries
 _query_cache: Dict[str, tuple] = {}
@@ -31,10 +31,43 @@ def _set_cache(key: str, data: Dict):
     # Cleanup old entries
     if len(_query_cache) > 100:
         now = datetime.now()
-        keys_to_remove = [k for k, (_, ts) in _query_cache.items() 
+        keys_to_remove = [k for k, (_, ts) in _query_cache.items()
                          if (now - ts).seconds > CACHE_TTL * 2]
         for k in keys_to_remove:
             del _query_cache[k]
+
+
+# ---------------------------------------------------------------------------
+# Honesty helpers (B6). This module used to invent business numbers with the
+# random module and serve them from production routes with no demo gate. Policy:
+#   - DERIVE from a real source when one exists (promotions table, sales dates);
+#   - return None + a sibling "data_basis" label when nothing real exists;
+#   - in demo mode only, pseudo-values may be emitted, but they must be a
+#     STABLE function of real inputs — the same query always returns the same
+#     numbers — and be labeled "data_basis": "demo_synthetic".
+# ---------------------------------------------------------------------------
+
+def _demo_mode() -> bool:
+    """Whether demo-synthetic (deterministic, labeled) values may be emitted."""
+    return bool(get_settings().demo_mode)
+
+
+def _stable_hash(*parts) -> int:
+    """Deterministic hash of real inputs (crc32 — standardized across
+    platforms/processes). The builtin hash() is process-salted
+    (PYTHONHASHSEED) so it must not be used: demo pseudo-values have to be
+    identical across workers, restarts and repeated queries."""
+    return zlib.crc32("|".join(str(p) for p in parts).encode("utf-8"))
+
+
+def _stable_range(lo: int, hi: int, *parts) -> int:
+    """Deterministic integer in [lo, hi] derived from the inputs."""
+    return lo + _stable_hash(*parts) % (hi - lo + 1)
+
+
+def _stable_choice(options: List, *parts):
+    """Deterministic pick from options derived from the inputs."""
+    return options[_stable_hash(*parts) % len(options)]
 
 
 class DataSyncService:
@@ -253,7 +286,8 @@ class DataSyncService:
             
             result = await session.execute(text(query), params)
             rows = result.fetchall()
-            
+
+            demo = _demo_mode()
             items = []
             for row in rows:
                 quantity = row[6]
@@ -277,7 +311,20 @@ class DataSyncService:
                 
                 # Get unit cost from category
                 unit_cost = DataSyncService.CATEGORY_COSTS.get(category_name, 20.0)
-                
+
+                # There is no restock-event source in this system, so honest
+                # mode reports None rather than inventing a date. Demo mode
+                # derives a stable pseudo-date from the row's real identifiers
+                # and its real last sale date — the same row always yields the
+                # same date (was: random 1-7 days before "now").
+                if demo:
+                    anchor = row[11] or date.today()
+                    last_restocked = (
+                        anchor - timedelta(days=_stable_range(1, 7, "restock", row[4], row[1]))
+                    ).isoformat()
+                else:
+                    last_restocked = None
+
                 items.append({
                     "id": row[0],
                     "item_id": row[1],
@@ -291,8 +338,9 @@ class DataSyncService:
                     "unit_cost": unit_cost,
                     "avg_daily_sales": float(row[9]) if row[9] else 0,
                     "total_sold_30d": int(row[10]) if row[10] else 0,
-                    "last_restocked": (datetime.now() - timedelta(days=random.randint(1, 7))).isoformat(),
-                    "status": status_val
+                    "last_restocked": last_restocked,
+                    "status": status_val,
+                    "data_basis": "demo_synthetic" if demo else "derived_from_sales"
                 })
             
             # Get total count from the same calculated inventory and filters as
@@ -550,6 +598,12 @@ class DataSyncService:
             alerts = []
             alert_id = 1
 
+            # These alerts are materialized from CURRENT data at request time,
+            # so created_at is honestly "now" — the moment the condition was
+            # detected. The old code back-dated them by a random 1-48h to make
+            # the feed look historical; that was fabrication, not data.
+            materialized_at = datetime.now().isoformat()
+
             # 1. Low stock alerts
             low_stock_query = f"""
                 WITH recent_sales AS (
@@ -607,12 +661,13 @@ class DataSyncService:
                     "store_id": row[0],
                     "store_name": row[1],
                     "item_id": row[2],
-                    "created_at": (datetime.now() - timedelta(hours=random.randint(1, 24))).isoformat(),
+                    "created_at": materialized_at,
                     "acknowledged_at": None,
-                    "resolved_at": None
+                    "resolved_at": None,
+                    "data_basis": "derived_from_sales"
                 })
                 alert_id += 1
-            
+
             # 2. Sales anomaly alerts (unusually high or low sales)
             anomaly_query = f"""
                 WITH daily_sales AS (
@@ -669,9 +724,10 @@ class DataSyncService:
                         "store_id": row[0],
                         "store_name": row[1],
                         "item_id": row[2],
-                        "created_at": (datetime.now() - timedelta(hours=random.randint(1, 12))).isoformat(),
+                        "created_at": materialized_at,
                         "acknowledged_at": None,
-                        "resolved_at": None
+                        "resolved_at": None,
+                        "data_basis": "derived_from_sales"
                     })
                     alert_id += 1
             except Exception as e:
@@ -718,9 +774,10 @@ class DataSyncService:
                         "store_id": row[0],
                         "store_name": row[1],
                         "item_id": None,
-                        "created_at": (datetime.now() - timedelta(hours=random.randint(2, 48))).isoformat(),
+                        "created_at": materialized_at,
                         "acknowledged_at": None,
-                        "resolved_at": None
+                        "resolved_at": None,
+                        "data_basis": "derived_from_sales"
                     })
                     alert_id += 1
             except Exception as e:
@@ -782,94 +839,137 @@ class DataSyncService:
             
             result = await session.execute(text(query))
             rows = result.fetchall()
-            
-            # Generate promotion suggestions
+
+            # DEMO-ONLY synthetic suggestion-promotions. A promotion nobody
+            # created is not data: honest mode returns none of them (the routes
+            # merge in the real `promotions` table rows themselves, so nothing
+            # is lost). In demo mode the suggestions stay so the panel looks
+            # alive, but every pseudo-value is a stable function of the row's
+            # real identifiers/aggregates — the same query always returns the
+            # same numbers — and each object is labeled demo_synthetic.
             promotions = []
             promo_id = 1
             today = date.today()
-            
-            slow_movers = [r for r in rows if r[7] == 'slow_mover'][:5]
-            fast_movers = [r for r in rows if r[7] == 'fast_mover'][:3]
-            
-            # Create promotions for slow movers
-            for row in slow_movers:
-                category = row[2]
-                unit_cost = DataSyncService.CATEGORY_COSTS.get(category, 20.0)
-                discount = random.choice([10, 15, 20, 25])
-                
-                promotions.append({
-                    "id": promo_id,
-                    "name": f"{discount}% Off {row[1]}",
-                    "description": f"Special discount on {row[1]} to boost sales",
-                    "discount_type": "percentage",
-                    "discount_value": discount,
-                    "start_date": today.isoformat(),
-                    "end_date": (today + timedelta(days=random.randint(7, 14))).isoformat(),
-                    "status": "active",
-                    "item_id": row[0],
-                    "item_name": row[1],
-                    "category": category,
-                    "redemption_count": random.randint(50, 500),
-                    "total_discount_given": random.randint(500, 5000),
-                    "original_price": unit_cost,
-                    "promo_price": unit_cost * (1 - discount / 100)
-                })
-                promo_id += 1
-            
-            # Bundle promotions for fast movers
-            for row in fast_movers:
-                promotions.append({
-                    "id": promo_id,
-                    "name": f"Buy 2 Get 1 Free: {row[1]}",
-                    "description": f"Popular item bundle deal",
-                    "discount_type": "bogo",
-                    "discount_value": 33,
-                    "start_date": today.isoformat(),
-                    "end_date": (today + timedelta(days=random.randint(3, 7))).isoformat(),
-                    "status": "active",
-                    "item_id": row[0],
-                    "item_name": row[1],
-                    "category": row[2],
-                    "redemption_count": random.randint(100, 800),
-                    "total_discount_given": random.randint(1000, 8000),
-                    "original_price": DataSyncService.CATEGORY_COSTS.get(row[2], 20.0),
-                    "promo_price": None
-                })
-                promo_id += 1
-            
-            # Category-wide promotions
-            categories = list(set([r[2] for r in rows]))[:3]
-            for cat in categories:
-                discount = random.choice([5, 10, 15])
-                promotions.append({
-                    "id": promo_id,
-                    "name": f"{cat} Week Sale",
-                    "description": f"{discount}% off all {cat} items",
-                    "discount_type": "percentage",
-                    "discount_value": discount,
-                    "start_date": (today - timedelta(days=random.randint(0, 3))).isoformat(),
-                    "end_date": (today + timedelta(days=random.randint(4, 10))).isoformat(),
-                    "status": "active",
-                    "item_id": None,
-                    "item_name": None,
-                    "category": cat,
-                    "redemption_count": random.randint(200, 2000),
-                    "total_discount_given": random.randint(2000, 20000),
-                    "original_price": None,
-                    "promo_price": None
-                })
-                promo_id += 1
-            
+
+            if _demo_mode():
+                slow_movers = [r for r in rows if r[7] == 'slow_mover'][:5]
+                fast_movers = [r for r in rows if r[7] == 'fast_mover'][:3]
+
+                # Suggested discounts for slow movers
+                for row in slow_movers:
+                    category = row[2]
+                    unit_cost = DataSyncService.CATEGORY_COSTS.get(category, 20.0)
+                    total_sales = int(row[3] or 0)
+                    discount = _stable_choice([10, 15, 20, 25], "slow-discount", row[0])
+
+                    promotions.append({
+                        "id": promo_id,
+                        "name": f"{discount}% Off {row[1]}",
+                        "description": f"Special discount on {row[1]} to boost sales",
+                        "discount_type": "percentage",
+                        "discount_value": discount,
+                        "start_date": today.isoformat(),
+                        "end_date": (today + timedelta(days=_stable_range(7, 14, "slow-end", row[0]))).isoformat(),
+                        "status": "active",
+                        "item_id": row[0],
+                        "item_name": row[1],
+                        "category": category,
+                        "redemption_count": _stable_range(50, 500, "slow-red", row[0], total_sales),
+                        "total_discount_given": _stable_range(500, 5000, "slow-given", row[0], total_sales),
+                        "original_price": unit_cost,
+                        "promo_price": unit_cost * (1 - discount / 100),
+                        "data_basis": "demo_synthetic"
+                    })
+                    promo_id += 1
+
+                # Bundle suggestions for fast movers
+                for row in fast_movers:
+                    total_sales = int(row[3] or 0)
+                    promotions.append({
+                        "id": promo_id,
+                        "name": f"Buy 2 Get 1 Free: {row[1]}",
+                        "description": "Popular item bundle deal",
+                        "discount_type": "bogo",
+                        "discount_value": 33,
+                        "start_date": today.isoformat(),
+                        "end_date": (today + timedelta(days=_stable_range(3, 7, "fast-end", row[0]))).isoformat(),
+                        "status": "active",
+                        "item_id": row[0],
+                        "item_name": row[1],
+                        "category": row[2],
+                        "redemption_count": _stable_range(100, 800, "fast-red", row[0], total_sales),
+                        "total_discount_given": _stable_range(1000, 8000, "fast-given", row[0], total_sales),
+                        "original_price": DataSyncService.CATEGORY_COSTS.get(row[2], 20.0),
+                        "promo_price": None,
+                        "data_basis": "demo_synthetic"
+                    })
+                    promo_id += 1
+
+                # Category-wide suggestions. Sorted — `set` iteration order is
+                # arbitrary, and the same three categories must be picked on
+                # every call.
+                categories = sorted(set(r[2] for r in rows))[:3]
+                for cat in categories:
+                    discount = _stable_choice([5, 10, 15], "cat-discount", cat)
+                    promotions.append({
+                        "id": promo_id,
+                        "name": f"{cat} Week Sale",
+                        "description": f"{discount}% off all {cat} items",
+                        "discount_type": "percentage",
+                        "discount_value": discount,
+                        "start_date": (today - timedelta(days=_stable_range(0, 3, "cat-start", cat))).isoformat(),
+                        "end_date": (today + timedelta(days=_stable_range(4, 10, "cat-end", cat))).isoformat(),
+                        "status": "active",
+                        "item_id": None,
+                        "item_name": None,
+                        "category": cat,
+                        "redemption_count": _stable_range(200, 2000, "cat-red", cat),
+                        "total_discount_given": _stable_range(2000, 20000, "cat-given", cat),
+                        "original_price": None,
+                        "promo_price": None,
+                        "data_basis": "demo_synthetic"
+                    })
+                    promo_id += 1
+
+            # Summary counts come from the REAL promotions table (tenant-scoped
+            # since migration 060) — never invented. Was: scheduled/draft
+            # hardcoded to 3/2 and ended a random 20-50. No SQL runs after this
+            # read, so a swallowed failure cannot poison the session.
+            status_counts: Dict[str, int] = {}
+            stored_discounts = 0.0
+            stored_redemptions = 0
+            try:
+                stored = (await session.execute(
+                    text(
+                        "SELECT status::text, COUNT(*), "
+                        "COALESCE(SUM(total_discount_given), 0), "
+                        "COALESCE(SUM(current_uses), 0) "
+                        "FROM promotions WHERE tenant_id = :tenant_id "
+                        "GROUP BY status"
+                    ),
+                    {"tenant_id": int(tenant_id)},
+                )).fetchall()
+                for s in stored:
+                    status_counts[s[0]] = int(s[1])
+                    stored_discounts += float(s[2] or 0)
+                    stored_redemptions += int(s[3] or 0)
+            except Exception as e:
+                logger.warning(f"Stored-promotion summary unavailable: {e}")
+
             return {
                 "promotions": promotions,
                 "summary": {
-                    "active_promotions": len([p for p in promotions if p["status"] == "active"]),
-                    "scheduled_promotions": 3,
-                    "ended_promotions": random.randint(20, 50),
-                    "draft_promotions": 2,
-                    "total_discounts_given": sum(p["total_discount_given"] for p in promotions),
-                    "total_redemptions": sum(p["redemption_count"] for p in promotions),
-                    "currency": "AED"
+                    "active_promotions": status_counts.get("active", 0)
+                        + len([p for p in promotions if p["status"] == "active"]),
+                    "scheduled_promotions": status_counts.get("scheduled", 0),
+                    "ended_promotions": status_counts.get("ended", 0),
+                    "draft_promotions": status_counts.get("draft", 0),
+                    "total_discounts_given": stored_discounts
+                        + sum(p["total_discount_given"] for p in promotions),
+                    "total_redemptions": stored_redemptions
+                        + sum(p["redemption_count"] for p in promotions),
+                    "currency": "AED",
+                    "data_basis": "demo_synthetic" if promotions else "derived_from_promotions"
                 }
             }
             
@@ -930,19 +1030,29 @@ class DataSyncService:
             result = await session.execute(text(query))
             rows = result.fetchall()
             
+            demo = _demo_mode()
             categories = []
             for row in rows:
                 category = row[0]
                 unit_price = DataSyncService.CATEGORY_COSTS.get(category, 20.0)
+                # No per-category promotion-redemption source exists here, so
+                # honest mode reports None rather than inventing a discount.
+                # Demo mode derives a stable 5.00-14.99 pseudo-value from the
+                # category name (was: a uniform random draw in [5, 15)).
+                if demo:
+                    avg_discount = round(5 + (_stable_hash("avg-discount", category) % 1000) / 100.0, 2)
+                else:
+                    avg_discount = None
                 categories.append({
                     "category": category,
                     "total_units": int(row[1]),
                     "total_revenue": int(row[1]) * unit_price,
                     "previous_units": int(row[2]),
                     "growth_rate": float(row[3]) if row[3] else 0,
-                    "avg_discount": random.uniform(5, 15)
+                    "avg_discount": avg_discount,
+                    "data_basis": "demo_synthetic" if demo else "derived_from_sales"
                 })
-            
+
             return categories
             
         except Exception as e:
