@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 96" role="img" aria-label="RetailIQ" fill="currentColor">
+  <svg x="2" y="4" width="88" height="88" viewBox="8 12 76 76">
+    <g fill="currentColor" fill-rule="evenodd">
+      <path d="M18 64l10-10v24H18z"/>
+      <path d="M30 52l10-10v36H30z"/>
+      <path d="M42 18h10v60H42z"/>
+      <path d="M52 18h8c12 0 12 34 0 34h-8zM52 28h6c6 0 6 14 0 14h-6z"/>
+      <path d="M44 48h10l20 30H64z"/>
+    </g>
+  </svg>
+  <line x1="104" y1="26" x2="104" y2="70" stroke="currentColor" stroke-opacity="0.3" stroke-width="2"/>
+  <text x="120" y="62" fill="currentColor" font-family="Manrope, Poppins, 'Segoe UI', system-ui, sans-serif" font-size="44" font-weight="800" letter-spacing="-1.5">RetailIQ</text>
+</svg>
