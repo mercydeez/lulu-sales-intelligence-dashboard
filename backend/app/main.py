@@ -180,6 +180,15 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Import scheduler disabled (IMPORT_SCHEDULER_ENABLED=false)")
 
+    # E6-3: keep sales_stream_raw's monthly partitions ahead of the clock. If next
+    # month's partition is missing when the month turns, inserts fall into DEFAULT
+    # and stop being reclaimable by the retention policy.
+    if settings.partition_maintenance_enabled:
+        from app.services.partition_maintenance import partition_maintenance_loop
+        _track("partition_maintenance", partition_maintenance_loop())
+    else:
+        logger.info("Partition maintenance disabled (PARTITION_MAINTENANCE_ENABLED=false)")
+
     logger.info("Sales Dashboard API is ready!")
 
     yield

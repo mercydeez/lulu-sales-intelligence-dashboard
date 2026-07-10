@@ -232,6 +232,14 @@ class Settings(BaseSettings):
     # revenue. Set false to withhold it (the endpoint then 404s).
     forecast_methodology_public: bool = True
 
+    # E6-3: sales_stream_raw is partitioned by month. Maintenance creates the next
+    # three months and DROPs whole partitions older than the retention window —
+    # instant, and it returns the disk, where a DELETE would bloat the table.
+    # Dropping a month is irreversible: 0 disables pruning entirely (partitions are
+    # still created), and anything under 1 month is refused by the SQL function.
+    partition_maintenance_enabled: bool = True
+    sales_stream_retention_months: int = 12
+
     # E2-2: the recurring-import poller. On by default and inert with no schedules
     # — the claim query returns nothing and it sleeps. Creating a schedule (an
     # explicit, operator-supplied https URL) is the consent to make egress calls.
