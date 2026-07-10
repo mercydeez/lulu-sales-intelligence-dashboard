@@ -41,6 +41,7 @@ from app.routes import scim as scim_routes
 
 # Yash — Frontend-platform support surfaces (CX loops)
 from app.routes import feedback as feedback_routes
+from app.routes import bulk_import as bulk_import_routes
 
 # Atharva — AI / Sage / Decisions / Briefing / Role Experience / Diagnostics
 from app.routes import ai as ai_routes
@@ -93,6 +94,9 @@ ROUTERS: List[RouterSpec] = [
 
     # === Yash — Frontend-platform support surfaces (CX loops) ==============
     (feedback_routes.router, "/api/feedback", ["Feedback"]),
+    # Bulk external-data ingestion (SCALE-2): /api/imports/bulk — shares the
+    # /api/imports domain with the interactive importer, no path overlap.
+    (bulk_import_routes.router, "/api/imports", ["Bulk Import"]),
 
     # === Atharva — AI / Sage / Decisions / Briefing / Experience ===========
     (ai_routes.router, "/api/ai", ["AI Assistant"]),
