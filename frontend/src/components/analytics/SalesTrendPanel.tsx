@@ -91,8 +91,8 @@ export function SalesTrendPanel({ days }: SalesTrendPanelProps) {
               {/* UAE retail calendar shading (E4-7) — behind grid and series */}
               {calendarBands(calendar, data.map((d) => d.date))}
               <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
-              <XAxis dataKey="date" tickFormatter={formatDateShort} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} minTickGap={24} />
-              <YAxis width={Y_AXIS_WIDTH} stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
+              <XAxis dataKey="date" tickFormatter={formatDateShort} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={false} minTickGap={24} />
+              <YAxis width={Y_AXIS_WIDTH} stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={false} />
               <Tooltip
                 contentStyle={tooltipStyle}
                 labelStyle={tooltipLabelStyle}

@@ -121,7 +121,7 @@ export function EmployeePerformanceChart({
             <CartesianGrid {...gridProps} />
             <XAxis dataKey="name" {...axisProps} fontSize={12} />
             <YAxis {...axisProps} width={Y_AXIS_WIDTH} fontSize={12} />
-            <Tooltip contentStyle={tooltipContent} labelStyle={tooltipLabelStyle} cursor={{ fill: 'rgba(15,118,110,0.06)' }} />
+            <Tooltip contentStyle={tooltipContent} labelStyle={tooltipLabelStyle} cursor={{ fill: 'rgb(var(--a-teal) / 0.06)' }} />
             <Bar dataKey={active.key} name={active.label} fill={active.color} radius={[6, 6, 0, 0]} maxBarSize={48} />
           </BarChart>
         ) : (

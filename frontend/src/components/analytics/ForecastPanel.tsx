@@ -134,8 +134,8 @@ export function ForecastPanel({ defaultStoreId = 1 }: ForecastPanelProps) {
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={result.points} margin={CHART_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
-                <XAxis dataKey="date" tickFormatter={formatDateShort} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} minTickGap={20} />
-                <YAxis width={Y_AXIS_WIDTH} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} />
+                <XAxis dataKey="date" tickFormatter={formatDateShort} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={false} minTickGap={20} />
+                <YAxis width={Y_AXIS_WIDTH} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={false} />
                 <Tooltip
                   contentStyle={tooltipStyle}
                   labelStyle={tooltipLabelStyle}

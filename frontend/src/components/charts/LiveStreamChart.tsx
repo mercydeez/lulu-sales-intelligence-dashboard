@@ -19,7 +19,7 @@ import { LiveIndicator } from '@/components/ui';
 import { useEventStream } from '@/hooks/useEventStream';
 import { authFetch } from '@/contexts/AuthContext';
 import { shortStoreLabel } from '@/components/analytics/format';
-import { CHART, gridProps, CATEGORICAL } from '@/lib/chart';
+import { CHART, gridProps, CATEGORICAL, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
 
 interface StreamingDataPoint {
   timestamp: string;
@@ -252,7 +252,7 @@ export default function LiveStreamChart() {
       const isReturn = point.isReturn || point.sales < 0;
 
       return (
-        <div className={`glass-strong rounded-lg p-4 border shadow-xl min-w-[200px] ${
+        <div className={`glass-strong rounded-xl p-3 border shadow-elevated min-w-[200px] ${
           isReturn ? 'border-rose-200 bg-rose-50' : 'border-line'
         }`}>
           {/* Transaction Type Badge */}
@@ -590,7 +590,8 @@ export default function LiveStreamChart() {
                 <Tooltip
                   formatter={(value: number) => [formatNumber(value), 'Sales']}
                   labelFormatter={(label: string) => storeChartData.find(s => s.name === label)?.fullName || label}
-                  contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: '8px' }}
+                  contentStyle={tooltipContent}
+                  labelStyle={tooltipLabelStyle}
                 />
                 <Bar dataKey="sales" radius={[0, 4, 4, 0]}>
                   {storeChartData.map((entry, index) => (

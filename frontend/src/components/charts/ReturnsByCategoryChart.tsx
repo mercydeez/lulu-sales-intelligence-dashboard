@@ -75,7 +75,7 @@ export default function ReturnsByCategoryChart() {
     if (active && payload && payload.length) {
       const category = payload[0].payload;
       return (
-        <div className="glass-strong rounded-lg p-3 border border-rose-200 shadow-lg">
+        <div className="glass-strong rounded-xl p-3 border border-line shadow-elevated">
           <p className="text-ink font-semibold">{category.category}</p>
           <p className="text-rose-600 font-medium">{category.count} Returns</p>
           <p className="text-amber-600">{formatNumber(category.value)} Units Returned</p>

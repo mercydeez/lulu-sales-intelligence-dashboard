@@ -10,7 +10,7 @@ import {
   singleLineTick,
 } from '@/components/ui';
 import {
-  CATEGORICAL as SUNSET_COLORS, CHART, CHART_MARGIN, HBAR_MARGIN, Y_AXIS_WIDTH, Y_AXIS_CATEGORY_WIDTH,
+  CATEGORICAL, CHART, CHART_MARGIN, HBAR_MARGIN, Y_AXIS_WIDTH, Y_AXIS_CATEGORY_WIDTH,
   hbarHeight, topNWithOther, tooltipContent as tooltipStyle, tooltipLabelStyle,
 } from '@/lib/chart';
 import { formatCompact, formatDateShort, axisItemLabel } from '@/components/analytics/format';
@@ -44,8 +44,8 @@ export function ReportTrendPanel({ data, loading }: { data: ReportDailyPoint[]; 
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
-          <XAxis dataKey="date" tickFormatter={formatDateShort} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={{ stroke: CHART.grid }} minTickGap={24} />
-          <YAxis width={Y_AXIS_WIDTH} stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
+          <XAxis dataKey="date" tickFormatter={formatDateShort} stroke={CHART.axis} fontSize={12} tickLine={false} axisLine={false} minTickGap={24} />
+          <YAxis width={Y_AXIS_WIDTH} stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={false} />
           <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} labelFormatter={(l) => formatDateShort(String(l))}
             formatter={(value: number, name: string) => [formatCompact(value), name === 'sales' ? 'Units' : 'Transactions']} />
           <Area type="monotone" dataKey="sales" stroke={CHART.teal} strokeWidth={2.5} fill="url(#reportUnits)" dot={false} />
@@ -65,7 +65,7 @@ export function ReportCategoryPanel({ data, loading }: { data: ReportCategory[];
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie data={slices} cx="50%" cy="50%" innerRadius={62} outerRadius={104} paddingAngle={2} dataKey="percentage" nameKey="category">
-            {slices.map((entry, i) => <Cell key={entry.category} fill={SUNSET_COLORS[i % SUNSET_COLORS.length]} />)}
+            {slices.map((entry, i) => <Cell key={entry.category} fill={CATEGORICAL[i % CATEGORICAL.length]} />)}
           </Pie>
           <Tooltip contentStyle={tooltipStyle} formatter={(_v: number, _n: string, p: { payload?: ReportCategory }) => [fmtUnits(p.payload?.sales ?? 0), p.payload?.category ?? '']} />
           <Legend verticalAlign="bottom" height={36} iconType="circle" formatter={(value) => <span className="text-xs text-ink-soft">{value}</span>} />
@@ -81,9 +81,9 @@ export function ReportTopItemsPanel({ data, loading }: { data: ReportTopItem[]; 
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} layout="vertical" margin={HBAR_MARGIN}>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} horizontal={false} />
-          <XAxis type="number" stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
+          <XAxis type="number" stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={false} />
           <YAxis type="category" dataKey="item_name" width={Y_AXIS_CATEGORY_WIDTH} interval={0} tick={singleLineTick(axisItemLabel)} tickLine={false} axisLine={false} />
-          <Tooltip cursor={{ fill: 'rgba(15,118,110,0.06)' }} contentStyle={tooltipStyle} formatter={(value: number, _n: string, p: { payload?: ReportTopItem }) => [fmtUnits(value), p.payload?.category ?? 'Units']} />
+          <Tooltip cursor={{ fill: 'rgb(var(--a-teal) / 0.06)' }} contentStyle={tooltipStyle} formatter={(value: number, _n: string, p: { payload?: ReportTopItem }) => [fmtUnits(value), p.payload?.category ?? 'Units']} />
           <Bar dataKey="total_sales" fill={CHART.teal} radius={[0, 6, 6, 0]} maxBarSize={22} />
         </BarChart>
       </ResponsiveContainer>

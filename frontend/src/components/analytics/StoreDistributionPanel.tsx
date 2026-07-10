@@ -41,10 +41,10 @@ export function StoreDistributionPanel() {
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} layout="vertical" margin={HBAR_MARGIN}>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} horizontal={false} />
-          <XAxis type="number" stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={{ stroke: CHART.grid }} />
+          <XAxis type="number" stroke={CHART.axis} fontSize={12} tickFormatter={formatCompact} tickLine={false} axisLine={false} />
           <YAxis type="category" dataKey="store_name" width={Y_AXIS_CATEGORY_WIDTH} interval={0} tick={singleLineTick(shortStoreLabel)} tickLine={false} axisLine={false} />
           <Tooltip
-            cursor={{ fill: 'rgba(255, 107, 92, 0.06)' }}
+            cursor={{ fill: 'rgb(var(--a-teal) / 0.06)' }}
             contentStyle={tooltipStyle}
             labelStyle={tooltipLabelStyle}
             formatter={(value: number) => [formatCurrency(value), 'Revenue']}
