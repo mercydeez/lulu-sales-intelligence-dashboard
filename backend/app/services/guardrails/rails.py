@@ -24,11 +24,19 @@ _SECRET = re.compile(r"\b(?:sk-[A-Za-z0-9]{16,}|phc_[A-Za-z0-9]{16,}|AKIA[0-9A-Z
 
 _INJECTION_PATTERNS = [
     r"ignore (all |the |your )?(previous|prior|above) (instructions|prompt)",
-    r"disregard (the |your )?(system|previous) (prompt|instructions)",
-    r"you are now\b", r"\bact as\b.*\b(dan|jailbreak|developer mode)\b",
+    r"ignore (my |the )?(store |tenant )?(restriction|scoping|scope|rbac|filter)",
+    r"disregard (the |your )?(system|previous) (prompt|instructions|rules)",
+    r"you are now\b", r"\bact as\b.*\b(dan|jailbreak|developer mode|unrestricted|admin)\b",
     r"reveal (your |the )?(system prompt|instructions|hidden)",
-    r"pretend (you are|to be)\b", r"\bbypass\b.*\b(guardrail|filter|policy|safety)\b",
+    r"pretend (you are|to be)\b",
+    # scope/RBAC manipulation: "pretend the RBAC filter is off", "scoping is disabled"
+    r"(pretend|assume|suppose|imagine)\b.*\b(rbac|filter|scope|scoping|restriction|permission).{0,20}\b(off|disabled|not applied|ignored|removed)",
+    r"\b(rbac|store scoping|access control|restriction)\b.{0,15}\b(is |are )?(off|disabled|not applied)",
+    r"\bbypass\b.*\b(guardrail|filter|policy|safety|rbac|scope|restriction)\b",
     r"print (your |the )?(system prompt|instructions)",
+    r"repeat (your |the )?(instructions|system prompt|rules)\b.*\b(verbatim|then|and)",
+    r"\b(list|show|dump|reveal)\b.*\b(all|every)\b.*\btenant",
+    r"new (directive|instruction|system)\b", r"###\s*system",
 ]
 _INJECTION = re.compile("|".join(_INJECTION_PATTERNS), re.IGNORECASE)
 

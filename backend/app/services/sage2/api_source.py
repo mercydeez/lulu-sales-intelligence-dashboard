@@ -50,6 +50,30 @@ def load_sources() -> List[ApiSource]:
     return out
 
 
+def is_safe_url(url: str) -> bool:
+    """SSRF guard: only https/http to a PUBLIC host. Blocks non-http schemes
+    (file://, gopher://) and private/loopback/link-local targets (cloud metadata
+    169.254.169.254, localhost, RFC-1918). External API source URLs are
+    operator-configured today, but this makes SSRF impossible even if a
+    misconfig or a future tenant-supplied source slips a hostile URL through."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+    try:
+        u = urlparse(url)
+        if u.scheme not in ("http", "https") or not u.hostname:
+            return False
+        # Resolve and reject any private / loopback / link-local / reserved IP.
+        for fam, _, _, _, sockaddr in socket.getaddrinfo(u.hostname, None):
+            ip = ipaddress.ip_address(sockaddr[0])
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def _dig(obj: Any, path: str) -> Any:
     cur = obj
     for part in path.split("."):
@@ -65,6 +89,8 @@ def _dig(obj: Any, path: str) -> Any:
 async def call_source(src: ApiSource) -> dict:
     """Fetch the source and extract value_path. Returns {ok, value|error, source}."""
     import httpx
+    if not is_safe_url(src.url):
+        return {"ok": False, "error": "source URL blocked (SSRF guard)", "source": src.name}
     headers = {}
     if src.header_env and src.header_name:
         key = os.environ.get(src.header_env)
