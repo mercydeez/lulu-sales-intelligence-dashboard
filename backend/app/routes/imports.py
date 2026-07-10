@@ -183,7 +183,21 @@ async def commit(body: ImportRequest, user: dict = Depends(get_current_user)):
 
     async with async_session() as session:
         try:
-            persist = await imp.commit_import(session, tenant_id, body.import_type, result["valid"])
+            # E2-4: the job row is created FIRST, so every canonical row this import
+            # writes can carry its id and be recorded in the undo ledger. It is
+            # marked reversible up front and lives in the same transaction — if the
+            # import fails, the job row rolls back with it and never existed.
+            job = (await session.execute(text("""
+                INSERT INTO import_jobs (tenant_id, import_type, filename, status,
+                    total_rows, mapping, created_by, reversible)
+                VALUES (:t, :ty, :fn, 'running', :total, CAST(:map AS JSONB), :by, TRUE)
+                RETURNING id
+            """), {"t": tenant_id, "ty": body.import_type, "fn": body.filename,
+                   "total": len(rows), "map": json.dumps(body.mapping),
+                   "by": user.get("email")})).fetchone()
+
+            persist = await imp.commit_import(session, tenant_id, body.import_type,
+                                              result["valid"], import_job_id=job.id)
             error_rows = result["summary"]["errors"]
             status = ("completed" if (persist["skipped"] == 0 and error_rows == 0)
                       else "partial")
@@ -196,21 +210,18 @@ async def commit(body: ImportRequest, user: dict = Depends(get_current_user)):
             quality["rejected_row_count"] = len(result["rejected"]) + persist["skipped"]
             quality["rejected_rows_stored"] = len(rejected)
 
-            job = (await session.execute(text("""
-                INSERT INTO import_jobs (tenant_id, import_type, filename, status,
-                    total_rows, imported_rows, skipped_rows, error_rows, mapping, notes, created_by)
-                VALUES (:t, :ty, :fn, :st, :total, :imp, :skip, :err,
-                        CAST(:map AS JSONB), CAST(:notes AS JSONB), :by)
-                RETURNING id
-            """), {"t": tenant_id, "ty": body.import_type, "fn": body.filename, "st": status,
-                   "total": len(rows), "imp": persist["imported"], "skip": persist["skipped"],
-                   "err": error_rows, "map": json.dumps(body.mapping),
+            await session.execute(text("""
+                UPDATE import_jobs
+                   SET status = :st, imported_rows = :imp, skipped_rows = :skip,
+                       error_rows = :err, notes = CAST(:notes AS JSONB)
+                 WHERE id = :jid AND tenant_id = :t
+            """), {"st": status, "imp": persist["imported"], "skip": persist["skipped"],
+                   "err": error_rows, "jid": job.id, "t": tenant_id,
                    "notes": json.dumps({
                        "skip_reasons": persist["skip_reasons"],
                        "quality": quality,
                        "rejected": {"headers": headers, "rows": rejected},
-                   }, default=str),
-                   "by": user.get("email")})).fetchone()
+                   }, default=str)})
             await session.commit()
         except Exception as e:
             await session.rollback()
@@ -262,11 +273,67 @@ async def list_jobs(user: dict = Depends(get_current_user)):
                    -- so the UI knows whether to offer the download, without
                    -- shipping the whole rejected payload in the list response.
                    COALESCE(jsonb_array_length(notes -> 'rejected' -> 'rows'), 0) AS rejected_rows,
-                   notes -> 'quality' -> 'scorecard' AS scorecard
+                   notes -> 'quality' -> 'scorecard' AS scorecard,
+                   -- E2-4: the UI must not offer an Undo button for a job that
+                   -- cannot be undone (pre-ledger, or already reversed).
+                   reversible, rolled_back_at
             FROM import_jobs WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 100
         """), {"t": tenant_id})).mappings().all()
-    return {"jobs": [{**dict(r), "created_at": r["created_at"].isoformat() if r["created_at"] else None}
+    return {"jobs": [{**dict(r),
+                      "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                      "rolled_back_at": r["rolled_back_at"].isoformat() if r["rolled_back_at"] else None,
+                      "can_rollback": bool(r["reversible"]) and r["rolled_back_at"] is None}
                      for r in rows]}
+
+
+@router.get("/{job_id}/rollback")
+async def rollback_preview(job_id: int, user: dict = Depends(get_current_user)):
+    """Can this import be undone, and if not, why not? (E2-4)"""
+    _require_operator(user)
+    tenant_id = user.get("tenant_id") or 1
+    from app.services import import_rollback as rb
+    async with async_session() as session:
+        status = await rb.rollback_status(session, tenant_id, job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="Import job not found")
+    return status
+
+
+@router.post("/{job_id}/rollback")
+async def rollback_job(job_id: int, user: dict = Depends(get_current_user)):
+    """Undo every row this import wrote. All-or-nothing (E2-4).
+
+    Refuses — rather than approximating — when the job predates the undo ledger,
+    when it has already been reversed, or when newer data now references rows the
+    import created.
+    """
+    _require_operator(user)
+    tenant_id = user.get("tenant_id") or 1
+    from app.services import import_rollback as rb
+
+    async with async_session() as session:
+        try:
+            result = await rb.rollback_import(session, tenant_id, job_id,
+                                              user=user.get("email") or "operator")
+            await session.commit()
+        except rb.RollbackRefused as refusal:
+            await session.rollback()
+            code = 404 if refusal.reason == "not_found" else 409
+            raise HTTPException(status_code=code,
+                                detail={"error": refusal.reason, "message": refusal.detail})
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Import rollback failed (tenant {tenant_id}, job {job_id}): {e}")
+            raise HTTPException(status_code=500,
+                                detail="Rollback failed — nothing was changed")
+
+    from app.services.security_events import record_event
+    await record_event("import_rolled_back", category="audit", severity="medium",
+                       tenant_id=tenant_id, actor_user_id=user.get("id"),
+                       actor_email=user.get("email"),
+                       detail=f"Import job {job_id} rolled back",
+                       evidence=result)
+    return result
 
 
 @router.get("/{job_id}/unresolved.csv", response_class=PlainTextResponse)

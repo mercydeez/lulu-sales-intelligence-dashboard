@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -619,34 +620,72 @@ def _record_skip(bucket: List[Dict], cleaned_row: Dict, reason: str) -> None:
     bucket.append({**source, "_row": cleaned_row.get("__row"), "_reason": reason})
 
 
+async def _record_undo(db: AsyncSession, tenant_id: int, job_id: Optional[int],
+                       table: str, op: str, row_id: int,
+                       before_image: Optional[dict] = None) -> None:
+    """Append one entry to the import undo ledger (E2-4).
+
+    `job_id is None` means the caller is not building a reversible import, so no
+    ledger is written — and the job is marked non-reversible, rather than us
+    pretending a rollback would be safe.
+    """
+    if job_id is None or row_id is None:
+        return
+    await db.execute(_sql("""
+        INSERT INTO import_row_undo (tenant_id, import_job_id, table_name, op, row_id, before_image)
+        VALUES (:t, :j, :tbl, :op, :rid, CAST(:img AS JSONB))
+    """), {"t": tenant_id, "j": job_id, "tbl": table, "op": op, "rid": row_id,
+           "img": json.dumps(before_image, default=str) if before_image is not None else None})
+
+
 async def commit_import(db: AsyncSession, tenant_id: int, import_type: str,
-                        valid_rows: List[Dict]) -> Dict:
+                        valid_rows: List[Dict], import_job_id: Optional[int] = None) -> Dict:
     """Persist validated rows into the canonical tables, tenant-scoped. Upserts
     stores/items by name; resolves store/item names → ids for sales/inventory
     (unresolved rows are skipped and reported). Caller commits.
 
     Returns `skipped_rows`: the ORIGINAL source rows that could not be resolved,
     with the reason — so the operator can download, fix and re-upload exactly
-    those rows instead of guessing (E1-5)."""
+    those rows instead of guessing (E1-5).
+
+    When `import_job_id` is supplied, every row this writes is recorded in the
+    undo ledger so the import can be reversed exactly (E2-4). Four of the five
+    types are pure appends; `inventory` upserts, so its pre-image is captured
+    BEFORE the write — otherwise a rollback would delete stock records the import
+    only overwrote, and never created.
+    """
     imported, skipped, skip_reasons = 0, 0, []
     skipped_rows: List[Dict] = []
 
     if import_type == "stores":
         for r in valid_rows:
-            await db.execute(_sql("""
-                INSERT INTO stores (name, location, tenant_id) VALUES (:name, :loc, :t)
+            # `RETURNING id` also tells us whether the row was really inserted:
+            # ON CONFLICT DO NOTHING returns nothing on a conflict, and counting a
+            # no-op as "imported" would inflate the number we report.
+            store_id = (await db.execute(_sql("""
+                INSERT INTO stores (name, location, tenant_id, import_job_id)
+                VALUES (:name, :loc, :t, :j)
                 ON CONFLICT DO NOTHING
-            """), {"name": r["name"], "loc": r.get("location"), "t": tenant_id})
+                RETURNING id
+            """), {"name": r["name"], "loc": r.get("location"), "t": tenant_id,
+                   "j": import_job_id})).scalar()
+            if store_id is None:
+                continue
+            await _record_undo(db, tenant_id, import_job_id, "stores", "insert", store_id)
             imported += 1
 
     elif import_type == "items":
         for r in valid_rows:
             item_id = (await db.execute(_sql("""
-                INSERT INTO items (name, category, unit_price_aed, tenant_id)
-                VALUES (:name, :cat, COALESCE(:price, 10.00), :t)
+                INSERT INTO items (name, category, unit_price_aed, tenant_id, import_job_id)
+                VALUES (:name, :cat, COALESCE(:price, 10.00), :t, :j)
                 RETURNING id
             """), {"name": r["name"], "cat": r.get("category"),
-                   "price": r.get("unit_price_aed"), "t": tenant_id})).scalar()
+                   "price": r.get("unit_price_aed"), "t": tenant_id,
+                   "j": import_job_id})).scalar()
+            # item_costs.item_id is ON DELETE CASCADE, so undoing the item undoes
+            # the cost period set_item_cost opens below. No separate ledger entry.
+            await _record_undo(db, tenant_id, import_job_id, "items", "insert", item_id)
 
             # E2-3: a supplied cost opens an effective-dated period in item_costs.
             # set_item_cost closes the straddling period first — a plain INSERT would
@@ -665,11 +704,15 @@ async def commit_import(db: AsyncSession, tenant_id: int, import_type: str,
 
     elif import_type == "suppliers":
         for r in valid_rows:
-            await db.execute(_sql("""
-                INSERT INTO suppliers (name, contact_email, contact_phone, lead_time_days, tenant_id)
-                VALUES (:name, :email, :phone, COALESCE(:lead, 7), :t)
+            supplier_id = (await db.execute(_sql("""
+                INSERT INTO suppliers (name, contact_email, contact_phone, lead_time_days,
+                                       tenant_id, import_job_id)
+                VALUES (:name, :email, :phone, COALESCE(:lead, 7), :t, :j)
+                RETURNING id
             """), {"name": r["name"], "email": r.get("contact_email"),
-                   "phone": r.get("contact_phone"), "lead": r.get("lead_time_days"), "t": tenant_id})
+                   "phone": r.get("contact_phone"), "lead": r.get("lead_time_days"),
+                   "t": tenant_id, "j": import_job_id})).scalar()
+            await _record_undo(db, tenant_id, import_job_id, "suppliers", "insert", supplier_id)
             imported += 1
 
     elif import_type == "sales":
@@ -685,10 +728,13 @@ async def commit_import(db: AsyncSession, tenant_id: int, import_type: str,
                     skip_reasons.append(reason)
                 _record_skip(skipped_rows, r, reason)
                 continue
-            await db.execute(_sql("""
-                INSERT INTO sales_historical (date, store_id, item_id, sales, tenant_id)
-                VALUES (:d, :s, :i, :u, :t)
-            """), {"d": _as_date(r["date"]), "s": sid, "i": iid, "u": r["units"], "t": tenant_id})
+            sale_id = (await db.execute(_sql("""
+                INSERT INTO sales_historical (date, store_id, item_id, sales, tenant_id, import_job_id)
+                VALUES (:d, :s, :i, :u, :t, :j)
+                RETURNING id
+            """), {"d": _as_date(r["date"]), "s": sid, "i": iid, "u": r["units"],
+                   "t": tenant_id, "j": import_job_id})).scalar()
+            await _record_undo(db, tenant_id, import_job_id, "sales_historical", "insert", sale_id)
             imported += 1
 
     elif import_type == "inventory":
@@ -703,20 +749,41 @@ async def commit_import(db: AsyncSession, tenant_id: int, import_type: str,
                     skip_reasons.append(reason)
                 _record_skip(skipped_rows, r, reason)
                 continue
-            await db.execute(_sql("""
+            # E2-4: this is an UPSERT, so capture the row as it stands BEFORE the
+            # write. Without the pre-image a rollback could only delete, which
+            # would destroy stock records the import overwrote but never created.
+            before = None
+            if import_job_id is not None:
+                before = (await db.execute(_sql("""
+                    SELECT to_jsonb(inv) FROM inventory inv
+                     WHERE store_id = :s AND item_id = :i
+                """), {"s": sid, "i": iid})).scalar()
+
+            # CAST(:uc AS NUMERIC) is load-bearing. In `COALESCE(:uc, 0)` the bind
+            # parameter has no declared type, so Postgres resolves it from the
+            # neighbouring literal — integer — and 7.77 AED was silently stored as
+            # 7. Same for average_daily_sales. reorder_point IS an integer column,
+            # so its `0`-typed literal is correct as written.
+            inv_id = (await db.execute(_sql("""
                 INSERT INTO inventory (store_id, item_id, current_stock, unit_cost,
                     reorder_point, average_daily_sales, last_sale_date)
-                VALUES (:s, :i, :cs, COALESCE(:uc, 0), COALESCE(:rp, 50),
-                        COALESCE(:ads, 0), :lsd)
+                VALUES (:s, :i, :cs, COALESCE(CAST(:uc AS NUMERIC), 0), COALESCE(:rp, 50),
+                        COALESCE(CAST(:ads AS NUMERIC), 0), :lsd)
                 ON CONFLICT (store_id, item_id) DO UPDATE SET
                     current_stock = EXCLUDED.current_stock,
                     unit_cost = EXCLUDED.unit_cost,
                     reorder_point = EXCLUDED.reorder_point,
                     average_daily_sales = EXCLUDED.average_daily_sales,
                     last_sale_date = EXCLUDED.last_sale_date
+                RETURNING id
             """), {"s": sid, "i": iid, "cs": r["current_stock"],
                    "uc": r.get("unit_cost"), "rp": r.get("reorder_point"),
                    "ads": r.get("average_daily_sales"), "lsd": _as_date(r.get("last_sale_date"))})
+            ).scalar()
+
+            await _record_undo(db, tenant_id, import_job_id, "inventory",
+                               "update" if before else "insert", inv_id,
+                               before_image=before)
             imported += 1
 
     return {"imported": imported, "skipped": skipped, "skip_reasons": skip_reasons[:50],

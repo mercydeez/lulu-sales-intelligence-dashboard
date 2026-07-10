@@ -1018,7 +1018,8 @@ CREATE TABLE public.stores (
     square_footage integer DEFAULT 50000,
     opening_date date DEFAULT '2020-01-01'::date,
     tenant_id integer DEFAULT 1 NOT NULL,
-    zone text
+    zone text,
+    import_job_id integer
 );
 
 ALTER TABLE ONLY public.stores FORCE ROW LEVEL SECURITY;
@@ -1213,7 +1214,11 @@ CREATE TABLE public.import_jobs (
     notes jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_by text,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT import_jobs_status_check CHECK ((status = ANY (ARRAY['completed'::text, 'partial'::text, 'failed'::text])))
+    reversible boolean DEFAULT false NOT NULL,
+    rolled_back_at timestamp with time zone,
+    rolled_back_by text,
+    CONSTRAINT import_jobs_rollback_is_consistent CHECK (((status = 'rolled_back'::text) = (rolled_back_at IS NOT NULL))),
+    CONSTRAINT import_jobs_status_check CHECK ((status = ANY (ARRAY['running'::text, 'completed'::text, 'partial'::text, 'failed'::text, 'rolled_back'::text])))
 );
 
 CREATE SEQUENCE public.import_jobs_id_seq
@@ -1225,6 +1230,31 @@ CREATE SEQUENCE public.import_jobs_id_seq
     CACHE 1;
 
 ALTER SEQUENCE public.import_jobs_id_seq OWNED BY public.import_jobs.id;
+
+CREATE TABLE public.import_row_undo (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    import_job_id integer NOT NULL,
+    table_name text NOT NULL,
+    op text NOT NULL,
+    row_id bigint NOT NULL,
+    before_image jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT import_row_undo_insert_has_no_image CHECK (((op <> 'insert'::text) OR (before_image IS NULL))),
+    CONSTRAINT import_row_undo_op_check CHECK ((op = ANY (ARRAY['insert'::text, 'update'::text]))),
+    CONSTRAINT import_row_undo_update_has_image CHECK (((op <> 'update'::text) OR (before_image IS NOT NULL)))
+);
+
+ALTER TABLE ONLY public.import_row_undo FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.import_row_undo_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.import_row_undo_id_seq OWNED BY public.import_row_undo.id;
 
 CREATE TABLE public.ingest_ledger (
     id bigint NOT NULL,
@@ -1444,7 +1474,8 @@ CREATE TABLE public.items (
     unit_price_aed numeric(10,2) DEFAULT 10.00,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     tenant_id integer DEFAULT 1 NOT NULL,
-    unit_cost_aed numeric(12,4)
+    unit_cost_aed numeric(12,4),
+    import_job_id integer
 );
 
 ALTER TABLE ONLY public.items FORCE ROW LEVEL SECURITY;
@@ -1468,7 +1499,8 @@ CREATE TABLE public.sales_historical (
     item_id integer NOT NULL,
     sales integer NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    tenant_id integer DEFAULT 1 NOT NULL
+    tenant_id integer DEFAULT 1 NOT NULL,
+    import_job_id integer
 );
 
 ALTER TABLE ONLY public.sales_historical FORCE ROW LEVEL SECURITY;
@@ -1787,7 +1819,8 @@ CREATE TABLE public.suppliers (
     lead_time_days integer DEFAULT 7 NOT NULL,
     status character varying(20) DEFAULT 'active'::character varying NOT NULL,
     notes text,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    import_job_id integer
 );
 
 ALTER TABLE ONLY public.suppliers FORCE ROW LEVEL SECURITY;
@@ -3202,6 +3235,8 @@ ALTER TABLE ONLY public.goods_receipts ALTER COLUMN id SET DEFAULT nextval('publ
 
 ALTER TABLE ONLY public.import_jobs ALTER COLUMN id SET DEFAULT nextval('public.import_jobs_id_seq'::regclass);
 
+ALTER TABLE ONLY public.import_row_undo ALTER COLUMN id SET DEFAULT nextval('public.import_row_undo_id_seq'::regclass);
+
 ALTER TABLE ONLY public.ingest_ledger ALTER COLUMN id SET DEFAULT nextval('public.ingest_ledger_id_seq'::regclass);
 
 ALTER TABLE ONLY public.inventory ALTER COLUMN id SET DEFAULT nextval('public.inventory_id_seq'::regclass);
@@ -3406,6 +3441,9 @@ ALTER TABLE ONLY public.goods_receipts
 
 ALTER TABLE ONLY public.import_jobs
     ADD CONSTRAINT import_jobs_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.import_row_undo
+    ADD CONSTRAINT import_row_undo_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.ingest_ledger
     ADD CONSTRAINT ingest_ledger_pkey PRIMARY KEY (id);
@@ -3973,13 +4011,23 @@ CREATE INDEX ix_data_requests_tenant ON public.data_requests USING btree (tenant
 
 CREATE INDEX ix_import_jobs_tenant ON public.import_jobs USING btree (tenant_id, created_at DESC);
 
+CREATE INDEX ix_import_row_undo_job ON public.import_row_undo USING btree (import_job_id, id DESC);
+
 CREATE INDEX ix_invoice_lines_invoice ON public.invoice_lines USING btree (invoice_id);
 
 CREATE INDEX ix_invoices_tenant ON public.invoices USING btree (tenant_id, created_at DESC);
 
+CREATE INDEX ix_items_import_job ON public.items USING btree (import_job_id) WHERE (import_job_id IS NOT NULL);
+
 CREATE INDEX ix_notifications_tenant_user_time ON public.notifications USING btree (tenant_id, user_id, created_at DESC);
 
 CREATE INDEX ix_notifications_unread ON public.notifications USING btree (tenant_id, created_at DESC) WHERE (read_at IS NULL);
+
+CREATE INDEX ix_sales_historical_import_job ON public.sales_historical USING btree (import_job_id) WHERE (import_job_id IS NOT NULL);
+
+CREATE INDEX ix_stores_import_job ON public.stores USING btree (import_job_id) WHERE (import_job_id IS NOT NULL);
+
+CREATE INDEX ix_suppliers_import_job ON public.suppliers USING btree (import_job_id) WHERE (import_job_id IS NOT NULL);
 
 CREATE INDEX ix_tenant_admin_notes_tenant ON public.tenant_admin_notes USING btree (tenant_id, created_at DESC);
 
@@ -4160,6 +4208,12 @@ ALTER TABLE ONLY public.goods_receipts
 ALTER TABLE ONLY public.import_jobs
     ADD CONSTRAINT import_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.import_row_undo
+    ADD CONSTRAINT import_row_undo_import_job_id_fkey FOREIGN KEY (import_job_id) REFERENCES public.import_jobs(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.import_row_undo
+    ADD CONSTRAINT import_row_undo_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.inventory_batches
     ADD CONSTRAINT inventory_batches_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);
 
@@ -4195,6 +4249,9 @@ ALTER TABLE ONLY public.item_costs
 
 ALTER TABLE ONLY public.item_costs
     ADD CONSTRAINT item_costs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+ALTER TABLE ONLY public.items
+    ADD CONSTRAINT items_import_job_fk FOREIGN KEY (import_job_id) REFERENCES public.import_jobs(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.items
     ADD CONSTRAINT items_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
@@ -4284,6 +4341,9 @@ ALTER TABLE ONLY public.report_history
     ADD CONSTRAINT report_history_scheduled_report_id_fkey FOREIGN KEY (scheduled_report_id) REFERENCES public.scheduled_reports(id);
 
 ALTER TABLE ONLY public.sales_historical
+    ADD CONSTRAINT sales_historical_import_job_fk FOREIGN KEY (import_job_id) REFERENCES public.import_jobs(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.sales_historical
     ADD CONSTRAINT sales_historical_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);
 
 ALTER TABLE ONLY public.sales_historical
@@ -4362,6 +4422,9 @@ ALTER TABLE ONLY public.stock_transfers
     ADD CONSTRAINT stock_transfers_to_store_id_fkey FOREIGN KEY (to_store_id) REFERENCES public.stores(id);
 
 ALTER TABLE ONLY public.stores
+    ADD CONSTRAINT stores_import_job_fk FOREIGN KEY (import_job_id) REFERENCES public.import_jobs(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.stores
     ADD CONSTRAINT stores_region_id_fkey FOREIGN KEY (region_id) REFERENCES public.regions(id);
 
 ALTER TABLE ONLY public.stores
@@ -4384,6 +4447,9 @@ ALTER TABLE ONLY public.supplier_invoices
 
 ALTER TABLE ONLY public.supplier_invoices
     ADD CONSTRAINT supplier_invoices_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.suppliers
+    ADD CONSTRAINT suppliers_import_job_fk FOREIGN KEY (import_job_id) REFERENCES public.import_jobs(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.suppliers
     ADD CONSTRAINT suppliers_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
@@ -4502,6 +4568,8 @@ ALTER TABLE public.goods_receipts ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.import_jobs ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.import_row_undo ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.invoice_lines ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
@@ -4577,6 +4645,8 @@ CREATE POLICY tenant_isolation ON public.goods_receipt_lines USING ((EXISTS ( SE
 CREATE POLICY tenant_isolation ON public.goods_receipts USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.import_jobs USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.import_row_undo USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.invoice_lines USING ((EXISTS ( SELECT 1
    FROM public.invoices i
