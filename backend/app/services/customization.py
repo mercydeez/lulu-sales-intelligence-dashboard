@@ -24,7 +24,10 @@ override is the bespoke exception ON TOP of a qualifying plan, not a bypass.
 """
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional, Tuple
+
+from sqlalchemy import text
 
 # Plan ladder used by plan_min checks (mirrors services/billing.py plans).
 PLAN_ORDER = ["free", "starter", "growth", "enterprise"]
@@ -232,28 +235,128 @@ def plan_allows(key: str, plan: Optional[str]) -> bool:
 # fail-closed on access — the gate in front of the console does the latter.
 # ---------------------------------------------------------------------------
 
+def _as_override_map(raw: Any) -> Dict[str, Any]:
+    """Coerce whatever the driver hands back for settings->'customizations' into a
+    dict. asyncpg normally decodes JSONB to dict; a str (no codec) is parsed; any
+    other shape (null, list, scalar, corrupt text) is treated as 'no overrides' —
+    defensive, never raises."""
+    if raw is None:
+        return {}
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
 async def get_overrides(db, tenant_id: int) -> Dict[str, Any]:
     """The raw override map from tenants.settings->'customizations'."""
-    raise NotImplementedError("customization engine not merged yet")
+    raw = (await db.execute(
+        text("SELECT settings->'customizations' FROM tenants WHERE id = CAST(:t AS integer)"),
+        {"t": tenant_id},
+    )).scalar()
+    return _as_override_map(raw)
 
 
 async def resolve_effective(db, tenant_id: int) -> Dict[str, Dict[str, Any]]:
     """{key: {"value": Any, "source": "default"|"plan"|"override"}} for every
     catalog key, after layering defaults -> plan gating -> overrides."""
-    raise NotImplementedError("customization engine not merged yet")
+    row = (await db.execute(
+        text("SELECT plan, settings->'customizations' FROM tenants WHERE id = CAST(:t AS integer)"),
+        {"t": tenant_id},
+    )).fetchone()
+    plan = row[0] if row else None
+    overrides = _as_override_map(row[1] if row else None)
+    effective: Dict[str, Dict[str, Any]] = {}
+    for key, entry in FLAG_CATALOG.items():
+        default = entry["default"]
+        if key in overrides:
+            candidate = overrides[key]
+            ok, _err = validate_value(key, candidate)
+            if not ok:
+                # Invalid-typed stored value: ignored, treated as absent.
+                effective[key] = {"value": default, "source": "default"}
+            elif not plan_allows(key, plan):
+                # The plan is a floor — an override never bypasses it.
+                effective[key] = {"value": default, "source": "plan"}
+            else:
+                effective[key] = {"value": candidate, "source": "override"}
+        else:
+            effective[key] = {"value": default, "source": "default"}
+    return effective
 
 
 async def flag_value(db, tenant_id: int, key: str) -> Any:
     """Convenience: the effective value of one flag (catalog default if unset)."""
-    raise NotImplementedError("customization engine not merged yet")
+    if key not in FLAG_CATALOG:
+        raise KeyError(key)
+    effective = await resolve_effective(db, tenant_id)
+    return effective[key]["value"]
 
 
 async def set_override(db, tenant_id: int, key: str, value: Any, *, actor: str) -> Dict[str, Any]:
     """Validate + write one override into the namespace (merge, never clobber the
     column); audits via security_events. Returns the new effective entry."""
-    raise NotImplementedError("customization engine not merged yet")
+    ok, err = validate_value(key, value)
+    if not ok:
+        raise ValueError(err)
+    plan = (await db.execute(
+        text("SELECT plan FROM tenants WHERE id = CAST(:t AS integer)"),
+        {"t": tenant_id},
+    )).scalar()
+    if not plan_allows(key, plan):
+        need = FLAG_CATALOG[key].get("plan_min")
+        raise ValueError(
+            f"{key} requires plan '{need}' or higher; tenant {tenant_id} is on "
+            f"'{plan or 'free'}' — the plan is the floor, overrides never bypass it"
+        )
+    # MERGE into the 'customizations' namespace only — never assign the whole
+    # settings column (that would clobber every other namespace). Binds are CAST
+    # explicitly: untyped binds take neighbouring literal types (known bug class).
+    await db.execute(
+        text("""
+            UPDATE tenants
+               SET settings = jsonb_set(
+                       COALESCE(settings, '{}'::jsonb),
+                       '{customizations}',
+                       COALESCE(settings->'customizations', '{}'::jsonb)
+                           || jsonb_build_object(CAST(:key AS text), CAST(:val AS jsonb)),
+                       true),
+                   updated_at = now()
+             WHERE id = CAST(:t AS integer)
+        """),
+        {"key": key, "val": json.dumps(value), "t": tenant_id},
+    )
+    from app.services.security_events import record_event
+    await record_event("customization_changed", category="audit", severity="medium",
+                       tenant_id=tenant_id, actor_email=actor,
+                       detail=f"{key} -> {value!r}")
+    # Having just passed validate_value + plan_allows, the layering rule makes the
+    # new effective entry exactly this — no re-read needed. Caller commits.
+    return {"value": value, "source": "override"}
 
 
 async def clear_override(db, tenant_id: int, key: str, *, actor: str) -> None:
     """Remove one override (revert to plan/default); audits via security_events."""
-    raise NotImplementedError("customization engine not merged yet")
+    if key not in FLAG_CATALOG:
+        raise ValueError(f"Unknown customization key {key!r}")
+    # `-` on the namespace object only; COALESCE guards a null/missing namespace
+    # so jsonb_set never nulls out the whole settings column.
+    await db.execute(
+        text("""
+            UPDATE tenants
+               SET settings = jsonb_set(
+                       COALESCE(settings, '{}'::jsonb),
+                       '{customizations}',
+                       COALESCE(settings->'customizations', '{}'::jsonb) - CAST(:key AS text),
+                       true),
+                   updated_at = now()
+             WHERE id = CAST(:t AS integer)
+        """),
+        {"key": key, "t": tenant_id},
+    )
+    from app.services.security_events import record_event
+    await record_event("customization_cleared", category="audit", severity="medium",
+                       tenant_id=tenant_id, actor_email=actor,
+                       detail=f"{key} override cleared (reverts to plan/default)")

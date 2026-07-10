@@ -39,6 +39,7 @@ from app.routes import data_rights as data_rights_routes
 from app.routes import provisioning as provisioning_routes
 from app.routes import payments as payments_routes
 from app.routes import pos as pos_routes
+from app.routes import customizations as customizations_routes
 from app.routes import sso as sso_routes
 from app.routes import scim as scim_routes
 
@@ -95,6 +96,7 @@ ROUTERS: List[RouterSpec] = [
     (provisioning_routes.router, "/api/admin", ["Provisioning"]),
     (payments_routes.router, "/api/payments", ["Payments"]),
     (pos_routes.router, "/api/pos", ["POS Connectors"]),
+    (customizations_routes.router, "/api/admin", ["Customizations"]),
     (sso_routes.router, "/api/sso", ["SSO"]),
     (scim_routes.router, "/api/scim", ["SCIM"]),
 
