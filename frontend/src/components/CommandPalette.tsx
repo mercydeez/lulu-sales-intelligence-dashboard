@@ -155,7 +155,7 @@ export default function CommandPalette() {
   return (
     <AnimatePresence>
     {open && (
-    <motion.div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] bg-black/30 backdrop-blur-sm"
+    <motion.div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] bg-ink/40 backdrop-blur-sm"
       onClick={() => setOpen(false)}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
       <motion.div className="w-full max-w-lg mx-4 rounded-2xl bg-surface border border-line shadow-card overflow-hidden"

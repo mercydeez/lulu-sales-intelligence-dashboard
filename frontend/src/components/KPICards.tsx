@@ -60,7 +60,7 @@ function AnimatedTooltip({ title, description, details, tone, icon, onClose }: T
   const toneClasses = tooltipToneClasses[tone];
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center animate-fade-in">
-      <div className="absolute inset-0 bg-ink/30 backdrop-blur-sm rounded-2xl" onClick={onClose}></div>
+      <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm rounded-2xl" onClick={onClose}></div>
       <div className={`relative bg-surface rounded-xl p-4 mx-3 border ${toneClasses.border} shadow-2xl transform animate-scale-in`}>
         <button
           onClick={onClose}

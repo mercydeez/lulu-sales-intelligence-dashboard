@@ -777,7 +777,7 @@ export default function ChatBot({ isOpen, onToggle, initialPrompt }: ChatBotProp
     return (
       <motion.aside {...panelMotion} className="fixed end-0 top-0 h-full w-full max-w-[400px] bg-surface border-s border-line shadow-2xl flex flex-col z-50">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-600 to-purple-600 border-b border-line">
+        <div className="flex items-center justify-between px-4 py-3 bg-[var(--ai-600)] border-b border-line">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-surface/20 flex items-center justify-center">
               <Lock className="w-5 h-5 text-white" />
@@ -823,7 +823,7 @@ export default function ChatBot({ isOpen, onToggle, initialPrompt }: ChatBotProp
       isMinimized ? 'w-16' : 'w-full max-w-[400px]'
     }`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-600 to-purple-600 border-b border-line">
+      <div className="flex items-center justify-between px-4 py-3 bg-[var(--ai-600)] border-b border-line">
         {!isMinimized && (
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-surface/20 flex items-center justify-center">
@@ -912,7 +912,7 @@ export default function ChatBot({ isOpen, onToggle, initialPrompt }: ChatBotProp
                       message.role === 'user'
                         ? 'bg-teal-50 text-ink rounded-tr-sm'
                         : message.role === 'system'
-                        ? 'bg-amber-500/10 text-amber-200 border border-amber-500/30 text-xs'
+                        ? 'bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-200 dark:border-amber-500/30 text-xs'
                         : 'bg-surface-2 text-ink rounded-tl-sm'
                     }`}
                   >
@@ -989,7 +989,7 @@ export default function ChatBot({ isOpen, onToggle, initialPrompt }: ChatBotProp
                   disabled={isProcessingVoice || isLoading}
                   className={`relative p-3 rounded-xl transition-all ${
                     isRecording 
-                      ? 'bg-rose-500 text-white scale-110 shadow-lg shadow-rose-500/50 animate-pulse' 
+                      ? 'bg-rose-500 text-white scale-110 animate-pulse'
                       : isProcessingVoice
                       ? 'bg-amber-500 text-white'
                       : 'bg-surface-2 hover:bg-surface-3 text-ink hover:scale-105'
@@ -1029,14 +1029,14 @@ export default function ChatBot({ isOpen, onToggle, initialPrompt }: ChatBotProp
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={isRecording ? "Recording... Click mic to stop" : "Ask about sales, trends, insights..."}
-                className="flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-ink placeholder-ink-muted focus:outline-none focus:border-violet-500 transition-colors"
+                className="flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-ink placeholder-ink-muted focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 transition-colors"
                 disabled={isLoading || isRecording}
               />
               
               <button
                 type="submit"
                 disabled={!input.trim() || isLoading}
-                className="p-3 bg-gradient-to-r from-violet-600 to-purple-600 rounded-xl text-white disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+                className="p-3 bg-[var(--ai-600)] rounded-xl text-white disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
                 aria-label="Send message"
               >
                 {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
@@ -1044,28 +1044,28 @@ export default function ChatBot({ isOpen, onToggle, initialPrompt }: ChatBotProp
             </div>
             
             {isRecording && (
-              <div className="mt-2 flex items-center justify-between bg-rose-500/20 rounded-lg px-3 py-2">
-                <div className="flex items-center gap-2 text-rose-400 text-sm">
+              <div className="mt-2 flex items-center justify-between bg-rose-50 border border-rose-200 dark:bg-rose-500/15 dark:border-rose-500/30 rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2 text-rose-700 dark:text-rose-300 text-sm">
                   <span className="w-3 h-3 bg-rose-500 rounded-full animate-pulse" />
                   <span className="font-medium">Recording... Speak now.</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-rose-300 text-sm font-mono">{recordingDuration.toFixed(1)}s</span>
-                  <button 
+                  <span className="text-rose-600 dark:text-rose-300 text-sm font-mono tabular-nums">{recordingDuration.toFixed(1)}s</span>
+                  <button
                     type="button"
                     onClick={stopRecording}
-                    className="text-rose-400 text-xs bg-rose-500/30 px-2 py-1 rounded hover:bg-rose-500/50"
+                    className="text-rose-700 dark:text-rose-300 text-xs bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/30 dark:hover:bg-rose-500/50 px-2 py-1 rounded-lg"
                   >
                     Click mic to stop
                   </button>
                 </div>
               </div>
             )}
-            
+
             {isProcessingVoice && (
-              <div className="mt-2 flex items-center gap-2 bg-amber-500/20 rounded-lg px-3 py-2">
-                <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
-                <span className="text-amber-400 text-sm">Processing your voice...</span>
+              <div className="mt-2 flex items-center gap-2 bg-amber-50 border border-amber-200 dark:bg-amber-500/15 dark:border-amber-500/30 rounded-lg px-3 py-2">
+                <Loader2 className="w-4 h-4 text-amber-700 dark:text-amber-300 animate-spin" />
+                <span className="text-amber-700 dark:text-amber-300 text-sm">Processing your voice...</span>
               </div>
             )}
           </form>

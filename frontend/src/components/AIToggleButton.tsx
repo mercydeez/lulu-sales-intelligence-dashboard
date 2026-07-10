@@ -24,20 +24,11 @@ export default function AIToggleButton({ isOpen, onClick }: AIToggleButtonProps)
       whileTap={{ scale: 0.96 }}
     >
       <div className="relative">
-        {/* Glow effect */}
-        <div className="absolute inset-0 bg-gradient-to-r from-violet-600 to-purple-600 rounded-full blur-lg opacity-50 group-hover:opacity-80 transition-opacity" />
-
-        {/* Button */}
-        <div className="relative flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-violet-600 to-purple-600 rounded-full shadow-lg transition-shadow duration-300 group-hover:shadow-xl">
+        {/* Button — tokenized AI accent (violet = AI provenance), neutral elevation */}
+        <div className="relative flex items-center gap-2 px-5 py-3 bg-[var(--ai-600)] rounded-full shadow-soft transition-shadow duration-300 group-hover:shadow-elevated">
           <Sparkles className="w-5 h-5 text-white" />
           <span className="text-white font-medium">Ask {CHATBOT_NAME}</span>
         </div>
-
-        {/* Ping indicator */}
-        <span className="absolute -top-1 -end-1 flex h-4 w-4">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-4 w-4 bg-teal-500"></span>
-        </span>
       </div>
     </motion.button>
   );
