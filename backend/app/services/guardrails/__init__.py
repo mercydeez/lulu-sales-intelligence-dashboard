@@ -21,8 +21,10 @@ from .pipeline import (
     Verdict,
 )
 from .default import default_pipeline
+from .entry import screen_input, input_block_reason, REFUSAL
 
 __all__ = [
     "FailMode", "Guardrail", "GuardrailContext", "GuardrailPipeline", "Phase",
     "PhaseResult", "Severity", "Trip", "Verdict", "default_pipeline",
+    "screen_input", "input_block_reason", "REFUSAL",
 ]

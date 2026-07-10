@@ -987,7 +987,9 @@ async def stream_chat_response(
     # Sage v2 (decompose-route-recompose) for multi-part questions — stream the
     # recomposed table; else fall through to federated single-question Sage.
     if is_multipart(user_message):
-        multi = await answer_multipart(user_message, tenant_id, role)
+        # allowed_stores threaded so every guarded sub-query AND the RAG doc
+        # lane are scoped to this caller's stores (RBAC boundary).
+        multi = await answer_multipart(user_message, tenant_id, role, allowed_stores=allowed_stores)
         if multi.ok:
             context.add_message("assistant", multi.answer)
             for i, word in enumerate(multi.answer.split(' ')):
@@ -1062,7 +1064,7 @@ async def get_chat_response(
     # Sage v2 (decompose-route-recompose) for genuinely multi-part questions —
     # answers each sub-question from its domain and recomposes one grounded table.
     if is_multipart(user_message):
-        multi = await answer_multipart(user_message, tenant_id, role)
+        multi = await answer_multipart(user_message, tenant_id, role, allowed_stores=allowed_stores)
         if multi.ok:
             context.add_message("assistant", multi.answer)
             return multi.answer

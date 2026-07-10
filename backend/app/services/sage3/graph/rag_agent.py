@@ -1,17 +1,19 @@
 """
-RAG agent node — thin wrapper over the existing document retriever.
+RAG agent node — routes document questions through the zero-hallucination
+pipeline (rag/pipeline.py::answer_grounded): RBAC-scoped hybrid retrieval →
+source-confidence gate → constrained cited generation → output guardrails.
 
-Calls rag.answer_from_docs (Postgres full-text retrieval, tenant-scoped — NO new
-vector store) and records {ok, answer, citations, chunks}. Grounded: with an LLM
-it narrates strictly from retrieved chunks; without one it returns the top chunk
-verbatim with a citation. Never raises.
+RBAC is enforced: role + allowed_stores come from AgentState (set once from the
+JWT, HARD INVARIANT) and scope retrieval so this node can never surface a chunk
+the caller isn't allowed to see. Below the confidence threshold it refuses
+(ok=False) instead of guessing. Never raises.
 """
 from __future__ import annotations
 
 import logging
 
 from app.services.llm import get_provider_chain
-from app.services.rag import answer_from_docs
+from app.services.rag.pipeline import answer_grounded
 from ..state import AgentState, add_trace
 
 logger = logging.getLogger(__name__)
@@ -19,14 +21,20 @@ logger = logging.getLogger(__name__)
 
 async def rag_agent_node(state: AgentState) -> AgentState:
     providers = get_provider_chain()
-    res = await answer_from_docs(state["user_query"], state["tenant_id"], providers=providers)
+    g = await answer_grounded(
+        state["user_query"], state["tenant_id"],
+        role=state.get("role"), allowed_stores=state.get("allowed_stores") or None,
+        providers=providers,
+    )
     state["rag_result"] = {
-        "ok": res.ok, "answer": res.answer,
-        "citations": res.citations, "chunks": res.chunks,
+        "ok": g.ok, "answer": g.answer,
+        "citations": g.citations, "chunks": [],
+        "confidence": g.confidence, "refused": g.refused,
     }
-    if res.ok:
-        for c in res.citations:
+    if g.ok:
+        for c in g.citations:
             state.setdefault("evidence", []).append({"kind": "doc", "citation": c})
     add_trace(state, "rag_agent",
-              f"rag ok={res.ok}, {len(res.citations)} citation(s)")
+              f"rag ok={g.ok}, conf={g.confidence}, {len(g.citations)} citation(s)"
+              + (f", refused={g.refusal_reason}" if g.refused else ""))
     return state

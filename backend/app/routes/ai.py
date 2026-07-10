@@ -27,6 +27,7 @@ from app.services.voice_service import (
     synthesize_speech,
     get_voices
 )
+from app.services.guardrails import screen_input, input_block_reason
 from app.routes.auth import get_current_user, get_accessible_store_ids
 
 router = APIRouter()
@@ -122,10 +123,24 @@ async def chat(request: ChatRequest, current_user: dict = Depends(require_ai_cha
     Send a message to the AI chatbot (non-streaming)
     """
     session_id = request.session_id or str(uuid.uuid4())
-    
+
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
-    
+
+    # Universal prompt-injection screen — runs BEFORE any answer lane or LLM.
+    # A jailbreak is refused deterministically here; no model ever sees it.
+    _refusal = screen_input(request.message)
+    if _refusal:
+        from app.config import logger
+        logger.warning(f"[sage] input blocked ({input_block_reason(request.message)}) "
+                       f"user={current_user.get('id')} tenant={current_user.get('tenant_id')}")
+        if request.stream:
+            async def _blocked():
+                yield {"event": "message", "data": json.dumps({"content": _refusal, "session_id": session_id})}
+                yield {"event": "done", "data": json.dumps({"session_id": session_id, "blocked": True})}
+            return EventSourceResponse(_blocked())
+        return ChatResponse(response=_refusal, session_id=session_id, intent={"blocked": True})
+
     # Get intent for analytics
     intent = detect_intent(request.message)
 
@@ -195,10 +210,22 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(require
     Send a message to the AI chatbot with SSE streaming response
     """
     session_id = request.session_id or str(uuid.uuid4())
-    
+
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
-    
+
+    # Universal prompt-injection screen (see /chat) — before the stream opens.
+    _refusal = screen_input(request.message)
+    if _refusal:
+        from app.config import logger
+        logger.warning(f"[sage] input blocked ({input_block_reason(request.message)}) "
+                       f"user={current_user.get('id')} tenant={current_user.get('tenant_id')}")
+        async def _blocked():
+            yield {"event": "start", "data": json.dumps({"session_id": session_id})}
+            yield {"event": "chunk", "data": json.dumps({"content": _refusal})}
+            yield {"event": "done", "data": json.dumps({"session_id": session_id, "blocked": True})}
+        return EventSourceResponse(_blocked())
+
     intent = detect_intent(request.message)
 
     allowed_stores = get_accessible_store_ids(current_user)

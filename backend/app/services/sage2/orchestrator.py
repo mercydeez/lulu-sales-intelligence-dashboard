@@ -108,17 +108,26 @@ async def _run_sql(label: str, sql: str, tenant_id: int,
         return SubAnswer(label, False, sql=safe, error=str(e))
 
 
-async def _run_doc(label: str, query: str, question: str, tenant_id: int, providers) -> SubAnswer:
-    from app.services.rag import answer_from_docs
-    rag = await answer_from_docs(question, tenant_id, providers=providers, query=query or question)
-    src = rag.citations[0] if rag.citations else "Document"
-    if not rag.ok:
-        return SubAnswer(label, False, error=rag.answer, source=src)
-    return SubAnswer(label, True, rows=[{"answer": rag.answer}], source=src)
+async def _run_doc(label: str, query: str, question: str, tenant_id: int, providers,
+                   role: Optional[str] = None,
+                   allowed_stores: Optional[List[int]] = None) -> SubAnswer:
+    """Document sub-answer via the zero-hallucination pipeline (rag/pipeline.py):
+    RBAC-scoped retrieval → confidence gate → constrained, cited generation →
+    output guardrails. A below-threshold sub-question refuses (ok=False) rather
+    than guessing — the recompose renders it as 'unavailable', never a fabricated
+    fact. role/allowed_stores scope retrieval to what this caller may see."""
+    from app.services.rag.pipeline import answer_grounded
+    g = await answer_grounded(query or question, tenant_id, role=role,
+                              allowed_stores=allowed_stores, providers=providers)
+    src = g.citations[0] if g.citations else "Document"
+    if not g.ok:
+        return SubAnswer(label, False, error=g.answer, source=src)
+    return SubAnswer(label, True, rows=[{"answer": g.answer}], source=src)
 
 
 async def _deterministic(question: str, tenant_id: int, providers=None,
-                         allowed_stores: Optional[List[int]] = None) -> List[SubAnswer]:
+                         allowed_stores: Optional[List[int]] = None,
+                         role: Optional[str] = None) -> List[SubAnswer]:
     zone = I.extract_zone(question)
     parts: List[SubAnswer] = []
     for intent in I.match_intents(question):
@@ -126,7 +135,8 @@ async def _deterministic(question: str, tenant_id: int, providers=None,
         if intent.zone_aware and zone:
             label = f"{intent.label} ({zone})"
         if intent.kind == "document":
-            parts.append(await _run_doc(label, intent.doc_query, question, tenant_id, providers))
+            parts.append(await _run_doc(label, intent.doc_query, question, tenant_id,
+                                        providers, role, allowed_stores))
         else:
             parts.append(await _run_sql(label, intent.build_sql(zone), tenant_id, allowed_stores))
 
@@ -187,7 +197,7 @@ async def answer_multipart(question: str, tenant_id: int, role: str = "admin",
         except LLMError:
             parts = []
     if not parts:
-        parts = await _deterministic(question, tenant_id, providers, allowed_stores)
+        parts = await _deterministic(question, tenant_id, providers, allowed_stores, role)
 
     if not parts:
         return MultiPartResult(ok=False, reason="no recognized sub-questions")
