@@ -371,6 +371,7 @@ class AuthService:
                            u.status, u.job_title, u.department, u.failed_login_attempts,
                            u.locked_until, u.two_factor_enabled, u.two_factor_secret,
                            u.tenant_id, u.email_verified,
+                           COALESCE(u.is_platform_developer, FALSE) AS is_platform_developer,
                            -- E10-2: carried out of this query so /login can check the
                            -- tenant's isolation tier without a second round-trip.
                            COALESCE(t.isolation_tier, 'shared') AS isolation_tier
@@ -489,6 +490,10 @@ class AuthService:
                 # None -> 'shared' and silently pass, which is the exact failure the
                 # tier exists to prevent.
                 "isolation_tier": user.get('isolation_tier') or 'shared',
+                # Platform-operator boundary (Platform Console): a per-user flag,
+                # deliberately NOT implied by super_admin (every self-signup owner
+                # is a super_admin of their own tenant; this must never leak to them).
+                "is_platform_developer": bool(user.get('is_platform_developer')),
                 "permissions": permissions
             }
 
@@ -704,7 +709,8 @@ class AuthService:
                 text("""
                     SELECT id, email, first_name, last_name, role, status,
                            job_title, department, last_login_at, created_at,
-                           tenant_id, email_verified
+                           tenant_id, email_verified,
+                           COALESCE(is_platform_developer, FALSE) AS is_platform_developer
                     FROM users WHERE id = :id
                 """),
                 {"id": user_id}

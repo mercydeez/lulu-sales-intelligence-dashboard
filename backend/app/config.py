@@ -280,6 +280,13 @@ class Settings(BaseSettings):
     # connections — sync_all_connected finds nothing and sleeps. It runs in the
     # singletons container (exactly one process), never per web worker.
     pos_sync_enabled: bool = True
+
+    # Platform Console: optional comma-separated email allowlist AND-gated with
+    # users.is_platform_developer (services/platform_access.py). Empty = the DB
+    # flag alone decides (dev convenience); set it in production so a tampered
+    # DB row alone cannot mint platform access. Comma-separated str, not a list —
+    # pydantic-settings would try to JSON-parse a List[str] env value.
+    platform_developer_emails: str = ""
     pos_sync_interval_seconds: int = 24 * 60 * 60   # nightly
     pos_sync_startup_delay_seconds: int = 90        # let the app settle first
 

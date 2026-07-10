@@ -11,6 +11,9 @@ export interface User {
   job_title?: string;
   department?: string;
   last_login_at?: string;
+  // Platform-operator boundary (Platform Console). Set only for the vendor's own
+  // developers — NOT implied by super_admin (tenant owners are super_admins too).
+  is_platform_developer?: boolean;
   permissions: UserPermissions;
   accessible_stores: number[];
   accessible_regions: string[];
