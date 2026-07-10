@@ -336,13 +336,17 @@ async def get_promotion_performance(
                 store_list = ','.join(map(str, accessible_stores))
                 store_filter = f"AND s.store_id IN ({store_list})"
             
-            # Get sales trends by category (simulating promotion impact)
+            # Category sales stats over the window. Revenue uses the real
+            # per-category average price (items.unit_price_aed), never a cost
+            # constant. Redemption/discount are NOT fabricated here — this endpoint
+            # has no promotion-event source, so it reports only what sales prove.
             query = f"""
                 WITH daily_category_sales AS (
-                    SELECT 
+                    SELECT
                         i.category,
                         s.date,
-                        SUM(s.sales) as daily_sales
+                        SUM(s.sales) as daily_sales,
+                        SUM(s.sales * i.unit_price_aed) as daily_revenue
                     FROM sales_fact_view s
                     JOIN items i ON s.item_id = i.id
                     WHERE s.date >= CURRENT_DATE - INTERVAL '{days} days'
@@ -350,56 +354,53 @@ async def get_promotion_performance(
                     GROUP BY i.category, s.date
                 ),
                 category_stats AS (
-                    SELECT 
+                    SELECT
                         category,
                         SUM(daily_sales) as total_sales,
+                        SUM(daily_revenue) as total_revenue,
                         AVG(daily_sales) as avg_daily_sales,
                         MAX(daily_sales) as peak_sales,
                         MIN(daily_sales) as min_sales
                     FROM daily_category_sales
                     GROUP BY category
                 )
-                SELECT 
+                SELECT
                     category,
                     total_sales,
                     avg_daily_sales,
                     peak_sales,
-                    min_sales
+                    min_sales,
+                    total_revenue
                 FROM category_stats
                 ORDER BY total_sales DESC
                 LIMIT 10
             """
-            
+
             result = await session.execute(text(query))
             rows = result.fetchall()
-            
+
             performance = []
             for row in rows:
-                category = row[0]
-                unit_price = DataSyncService.CATEGORY_COSTS.get(category, 20.0)
                 total_units = int(row[1])
-                
-                # Calculate simulated promotion metrics
-                import random
-                discount_rate = random.uniform(0.05, 0.15)
-                redemptions = int(total_units * random.uniform(0.1, 0.3))
-                
                 performance.append({
-                    "category": category,
+                    "category": row[0],
                     "total_units_sold": total_units,
-                    "total_revenue": total_units * unit_price,
+                    "total_revenue": round(float(row[5]), 2) if row[5] else 0.0,
                     "avg_daily_units": float(row[2]) if row[2] else 0,
                     "peak_daily_units": int(row[3]) if row[3] else 0,
-                    "estimated_discount_given": total_units * unit_price * discount_rate,
-                    "estimated_redemptions": redemptions,
+                    # Redemptions/discounts require actual promotion events we don't
+                    # track here — reported as null rather than invented.
+                    "estimated_discount_given": None,
+                    "estimated_redemptions": None,
                     "performance_score": min(100, int((float(row[2]) / float(row[4]) * 50) if row[4] else 50))
                 })
             
             return {
                 "period_days": days,
                 "categories": performance,
-                "total_revenue": sum(p["total_revenue"] for p in performance),
-                "total_discounts": sum(p["estimated_discount_given"] for p in performance)
+                "total_revenue": round(sum(p["total_revenue"] for p in performance), 2),
+                # No promotion-event source here, so total discounts are not invented.
+                "total_discounts": None,
             }
             
         except Exception as e:
@@ -450,10 +451,11 @@ async def get_promotion_suggestions(
             # Find slow-moving items
             slow_query = f"""
                 WITH item_velocity AS (
-                    SELECT 
+                    SELECT
                         s.item_id,
                         i.name as item_name,
                         i.category,
+                        MAX(i.unit_price_aed) as unit_price_aed,
                         AVG(s.sales) as avg_daily_sales,
                         SUM(s.sales) as total_sales
                     FROM sales_fact_view s
@@ -467,43 +469,72 @@ async def get_promotion_suggestions(
                     FROM item_velocity
                     GROUP BY category
                 )
-                SELECT 
+                SELECT
                     iv.item_id, iv.item_name, iv.category,
-                    iv.avg_daily_sales, iv.total_sales, ca.cat_avg
+                    iv.avg_daily_sales, iv.total_sales, ca.cat_avg, iv.unit_price_aed
                 FROM item_velocity iv
                 JOIN category_avg ca ON iv.category = ca.category
                 WHERE iv.avg_daily_sales < ca.cat_avg * 0.6
                 ORDER BY iv.avg_daily_sales ASC
                 LIMIT 10
             """
-            
+
             result = await session.execute(text(slow_query))
             rows = result.fetchall()
-            
+
             suggestions = []
-            import random
-            today = date.today()
-            
             for row in rows:
                 category = row[2]
-                unit_cost = DataSyncService.CATEGORY_COSTS.get(category, 20.0)
-                discount = random.choice([15, 20, 25, 30])
-                
+                velocity = float(row[3]) if row[3] else 0.0
+                cat_avg = float(row[5]) if row[5] else 0.0
+                unit_price = float(row[6]) if row[6] else 0.0
+
+                # Everything below is DERIVED from this item's own evidence — never
+                # a random number (honesty: the brand). The item sells below its
+                # category norm; the recovery headroom is the honest ceiling on a
+                # promo's lift, and the discount scales with how far below it sits.
+                gap_to_avg = max(0.0, cat_avg - velocity)          # units/day below norm
+                gap_pct = (gap_to_avg / cat_avg) if cat_avg > 0 else 0.0
+
+                # Lift ceiling = fully recovering to the category-average velocity.
+                # Reported as a ceiling, not a point estimate, and only when the
+                # item actually has sales to lift.
+                lift_ceiling_pct = (
+                    round((gap_to_avg / velocity) * 100) if velocity > 0 else None
+                )
+
+                # Discount scales deterministically with the severity of the gap.
+                if gap_pct >= 0.6:
+                    discount = 30
+                elif gap_pct >= 0.5:
+                    discount = 25
+                elif gap_pct >= 0.45:
+                    discount = 20
+                else:
+                    discount = 15
+
                 suggestions.append({
                     "item_id": row[0],
                     "item_name": row[1],
                     "category": category,
-                    "current_velocity": float(row[3]) if row[3] else 0,
-                    "category_avg_velocity": float(row[5]) if row[5] else 0,
+                    "current_velocity": round(velocity, 2),
+                    "category_avg_velocity": round(cat_avg, 2),
                     "suggested_discount": discount,
                     "suggested_type": "percentage",
-                    "estimated_lift": f"{random.randint(20, 50)}%",
-                    "suggested_duration": f"{random.randint(5, 14)} days",
-                    "original_price": unit_cost,
-                    "suggested_price": unit_cost * (1 - discount / 100),
-                    "reason": "Below category average sales velocity"
+                    # A ceiling ("up to"), derived, or null when it can't be grounded.
+                    "estimated_lift": f"up to {lift_ceiling_pct}%" if lift_ceiling_pct else None,
+                    "estimated_lift_pct": lift_ceiling_pct,
+                    "suggested_duration": "14 days",   # default window, not a guess
+                    "original_price": round(unit_price, 2) if unit_price else None,
+                    "suggested_price": round(unit_price * (1 - discount / 100), 2) if unit_price else None,
+                    "reason": "Selling below category-average velocity",
+                    "basis": (
+                        f"{round(gap_pct * 100)}% below the {category} average "
+                        f"({round(velocity, 1)} vs {round(cat_avg, 1)} units/day); "
+                        "lift is the ceiling if it recovers to the category norm"
+                    ),
                 })
-            
+
             return {"suggestions": suggestions, "total": len(suggestions)}
             
         except Exception as e:
