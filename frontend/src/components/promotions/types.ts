@@ -38,5 +38,8 @@ export interface CategoryPerformance {
   total_revenue: number;
   previous_units: number;
   growth_rate: number;
-  avg_discount: number;
+  // null outside demo mode: there is no promotion-event source to derive an
+  // average discount from, and the product never invents one (B6).
+  avg_discount: number | null;
+  data_basis?: 'derived_from_sales' | 'demo_synthetic';
 }
