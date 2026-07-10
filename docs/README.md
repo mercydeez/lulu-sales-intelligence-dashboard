@@ -35,6 +35,7 @@ For the three-developer engineering organization (root-level docs):
 ### `production/` — operations & deployment hardening
 The production-readiness program (turning the MVP into a deployable, recoverable, tenant-isolated pilot). Start with the audit, then the gap analysis.
 - [`production/BASELINE_AUDIT.md`](production/BASELINE_AUDIT.md) - current-state facts: what is production-grade, MVP-only, demo-only, or risky.
+- [`production/LOAD_TEST_BASELINE.md`](production/LOAD_TEST_BASELINE.md) - measured k6 + SSE baseline (E6-5), and the finding it produced: the API runs on a single uvicorn worker, and the singleton background tasks must move out before it can be scaled.
 - [`production/PRODUCTION_GAP_ANALYSIS.md`](production/PRODUCTION_GAP_ANALYSIS.md) - recommendations mapped to hardening phases.
 - [`production/RISK_REGISTER.md`](production/RISK_REGISTER.md) - top 30 risks ranked by severity, with mitigations.
 - [`production/READINESS_CHECKLIST.md`](production/READINESS_CHECKLIST.md) - the GO/NO-GO checklist.
