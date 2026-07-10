@@ -138,6 +138,14 @@ export default function AdminPage() {
           <Reveal key="tab-activity"><ActivityFeed activities={activities} loading={loading} /></Reveal>
         )}
       </div>
+
+      {/* Add-user dialog — the UsersTable "Add user" button opens this; on
+          success it refreshes the list so the new account appears immediately. */}
+      <NewUserModal
+        open={showNewUser}
+        onClose={() => setShowNewUser(false)}
+        onCreated={fetchData}
+      />
     </main>
   );
 }
