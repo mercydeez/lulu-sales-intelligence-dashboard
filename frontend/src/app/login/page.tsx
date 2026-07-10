@@ -9,9 +9,10 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { track } from '@/lib/telemetry';
 import {
-  Eye, EyeOff, Lock, Mail, AlertCircle, Loader2, ShoppingBag,
+  Eye, EyeOff, Lock, Mail, AlertCircle, Loader2,
   TrendingUp, ShieldCheck, Activity, Sparkles, ArrowRight, KeyRound,
 } from 'lucide-react';
+import { BrandIcon } from '@/components/branding/BrandIcon';
 
 // Labels/features are translation keys (src/locales/auth.ts) — resolved with
 // t() at render so the screen is fully EN/AR (E4-4 core screen).
@@ -127,7 +128,7 @@ export default function LoginPage() {
           className="relative z-10 flex items-center gap-3"
         >
           <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-sm ring-1 ring-white/30">
-            <ShoppingBag className="w-6 h-6" />
+            <BrandIcon size={24} decorative className="text-white" />
           </div>
           <span className="text-xl font-bold tracking-tight">{PRODUCT_NAME}</span>
         </motion.div>
@@ -201,7 +202,7 @@ export default function LoginPage() {
           {/* Mobile brand */}
           <div className="lg:hidden text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-sunset">
-              <ShoppingBag className="w-8 h-8 text-white" />
+              <BrandIcon size={32} decorative className="text-white" />
             </div>
             <h1 className="text-2xl font-bold text-ink">{PRODUCT_NAME}</h1>
             <p className="text-ink-muted text-sm">{t('auth.tagline')}</p>
@@ -312,6 +313,8 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
                     className="absolute inset-y-0 end-0 pe-4 flex items-center text-ink-muted hover:text-teal-600 transition-colors"
                   >
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}

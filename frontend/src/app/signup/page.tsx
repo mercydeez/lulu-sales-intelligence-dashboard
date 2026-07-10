@@ -8,8 +8,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { PRODUCT_NAME } from '@/lib/brand';
 import {
   Eye, EyeOff, Lock, Mail, User, Building2, AlertCircle, Loader2,
-  ShoppingBag, Rocket, Sparkles, ArrowRight, CheckCircle2,
+  Rocket, Sparkles, ArrowRight, CheckCircle2,
 } from 'lucide-react';
+import { BrandIcon } from '@/components/branding/BrandIcon';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -67,7 +68,7 @@ export default function SignupPage() {
 
         <div className="relative z-10 flex items-center gap-3">
           <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-surface/20 backdrop-blur-sm ring-1 ring-white/30">
-            <ShoppingBag className="w-6 h-6" />
+            <BrandIcon size={24} decorative className="text-white" />
           </div>
           <span className="text-xl font-bold tracking-tight">{PRODUCT_NAME}</span>
         </div>
@@ -112,7 +113,7 @@ export default function SignupPage() {
         >
           <div className="lg:hidden text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-sunset">
-              <ShoppingBag className="w-8 h-8 text-white" />
+              <BrandIcon size={32} decorative className="text-white" />
             </div>
             <h1 className="text-2xl font-bold text-ink">{PRODUCT_NAME}</h1>
           </div>
@@ -177,6 +178,8 @@ export default function SignupPage() {
                   className={`${inputBase} ps-11 pe-11`}
                   placeholder="At least 12 characters" autoComplete="new-password" />
                 <button type="button" onClick={() => setShowPassword((s) => !s)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
                   className="absolute end-3.5 top-1/2 -translate-y-1/2 text-ink-muted hover:text-teal-600 transition-colors">
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>

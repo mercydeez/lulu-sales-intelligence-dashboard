@@ -9,7 +9,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useExperience } from '@/contexts/ExperienceContext';
 import { cn } from '@/lib/cn';
 import { PRODUCT_NAME } from '@/lib/brand';
-import { Settings, X, ShoppingBag } from 'lucide-react';
+import { BrandIcon } from '@/components/branding/BrandIcon';
+import { Settings, X } from 'lucide-react';
 // Nav destinations + the server-manifest icon map live in one append-only config
 // so adding a page no longer edits this component. See src/config/nav.tsx.
 import { navItems, NAV_ICONS, type NavItem } from '@/config/nav';
@@ -122,7 +123,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     <div className="flex flex-col h-full">
       <Link href="/" onClick={onNavigate} className="flex items-center gap-3 px-5 h-16 shrink-0 border-b border-line">
         <div className="w-10 h-10 rounded-xl sunset-gradient flex items-center justify-center shadow-sunset shrink-0">
-          <ShoppingBag className="w-5 h-5 text-white" />
+          <BrandIcon size={20} decorative className="text-white" />
         </div>
         <div className="min-w-0">
           <h1 className="text-base font-bold gradient-text truncate">{PRODUCT_NAME}</h1>

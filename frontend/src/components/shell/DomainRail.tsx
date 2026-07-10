@@ -8,10 +8,11 @@
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
-  Home, Inbox, Package, BarChart3, Database, Shield, ShoppingBag, type LucideIcon,
+  Home, Inbox, Package, BarChart3, Database, Shield, type LucideIcon,
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { PRODUCT_NAME } from '@/lib/brand';
+import { BrandIcon } from '@/components/branding/BrandIcon';
 import { cn } from '@/lib/cn';
 import type { DomainGroup, DomainKey } from '@/lib/nav';
 
@@ -35,7 +36,7 @@ export function DomainRail({
         aria-label={`${PRODUCT_NAME} home`}
         className="w-11 h-11 rounded-2xl sunset-gradient flex items-center justify-center shadow-sunset shrink-0 mb-2"
       >
-        <ShoppingBag className="w-5 h-5 text-white" />
+        <BrandIcon size={20} decorative className="text-white" />
       </Link>
 
       {groups.map((g) => {
