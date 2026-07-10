@@ -74,6 +74,62 @@ def test_rs256_signing_key_never_leaves_in_jwks(tmp_path):
     assert "PRIVATE" not in blob and "d" not in {kk for kk in k.keys() if kk == "d"}
 
 
+# --- keyless downstream verification (the E5-6 AC) --------------------------
+def _verify_with_only_jwks(token: str, jwks: dict) -> dict:
+    """Verify a token as an INDEPENDENT downstream service would: with nothing
+    but the published JWKS JSON. No KeyProvider, no PEM, no private key, no shared
+    secret in scope. Picks the key by the token's kid and reconstructs a public
+    key from the JWK. This is the whole point of RS256 — the worker / public API /
+    any third party can validate without the ability to forge."""
+    from jose import jwk as jose_jwk
+
+    header = jwt.get_unverified_header(token)
+    assert header["alg"] == "RS256", "downstream must refuse anything but RS256 here"
+    kid = header["kid"]
+    entry = next((key for key in jwks["keys"] if key["kid"] == kid), None)
+    if entry is None:
+        raise JWTError(f"no JWKS entry for kid {kid}")
+    # RSA public JWK carries only n/e — mathematically cannot sign.
+    assert "d" not in entry and "p" not in entry and "q" not in entry
+    public_key = jose_jwk.construct(entry, "RS256")
+    return jwt.decode(token, public_key.to_pem().decode(), algorithms=["RS256"])
+
+
+def test_downstream_verifies_with_only_the_jwks(tmp_path):
+    s, priv, pub, kid = _rs_settings(tmp_path)
+    kp = jk.KeyProvider.from_settings(s)
+    token = kp.sign(_claims(user_id=42, role="regional_manager"))
+
+    # Hand a fresh process ONLY the JWKS dict (as if fetched over HTTP).
+    jwks = kp.public_jwks()
+    payload = _verify_with_only_jwks(token, jwks)
+    assert payload["user_id"] == 42 and payload["role"] == "regional_manager"
+
+
+def test_downstream_with_jwks_cannot_forge_a_token(tmp_path):
+    """A holder of the JWKS can verify but must NOT be able to mint a token the
+    real verifier accepts — proving the blast radius actually shrank.
+
+    The published JWK carries only the public modulus/exponent (n/e), so it is
+    mathematically incapable of producing an RS256 signature. (The RS256->HS256
+    'use the public bytes as an HMAC secret' confusion forge is rejected by the
+    real verifier too — see test_algorithm_confusion_public_key_as_hmac_is_rejected.)
+    """
+    from jose import jwk as jose_jwk
+
+    s, priv, pub, kid = _rs_settings(tmp_path)
+    kp = jk.KeyProvider.from_settings(s)
+    entry = kp.public_jwks()["keys"][0]
+
+    # No private component anywhere in the published key.
+    assert not any(f in entry for f in ("d", "p", "q", "dp", "dq", "qi"))
+
+    # Reconstructing a signer from the public JWK and RS256-signing is impossible.
+    pub_pem = jose_jwk.construct(entry, "RS256").to_pem().decode()
+    with pytest.raises(Exception):
+        jwt.encode(_claims(user_id=1, role="super_admin"), pub_pem, algorithm="RS256")
+
+
 # --- rotation ---------------------------------------------------------------
 def test_rotation_old_and_new_kid_both_verify(tmp_path):
     # Sign a token with key A, then rotate: active key B, but A's public still in the dir.

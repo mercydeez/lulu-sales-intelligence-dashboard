@@ -150,6 +150,34 @@ RS256 is config + key material only — no migration, no schema change.
   to the previous key (still in the public set) and redeploy. Tokens signed by the
   bad key stop being minted; keep its public key until those expire, then remove it.
 
+## 8a. Rotation executed once — evidence (2026-07)
+
+A full rotation was exercised end-to-end against the running stack (not just
+unit-tested) to satisfy the E5-6 acceptance criterion:
+
+1. Backend booted with `JWT_ALGORITHM=RS256`, `JWT_ACTIVE_KID=2026-07`, keys
+   mounted read-only at `/run/secrets/jwt` (private via `JWT_PRIVATE_KEY_PATH`,
+   public set via `JWT_PUBLIC_KEYS_DIR`). `POST /api/auth/login` issued a token
+   with header `{"alg":"RS256","kid":"2026-07"}`.
+2. That token was verified in a **separate process holding only the JWKS JSON**
+   fetched from `GET /api/monitoring/jwks.json` — no private key, no app code, no
+   shared secret. This is exactly how a downstream worker / public API / third
+   party validates: it can verify but cannot forge (the published JWK carries only
+   `n`/`e`). Codified as `test_downstream_verifies_with_only_the_jwks`.
+3. New key `2026-08` generated; its **public** half added to the keys dir
+   alongside `2026-07` (the overlap window). Backend restarted signing with
+   `JWT_ACTIVE_KID=2026-08`. JWKS then advertised **both** kids, and tokens
+   signed by either verified against the live JWKS.
+4. After the old tokens' TTL, `2026-07.pem` is removed from the dir; only new
+   tokens verify thereafter (`test_dropped_old_key_no_longer_verifies`).
+
+**Note on defaults:** the app and prod compose keep `JWT_ALGORITHM` defaulting to
+`HS256` so existing deployments and the whole test suite are unaffected until an
+operator opts in. A live deployment cuts over via the `JWT_ALLOW_HS256_FALLBACK`
+window (new tokens RS256, old HS256 still verify), then closes the fallback once
+issued HS256 tokens have expired. The config guardrail fails closed in
+prod/staging if RS256 is selected without a loadable key + kid.
+
 ## 9. Related
 
 - `docs/production/ENVIRONMENT.md` — the JWT signing env table + fail-closed rules.
