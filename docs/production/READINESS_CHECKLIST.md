@@ -94,7 +94,9 @@
 - [x] CI runs FE typecheck + build + component tests (`frontend` job: tsc, `npm test`, build; Playwright smoke in `smoke` job)
 - [x] CI validates both compose files (`docker` job: dev + production `config -q`)
 - [x] CI runs fresh-DB + existing-DB migration (`migrations` job: apply + idempotent re-apply)
-- [x] CI runs backup/restore syntax + dependency/image scan (`docker` bash -n; `security-scan` pip-audit/npm/Trivy)
+- [x] CI runs backup/restore syntax + dependency/image scan (`docker` bash -n; `security-scan` pip-audit report + npm-audit blocking-on-critical + Trivy image/fs + **blocking Trivy CRITICAL dependency gate** with a documented `.trivyignore`)
+- [x] CI generates a CycloneDX **SBOM** per build (source tree + backend image) — `security-scan` job (E5-5)
+- [x] CI runs **gitleaks** secrets scan over full git history, blocking, with a narrow `.gitleaks.toml` allowlist — `secrets-scan` job (E5-5)
 - [x] CI runs a live backup→restore **drill** with row-count + checksum validation (`backup-restore-drill` job)
 
 ## Final gate (Phase 14)

@@ -344,14 +344,18 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Python dependency audit (pip-audit)
+      # Full advisory report (informational). pip-audit has no severity filter, so
+      # the BLOCKING gate is the severity-aware Trivy fs scan below — this step
+      # stays advisory rather than failing on every low-severity transitive note.
+      - name: Python dependency audit (pip-audit, advisory report)
         run: |
           pip install pip-audit
-          pip-audit -r backend/requirements.txt || echo "::warning::pip-audit found advisories — review above"
+          pip-audit -r backend/requirements.txt --desc || echo "::warning::pip-audit found advisories — review above"
 
-      - name: Node dependency audit (npm)
+      # BLOCKING: any critical advisory in the frontend tree fails the build.
+      - name: Node dependency audit (npm) — blocking on critical
         working-directory: ./frontend
-        run: npm audit --omit=dev || echo "::warning::npm audit found advisories — review above"
+        run: npm audit --omit=dev --audit-level=critical
 
       - name: Build backend image for scanning
         run: docker build -t scan/backend:ci ./backend
@@ -373,6 +377,70 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "0"
           ignore-unfixed: true
+
+      # E5-5 BLOCKING dependency gate: fail on a CRITICAL vulnerability that has a
+      # fix available. Deliberate exceptions live in .trivyignore, each with a
+      # rationale, an owner and a follow-up — never a blanket silence.
+      - name: Trivy dependency scan — BLOCKING on fixable CRITICAL
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+
+      # E5-5 SBOM: one per release artifact. Source SBOM covers requirements.txt +
+      # frontend/package-lock.json; the image SBOM additionally covers the OS layer
+      # (and the worker's unlocked npm deps once it is imaged).
+      - name: SBOM — source tree (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          artifact-name: sbom-source.cdx.json
+
+      - name: SBOM — backend image (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: scan/backend:ci
+          format: cyclonedx-json
+          artifact-name: sbom-backend-image.cdx.json
+
+  # =========================================================================
+  # Secrets scan (E5-5) — gitleaks over the FULL git history on every push.
+  # A secret committed and later deleted is still leaked, so a working-tree-only
+  # scan would miss it; fetch-depth: 0 gets the whole history.
+  # Allowlist: .gitleaks.toml — narrow, per-finding, never whole directories.
+  # Run locally exactly as CI does (see the header of .gitleaks.toml).
+  # =========================================================================
+  secrets-scan:
+    name: Secrets Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The pinned official image keeps CI and local runs byte-identical and
+      # sidesteps gitleaks-action's org-license requirement.
+      - name: gitleaks detect (BLOCKING)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.24.3 \
+            detect --source /repo --config /repo/.gitleaks.toml \
+            --redact --no-banner --exit-code 1 \
+            --report-format sarif --report-path /repo/gitleaks.sarif
+
+      - name: Upload gitleaks report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-sarif
+          path: gitleaks.sarif
+          if-no-files-found: ignore
 
   # =========================================================================
   # Deploy config (E0-3/E0-4) — validate scripts, production compose, workflows.

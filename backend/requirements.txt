@@ -35,9 +35,13 @@ langchain-core==0.2.43
 # (optional) langfuse tracing is env-gated and added in Phase 5 to avoid pulling
 # heavier deps before they're needed:
 # langfuse==2.*
-python-multipart==0.0.9
+# 0.0.18 fixes CVE-2024-53981 (multipart parser DoS).
+python-multipart==0.0.18
 # Authentication
-python-jose[cryptography]==3.3.0
+# 3.4.0 fixes CVE-2024-33663 (algorithm confusion) and CVE-2024-33664 (JWT bomb
+# DoS). This library performs our JWT verification — see services/jwt_keys.py,
+# whose tests assert an RS256->HS256 confusion token is rejected. Drop-in bump.
+python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.1.2
 
@@ -45,7 +49,8 @@ bcrypt==4.1.2
 pytest==8.0.0
 pytest-asyncio>=0.23.0,<0.25.0
 pytest-cov==4.1.0
-aiohttp==3.9.3
+# Test-only HTTP client. 3.10.11 clears CVE-2024-30251/27306/52303/52304.
+aiohttp==3.10.11
 
 # Observability (K4 — CX_LOOPS_PLAN): error tracking. main.py inits it only
 # when SENTRY_DSN is set (guarded import), so the dep is inert by default.
