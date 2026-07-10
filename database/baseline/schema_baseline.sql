@@ -960,6 +960,43 @@ CREATE SEQUENCE public.documents_id_seq
 
 ALTER SEQUENCE public.documents_id_seq OWNED BY public.documents.id;
 
+CREATE TABLE public.einvoice_submissions (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    invoice_id integer NOT NULL,
+    provider text NOT NULL,
+    environment text NOT NULL,
+    status text DEFAULT 'building'::text NOT NULL,
+    ubl_xml text,
+    invoice_hash text,
+    previous_invoice_hash text,
+    signature text,
+    is_production_signed boolean DEFAULT false NOT NULL,
+    clearance_ref text,
+    cleared_at timestamp with time zone,
+    rejection_reason text,
+    poll_attempts integer DEFAULT 0 NOT NULL,
+    response_payload jsonb,
+    submitted_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT einvoice_submissions_cleared_has_proof CHECK (((status <> 'cleared'::text) OR ((clearance_ref IS NOT NULL) AND (invoice_hash IS NOT NULL)))),
+    CONSTRAINT einvoice_submissions_environment_check CHECK ((environment = ANY (ARRAY['sandbox'::text, 'production'::text]))),
+    CONSTRAINT einvoice_submissions_prod_sig_only_in_prod CHECK (((is_production_signed = false) OR (environment = 'production'::text))),
+    CONSTRAINT einvoice_submissions_status_check CHECK ((status = ANY (ARRAY['building'::text, 'submitted'::text, 'cleared'::text, 'rejected'::text, 'error'::text])))
+);
+
+ALTER TABLE ONLY public.einvoice_submissions FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.einvoice_submissions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.einvoice_submissions_id_seq OWNED BY public.einvoice_submissions.id;
+
 CREATE TABLE public.employee_attendance (
     id integer NOT NULL,
     employee_id integer NOT NULL,
@@ -3574,6 +3611,8 @@ ALTER TABLE ONLY public.distributors ALTER COLUMN id SET DEFAULT nextval('public
 
 ALTER TABLE ONLY public.documents ALTER COLUMN id SET DEFAULT nextval('public.documents_id_seq'::regclass);
 
+ALTER TABLE ONLY public.einvoice_submissions ALTER COLUMN id SET DEFAULT nextval('public.einvoice_submissions_id_seq'::regclass);
+
 ALTER TABLE ONLY public.employee_attendance ALTER COLUMN id SET DEFAULT nextval('public.employee_attendance_id_seq'::regclass);
 
 ALTER TABLE ONLY public.employee_certifications ALTER COLUMN id SET DEFAULT nextval('public.employee_certifications_id_seq'::regclass);
@@ -3764,6 +3803,9 @@ ALTER TABLE ONLY public.distributors
 
 ALTER TABLE ONLY public.documents
     ADD CONSTRAINT documents_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.einvoice_submissions
+    ADD CONSTRAINT einvoice_submissions_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.employee_attendance
     ADD CONSTRAINT employee_attendance_employee_id_attendance_date_key UNIQUE (employee_id, attendance_date);
@@ -4440,6 +4482,10 @@ CREATE INDEX ix_data_requests_status ON public.data_requests USING btree (status
 
 CREATE INDEX ix_data_requests_tenant ON public.data_requests USING btree (tenant_id, created_at DESC);
 
+CREATE INDEX ix_einvoice_submissions_chain ON public.einvoice_submissions USING btree (tenant_id, cleared_at DESC) WHERE (status = 'cleared'::text);
+
+CREATE INDEX ix_einvoice_submissions_invoice ON public.einvoice_submissions USING btree (invoice_id);
+
 CREATE INDEX ix_import_jobs_tenant ON public.import_jobs USING btree (tenant_id, created_at DESC);
 
 CREATE INDEX ix_import_row_undo_job ON public.import_row_undo USING btree (import_job_id, id DESC);
@@ -4693,6 +4739,12 @@ ALTER TABLE ONLY public.data_requests
 
 ALTER TABLE ONLY public.data_sources
     ADD CONSTRAINT data_sources_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id);
+
+ALTER TABLE ONLY public.einvoice_submissions
+    ADD CONSTRAINT einvoice_submissions_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.einvoice_submissions
+    ADD CONSTRAINT einvoice_submissions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.employee_attendance
     ADD CONSTRAINT employee_attendance_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES public.employees(id) ON DELETE CASCADE;
@@ -5136,6 +5188,8 @@ ALTER TABLE public.distributors ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.einvoice_submissions ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.findings ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.goods_receipt_lines ENABLE ROW LEVEL SECURITY;
@@ -5219,6 +5273,8 @@ CREATE POLICY tenant_isolation ON public.data_sources USING ((tenant_id = public
 CREATE POLICY tenant_isolation ON public.distributors USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.documents USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.einvoice_submissions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.findings USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 

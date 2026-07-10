@@ -320,3 +320,80 @@ async def submit_einvoice_endpoint(invoice_id: int, payload: EInvoiceSubmit,
                           "status": result["e_invoice_status"]})
     result["note"] = _LEGAL_NOTE
     return result
+
+
+# --- E10-4: full FTA clearance harness (UBL 2.1 + PIH chain + signing scaffold) -----
+
+class EInvoiceClearanceSubmit(BaseModel):
+    provider: str = Field("mock", pattern="^(mock|zatca|uae_fta)$")
+    environment: str = Field("sandbox", pattern="^(sandbox|production)$")
+
+
+@router.get("/einvoice/clearance/config")
+async def einvoice_clearance_config(current_user: dict = Depends(get_current_user)):
+    """Honest status of the clearance harness: which providers are integrated, and the
+    fact that only mock/sandbox actually clears (real FTA needs accreditation)."""
+    _require_super(current_user)
+    from app.services import einvoicing
+    from app.services.einvoice_clearance import VALID_ENVIRONMENTS, UBL_CUSTOMIZATION_ID
+    providers = {
+        p: {"implemented": einvoicing.is_provider_implemented(p),
+            "available": einvoicing.is_provider_available(p)}
+        for p in sorted(einvoicing.ALL_PROVIDERS)
+    }
+    return {"providers": providers, "environments": list(VALID_ENVIRONMENTS),
+            "clears_only": {"provider": "mock", "environment": "sandbox"},
+            "ubl_profile": UBL_CUSTOMIZATION_ID, "note": _LEGAL_NOTE}
+
+
+@router.post("/invoices/{invoice_id}/einvoice/clear")
+async def clear_einvoice_endpoint(invoice_id: int, payload: EInvoiceClearanceSubmit,
+                                  current_user: dict = Depends(get_current_user)):
+    """Run the full clearance harness for an issued invoice (operator only): serialize to
+    UBL 2.1, hash, chain to the previous cleared invoice (PIH), sign, submit, persist.
+    Only mock/sandbox clears; a real gateway or production is refused (not accredited)."""
+    _require_super(current_user)
+    from app.services.einvoice_clearance import submit_for_clearance
+    async with async_session() as session:
+        result, error = await submit_for_clearance(
+            session, invoice_id, provider=payload.provider,
+            environment=payload.environment, submitted_by=current_user.get("email") or "operator")
+        if error:
+            await session.rollback()
+            code = 404 if error == "Invoice not found" else 422
+            raise HTTPException(status_code=code, detail=error)
+        await session.commit()
+    await _audit_invoice("invoice_einvoice_cleared", invoice_id, current_user,
+                         {"tenant_id": result.get("tenant_id"),
+                          "invoice_number": result["invoice_number"],
+                          "clearance_ref": result["clearance_ref"],
+                          "environment": result["environment"]})
+    result["note"] = _LEGAL_NOTE
+    return result
+
+
+@router.get("/invoices/{invoice_id}/einvoice/submissions")
+async def list_einvoice_submissions_endpoint(invoice_id: int,
+                                             current_user: dict = Depends(get_current_user)):
+    """The clearance ledger for an invoice (documents, hashes, PIH chain, clearance refs)."""
+    _require_super(current_user)
+    from app.services.einvoice_clearance import list_submissions
+    tenant_id = current_user.get("tenant_id") or 1
+    async with async_session() as session:
+        subs = await list_submissions(session, tenant_id, invoice_id)
+    return {"invoice_id": invoice_id, "submissions": subs, "note": _LEGAL_NOTE}
+
+
+@router.get("/einvoice/submissions/{submission_id}")
+async def poll_einvoice_submission_endpoint(submission_id: int,
+                                            current_user: dict = Depends(get_current_user)):
+    """Poll a single clearance submission's state (terminal for mock/sandbox)."""
+    _require_super(current_user)
+    from app.services.einvoice_clearance import poll_clearance
+    tenant_id = current_user.get("tenant_id") or 1
+    async with async_session() as session:
+        sub = await poll_clearance(session, tenant_id, submission_id)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    sub["note"] = _LEGAL_NOTE
+    return sub
