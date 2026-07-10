@@ -55,6 +55,11 @@ async def reset_demo_tenant(retain_hours: int | None = None) -> int:
     async with async_session() as session:
         await _assert_is_demo_tenant(session, tenant_id)
 
+        # Deleting a long backlog of synthetic rows can exceed the engine-default
+        # statement_timeout — lift it for this transaction only (E6-4).
+        from app.services.database import exempt_statement_timeout
+        await exempt_statement_timeout(session)
+
         result = await session.execute(
             text(
                 """

@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     use_rls_role: bool = False
     rls_database_url: Optional[str] = None  # defaults to database_url with app_rw creds
 
+    # E6-4: default statement_timeout stamped onto every app DB connection (both
+    # engines), so no endpoint can hold a connection on one runaway query. Known
+    # long operations (migrations, CSV seed, bulk ingest, forecast fetch, demo
+    # reset) opt out per-transaction with SET LOCAL statement_timeout = 0.
+    # 0 disables. Sage's own tighter cap (sage_query_timeout_ms) still applies
+    # to generated SQL.
+    db_statement_timeout_ms: int = 10000
+
     # Redis
     redis_url: str = "redis://localhost:6379"
     

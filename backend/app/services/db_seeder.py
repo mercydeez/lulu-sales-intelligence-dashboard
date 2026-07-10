@@ -75,6 +75,8 @@ async def run_seed():
         with open(init_sql, "r", encoding="utf-8") as f:
             schema_sql = f.read()
         async with engine.begin() as conn:
+            from app.services.database import exempt_statement_timeout
+            await exempt_statement_timeout(conn)  # schema script runs long (E6-4)
             raw = await conn.get_raw_connection()
             # asyncpg runs the multi-statement script (DO blocks, views, seeds).
             await raw.driver_connection.execute(schema_sql)
@@ -97,6 +99,8 @@ async def run_seed():
 
     logger.info("Bulk-loading historical sales from %s ...", csv_path)
     async with engine.begin() as conn:
+        from app.services.database import exempt_statement_timeout
+        await exempt_statement_timeout(conn)  # ~900k-row COPY + date shift (E6-4)
         raw = await conn.get_raw_connection()
         asyncpg_conn = raw.driver_connection
         # Client-side streamed COPY (works against managed Postgres). The CSV's

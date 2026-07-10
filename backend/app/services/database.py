@@ -31,6 +31,15 @@ async def apply_tenant_guc(session: AsyncSession) -> None:
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+
+async def exempt_statement_timeout(conn_or_session) -> None:
+    """Lift the engine-default statement_timeout (E6-4) for the CURRENT
+    transaction only. SET LOCAL resets on commit/rollback, so the exemption can
+    never leak back into the connection pool. Only for known long operations —
+    migrations, CSV seed, bulk ingest, forecast fetch, demo reset — never a
+    request handler."""
+    await conn_or_session.execute(text("SET LOCAL statement_timeout = 0"))
+
 # Optimized connection pooling for production.
 # NullPool (testing) rejects pool sizing kwargs, so only pass them when pooling.
 _engine_kwargs = {
@@ -47,6 +56,22 @@ else:
         pool_recycle=1800,   # Recycle connections after 30 minutes
         pool_timeout=30,     # Wait up to 30 seconds for connection
     )
+
+# E6-4: every connection carries a default statement_timeout, so no endpoint can
+# hold a connection on one runaway query — routes reach the DB via get_db OR via
+# async_session() directly (analytics/reports/promotions/...), and only a
+# connect-time default covers both. asyncpg applies server_settings at connect,
+# so pooled connections inherit it and SET LOCAL exemptions (transaction-scoped)
+# can never leak back into the pool. Known long operations (migration_runner,
+# db_seeder COPY, ingest/bulk, forecast_trainer fetch, demo_reset) opt out with
+# SET LOCAL statement_timeout = 0 inside their own transactions.
+if settings.db_statement_timeout_ms > 0:
+    _engine_kwargs["connect_args"] = {
+        "server_settings": {
+            "statement_timeout": str(settings.db_statement_timeout_ms),
+            "application_name": "retail_intelligence_api",
+        }
+    }
 
 engine = create_async_engine(settings.database_url, **_engine_kwargs)
 

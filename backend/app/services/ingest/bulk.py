@@ -163,6 +163,11 @@ async def _ingest_chunk(
     months = {d.replace(day=1) for (_, _, d) in rollup.keys()}
 
     async with engine.begin() as conn:
+        # A chunk COPY + rollup upsert legitimately runs long — lift the
+        # engine-default statement_timeout for this transaction only (E6-4).
+        from app.services.database import exempt_statement_timeout
+        await exempt_statement_timeout(conn)
+
         # Claim the chunk. If these exact bytes already loaded → skip.
         row = (await conn.execute(text("""
             INSERT INTO ingest_ledger

@@ -33,6 +33,11 @@ WARM_HORIZON = 14
 
 async def _train_once() -> None:
     async with async_session() as session:
+        # The training fetch reads the full sales history — legitimately long on
+        # real-tenant volumes; lift the engine-default statement_timeout for this
+        # transaction only (E6-4). Background task, never a request connection.
+        from app.services.database import exempt_statement_timeout
+        await exempt_statement_timeout(session)
         await compute_and_cache_model_metrics(
             session, tenant_id=WARM_TENANT_ID, allowed=None, horizon=WARM_HORIZON
         )

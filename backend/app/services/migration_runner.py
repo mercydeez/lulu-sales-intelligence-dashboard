@@ -75,6 +75,11 @@ async def run_migrations():
         return
 
     async with engine.begin() as conn:
+        # Migrations legitimately run long (backfills, index builds) — lift the
+        # engine-default statement_timeout for this transaction only (E6-4).
+        from app.services.database import exempt_statement_timeout
+        await exempt_statement_timeout(conn)
+
         # Create schema_migrations table if not exists
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS schema_migrations (
