@@ -47,6 +47,8 @@ The production-readiness program (turning the MVP into a deployable, recoverable
 - [`product/PITCH.md`](product/PITCH.md) - short pitch covering the problem, solution, and quality signals.
 - [`product/PRODUCT_STRATEGY.md`](product/PRODUCT_STRATEGY.md) - positioning and feature strategy for the retail operations MVP.
 - [`product/SAAS_PATH.md`](product/SAAS_PATH.md) - what it would take to turn the project into a sellable SaaS product.
+- [`product/PLATFORM_CONSOLE.md`](product/PLATFORM_CONSOLE.md) - internal operator console: the per-tenant customization catalog, bespoke-request ledger, Atelier advisor, and the platform-developer access boundary (who gets in, and why `super_admin` can't).
+- [`product/IMPROVEMENT_ROADMAP.md`](product/IMPROVEMENT_ROADMAP.md) - prioritized Now/Next/Later roadmap of SaaS improvements, each grounded in code that already exists.
 
 ## Historical docs
 
