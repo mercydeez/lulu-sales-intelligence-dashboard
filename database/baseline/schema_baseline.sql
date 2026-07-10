@@ -1256,6 +1256,45 @@ CREATE SEQUENCE public.import_row_undo_id_seq
 
 ALTER SEQUENCE public.import_row_undo_id_seq OWNED BY public.import_row_undo.id;
 
+CREATE TABLE public.import_schedules (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    name text NOT NULL,
+    import_type text NOT NULL,
+    source_kind text NOT NULL,
+    source_url text NOT NULL,
+    mapping jsonb DEFAULT '{}'::jsonb NOT NULL,
+    interval_minutes integer NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    next_run_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_run_at timestamp with time zone,
+    last_status text,
+    last_error text,
+    last_job_id integer,
+    last_content_hash text,
+    consecutive_failures integer DEFAULT 0 NOT NULL,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT import_schedules_failure_has_reason CHECK (((last_status <> 'failed'::text) OR ((last_error IS NOT NULL) AND (length(btrim(last_error)) > 0)))),
+    CONSTRAINT import_schedules_import_type_check CHECK ((import_type = ANY (ARRAY['stores'::text, 'items'::text, 'suppliers'::text, 'sales'::text, 'inventory'::text]))),
+    CONSTRAINT import_schedules_interval_minutes_check CHECK (((interval_minutes >= 15) AND (interval_minutes <= 10080))),
+    CONSTRAINT import_schedules_last_status_check CHECK ((last_status = ANY (ARRAY['ok'::text, 'failed'::text, 'skipped_unchanged'::text, 'skipped_quota'::text]))),
+    CONSTRAINT import_schedules_source_kind_check CHECK ((source_kind = 'https'::text))
+);
+
+ALTER TABLE ONLY public.import_schedules FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.import_schedules_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.import_schedules_id_seq OWNED BY public.import_schedules.id;
+
 CREATE TABLE public.ingest_ledger (
     id bigint NOT NULL,
     tenant_id integer NOT NULL,
@@ -3237,6 +3276,8 @@ ALTER TABLE ONLY public.import_jobs ALTER COLUMN id SET DEFAULT nextval('public.
 
 ALTER TABLE ONLY public.import_row_undo ALTER COLUMN id SET DEFAULT nextval('public.import_row_undo_id_seq'::regclass);
 
+ALTER TABLE ONLY public.import_schedules ALTER COLUMN id SET DEFAULT nextval('public.import_schedules_id_seq'::regclass);
+
 ALTER TABLE ONLY public.ingest_ledger ALTER COLUMN id SET DEFAULT nextval('public.ingest_ledger_id_seq'::regclass);
 
 ALTER TABLE ONLY public.inventory ALTER COLUMN id SET DEFAULT nextval('public.inventory_id_seq'::regclass);
@@ -3444,6 +3485,12 @@ ALTER TABLE ONLY public.import_jobs
 
 ALTER TABLE ONLY public.import_row_undo
     ADD CONSTRAINT import_row_undo_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.import_schedules
+    ADD CONSTRAINT import_schedules_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.import_schedules
+    ADD CONSTRAINT import_schedules_tenant_id_name_key UNIQUE (tenant_id, name);
 
 ALTER TABLE ONLY public.ingest_ledger
     ADD CONSTRAINT ingest_ledger_pkey PRIMARY KEY (id);
@@ -4013,6 +4060,10 @@ CREATE INDEX ix_import_jobs_tenant ON public.import_jobs USING btree (tenant_id,
 
 CREATE INDEX ix_import_row_undo_job ON public.import_row_undo USING btree (import_job_id, id DESC);
 
+CREATE INDEX ix_import_schedules_due ON public.import_schedules USING btree (next_run_at) WHERE active;
+
+CREATE INDEX ix_import_schedules_tenant ON public.import_schedules USING btree (tenant_id, active);
+
 CREATE INDEX ix_invoice_lines_invoice ON public.invoice_lines USING btree (invoice_id);
 
 CREATE INDEX ix_invoices_tenant ON public.invoices USING btree (tenant_id, created_at DESC);
@@ -4213,6 +4264,12 @@ ALTER TABLE ONLY public.import_row_undo
 
 ALTER TABLE ONLY public.import_row_undo
     ADD CONSTRAINT import_row_undo_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.import_schedules
+    ADD CONSTRAINT import_schedules_last_job_id_fkey FOREIGN KEY (last_job_id) REFERENCES public.import_jobs(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.import_schedules
+    ADD CONSTRAINT import_schedules_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.inventory_batches
     ADD CONSTRAINT inventory_batches_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);
@@ -4570,6 +4627,8 @@ ALTER TABLE public.import_jobs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.import_row_undo ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.import_schedules ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.invoice_lines ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
@@ -4647,6 +4706,8 @@ CREATE POLICY tenant_isolation ON public.goods_receipts USING ((tenant_id = publ
 CREATE POLICY tenant_isolation ON public.import_jobs USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.import_row_undo USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.import_schedules USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.invoice_lines USING ((EXISTS ( SELECT 1
    FROM public.invoices i

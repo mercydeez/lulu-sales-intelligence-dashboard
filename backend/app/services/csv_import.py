@@ -361,6 +361,21 @@ def _coerce(kind: str, raw: str) -> Tuple[object, Optional[str]]:
     return v, None
 
 
+def default_mapping(import_type: str, headers: List[str]) -> Dict[str, str]:
+    """Identity mapping for headers that already carry the canonical field names.
+
+    Used by recurring imports (E2-2), where nobody is at a keyboard to draw the
+    columns. EXACT matches only — a header that merely resembles a field is a
+    guess, and a guess that silently loads the wrong column into `sales` is worse
+    than a schedule that fails and says which field was not mapped.
+    """
+    schema = SCHEMAS.get(import_type)
+    if not schema:
+        return {}
+    present = set(headers)
+    return {field: field for field in schema["fields"] if field in present}
+
+
 def validate_rows(import_type: str, headers: List[str], rows: List[Dict[str, str]],
                   mapping: Dict[str, str]) -> Dict:
     """Validate mapped rows. `mapping` maps canonical field -> source column.

@@ -286,6 +286,153 @@ async def list_jobs(user: dict = Depends(get_current_user)):
                      for r in rows]}
 
 
+# ---------------------------------------------------------------------------
+# E2-2 — recurring imports on a schedule.
+#
+# Route order matters: `/schedules` is a literal and must be declared before any
+# `/{job_id}` route that could otherwise capture it.
+# ---------------------------------------------------------------------------
+
+class ScheduleCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    import_type: str
+    source_kind: str = "https"
+    source_url: str = Field(..., max_length=2000)
+    mapping: Dict[str, str] = Field(default_factory=dict)
+    interval_minutes: int = Field(1440, ge=15, le=10080)
+    active: bool = True
+
+
+@router.get("/schedules")
+async def list_schedules(user: dict = Depends(get_current_user)):
+    """Recurring imports configured for this tenant (E2-2)."""
+    _require_operator(user)
+    tenant_id = user.get("tenant_id") or 1
+    async with async_session() as session:
+        rows = (await session.execute(text("""
+            SELECT id, name, import_type, source_kind, source_url, interval_minutes,
+                   active, next_run_at, last_run_at, last_status, last_error,
+                   last_job_id, consecutive_failures, created_by, created_at
+              FROM import_schedules
+             WHERE tenant_id = :t
+             ORDER BY created_at DESC
+        """), {"t": tenant_id})).mappings().all()
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("next_run_at", "last_run_at", "created_at"):
+            d[k] = d[k].isoformat() if d.get(k) else None
+        out.append(d)
+    from app.services import import_scheduler as sched
+    return {"schedules": out, "supported_source_kinds": list(sched.SUPPORTED_SOURCE_KINDS)}
+
+
+@router.post("/schedules", status_code=201)
+async def create_schedule(body: ScheduleCreate, user: dict = Depends(get_current_user)):
+    """Create a recurring import.
+
+    Answers 501 for a transport this build cannot run, rather than storing a
+    schedule that would never fire. The URL is fetched by our servers, so it is
+    validated against the SSRF guard here, at creation, and again at every run.
+    """
+    _require_operator(user)
+    tenant_id = user.get("tenant_id") or 1
+    from app.services import import_scheduler as sched
+
+    if body.import_type not in imp.import_types():
+        raise HTTPException(status_code=422, detail="Unknown import type")
+
+    if body.source_kind in sched.UNSUPPORTED_SOURCE_KINDS:
+        raise HTTPException(
+            status_code=501,
+            detail={"error": "source_kind_not_implemented",
+                    "source_kind": body.source_kind,
+                    "message": sched.UNSUPPORTED_SOURCE_KINDS[body.source_kind],
+                    "supported": list(sched.SUPPORTED_SOURCE_KINDS)})
+    if body.source_kind not in sched.SUPPORTED_SOURCE_KINDS:
+        raise HTTPException(status_code=422,
+                            detail=f"Unknown source_kind {body.source_kind!r}")
+
+    from app.services.sage2.api_source import is_safe_url
+    if not is_safe_url(body.source_url):
+        raise HTTPException(
+            status_code=422,
+            detail="source_url must be http(s) to a public host — loopback, private "
+                   "and link-local addresses are refused")
+
+    async with async_session() as session:
+        try:
+            row = (await session.execute(text("""
+                INSERT INTO import_schedules (tenant_id, name, import_type, source_kind,
+                    source_url, mapping, interval_minutes, active, created_by)
+                VALUES (:t, :n, :ty, :sk, :url, CAST(:map AS JSONB), :iv, :act, :by)
+                RETURNING id, next_run_at
+            """), {"t": tenant_id, "n": body.name, "ty": body.import_type,
+                   "sk": body.source_kind, "url": body.source_url,
+                   "map": json.dumps(body.mapping), "iv": body.interval_minutes,
+                   "act": body.active, "by": user.get("email")})).mappings().fetchone()
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            if "import_schedules_tenant_id_name_key" in str(e):
+                raise HTTPException(status_code=409,
+                                    detail="A schedule with that name already exists")
+            logger.error(f"Create import schedule failed (tenant {tenant_id}): {e}")
+            raise HTTPException(status_code=500, detail="Could not create the schedule")
+
+    return {"id": row["id"], "next_run_at": row["next_run_at"].isoformat()}
+
+
+@router.delete("/schedules/{schedule_id}", status_code=204)
+async def delete_schedule(schedule_id: int, user: dict = Depends(get_current_user)):
+    _require_operator(user)
+    tenant_id = user.get("tenant_id") or 1
+    async with async_session() as session:
+        res = await session.execute(text(
+            "DELETE FROM import_schedules WHERE id = :sid AND tenant_id = :t"),
+            {"sid": schedule_id, "t": tenant_id})
+        await session.commit()
+    if not res.rowcount:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return Response(status_code=204)
+
+
+@router.post("/schedules/{schedule_id}/run-now")
+async def run_schedule_now(schedule_id: int, user: dict = Depends(get_current_user)):
+    """Run one schedule immediately, without waiting for its next tick.
+
+    Goes through exactly the same code the background loop uses — including the
+    unchanged-payload skip, so pressing this twice cannot double-import.
+    """
+    _require_operator(user)
+    tenant_id = user.get("tenant_id") or 1
+    from app.services import import_scheduler as sched
+
+    async with async_session() as session:
+        row = (await session.execute(text("""
+            SELECT id, tenant_id, name, import_type, source_kind, source_url,
+                   mapping, interval_minutes, last_content_hash, consecutive_failures
+              FROM import_schedules WHERE id = :sid AND tenant_id = :t
+        """), {"sid": schedule_id, "t": tenant_id})).mappings().fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    try:
+        async with async_session() as session:
+            outcome = await sched.run_schedule(session, dict(row))
+            await session.commit()
+        return outcome
+    except sched.ScheduleRunFailed as failure:
+        async with async_session() as session:
+            await sched._finish(session, failure.schedule_id, status="failed",
+                                error=failure.reason[:2000],
+                                interval_minutes=failure.interval,
+                                failures=failure.failures)
+            await session.commit()
+        raise HTTPException(status_code=502,
+                            detail={"error": "schedule_run_failed", "message": failure.reason})
+
+
 @router.get("/{job_id}/rollback")
 async def rollback_preview(job_id: int, user: dict = Depends(get_current_user)):
     """Can this import be undone, and if not, why not? (E2-4)"""

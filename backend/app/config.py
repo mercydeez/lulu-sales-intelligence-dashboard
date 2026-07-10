@@ -232,6 +232,11 @@ class Settings(BaseSettings):
     # revenue. Set false to withhold it (the endpoint then 404s).
     forecast_methodology_public: bool = True
 
+    # E2-2: the recurring-import poller. On by default and inert with no schedules
+    # — the claim query returns nothing and it sleeps. Creating a schedule (an
+    # explicit, operator-supplied https URL) is the consent to make egress calls.
+    import_scheduler_enabled: bool = True
+
     # E8-3: turn plan quotas from a meter into a limit. Off by default — we meter
     # first and enforce once the numbers have been watched for a period. Was read
     # via a bare os.getenv in usage_metering, which kept it out of Settings and

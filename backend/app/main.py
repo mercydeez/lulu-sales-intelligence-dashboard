@@ -172,6 +172,14 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Forecast trainer disabled (RUN_FORECAST_TRAINER=false)")
 
+    # E2-2: recurring imports. Inert with no schedules — it claims nothing and
+    # sleeps. Replicas coordinate through FOR UPDATE SKIP LOCKED.
+    if settings.import_scheduler_enabled:
+        from app.services.import_scheduler import scheduler_loop
+        _track("import_scheduler", scheduler_loop())
+    else:
+        logger.info("Import scheduler disabled (IMPORT_SCHEDULER_ENABLED=false)")
+
     logger.info("Sales Dashboard API is ready!")
 
     yield
