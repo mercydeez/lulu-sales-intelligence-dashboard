@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings
 from pydantic import field_validator, model_validator
 from functools import lru_cache
 from typing import Optional, List
+from datetime import date
 import contextvars
 import json
 import logging
@@ -230,6 +231,17 @@ class Settings(BaseSettings):
     # anonymous by construction — error rates and feature flags, never a tenant's
     # revenue. Set false to withhold it (the endpoint then 404s).
     forecast_methodology_public: bool = True
+
+    # E6-6: the public API's version lifecycle (services/api_versioning.py).
+    # Both dates are UNSET, which is what makes /api/public/v1 "current" — the
+    # deprecation machinery is live, it simply has nothing to announce. Setting
+    # public_api_v1_deprecated_on starts emitting RFC 9745 `Deprecation` headers;
+    # once public_api_v1_sunset_on passes, v1 answers 410 Gone. Never set a sunset
+    # date without a deprecation date at least one release cycle earlier.
+    public_api_v1_deprecated_on: Optional[date] = None
+    public_api_v1_sunset_on: Optional[date] = None
+    public_api_policy_url: str = "https://github.com/mercydeez/lulu-sales-intelligence-dashboard/blob/main/docs/api/VERSIONING.md"
+
     # Nightly wipe of generated sales so the demo never drifts into a fake all-time
     # high. Rows younger than the retention window survive so the live stream stays
     # populated right after a reset.
@@ -373,6 +385,25 @@ class Settings(BaseSettings):
         self.enable_data_source_connectors = auto(self.enable_data_source_connectors, True, False)
         self.require_email_verification = auto(self.require_email_verification, False, True)
         self.require_mfa_for_admins = auto(self.require_mfa_for_admins, False, False)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_api_lifecycle(self):
+        """E6-6: a sunset is a promise, and a promise needs notice.
+
+        Retiring a version without ever announcing the deprecation would 410 an
+        integrator who had no warning, so the config refuses to express it.
+        """
+        dep, sun = self.public_api_v1_deprecated_on, self.public_api_v1_sunset_on
+        if sun and not dep:
+            raise ValueError(
+                "PUBLIC_API_V1_SUNSET_ON is set without PUBLIC_API_V1_DEPRECATED_ON — "
+                "a version must be announced as deprecated before it can be retired."
+            )
+        if sun and dep and sun <= dep:
+            raise ValueError(
+                "PUBLIC_API_V1_SUNSET_ON must be strictly after PUBLIC_API_V1_DEPRECATED_ON."
+            )
         return self
 
     @property

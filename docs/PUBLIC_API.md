@@ -4,6 +4,12 @@ The platform exposes a per-tenant public REST API so customers can pull their
 own intelligence — and embed the AI assistant — in their own apps. **The API
 key *is* the tenant scope:** a key can only ever read its own tenant's data.
 
+> **Versioning.** Every endpoint lives under `/api/public/v1/`. What we may and
+> may not change inside a version, how a deprecation is announced, and when a
+> retired version starts answering `410` — see
+> [`api/VERSIONING.md`](api/VERSIONING.md). Live state, no API key required:
+> `GET /api/public/versions`.
+
 ## Authentication
 
 Every public request is authenticated by a per-tenant API key, sent either way:

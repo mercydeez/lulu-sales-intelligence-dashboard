@@ -30,6 +30,7 @@ For the three-developer engineering organization (root-level docs):
 
 ### `PUBLIC_API.md`
 - [`PUBLIC_API.md`](PUBLIC_API.md) - per-tenant public REST API + embeddable AI assistant (B4/B5): auth, endpoints, isolation.
+- [`api/VERSIONING.md`](api/VERSIONING.md) - the `/api/public/v1` version contract (E6-6): what may change inside a version, the deprecation → sunset → `410` lifecycle, and why `/api/<domain>` is explicitly *not* a supported surface.
 
 ### `production/` — operations & deployment hardening
 The production-readiness program (turning the MVP into a deployable, recoverable, tenant-isolated pilot). Start with the audit, then the gap analysis.

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.database import get_db, tenant_context
 from app.services import api_key_service as keys
+from app.services import api_versioning
 from app.config import logger, get_settings
 
 
@@ -37,7 +38,26 @@ def _expose_sql() -> bool:
     (schema/info disclosure on a public, API-key surface)."""
     return get_settings().environment.lower() not in ("production", "prod", "staging")
 
-router = APIRouter()
+# E6-6: every route on this router passes through the version lifecycle first.
+# Today it is a no-op (v1 is current); once v1 is deprecated it adds Deprecation/
+# Sunset headers, and after the sunset date it answers 410 Gone. Discovery
+# (`/versions`) carries no version segment and is exempt.
+router = APIRouter(dependencies=[Depends(api_versioning.public_api_lifecycle)])
+
+
+@router.get("/versions")
+async def public_api_versions() -> dict:
+    """Version discovery — unauthenticated and deliberately unversioned.
+
+    An integrator needs this most at the moment their version stops answering, so
+    it must not require the retired version, nor an API key they may have let
+    lapse. It exposes no tenant data.
+    """
+    return {
+        "current": api_versioning.PUBLIC_API_VERSION,
+        "supported": api_versioning.supported_versions(),
+        "policy": get_settings().public_api_policy_url,
+    }
 
 
 async def get_api_context(
