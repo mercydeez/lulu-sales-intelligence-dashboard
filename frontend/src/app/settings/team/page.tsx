@@ -8,7 +8,7 @@ import {
 } from '@/components/ui';
 import type { BadgeVariant } from '@/components/ui';
 import { apiGet, apiPost, ApiError } from '@/lib/apiClient';
-import { Users, UserPlus, ShieldAlert, Copy } from 'lucide-react';
+import { Users, UserPlus, Copy } from 'lucide-react';
 
 const ROLE_LABEL: Record<string, string> = {
   super_admin: 'Admin', regional_manager: 'Regional manager', store_manager: 'Store manager', analyst: 'Analyst',

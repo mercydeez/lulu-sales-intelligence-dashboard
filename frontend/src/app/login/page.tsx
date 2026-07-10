@@ -10,7 +10,7 @@ import { PRODUCT_NAME } from '@/lib/brand';
 import { track } from '@/lib/telemetry';
 import {
   Eye, EyeOff, Lock, Mail, AlertCircle, Loader2,
-  TrendingUp, ShieldCheck, Activity, Sparkles, ArrowRight, KeyRound,
+  TrendingUp, ShieldCheck, Activity, ArrowRight, KeyRound,
 } from 'lucide-react';
 import { BrandIcon } from '@/components/branding/BrandIcon';
 

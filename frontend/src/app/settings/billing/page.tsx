@@ -10,7 +10,7 @@ import {
 import type { BadgeVariant } from '@/components/ui';
 import { apiGet, apiPost, authFetch, ApiError } from '@/lib/apiClient';
 import UsageMeters from '@/components/settings/UsageMeters';
-import { CreditCard, FileText, ShieldAlert, Printer } from 'lucide-react';
+import { CreditCard, FileText, Printer } from 'lucide-react';
 
 const AED = (n: number | null | undefined) =>
   n == null ? '—' : `AED ${n.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

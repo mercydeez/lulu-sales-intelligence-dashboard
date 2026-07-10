@@ -8,7 +8,7 @@ import {
   NoPermissionState,
 } from '@/components/ui';
 import type { BadgeVariant } from '@/components/ui';
-import { ScrollText, Download, ShieldAlert, RefreshCw } from 'lucide-react';
+import { ScrollText, Download, RefreshCw } from 'lucide-react';
 
 interface AuditEvent {
   id: number; occurred_at: string; event_type: string; severity: string;

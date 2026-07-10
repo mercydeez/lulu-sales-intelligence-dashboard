@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import { ShoppingCart, Receipt, Package, TrendingUp, Store } from 'lucide-react';
 import {
-  Card, StatCard, ChartFrame, Table, TableHead, TableBody, TableRow, Th, Td, Badge, SkeletonText, EmptyState,
+  Card, StatCard, ChartFrame, Table, TableHead, TableBody, TableRow, Th, Td, SkeletonText, EmptyState,
   singleLineTick,
 } from '@/components/ui';
 import {

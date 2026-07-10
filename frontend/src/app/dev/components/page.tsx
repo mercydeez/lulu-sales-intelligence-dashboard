@@ -27,7 +27,6 @@ import {
   Th,
   Td,
   Modal,
-  Skeleton,
   SkeletonCard,
   SkeletonText,
   StatCard,

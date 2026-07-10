@@ -7,7 +7,7 @@
  * Public endpoints are exercised with the tenant's API key; management endpoints
  * use the authed session.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Code2, Plus, Trash2, Send, Copy, KeyRound, Webhook, ExternalLink, Play,
   Sparkles, Boxes, Activity, ChevronDown, ChevronRight,

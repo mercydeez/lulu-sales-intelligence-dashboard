@@ -8,7 +8,7 @@ import {
   SkeletonCard, ErrorState, useToast, NoPermissionState,
 } from '@/components/ui';
 import { apiGet, apiPut, ApiError } from '@/lib/apiClient';
-import { Building2, ShieldAlert } from 'lucide-react';
+import { Building2 } from 'lucide-react';
 
 // Keep these labels in sync with backend EMIRATES (services/uae_profile.py) and
 // the DB CHECK constraint (migration 041).
