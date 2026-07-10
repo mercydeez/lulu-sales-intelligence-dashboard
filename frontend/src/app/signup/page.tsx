@@ -51,6 +51,13 @@ export default function SignupPage() {
 
   const displayError = error || localError;
 
+  // Shared input treatment — mirrors the login screen so the two auth surfaces
+  // read as one system (rounded-2xl, soft 4px focus ring, brand focus border).
+  const inputBase =
+    'w-full py-3.5 rounded-2xl bg-surface border border-line text-ink placeholder-ink-muted ' +
+    'shadow-sm focus:outline-none focus:ring-4 focus:ring-teal-500/15 focus:border-teal-500 transition-all';
+  const iconCls = 'w-5 h-5 text-ink-muted group-focus-within:text-teal-600 transition-colors';
+
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* ============================= BRAND PANEL ============================= */}
@@ -107,11 +114,11 @@ export default function SignupPage() {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-sunset">
               <ShoppingBag className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold gradient-text">{PRODUCT_NAME}</h1>
+            <h1 className="text-2xl font-bold text-ink">{PRODUCT_NAME}</h1>
           </div>
 
           <div className="mb-8">
-            <h2 className="text-3xl font-bold text-ink mb-2">Create your workspace ✨</h2>
+            <h2 className="text-3xl font-bold text-ink mb-2">Create your workspace</h2>
             <p className="text-ink-soft">Free trial — set up your team in minutes.</p>
           </div>
 
@@ -125,10 +132,10 @@ export default function SignupPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="company" className="block text-sm font-medium text-ink-soft mb-2">Company name</label>
-              <div className="relative">
-                <Building2 className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
+              <div className="relative group">
+                <Building2 className={`absolute start-3.5 top-1/2 -translate-y-1/2 ${iconCls}`} />
                 <input id="company" type="text" value={company} onChange={(e) => setCompany(e.target.value)}
-                  className="w-full ps-11 pe-4 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-teal-400 outline-none"
+                  className={`${inputBase} ps-11 pe-4`}
                   placeholder="Acme Retail" autoComplete="organization" />
               </div>
             </div>
@@ -136,41 +143,41 @@ export default function SignupPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="first" className="block text-sm font-medium text-ink-soft mb-2">First name</label>
-                <div className="relative">
-                  <User className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
+                <div className="relative group">
+                  <User className={`absolute start-3.5 top-1/2 -translate-y-1/2 ${iconCls}`} />
                   <input id="first" type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)}
-                    className="w-full ps-11 pe-3 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-teal-400 outline-none"
+                    className={`${inputBase} ps-11 pe-3`}
                     placeholder="Nadia" autoComplete="given-name" />
                 </div>
               </div>
               <div>
                 <label htmlFor="last" className="block text-sm font-medium text-ink-soft mb-2">Last name</label>
                 <input id="last" type="text" value={lastName} onChange={(e) => setLastName(e.target.value)}
-                  className="w-full px-3 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-teal-400 outline-none"
+                  className={`${inputBase} px-4`}
                   placeholder="Al Mansouri" autoComplete="family-name" />
               </div>
             </div>
 
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-ink-soft mb-2">Work email</label>
-              <div className="relative">
-                <Mail className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
+              <div className="relative group">
+                <Mail className={`absolute start-3.5 top-1/2 -translate-y-1/2 ${iconCls}`} />
                 <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                  className="w-full ps-11 pe-4 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-teal-400 outline-none"
+                  className={`${inputBase} ps-11 pe-4`}
                   placeholder="you@company.com" autoComplete="email" />
               </div>
             </div>
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-ink-soft mb-2">Password</label>
-              <div className="relative">
-                <Lock className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-muted" />
+              <div className="relative group">
+                <Lock className={`absolute start-3.5 top-1/2 -translate-y-1/2 ${iconCls}`} />
                 <input id="password" type={showPassword ? 'text' : 'password'} value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full ps-11 pe-11 py-3 rounded-xl border border-line bg-surface text-ink focus:ring-2 focus:ring-teal-400 outline-none"
+                  className={`${inputBase} ps-11 pe-11`}
                   placeholder="At least 12 characters" autoComplete="new-password" />
                 <button type="button" onClick={() => setShowPassword((s) => !s)}
-                  className="absolute end-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink">
+                  className="absolute end-3.5 top-1/2 -translate-y-1/2 text-ink-muted hover:text-teal-600 transition-colors">
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
@@ -179,19 +186,19 @@ export default function SignupPage() {
 
             <label className="flex items-center gap-3 cursor-pointer select-none">
               <input type="checkbox" checked={seedSample} onChange={(e) => setSeedSample(e.target.checked)}
-                className="w-4 h-4 rounded border-line text-teal-600 focus:ring-teal-400" />
+                className="w-4 h-4 rounded border-line text-teal-600 focus:ring-teal-500/30 accent-teal-600" />
               <span className="text-sm text-ink-soft">Pre-load sample data so I can explore right away</span>
             </label>
 
             <button type="submit" disabled={isLoading}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl sunset-gradient text-white font-semibold shadow-sunset hover:opacity-95 disabled:opacity-60 transition">
+              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl sunset-gradient text-white font-semibold shadow-sunset hover:opacity-95 active:scale-[0.99] disabled:opacity-60 transition">
               {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Create workspace <ArrowRight className="w-4 h-4" /></>}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-ink-soft">
             Already have an account?{' '}
-            <Link href="/login" className="font-medium gradient-text inline-flex items-center gap-1">
+            <Link href="/login" className="font-semibold text-teal-700 hover:text-teal-800 dark:hover:text-teal-200 inline-flex items-center gap-1">
               Sign in <Sparkles className="w-3.5 h-3.5" />
             </Link>
           </p>

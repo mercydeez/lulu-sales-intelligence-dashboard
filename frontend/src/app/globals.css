@@ -605,6 +605,20 @@ html.dark *::-webkit-scrollbar-thumb:hover { background: #3c5a53; }
     50% { transform: translateY(-10px); }
   }
 
+  /* Ambient drift for decorative blurred blobs (auth brand panels, hero backdrops).
+     Subtle float + scale so the panel feels alive without distracting. Neutralized
+     under prefers-reduced-motion by the global reduce block. */
+  .animate-blob {
+    animation: blob 12s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  @keyframes blob {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(18px, -24px) scale(1.08); }
+    66% { transform: translate(-14px, 14px) scale(0.95); }
+  }
+
   /* Gradient shimmer effect for cards */
   .gradient-shimmer {
     background: linear-gradient(
