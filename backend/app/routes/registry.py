@@ -42,6 +42,7 @@ from app.routes import pos as pos_routes
 from app.routes import atelier_ai as atelier_routes
 from app.routes import customizations as customizations_routes
 from app.routes import platform_ops as platform_ops_routes
+from app.routes import bespoke as bespoke_routes
 from app.routes import sso as sso_routes
 from app.routes import scim as scim_routes
 
@@ -101,6 +102,7 @@ ROUTERS: List[RouterSpec] = [
     (atelier_routes.router, "/api/ai/atelier", ["Atelier"]),
     (customizations_routes.router, "/api/admin", ["Customizations"]),
     (platform_ops_routes.router, "/api/admin", ["Platform Ops"]),
+    (bespoke_routes.router, "/api/admin", ["Bespoke"]),
     (sso_routes.router, "/api/sso", ["SSO"]),
     (scim_routes.router, "/api/scim", ["SCIM"]),
 
