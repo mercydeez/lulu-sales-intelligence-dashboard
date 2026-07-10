@@ -17,7 +17,9 @@
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_rw') THEN
-        -- Dev default password; OVERRIDE in production:  ALTER ROLE app_rw PASSWORD '...'
+        -- Dev default password. In production it is overwritten automatically at
+        -- migrate time from the password inside RLS_DATABASE_URL
+        -- (backend/app/services/role_password_sync.py) — no manual ALTER ROLE.
         CREATE ROLE app_rw LOGIN PASSWORD 'app_rw_dev_pass';
     END IF;
 END $$;

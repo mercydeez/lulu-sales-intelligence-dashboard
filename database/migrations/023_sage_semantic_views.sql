@@ -121,7 +121,9 @@ ALTER VIEW sage_items              SET (security_invoker = false);
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sage_ro') THEN
-        -- Dev default password; OVERRIDE in production: ALTER ROLE sage_ro PASSWORD '...'
+        -- Dev default password. In production it is overwritten automatically at
+        -- migrate time from the password inside SAGE_DATABASE_URL
+        -- (backend/app/services/role_password_sync.py) — no manual ALTER ROLE.
         CREATE ROLE sage_ro LOGIN PASSWORD 'sage_ro_dev_pass' NOSUPERUSER NOCREATEDB NOCREATEROLE;
     END IF;
     -- Strip any ambient privileges, then grant exactly the sage_* read surface.

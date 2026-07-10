@@ -29,11 +29,27 @@ USE_RLS_ROLE=true
 RLS_DATABASE_URL=postgresql+asyncpg://app_rw:<strong-app_rw-pw>@postgres:5432/<db>
 ```
 
-and ensure the DB role password matches:
+No manual `ALTER ROLE` is needed: the migrate step **syncs the DB role
+passwords from the environment automatically** — `app_rw` from the password
+inside `RLS_DATABASE_URL`, `worker_rw` from `WORKER_DB_PASSWORD` (the same
+value the compose file builds `WORKER_DATABASE_URL` from), and `sage_ro` from
+`SAGE_DATABASE_URL` if you set it. Set them **before first boot**. The sync
+runs after every migration pass (the dedicated `migrate` job and, where
+enabled, the startup migration path), is idempotent, and skips any role whose
+env var is unset — dev volumes keep the migration defaults.
 
-```sql
-ALTER ROLE app_rw WITH PASSWORD '<strong-app_rw-pw>';
-```
+> The sync reads the environment of the process that applies migrations, i.e.
+> the `migrate` job's environment. Those variables must be present there — if
+> they only reach the `backend`/`worker` services, the migrate job logs a
+> WARNING ("roles keep their migration-default dev passwords") instead of
+> syncing.
+
+To verify: passwords are not inspectable — `docker compose exec postgres psql
+-U $POSTGRES_USER -c "\du"` lists the roles but never shows passwords. The real
+check is that the services authenticate: after the migrate job runs,
+`/health/ready` succeeds (the API connects as `app_rw`) and the worker logs
+show a successful DB connection instead of
+`password authentication failed for user "worker_rw"`.
 
 > If `RLS_DATABASE_URL` is left empty the app derives a **dev-grade** app_rw
 > password — acceptable only for throwaway environments. `ALLOW_INSECURE_NO_RLS=true`

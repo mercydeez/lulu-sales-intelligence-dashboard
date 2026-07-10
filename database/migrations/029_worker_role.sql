@@ -19,7 +19,9 @@
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'worker_rw') THEN
-        -- Dev default password; OVERRIDE in production: ALTER ROLE worker_rw PASSWORD '...'
+        -- Dev default password. In production it is overwritten automatically at
+        -- migrate time from WORKER_DB_PASSWORD
+        -- (backend/app/services/role_password_sync.py) — no manual ALTER ROLE.
         CREATE ROLE worker_rw LOGIN PASSWORD 'worker_rw_dev_pass' BYPASSRLS;
     ELSE
         -- Idempotent: ensure attributes AND the login password are present even if the
