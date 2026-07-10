@@ -35,9 +35,26 @@ CHUNK_ROWS = 50_000
 _REQUIRED = ["store_id", "item_id", "sale_date", "units"]
 _OPTIONAL = ["revenue_aed", "txn_count"]
 
-# In-process view of running jobs (authoritative state lives in ingest_ledger,
-# which survives restarts; this only adds liveness for the status endpoint).
-_active_jobs: Dict[str, Dict] = {}
+# Liveness for the status endpoint. Authoritative chunk state lives in
+# ingest_ledger (survives restarts); this only adds the coarse run `state`
+# (running/done/aborted). Kept in REDIS, not a module dict, so a status poll that
+# lands on a different gunicorn worker than the one running the job still sees it.
+_JOB_STATE_TTL_SECONDS = 60 * 60 * 24  # a day is ample for a run's liveness
+
+
+def _job_state_key(job_id: str) -> str:
+    return f"ingest:job:{job_id}:state"
+
+
+async def _set_job_state(job_id: str, state: str) -> None:
+    from app.services.cache import set_cached
+    await set_cached(_job_state_key(job_id), {"state": state}, ttl=_JOB_STATE_TTL_SECONDS)
+
+
+async def _get_job_state(job_id: str) -> Optional[str]:
+    from app.services.cache import get_cached
+    data = await get_cached(_job_state_key(job_id))
+    return data.get("state") if data else None
 
 
 def _parse_header(line: str) -> List[str]:
@@ -124,7 +141,7 @@ async def ingest_csv_file(
         "chunks_loaded": 0, "chunks_skipped": 0, "chunks_failed": 0,
         "rows_loaded": 0, "started_at": datetime.now(timezone.utc).isoformat(),
     }
-    _active_jobs[job_id] = summary
+    await _set_job_state(job_id, "running")
     try:
         with open(file_path, "r", encoding="utf-8", newline="") as fh:
             header = fh.readline()
@@ -151,6 +168,7 @@ async def ingest_csv_file(
         summary["state"] = "aborted"
         summary["error"] = str(e)
     summary["finished_at"] = datetime.now(timezone.utc).isoformat()
+    await _set_job_state(job_id, summary["state"])
     return summary
 
 
@@ -242,7 +260,7 @@ async def job_status(job_id: str) -> Dict:
         "failed": row.failed, "pending": row.pending,
         "rows_loaded": int(row.rows_loaded),
     }
-    live = _active_jobs.get(job_id)
-    if live:
-        out["state"] = live["state"]
+    state = await _get_job_state(job_id)
+    if state:
+        out["state"] = state
     return out

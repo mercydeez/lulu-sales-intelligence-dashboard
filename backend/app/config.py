@@ -232,6 +232,18 @@ class Settings(BaseSettings):
     # revenue. Set false to withhold it (the endpoint then 404s).
     forecast_methodology_public: bool = True
 
+    # E6-5 follow-up: process model + connection budget for `gunicorn --workers N`.
+    # web_concurrency is set per-service in compose (command:), NOT in the
+    # Dockerfile CMD, so production never silently inherits a worker count. The
+    # pool is PER PROCESS, so total server connections ≈
+    #   (API workers + singletons + worker) × engines-per-process × (pool + overflow).
+    # Keep these small so N workers stay under Postgres max_connections (raised to
+    # 200 in production compose). Owner + optional rls + optional replica = up to 3
+    # engines per process.
+    web_concurrency: int = 4          # gunicorn worker count (per-service override wins)
+    db_pool_size: int = 10            # warm connections kept open, per engine per process
+    db_max_overflow: int = 10         # extra on-demand connections, per engine per process
+
     # E10-7: lag-tolerant reads (analytics, reports, history) route here. Unset =>
     # every read goes to the primary and get_read_db is a no-op. A replica is
     # BEHIND the primary, so nothing that reads its own write may use it.

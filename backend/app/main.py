@@ -12,13 +12,16 @@ from datetime import datetime, timezone
 from app.config import get_settings, logger
 from app.services.database import init_db, close_db
 from app.services.redis_client import init_redis, close_redis
-from app.services.data_generator import DataGenerator
-from app.services.demo_reset import run_demo_reset_loop
 from app.services.employee_seeder import initialize_employee_system
 from app.services.migration_runner import run_migrations
 from app.services.db_seeder import run_seed
-from app.services.cache_warmer import run_cache_warmer
-from app.services.forecast_trainer import run_forecast_trainer
+from app.services.leader_lock import startup_lock
+
+# The continuous singletons (data_generator, demo_reset, cache_warmer,
+# forecast_trainer, partition_maintenance) used to be imported and started HERE,
+# once per API process. Under `gunicorn --workers N` that ran N of each — N
+# generators, N concurrent partition DROPs. They now live in ONE dedicated
+# single-replica process: app/commands/singletons.py. The API imports none of them.
 
 # Every API router is declared once in the central registry (see routes/registry.py).
 # Adding an endpoint is a one-line append THERE — main.py no longer changes per route.
@@ -70,56 +73,64 @@ async def lifespan(app: FastAPI):
 
     # ── One-shot startup work — gated by flags. In production these run as
     # dedicated jobs (app.commands.{seed,migrate}); the API does API only. ──
-    if settings.run_seed_on_startup:
-        # Seed loads SYNTHETIC demo data (idempotent). Only runs in dev or a
-        # DEMO_MODE box; validate_security() blocks it in real production.
+    #
+    # ALL of it runs inside ONE session-level Postgres advisory lock, so when
+    # `gunicorn --workers N` boots N processes at once, exactly one applies the
+    # DDL and the rest block, then re-check their own idempotent guards and no-op.
+    # Without this, concurrent CREATE TABLE / COPY were PROVEN to crash workers on
+    # a duplicate-key from pg_type and to double-load ~900k history rows. The lock
+    # fails open (proceed unserialized, loudly) if Postgres is unreachable.
+    async with startup_lock():
+        if settings.run_seed_on_startup:
+            # Seed loads SYNTHETIC demo data (idempotent). Only runs in dev or a
+            # DEMO_MODE box; validate_security() blocks it in real production.
+            try:
+                await run_seed()
+                logger.info("Database seed ensured (RUN_SEED_ON_STARTUP=true)")
+            except Exception as e:
+                logger.error(f"Failed to seed database: {e}")
+                raise e
+        else:
+            logger.info("Startup seed skipped (RUN_SEED_ON_STARTUP=false) — run `python -m app.commands.seed`")
+
+        if settings.run_migrations_on_startup:
+            try:
+                await run_migrations()
+                logger.info("Database migrations applied (RUN_MIGRATIONS_ON_STARTUP=true)")
+            except Exception as e:
+                logger.error(f"Failed to apply database migrations: {e}")
+                raise e
+        else:
+            logger.info(
+                "Startup migrations skipped (RUN_MIGRATIONS_ON_STARTUP=false) — "
+                "run the dedicated migrate job (`python -m app.commands.migrate`)"
+            )
+
+        await init_redis()
+        logger.info("Redis initialized")
+
+        # Employee system (migration + seeding) — gated; non-fatal.
+        if settings.run_employee_seeder_on_startup:
+            try:
+                await initialize_employee_system()
+                logger.info("Employee system initialized")
+            except Exception as e:
+                logger.warning(f"Employee system initialization skipped: {e}")
+        else:
+            logger.info("Employee seeder skipped (RUN_EMPLOYEE_SEEDER_ON_STARTUP=false)")
+
+        # Refresh per-category prices from the single price source (items.unit_price_aed)
+        # so inventory/promotions/procurement never drift from the analytics revenue math.
         try:
-            await run_seed()
-            logger.info("Database seed ensured (RUN_SEED_ON_STARTUP=true)")
+            from app.services.data_sync import DataSyncService
+            from app.services.database import async_session
+            async with async_session() as _s:
+                await DataSyncService.refresh_category_costs(_s)
+                # E2-3: on a fresh volume, migration 058's backfill ran before the
+                # seeder loaded inventory — seed any still-missing item costs now.
+                await DataSyncService.backfill_item_costs(_s)
         except Exception as e:
-            logger.error(f"Failed to seed database: {e}")
-            raise e
-    else:
-        logger.info("Startup seed skipped (RUN_SEED_ON_STARTUP=false) — run `python -m app.commands.seed`")
-
-    if settings.run_migrations_on_startup:
-        try:
-            await run_migrations()
-            logger.info("Database migrations applied (RUN_MIGRATIONS_ON_STARTUP=true)")
-        except Exception as e:
-            logger.error(f"Failed to apply database migrations: {e}")
-            raise e
-    else:
-        logger.info(
-            "Startup migrations skipped (RUN_MIGRATIONS_ON_STARTUP=false) — "
-            "run the dedicated migrate job (`python -m app.commands.migrate`)"
-        )
-
-    await init_redis()
-    logger.info("Redis initialized")
-
-    # Employee system (migration + seeding) — gated; non-fatal.
-    if settings.run_employee_seeder_on_startup:
-        try:
-            await initialize_employee_system()
-            logger.info("Employee system initialized")
-        except Exception as e:
-            logger.warning(f"Employee system initialization skipped: {e}")
-    else:
-        logger.info("Employee seeder skipped (RUN_EMPLOYEE_SEEDER_ON_STARTUP=false)")
-
-    # Refresh per-category prices from the single price source (items.unit_price_aed)
-    # so inventory/promotions/procurement never drift from the analytics revenue math.
-    try:
-        from app.services.data_sync import DataSyncService
-        from app.services.database import async_session
-        async with async_session() as _s:
-            await DataSyncService.refresh_category_costs(_s)
-            # E2-3: on a fresh volume, migration 058's backfill ran before the
-            # seeder loaded inventory — seed any still-missing item costs now.
-            await DataSyncService.backfill_item_costs(_s)
-    except Exception as e:
-        logger.warning(f"Category cost refresh skipped: {e}")
+            logger.warning(f"Category cost refresh skipped: {e}")
 
     # ── Background tasks — gated; only started tasks are tracked/cancelled. ──
     started_tasks: list[tuple[str, asyncio.Task]] = []
@@ -142,52 +153,21 @@ async def lifespan(app: FastAPI):
         task.add_done_callback(_on_done)
         started_tasks.append((name, task))
 
-    # The synthetic generator writes fake sales — DEMO ONLY. It self-confines to
-    # settings.demo_tenant_id and refuses to start if that tenant owns no stores
-    # (E0-8); migration 057 enforces the same rule in Postgres.
-    if settings.demo_mode and settings.live_generator_enabled:
-        generator = DataGenerator()
-        _track("data_generator", generator.start())
-        logger.info(
-            "Data generator started (DEMO_MODE + LIVE_GENERATOR_ENABLED), "
-            f"confined to tenant {settings.demo_tenant_id}"
-        )
-    else:
-        logger.info("Data generator NOT started (demo/live-generator disabled)")
+    # CONTINUOUS SINGLETONS (data_generator, demo_reset, cache_warmer,
+    # forecast_trainer, partition_maintenance) are NOT started here. Each must run
+    # in exactly one process; under `gunicorn --workers N` the API is N processes,
+    # so they live in the dedicated single-replica `singletons` container
+    # (app/commands/singletons.py). The API runs API — plus the one loop that is
+    # genuinely safe across processes:
 
-    # Nightly wipe of the generator's output so the demo never drifts (E0-8).
-    if settings.demo_mode and settings.demo_reset_enabled:
-        _track("demo_reset", run_demo_reset_loop())
-        logger.info(f"Demo reset loop started (nightly at {settings.demo_reset_hour_utc}:00 UTC)")
-
-    if settings.run_cache_warmer:
-        _track("cache_warmer", run_cache_warmer())
-        logger.info("Cache warmer started")
-    else:
-        logger.info("Cache warmer disabled (RUN_CACHE_WARMER=false)")
-
-    if settings.run_forecast_trainer:
-        _track("forecast_trainer", run_forecast_trainer())
-        logger.info("Forecast trainer started")
-    else:
-        logger.info("Forecast trainer disabled (RUN_FORECAST_TRAINER=false)")
-
-    # E2-2: recurring imports. Inert with no schedules — it claims nothing and
-    # sleeps. Replicas coordinate through FOR UPDATE SKIP LOCKED.
+    # E2-2: recurring imports. Safe in every API worker because it claims work with
+    # `FOR UPDATE SKIP LOCKED` — N workers partition the schedules rather than
+    # double-run them. This is the ONLY background loop the API process starts.
     if settings.import_scheduler_enabled:
         from app.services.import_scheduler import scheduler_loop
         _track("import_scheduler", scheduler_loop())
     else:
         logger.info("Import scheduler disabled (IMPORT_SCHEDULER_ENABLED=false)")
-
-    # E6-3: keep sales_stream_raw's monthly partitions ahead of the clock. If next
-    # month's partition is missing when the month turns, inserts fall into DEFAULT
-    # and stop being reclaimable by the retention policy.
-    if settings.partition_maintenance_enabled:
-        from app.services.partition_maintenance import partition_maintenance_loop
-        _track("partition_maintenance", partition_maintenance_loop())
-    else:
-        logger.info("Partition maintenance disabled (PARTITION_MAINTENANCE_ENABLED=false)")
 
     logger.info("Sales Dashboard API is ready!")
 

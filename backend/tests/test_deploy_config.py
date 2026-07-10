@@ -52,7 +52,10 @@ def test_prod_init_has_no_demo_data():
 def test_prod_compose_core_services_and_healthcheck():
     text = _read(PROD_COMPOSE)
     assert "/health/ready" in text, "backend healthcheck should target /health/ready"
-    for svc in ("worker:", "migrate:", "backup:"):
+    # `singletons` is now load-bearing: it hosts every continuous background loop
+    # (generator/reset/warmer/trainer/partition-maintenance) so the API workers run
+    # none — guard its presence.
+    for svc in ("worker:", "migrate:", "backup:", "singletons:"):
         assert svc in text, f"production compose should define the {svc} service"
 
 
@@ -64,12 +67,27 @@ def test_prod_compose_keeps_e0_2_env_wiring():
 
 
 def test_prod_compose_no_startup_seed_or_generator():
-    text = _read(PROD_COMPOSE)
+    """The API/backend must never seed on startup or force synthetic generation on.
+
+    The continuous singletons (including the generator) now live in the dedicated
+    `singletons` service, and the generator self-gates on DEMO_MODE +
+    LIVE_GENERATOR_ENABLED. Both flags default to false and are NOT hardcoded true
+    anywhere, so a non-demo production deploy runs the maintenance loops and
+    generates nothing. (A demo deploy opts in by setting the two env vars.)
+    """
+    text = _strip_comments(_read(PROD_COMPOSE), "#")
     assert 'RUN_SEED_ON_STARTUP: "true"' not in text
-    # backend must not hardcode the live generator on (generator service is demo-profile-gated)
-    assert 'LIVE_GENERATOR_ENABLED: "true"' in text  # exists only in the demo generator service
-    # ...and that occurrence must be within the profile-gated generator, not backend:
-    assert 'profiles: ["demo"]' in text
+    # No service hardcodes the generator / demo mode ON — both are env-gated,
+    # default false. This is a STRONGER guarantee than the old demo-profile check:
+    # generation is off unless explicitly enabled, not merely quarantined.
+    assert 'LIVE_GENERATOR_ENABLED: "true"' not in text, \
+        "the live generator must be env-gated (default false), never hardcoded on"
+    assert 'DEMO_MODE: "true"' not in text, \
+        "demo mode must be env-gated (default false), never hardcoded on"
+    # The singletons service is the ONLY host that can run the generator, and it
+    # gates it on the (default-false) env vars.
+    assert "singletons:" in text
+    assert "LIVE_GENERATOR_ENABLED: ${LIVE_GENERATOR_ENABLED:-false}" in text
 
 
 # --- E0-3: pipeline artifacts exist -------------------------------------------

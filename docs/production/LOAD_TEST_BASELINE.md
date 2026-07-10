@@ -7,6 +7,28 @@
 Every number below was measured on the run described. Nothing here is a target, a
 projection, or a promise. Where a scenario failed, the failure is the headline.
 
+> **RESOLVED — the single-worker finding below is fixed.** The API now runs under
+> `gunicorn` with N `UvicornWorker`s, and the continuous singletons moved to a
+> dedicated `singletons` container so N workers don't run N of each. Re-run of
+> Scenario 4 (100 SSE + 100 VUs, Sage every iteration) on **4 workers**, same box:
+>
+> | Metric | 1 worker (below) | **4 workers** |
+> |---|---|---|
+> | Throughput | 26 req/s | **249 req/s** |
+> | Latency p95 | 12.45 s | **1.24 s** |
+> | Overall failed | 10.16 % | **1.54 %** |
+> | Sage success | 34 % | **93 %** |
+> | Peak DB connections | — | 89 / 100 |
+>
+> The residual ~1.5 % is the same Post-`EOF` connection-reuse artifact documented in
+> §"two wrong explanations", now amplified by gunicorn's `--max-requests` worker
+> recycling — a harness effect, not server saturation. Verified live: 4 gunicorn
+> workers, exactly one `singletons` container running all five loops, the generator
+> writing at ~1 row / 5–15 s (NOT 4×), Sage multi-turn history surviving across
+> workers (Redis-backed), and the startup advisory lock serializing all four workers'
+> boot DDL with no duplicate-key crash. See `docs/production/RUNTIME_PROCESSES.md`
+> for the process model and the fix's design.
+
 ---
 
 ## What this is, and is not

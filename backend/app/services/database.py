@@ -51,8 +51,12 @@ if settings.environment == "testing":
 else:
     _engine_kwargs.update(
         poolclass=AsyncAdaptedQueuePool,
-        pool_size=20,        # Base number of connections
-        max_overflow=30,     # Additional connections when pool is exhausted
+        # Sized DOWN from 20/30 because the pool is per-process: with
+        # `gunicorn --workers N` the old defaults meant N×50 connections, blowing
+        # past Postgres max_connections. Config-driven so ops tunes it with the
+        # worker count (see config.web_concurrency / db_pool_size / db_max_overflow).
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
         pool_recycle=1800,   # Recycle connections after 30 minutes
         pool_timeout=30,     # Wait up to 30 seconds for connection
     )

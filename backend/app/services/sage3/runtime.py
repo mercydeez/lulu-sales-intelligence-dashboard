@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from typing import AsyncGenerator, Dict, List, Optional
 
-from app.services.ai_assistant import get_or_create_context
+from app.services.ai_assistant import load_context, save_context
 from .orchestrator import run_sage3
 from .state import AgentState
 
@@ -53,7 +53,7 @@ async def answer_sage3(
     # role threads the persona into the stored system message (role_experience);
     # the v3 graph builds its own prompts, so a persona-aware graph prompt is a
     # later, separate hook.
-    context = get_or_create_context(session_id, role)
+    context = await load_context(session_id, role)
     pending = getattr(context, "pending", None)
 
     effective_query = message
@@ -95,6 +95,9 @@ async def answer_sage3(
     context.add_message("user", message)
     if answer:
         context.add_message("assistant", answer)
+    # Persist the turn (history + any parked `pending`) to Redis so the next turn
+    # resolves it even if it lands on a different gunicorn worker.
+    await save_context(session_id, context)
     return state
 
 

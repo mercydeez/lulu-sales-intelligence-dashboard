@@ -176,6 +176,25 @@ async def check_worker_heartbeat(redis, now: Optional[datetime] = None, stale_af
     return parse_worker_heartbeat(raw, now, stale_after)
 
 
+# The `singletons` sidecar (app/commands/singletons.py) writes this key. It is
+# reported in /health/deep for visibility but does NOT gate readiness: the API
+# serves fine when the sidecar is down — only the generator/partition-maintenance
+# stop, which is an operational concern, not an API outage.
+SINGLETONS_HEARTBEAT_KEY = "health:worker:singletons"
+
+
+async def check_singletons_heartbeat(redis, now: Optional[datetime] = None, stale_after_seconds: Optional[int] = None) -> dict:
+    s = get_settings()
+    stale_after = int(stale_after_seconds if stale_after_seconds is not None else s.worker_heartbeat_stale_seconds)
+    raw = None
+    try:
+        if redis is not None:
+            raw = await redis.get(SINGLETONS_HEARTBEAT_KEY)
+    except Exception:
+        return parse_worker_heartbeat(None, now, stale_after) | {"status": "unknown"}
+    return parse_worker_heartbeat(raw, now, stale_after)
+
+
 def check_backup(settings=None, now: Optional[datetime] = None) -> dict:
     """READ-ONLY freshness read of the E0-1 backup manifest. Never writes/creates
     a backup — just reports what E0-1 produced."""
@@ -235,6 +254,8 @@ async def full_health(engine, redis, settings=None, now: Optional[datetime] = No
         "redis": await check_redis(redis),
         "migrations": await check_migrations(),
         "worker_heartbeat": await check_worker_heartbeat(redis, now, s.worker_heartbeat_stale_seconds),
+        # Informational only — see aggregate_status/is_ready, which do NOT read it.
+        "singletons_heartbeat": await check_singletons_heartbeat(redis, now, s.worker_heartbeat_stale_seconds),
         "backup": check_backup(s, now),
         "alerting": check_alerting(s),
         "data_residency": _residency_check(s),

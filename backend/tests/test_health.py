@@ -13,22 +13,27 @@ from httpx import AsyncClient, ASGITransport
 
 @pytest.fixture
 def mock_db_and_redis():
-    """Patch database and redis so the app can start without real services."""
+    """Patch database and redis so the app can start without real services.
+
+    The synthetic generator no longer runs in the API lifespan (it moved to the
+    `singletons` command), so there is nothing generator-shaped to patch here. The
+    startup advisory lock IS patched to a no-op — otherwise it would try to open a
+    real asyncpg connection at boot."""
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _noop_lock(*a, **k):
+        yield
+
     with patch("app.main.init_db", new_callable=AsyncMock) as mock_init_db, \
          patch("app.main.close_db", new_callable=AsyncMock), \
          patch("app.main.init_redis", new_callable=AsyncMock), \
          patch("app.main.close_redis", new_callable=AsyncMock), \
          patch("app.main.initialize_employee_system", new_callable=AsyncMock), \
-         patch("app.main.DataGenerator") as mock_gen:
-
-        # Make the generator's start() a coroutine that just sleeps
-        instance = MagicMock()
-        async def fake_start():
-            import asyncio
-            await asyncio.sleep(999999)
-        instance.start = fake_start
-        mock_gen.return_value = instance
-
+         patch("app.main.run_seed", new_callable=AsyncMock), \
+         patch("app.main.run_migrations", new_callable=AsyncMock), \
+         patch("app.main.startup_lock", new=_noop_lock), \
+         patch("app.services.import_scheduler.scheduler_loop", new=lambda: AsyncMock()()):
         yield mock_init_db
 
 

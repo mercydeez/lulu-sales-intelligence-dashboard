@@ -136,19 +136,35 @@ def test_session_namespaced_by_user():
 
 
 @pytest.mark.asyncio
-async def test_session_summary_isolated_between_users():
-    """User B cannot see user A's conversation via a shared client session_id."""
+async def test_session_summary_isolated_between_users(fake_redis):
+    """User B cannot see user A's conversation via a shared client session_id.
+
+    Isolation comes from `_scoped_session` namespacing the client sid with the
+    user id, so A and B address DIFFERENT Redis keys. A seeds a context; B asks for
+    the same client sid "s1" and gets an empty summary because B's scoped key
+    differs from A's."""
     from app.routes.ai import _scoped_session
     from app.services import ai_assistant as svc
-    # User A (store manager) starts a conversation under client sid "s1".
-    svc.get_or_create_context(_scoped_session(MOCK_STORE_MANAGER, "s1"))
-    # User B (regional manager) asks for the summary of the same client sid.
+
+    a_key = _scoped_session(MOCK_STORE_MANAGER, "s1")
+    b_key = _scoped_session(MOCK_REGIONAL_MANAGER, "s1")
+    assert a_key != b_key, "the scoping is the isolation mechanism"
+
+    # User A starts a conversation under their scoped sid.
+    ctx = await svc.load_context(a_key)
+    ctx.add_message("user", "my private question")
+    await svc.save_context(a_key, ctx)
+
+    # User B asks for the summary of the same CLIENT sid "s1".
     app.dependency_overrides[get_current_user] = lambda: MOCK_REGIONAL_MANAGER
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/ai/chat/summary/s1")
     assert resp.status_code == 200
-    assert resp.json()["active"] is False
+    assert resp.json()["active"] is False   # B sees nothing of A's session
+
+    # And A's own summary IS active — proving the seed worked and isolation is real.
+    assert (await svc.get_conversation_summary(a_key))["active"] is True
 
 
 # --- P1.2 / P0.4: guardrails & prompt-injection resistance ---------------------

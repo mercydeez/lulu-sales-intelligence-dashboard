@@ -20,7 +20,6 @@ from app.services.ai_assistant import (
     clear_conversation,
     get_conversation_summary,
     detect_intent,
-    get_or_create_context
 )
 from app.services.voice_service import (
     transcribe_audio,
@@ -273,7 +272,7 @@ async def clear_chat(request: ClearConversationRequest, current_user: dict = Dep
     """
     Clear conversation history for a session
     """
-    clear_conversation(_scoped_session(current_user, request.session_id))
+    await clear_conversation(_scoped_session(current_user, request.session_id))
     return {"status": "cleared", "session_id": request.session_id}
 
 
@@ -282,7 +281,7 @@ async def get_chat_summary(session_id: str, current_user: dict = Depends(require
     """
     Get conversation summary for a session
     """
-    summary = get_conversation_summary(_scoped_session(current_user, session_id))
+    summary = await get_conversation_summary(_scoped_session(current_user, session_id))
     return summary
 
 

@@ -112,9 +112,14 @@ async def run_migrations():
             try:
                 raw_conn = await conn.get_raw_connection()
                 await raw_conn.driver_connection.execute(sql_content)
-                # Record in schema_migrations
+                # Record in schema_migrations. ON CONFLICT DO NOTHING is
+                # defence-in-depth: the startup advisory lock (services.leader_lock)
+                # already serializes booting processes, but a torn boot (SIGKILL
+                # after a migration file's embedded COMMIT, before this INSERT) must
+                # never crash a later process on the PK.
                 await conn.execute(
-                    text("INSERT INTO schema_migrations (version) VALUES (:version)"),
+                    text("INSERT INTO schema_migrations (version) VALUES (:version) "
+                         "ON CONFLICT (version) DO NOTHING"),
                     {"version": filename}
                 )
                 logger.info(f"Migration {filename} applied successfully.")

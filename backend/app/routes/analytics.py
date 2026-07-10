@@ -718,10 +718,40 @@ async def get_returns_summary(
 # within this TTL (see services/forecast_trainer.py), so it never expires under it.
 MODEL_METRICS_TTL = 6 * 3600
 
-# Keys whose training is currently running, so concurrent cold requests don't
-# each spawn a duplicate (and expensive) background training task. In-process
-# guard — fine for the single-worker app; harmless if it ever runs multi-worker.
-_inflight_metrics: set = set()
+# Cross-worker guard so concurrent cold requests don't each spawn a duplicate
+# (expensive) background training task. A Redis SET NX lease, not an in-process
+# set: under `gunicorn --workers N` an in-process set would let N workers train
+# the same scope N times. Fails OPEN (a Redis blip just permits a duplicate warm —
+# the output is idempotent, so this is waste, never wrong).
+_INFLIGHT_METRICS_TTL = 15 * 60  # a warm should finish well within this; auto-frees on crash
+
+
+def _inflight_key(cache_key: str) -> str:
+    return f"analytics:warming:{cache_key}"
+
+
+async def _try_claim_metrics_warm(cache_key: str) -> bool:
+    """True if THIS worker should run the warm; False if another already is."""
+    from app.services import redis_client as _redis
+    client = _redis.redis_client
+    if client is None:
+        return True  # no Redis => no cross-worker coordination; proceed (idempotent)
+    try:
+        got = await client.set(_inflight_key(cache_key), "1", nx=True, ex=_INFLIGHT_METRICS_TTL)
+        return bool(got)
+    except Exception:
+        return True  # fail open
+
+
+async def _release_metrics_warm(cache_key: str) -> None:
+    from app.services import redis_client as _redis
+    client = _redis.redis_client
+    if client is None:
+        return
+    try:
+        await client.delete(_inflight_key(cache_key))
+    except Exception:
+        pass
 
 
 def _empty_model_metrics(status: str = "ready") -> dict:
@@ -918,9 +948,8 @@ async def _warm_model_metrics_in_background(
     (the request's session is gone by the time this runs). Guarded so concurrent
     cold requests for the same scope don't trigger duplicate training."""
     cache_key = model_metrics_cache_key(tenant_id, allowed, horizon)
-    if cache_key in _inflight_metrics:
-        return
-    _inflight_metrics.add(cache_key)
+    if not await _try_claim_metrics_warm(cache_key):
+        return  # another worker is already warming this scope
     try:
         from app.services.database import async_session
         async with async_session() as session:
@@ -928,7 +957,7 @@ async def _warm_model_metrics_in_background(
     except Exception as e:
         logger.warning(f"Background model-metrics warm failed: {e}")
     finally:
-        _inflight_metrics.discard(cache_key)
+        await _release_metrics_warm(cache_key)
 
 
 @router.get("/model-metrics")
@@ -955,8 +984,9 @@ async def get_model_metrics(
     if cached:
         return cached
 
-    if cache_key not in _inflight_metrics:
-        asyncio.create_task(_warm_model_metrics_in_background(tenant_id, allowed, horizon))
+    # Always schedule; the Redis SET NX inside the warm dedupes across workers (and
+    # a same-worker double-schedule just no-ops on the second claim). Cheap.
+    asyncio.create_task(_warm_model_metrics_in_background(tenant_id, allowed, horizon))
     return _empty_model_metrics("warming")
 
 

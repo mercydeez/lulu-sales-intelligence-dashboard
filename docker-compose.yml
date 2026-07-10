@@ -54,6 +54,21 @@ services:
     container_name: ${PROJECT_PREFIX:-sales}_backend
     security_opt:
       - no-new-privileges:true
+    # E6-5 follow-up: real multi-worker serving. gunicorn (not `uvicorn --workers`,
+    # whose supervisor does NOT restart a dead worker) manages N UvicornWorkers,
+    # with periodic recycling. --timeout 120 protects long-lived SSE streams. This
+    # base command is overridden in docker-compose.override.yml with single-worker
+    # `uvicorn --reload` for everyday hot-reload dev; it applies when you run the
+    # base compose alone (load tests, CI, prod-like local).
+    command: >
+      gunicorn app.main:app
+      -k uvicorn.workers.UvicornWorker
+      -w ${WEB_CONCURRENCY:-4}
+      -b 0.0.0.0:8000
+      --timeout 120
+      --graceful-timeout 30
+      --max-requests 2000
+      --max-requests-jitter 200
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD:-salespass}@postgres:5432/${POSTGRES_DB:-salesdb}
       # Defense-in-depth: the authenticated request path runs as the non-owner
@@ -96,6 +111,39 @@ services:
       - USE_SAGE_V3=${USE_SAGE_V3:-true}
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+      - ./data:/app/data
+      - ./database:/app/database:ro
+    networks:
+      - sales_network
+
+  # E6-5 follow-up: the ONE home for continuous singletons (data generator, demo
+  # reset, cache warmer, forecast trainer, partition maintenance). These used to
+  # run inside the API lifespan — under `gunicorn --workers N` that would run N of
+  # each. Here they run in exactly one container, so duplication is impossible by
+  # construction rather than by a runtime election. `docker compose up -d` starts
+  # it by default, so the dev demo still gets live sales. It uses the same image
+  # and the same config defaults as the backend (DEMO_MODE etc. auto-on in dev).
+  singletons:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ${PROJECT_PREFIX:-sales}_singletons
+    security_opt:
+      - no-new-privileges:true
+    command: ["python", "-m", "app.commands.singletons"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD:-salespass}@postgres:5432/${POSTGRES_DB:-salesdb}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-sales_redis_dev_pass}@redis:6379
+      - ENVIRONMENT=development
+      - USE_RLS_ROLE=${USE_RLS_ROLE:-true}
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy

@@ -63,7 +63,10 @@ async def test_vague_triggers_clarification():
 
 
 @pytest.mark.asyncio
-async def test_multipart_triggers_readback_then_confirms():
+async def test_multipart_triggers_readback_then_confirms(fake_redis):
+    # Two turns that must share `pending` (the parked readback). That state now
+    # lives in Redis, not a process dict, so this test needs a Redis stand-in — the
+    # same requirement multi-worker serving imposes in production.
     q = "top stores by revenue and total returns"
     st1 = await answer_sage3("g:2", q, tenant_id=1, role="super_admin", allowed_stores=[])
     assert st1.get("needs_readback") is True

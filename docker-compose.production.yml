@@ -24,6 +24,11 @@ services:
     image: pgvector/pgvector:pg15  # pgvector-enabled PG15 (semantic layer / RAG needs the `vector` type)
     container_name: app_db_prod
     restart: always
+    # E6-5 follow-up: the pool is per-process, so with `gunicorn --workers N` the
+    # API alone can want N×(pool+overflow) connections; add the singletons + worker
+    # containers and the default max_connections=100 is exhausted. 200 fits
+    # WEB_CONCURRENCY=2 × 20/worker + sidecars comfortably (see LOAD_TEST_BASELINE.md).
+    command: ["postgres", "-c", "max_connections=200"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-salesuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
@@ -120,6 +125,20 @@ services:
       dockerfile: Dockerfile
     container_name: app_backend_prod
     restart: always
+    # E6-5 follow-up: multi-worker serving. gunicorn manages the workers (its
+    # supervisor restarts a dead one; `uvicorn --workers` does not) and recycles
+    # them periodically. Set PER SERVICE, never in the Dockerfile CMD, so prod can
+    # never silently inherit a worker count. Default 2; raise WEB_CONCURRENCY once
+    # the singleton loops are confirmed out of the API (they are — see singletons).
+    command: >
+      gunicorn app.main:app
+      -k uvicorn.workers.UvicornWorker
+      -w ${WEB_CONCURRENCY:-2}
+      -b 0.0.0.0:8000
+      --timeout 120
+      --graceful-timeout 30
+      --max-requests 2000
+      --max-requests-jitter 200
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-salesdb}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
@@ -251,26 +270,40 @@ services:
           memory: 96M
 
   # ===========================================================================
-  # Synthetic generator — DEMO ONLY. Enable with `--profile demo`.
-  # Refuses to run unless DEMO_MODE=true AND LIVE_GENERATOR_ENABLED=true.
+  # Singletons — the ONE process for every continuous background loop.
+  #
+  # E6-5 follow-up. These used to run inside the API lifespan; under
+  # `gunicorn --workers N` that ran N of each (N generators, N concurrent
+  # partition DROPs). Here they run in exactly one always-on container, so
+  # duplication is impossible by construction.
+  #
+  # Always-on (NOT demo-profiled) because partition_maintenance, cache_warmer and
+  # forecast_trainer are needed in REAL production. The synthetic generator and
+  # demo_reset self-gate on DEMO_MODE + LIVE_GENERATOR_ENABLED (both default
+  # false), so a non-demo deploy runs the maintenance loops and generates NOTHING.
+  # Migration 057's trigger enforces E0-8 at the DB regardless.
   # ===========================================================================
-  generator:
+  singletons:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: app_generator_prod
-    profiles: ["demo"]
-    command: ["python", "-m", "app.commands.generator"]
+    container_name: app_singletons_prod
+    command: ["python", "-m", "app.commands.singletons"]
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-salesdb}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ENVIRONMENT: production
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       SECRET_KEY: ${SECRET_KEY}
+      USE_RLS_ROLE: ${USE_RLS_ROLE:-true}
+      RLS_DATABASE_URL: ${RLS_DATABASE_URL:-}
       LOG_JSON: ${LOG_JSON:-true}
-      DEMO_MODE: "true"
-      LIVE_GENERATOR_ENABLED: "true"
+      # Generator/demo_reset self-gate on these — default OFF, so real production
+      # generates nothing. A demo deploy sets DEMO_MODE=true + LIVE_GENERATOR_ENABLED=true.
+      DEMO_MODE: ${DEMO_MODE:-false}
+      LIVE_GENERATOR_ENABLED: ${LIVE_GENERATOR_ENABLED:-false}
       STREAMING_INTERVAL_SECONDS: ${STREAMING_INTERVAL_SECONDS:-60}
+      WORKER_HEARTBEAT_STALE_SECONDS: ${WORKER_HEARTBEAT_STALE_SECONDS:-120}
     depends_on:
       postgres:
         condition: service_healthy
@@ -279,6 +312,8 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: always
+    deploy:
+      replicas: 1  # exactly one, always — this is what makes duplication impossible
     networks:
       - app_network
 
