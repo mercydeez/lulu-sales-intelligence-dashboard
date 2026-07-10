@@ -17,13 +17,10 @@ import {
 import { Button, SkeletonCard } from '@/components/ui';
 import { registerWidgets, type WidgetProps } from '@/components/copilot/registry';
 import { useCopilotFeed, type BusinessHealth, type FeedAction, type FeedOpportunity, type FeedRisk } from '@/components/copilot/useCopilotFeed';
+import { severityAccent, PRIORITY_CHIP } from '@/lib/severity';
 
 const AED = (n: number | null | undefined, dp = 0) =>
   n == null ? '—' : `AED ${n.toLocaleString('en-AE', { maximumFractionDigits: dp, minimumFractionDigits: dp })}`;
-
-const SEV_HEX: Record<string, string> = {
-  critical: '#f43f5e', high: '#f97316', medium: '#f59e0b', low: 'var(--brand)',
-};
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted mb-3">{children}</p>;
@@ -135,7 +132,7 @@ export function RisksWidget({ spec }: WidgetProps) {
           {risks.map((r: FeedRisk, i) => (
             <Link key={r.id ?? i} href={r.href || '/decisions'}
               className="block rounded-2xl bg-surface border border-line shadow-card p-4 hover:bg-surface-2 transition-colors"
-              style={{ borderInlineStartWidth: '3px', borderInlineStartColor: SEV_HEX[r.severity] ?? SEV_HEX.low }}>
+              style={{ borderInlineStartWidth: '3px', borderInlineStartColor: severityAccent(r.severity) }}>
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-[15px] font-semibold text-ink leading-snug flex items-center gap-2">
@@ -219,14 +216,8 @@ export function OpportunitiesWidget({ spec }: WidgetProps) {
   );
 }
 
-/* ── Recommendations — reshaped decisions with priority + evidence ── */
-
-const PRIORITY_CHIP: Record<FeedAction['priority'], string> = {
-  urgent: 'bg-rose-50 text-rose-700 ring-rose-200',
-  high: 'bg-orange-50 text-orange-700 ring-orange-200',
-  normal: 'bg-teal-50 text-teal-700 ring-teal-200',
-  low: 'bg-surface-2 text-ink-muted ring-line',
-};
+/* ── Recommendations — reshaped decisions with priority + evidence ──
+   Priority chips come from lib/severity (one severity→color map app-wide). */
 
 export function RecommendationsWidget({ spec }: WidgetProps) {
   const { feed, status, refresh } = useCopilotFeed();

@@ -4,6 +4,7 @@ import { HTMLAttributes, ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Inbox } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { EASE } from './motion';
 
 export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
   icon?: ReactNode;
@@ -11,8 +12,6 @@ export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLDivElement>, 't
   description?: string;
   action?: ReactNode;
 }
-
-const EASE = [0.22, 1, 0.36, 1] as const;
 
 export function EmptyState({ icon, title, description, action, className, ...props }: EmptyStateProps) {
   return (

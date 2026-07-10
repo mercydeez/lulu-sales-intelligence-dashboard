@@ -1,4 +1,5 @@
 import { BadgeVariant } from '@/components/ui';
+import { SEVERITY_BADGE } from '@/lib/severity';
 
 export interface InventoryItem {
   id: number;
@@ -68,12 +69,8 @@ export const statusLabels: Record<InventoryItem['status'], string> = {
   overstocked: 'Overstocked',
 };
 
-export const priorityBadgeVariant: Record<ProcurementItem['priority'], BadgeVariant> = {
-  critical: 'danger',
-  high: 'coral',
-  medium: 'warning',
-  low: 'teal',
-};
+// One severity→color map app-wide (lib/severity) — this is that map.
+export const priorityBadgeVariant: Record<ProcurementItem['priority'], BadgeVariant> = SEVERITY_BADGE;
 
 export const severityBadgeVariant: Record<InventoryAlert['severity'], BadgeVariant> = {
   critical: 'danger',

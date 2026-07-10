@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useEventStream } from '@/hooks/useEventStream';
-import { Badge, ThemeToggle } from '@/components/ui';
+import { Badge, ThemeToggle, LiveIndicator, EASE, DUR } from '@/components/ui';
 import { WhatsNew } from './WhatsNew';
 import FeedbackDialog from '@/components/FeedbackDialog';
 import {
@@ -333,7 +333,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                 initial={{ opacity: 0, y: -8, scale: 0.97 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: DUR.state, ease: EASE }}
                 className="absolute end-0 mt-2 w-[min(24rem,calc(100vw-2rem))] glass-strong rounded-xl shadow-2xl overflow-hidden z-50">
                 <div className="px-4 py-3 bg-surface-2 border-b border-line flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -344,13 +344,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                         {unreadCount} new
                       </span>
                     )}
-                    <div className="flex items-center gap-1 ms-2">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
-                      </span>
-                      <span className="text-xs text-teal-600 font-medium">LIVE</span>
-                    </div>
+                    <LiveIndicator className="ms-2" />
                   </div>
                   {unreadCount > 0 && (
                     <button
@@ -450,7 +444,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                 initial={{ opacity: 0, y: -8, scale: 0.97 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: DUR.state, ease: EASE }}
                 className="absolute end-0 mt-2 w-64 py-2 glass-strong rounded-xl shadow-xl">
                 <div className="px-4 py-3 border-b border-line">
                   <p className="text-sm font-medium text-ink">

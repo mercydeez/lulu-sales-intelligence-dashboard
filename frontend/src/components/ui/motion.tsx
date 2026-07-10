@@ -14,7 +14,17 @@ import { ReactNode } from 'react';
 import { motion, Variants, HTMLMotionProps } from 'framer-motion';
 import { Card, CardProps } from './Card';
 
-const EASE = [0.22, 1, 0.36, 1] as const; // expo-out: confident, premium settle
+/** The app's one easing curve (expo-out: confident, premium settle). Import this
+ *  instead of redefining the literal — every surface should move the same way. */
+export const EASE = [0.22, 1, 0.36, 1] as const;
+
+/** Named durations (seconds) — DESIGN_SYSTEM §3.5 motion scale. */
+export const DUR = {
+  micro: 0.12,   // hover/press feedback
+  state: 0.18,   // dropdowns, popovers, hover states
+  panel: 0.22,   // modals, drawers, panels
+  entrance: 0.45, // page/section entrances
+} as const;
 
 export const fadeRise: Variants = {
   hidden: { opacity: 0, y: 12 },

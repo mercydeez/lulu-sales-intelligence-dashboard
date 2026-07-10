@@ -15,6 +15,7 @@ import { Search, CornerDownLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useExperience } from '@/contexts/ExperienceContext';
 import { navItems } from '@/config/nav';
+import { EASE } from '@/components/ui';
 
 interface Command { label: string; href: string; hint?: string; }
 
@@ -160,7 +161,7 @@ export default function CommandPalette() {
       <motion.div className="w-full max-w-lg mx-4 rounded-2xl bg-surface border border-line shadow-card overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.96, y: -12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.97, y: -8 }} transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}>
+        exit={{ opacity: 0, scale: 0.97, y: -8 }} transition={{ duration: 0.2, ease: EASE }}>
         <div className="flex items-center gap-3 px-4 border-b border-line">
           <Search className="w-5 h-5 text-ink-muted shrink-0" />
           <input ref={inputRef} value={query} onChange={(e) => { setQuery(e.target.value); setActive(0); }}

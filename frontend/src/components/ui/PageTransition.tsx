@@ -9,8 +9,7 @@
 import { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-
-const EASE = [0.22, 1, 0.36, 1] as const; // expo-out, matches motion.tsx
+import { EASE } from './motion';
 
 export function PageTransition({ children }: { children: ReactNode }) {
   const pathname = usePathname();

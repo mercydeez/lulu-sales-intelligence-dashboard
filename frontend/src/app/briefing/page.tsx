@@ -14,6 +14,7 @@ import { HomeTemplate } from '@/components/templates';
 import { useBriefing } from '@/features/home/hooks/useBriefing';
 import type { Briefing, BriefingDecision } from '@/features/home/hooks/useBriefing';
 import { authFetch } from '@/lib/apiClient';
+import { severityAccent, severityDot, SEVERITY_TEXT, type Severity } from '@/lib/severity';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import {
   Sparkles, RefreshCw, Download, ArrowRight,
@@ -25,16 +26,12 @@ const AED = (n: number | null | undefined, dp = 0) =>
 
 type Mood = 'strong' | 'steady' | 'soft' | 'attention';
 
-const SEV_HEX: Record<string, string> = {
-  critical: '#f43f5e', high: '#f97316', medium: '#f59e0b', low: 'var(--brand)',
-};
-const SEV_TEXT: Record<string, string> = {
-  critical: 'text-rose-600 dark:text-rose-400', high: 'text-orange-600 dark:text-orange-400', medium: 'text-amber-600 dark:text-amber-400', low: 'text-teal-600 dark:text-teal-300',
-};
-/** Logical (RTL-correct) colored accent bar on the inline-start edge. */
+/** Logical (RTL-correct) colored accent bar on the inline-start edge.
+ *  Colors come from lib/severity — one severity→color map app-wide. */
 const sevBar = (sev: string): React.CSSProperties => ({
-  borderInlineStartWidth: '3px', borderInlineStartColor: SEV_HEX[sev] ?? SEV_HEX.low,
+  borderInlineStartWidth: '3px', borderInlineStartColor: severityAccent(sev),
 });
+const sevText = (sev: string): string => SEVERITY_TEXT[sev as Severity] ?? SEVERITY_TEXT.low;
 
 /** Lowercase a decision title for mid-sentence use, but keep acronyms/first-caps names. */
 function midSentence(s: string): string {
@@ -258,7 +255,7 @@ function BriefingContent({ b, firstName, onRefresh, loading, onDownload, printin
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={`text-[11px] font-bold uppercase tracking-wide ${SEV_TEXT[top.urgency] ?? 'text-teal-600'}`}>{top.urgency}</span>
+                      <span className={`text-[11px] font-bold uppercase tracking-wide ${sevText(top.urgency)}`}>{top.urgency}</span>
                     </div>
                     <h3 className="mt-1 text-xl font-semibold text-ink leading-snug">{top.title}</h3>
                     <p className="mt-1.5 text-[15px] leading-relaxed text-ink-soft">{top.why}</p>
@@ -283,7 +280,7 @@ function BriefingContent({ b, firstName, onRefresh, loading, onDownload, printin
                   {rest.map((d, i) => (
                     <Link key={i} href={d.href}
                       className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2 transition-colors group first:rounded-t-2xl last:rounded-b-2xl">
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${(SEV_TEXT[d.urgency] ?? 'text-teal-600').replace('text-', 'bg-')}`} />
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${severityDot(d.urgency)}`} />
                       <span className="text-sm text-ink font-medium truncate">{d.title}</span>
                       <span className="text-xs text-ink-muted truncate hidden sm:block">— {d.action}</span>
                       <ChevronRight className="w-4 h-4 text-ink-muted ms-auto shrink-0 group-hover:translate-x-0.5 transition-transform" />

@@ -15,6 +15,7 @@ import {
   ComposedChart
 } from 'recharts';
 import { Activity, Zap, Clock, ShoppingBag, Store, TrendingUp, Package, ArrowDown, ArrowUp, RefreshCw } from 'lucide-react';
+import { LiveIndicator } from '@/components/ui';
 import { useEventStream } from '@/hooks/useEventStream';
 import { authFetch } from '@/contexts/AuthContext';
 import { shortStoreLabel } from '@/components/analytics/format';
@@ -325,12 +326,8 @@ export default function LiveStreamChart() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-rose-100 relative">
-            <Activity className="w-5 h-5 text-rose-600" />
-            <span className="absolute -top-1 -right-1 flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
-            </span>
+          <div className="p-2 rounded-xl bg-teal-50 ring-1 ring-teal-100">
+            <Activity className="w-5 h-5 text-teal-600" />
           </div>
           <div>
             <h3 className="text-lg font-semibold text-ink">Live Streaming Sales</h3>
@@ -355,13 +352,8 @@ export default function LiveStreamChart() {
               <div className="text-xs text-rose-600/70">Returns</div>
             </div>
           )}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-100">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-            </span>
-            <span className="text-sm font-bold text-rose-700">LIVE</span>
-          </div>
+          {/* Canonical teal live pulse (rose = danger, not "live") */}
+          <LiveIndicator />
         </div>
       </div>
 

@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Sparkles, Activity } from 'lucide-react';
-import { Badge } from '@/components/ui';
+import { Badge, EASE, DUR } from '@/components/ui';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { CHANGELOG } from '@/data/changelog';
 import { track } from '@/lib/telemetry';
@@ -78,7 +78,7 @@ export function WhatsNew() {
             initial={{ opacity: 0, y: -8, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.97 }}
-            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: DUR.state, ease: EASE }}
             className="absolute right-0 mt-2 w-96 glass-strong rounded-xl shadow-2xl overflow-hidden z-50"
           >
             <div className="px-4 py-3 bg-surface-2 border-b border-line flex items-center justify-between">

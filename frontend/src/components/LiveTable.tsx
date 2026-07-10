@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { Wifi, WifiOff, Clock, Timer, Zap } from 'lucide-react';
+import { LiveIndicator } from '@/components/ui';
 import { useEventStream } from '@/hooks/useEventStream';
 import { authFetch } from '@/contexts/AuthContext';
 
@@ -168,10 +169,6 @@ export default function LiveTable() {
               <>
                 <Wifi className="w-4 h-4 text-emerald-600" />
                 <span className="text-sm text-emerald-700">Connected</span>
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
               </>
             ) : (
               <>
@@ -181,14 +178,8 @@ export default function LiveTable() {
             )}
           </div>
 
-          {/* Live indicator */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-100">
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
-            </span>
-            <span className="text-sm font-bold text-rose-700">LIVE</span>
-          </div>
+          {/* Live indicator — canonical teal pulse (rose = danger, not "live") */}
+          <LiveIndicator />
         </div>
       </div>
 

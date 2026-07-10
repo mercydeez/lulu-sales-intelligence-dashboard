@@ -4,6 +4,7 @@ import { ReactNode, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { EASE, DUR } from './motion';
 
 export interface ModalProps {
   open: boolean;
@@ -18,8 +19,6 @@ const sizeClasses = {
   md: 'max-w-lg',
   lg: 'max-w-2xl',
 };
-
-const EASE = [0.22, 1, 0.36, 1] as const;
 
 export function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
   useEffect(() => {
@@ -50,7 +49,7 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 8 }}
-            transition={{ duration: 0.28, ease: EASE }}
+            transition={{ duration: DUR.panel, ease: EASE }}
           >
             {title && (
               <div className="flex items-center justify-between px-6 py-4 border-b border-line">
