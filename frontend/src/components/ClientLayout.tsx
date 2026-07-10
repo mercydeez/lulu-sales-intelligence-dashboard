@@ -7,8 +7,10 @@ import { useExperience } from '@/contexts/ExperienceContext';
 import { AppShell } from '@/components/shell';
 import { initTelemetry, identify, resetIdentity, track } from '@/lib/telemetry';
 
-// Pages that don't require authentication
-const publicPaths = ['/login', '/forgot-password', '/reset-password', '/dev'];
+// Pages that don't require authentication. /signup must be here or the guard
+// bounces signed-out visitors (its entire audience) back to /login — the
+// login page links to it via "Create your workspace".
+const publicPaths = ['/login', '/signup', '/forgot-password', '/reset-password', '/dev'];
 
 // Truly open pages: reachable signed-in or out, no redirect in either
 // direction, rendered without the shell. The status page must stay reachable
