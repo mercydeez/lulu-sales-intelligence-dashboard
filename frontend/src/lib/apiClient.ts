@@ -1,9 +1,11 @@
 /**
  * Single frontend API client (Phase 2.7).
  *
- * One place for: base URL, bearer auth, 401 -> refresh -> retry, a user-aware
- * response cache (so one user never sees another's cached data — GAP M2), and
- * parsing of the backend's JSON error envelope into a typed ApiError (GAP M3).
+ * One place for: base URL, bearer auth, 401 -> refresh -> retry, an
+ * authorization-scoped response cache (keyed by user + tenant + role + accessible
+ * stores/regions, so no cached response outlives the permissions it was fetched
+ * under — GAP M2, E0-6), and parsing of the backend's JSON error envelope into a
+ * typed ApiError (GAP M3).
  *
  * Auth endpoints (login/refresh/logout) stay in AuthContext; everything else
  * should go through here. `authFetch` is exposed for callers that need the raw
@@ -60,21 +62,49 @@ function clearSession(): void {
   localStorage.removeItem(USER_KEY);
 }
 
-/** Stable id for the logged-in user (or 'anon') — used to scope the cache. */
-function currentUserId(): string {
-  const raw = readStorage(USER_KEY);
-  if (!raw) return 'anon';
-  try {
-    const id = (JSON.parse(raw) as { id?: number }).id;
-    return id != null ? String(id) : 'anon';
-  } catch {
-    return 'anon';
-  }
+// ============================================================================
+// Authorization-aware response cache (E0-6)
+// ============================================================================
+//
+// Keying the cache on user id alone was not enough. The backend scopes every
+// response by (tenant, role, accessible stores) — so two requests from the same
+// user id can legitimately return different data, and the cache would serve the
+// first answer for the second question. A role switch, a tenant switch, or a
+// permission grant/revoke all keep `user.id` constant while changing what that
+// user is allowed to see. The key below covers the whole authorization scope,
+// so a stale privileged response can never be read back under a narrower one.
+
+interface CachedIdentity {
+  id?: number;
+  tenant_id?: number;
+  role?: string;
+  accessible_stores?: number[];
+  accessible_regions?: string[];
+  permissions?: { accessible_stores?: number[]; accessible_regions?: string[] };
 }
 
-// ============================================================================
-// User-aware response cache
-// ============================================================================
+const ANON_IDENTITY = 'anon';
+
+/** Fingerprint of everything the backend uses to scope a response. */
+function identityFingerprint(): string {
+  const raw = readStorage(USER_KEY);
+  if (!raw) return ANON_IDENTITY;
+  try {
+    const u = JSON.parse(raw) as CachedIdentity;
+    if (u.id == null) return ANON_IDENTITY;
+
+    const stores = [...(u.accessible_stores ?? u.permissions?.accessible_stores ?? [])]
+      .sort((a, b) => a - b)
+      .join('.');
+    const regions = [...(u.accessible_regions ?? u.permissions?.accessible_regions ?? [])]
+      .sort()
+      .join('.');
+
+    return [u.id, u.tenant_id ?? '-', u.role ?? '-', stores, regions].join('|');
+  } catch {
+    return ANON_IDENTITY;
+  }
+}
 
 interface CacheEntry<T> {
   data: T;
@@ -83,14 +113,33 @@ interface CacheEntry<T> {
 
 const cache = new Map<string, CacheEntry<unknown>>();
 
-function cacheKey(userId: string, url: string): string {
-  return `${userId}::${url}`;
+/** Last identity we served from cache, so a change can flush it. */
+let lastIdentity: string | null = null;
+
+/**
+ * Current identity, flushing the cache if it changed since the last request.
+ *
+ * Keying alone already prevents a cross-scope read. This flush is the second
+ * layer: it bounds memory across role switches, and it means a *revert* to a
+ * previous role starts cold rather than replaying entries cached before the
+ * permission change that prompted the switch.
+ */
+function currentIdentity(): string {
+  const identity = identityFingerprint();
+  if (lastIdentity !== null && lastIdentity !== identity) cache.clear();
+  lastIdentity = identity;
+  return identity;
+}
+
+function cacheKey(identity: string, url: string): string {
+  return `${identity}::${url}`;
 }
 
 /** Clear the whole cache, or only entries whose key contains `pattern`. */
 export function clearApiCache(pattern?: string): void {
   if (!pattern) {
     cache.clear();
+    lastIdentity = null;
     return;
   }
   for (const key of cache.keys()) {
@@ -215,7 +264,7 @@ export async function apiRequest<T>(
   const url = buildUrl(endpoint, params);
 
   const canCache = method === 'GET' && ttl != null && ttl > 0;
-  const key = cacheKey(currentUserId(), url);
+  const key = cacheKey(currentIdentity(), url);
   if (canCache) {
     const hit = cache.get(key) as CacheEntry<T> | undefined;
     if (hit && hit.expiresAt > Date.now()) return hit.data;
@@ -255,7 +304,10 @@ export async function apiRequest<T>(
     if (!res.ok) throw await parseError(res);
 
     const data = (await res.json()) as T;
-    if (canCache) {
+    // A 401-refresh mid-flight can hand back a different role/tenant. Only cache
+    // if the scope that keyed this request is still the live one — otherwise the
+    // entry belongs to an identity that no longer holds.
+    if (canCache && identityFingerprint() === key.slice(0, key.indexOf('::'))) {
       cache.set(key, { data, expiresAt: Date.now() + ttl! });
       if (cache.size > 200) {
         const now = Date.now();
