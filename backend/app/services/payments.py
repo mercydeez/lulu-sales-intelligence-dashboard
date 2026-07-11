@@ -53,11 +53,32 @@ def _env(provider: str, key: str) -> Optional[str]:
     return os.getenv(f"{provider.upper()}_{key}")
 
 
+def _mock_allowed() -> bool:
+    """The `mock` gateway is a DEMO tool that settles against no real money and,
+    when MOCK_WEBHOOK_SECRET is unset, verifies with a source-code-known default
+    secret. It must therefore be UNUSABLE in a real production/staging deployment,
+    or anyone able to reach the public webhook could flip a real invoice to `paid`
+    for free. Allow it only outside production/staging, or on an explicit demo
+    deployment (DEMO_MODE=true) — the same gate the synthetic generator/seed use.
+    """
+    try:
+        from app.config import get_settings
+        s = get_settings()
+        env = (s.environment or "").lower()
+        if env in ("production", "staging"):
+            return bool(getattr(s, "demo_mode", False))
+        return True
+    except Exception:
+        # Fail safe: if we cannot determine the environment, do NOT enable mock.
+        return False
+
+
 def is_provider_available(provider: str) -> bool:
     """A provider is usable only if it is IMPLEMENTED and (for a real gateway) its
-    merchant credentials are present. `mock` is always available."""
+    merchant credentials are present. `mock` is available only where
+    _mock_allowed() permits it (never in real production)."""
     if provider == MOCK_PROVIDER:
-        return provider in IMPLEMENTED_PROVIDERS
+        return provider in IMPLEMENTED_PROVIDERS and _mock_allowed()
     if provider in GATEWAY_PROVIDERS:
         has_creds = bool(_env(provider, "MERCHANT_ID") and _env(provider, "API_KEY"))
         return provider in IMPLEMENTED_PROVIDERS and has_creds
@@ -180,6 +201,12 @@ def verify_webhook_signature(provider: str, raw_body: bytes, signature: Optional
     `mock` uses an HMAC over the body with MOCK_WEBHOOK_SECRET, so even the demo
     path exercises a real signature check rather than trusting the caller.
     """
+    # Defense in depth: the public webhook is the ONLY path that settles a payment,
+    # so the mock gateway's signature must NEVER verify where mock is disallowed
+    # (real production). Without this, a mock webhook signed with the known default
+    # secret could settle a real invoice even though intent-creation is refused.
+    if provider == MOCK_PROVIDER and not _mock_allowed():
+        return False
     secret = _env(provider, "WEBHOOK_SECRET")
     if provider == MOCK_PROVIDER and not secret:
         secret = os.getenv("MOCK_WEBHOOK_SECRET", "mock-webhook-secret")

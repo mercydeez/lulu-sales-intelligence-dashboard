@@ -63,7 +63,9 @@ def test_only_mock_is_implemented():
     assert payments.ALL_PROVIDERS == {"mock", "telr", "paytabs"}
 
 
-def test_mock_is_always_available():
+def test_mock_available_outside_production():
+    # Available in dev/testing (this suite runs as ENVIRONMENT=testing). It is
+    # gated OFF in real production — see test_payments_mock_gating.py (C4).
     assert payments.is_provider_available("mock") is True
 
 
