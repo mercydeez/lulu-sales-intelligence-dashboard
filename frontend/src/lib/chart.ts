@@ -100,7 +100,7 @@ export const tooltipStyle = {
     fontSize: 12,
     padding: '10px 12px',
   },
-  labelStyle: { color: 'var(--text-primary)', fontWeight: 600, marginBottom: 4 },
+  labelStyle: { color: 'rgb(var(--c-ink))', fontWeight: 600, marginBottom: 4 },
   itemStyle: { color: 'var(--text-secondary)' },
 } as const;
 

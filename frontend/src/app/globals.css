@@ -42,23 +42,13 @@
 :root,
 html.light {
   color-scheme: light;
-  --bg-primary: #fafaf8;
-  --bg-secondary: #ffffff;
+  /* Retained legacy tokens (still referenced by app components or internal
+     globals.css rules). The canonical themeable tokens are the --c- channels
+     below and the --series- / --signal- chart tokens; new code should use those.
+     The dead "Sunset Pop" bg/text/accent aliases were removed (0 references). */
   --bg-card: #ffffff;
-  --bg-card-solid: #ffffff;
-  --bg-hover: #f4f4f0;
   --text-primary: #1a1d21;
   --text-secondary: #4b5258;
-  --text-muted: #5f6660;
-  --accent-coral: #c8451f;
-  --accent-violet: #0f766e;
-  --accent-teal: #0f766e;
-  --accent-amber: #d97706;
-  /* legacy aliases still referenced around the app — remapped to brand */
-  --accent-cyan: #0f766e;
-  --accent-purple: #0f766e;
-  --accent-emerald: #0f8f73;
-  --accent-rose: #c8451f;
   --brand: #0f766e;
   --border-color: #ece9e3;
   --shadow-color: rgba(20, 29, 33, 0.10);
@@ -139,23 +129,11 @@ html.light {
    =============================================== */
 html.dark {
   color-scheme: dark;
-  --bg-primary: #0b0d0e;
-  --bg-secondary: #16191b;
+  /* Retained legacy tokens (dark). Dead Sunset Pop bg/text/accent aliases removed
+     (0 references); canonical dark tokens are the --c-* channels + --series-*. */
   --bg-card: #16191b;
-  --bg-card-solid: #16191b;
-  --bg-hover: #1e2224;
   --text-primary: #f2f4f3;
   --text-secondary: #b6bdbb;
-  --text-muted: #8b9390;
-  --accent-coral: #e87a55;
-  --accent-violet: #2da88a;
-  --accent-teal: #2da88a;
-  --accent-amber: #f0a13c;
-  /* legacy aliases — remapped to the brightened dark brand */
-  --accent-cyan: #2da88a;
-  --accent-purple: #2da88a;
-  --accent-emerald: #34c39c;
-  --accent-rose: #e87a55;
   --brand: #2da88a;
   --border-color: #24292b;
   --shadow-color: rgba(0, 0, 0, 0.55);
