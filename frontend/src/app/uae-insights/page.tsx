@@ -1,43 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Badge, Button, SkeletonCard, EmptyState, Stagger, RevealItem } from '@/components/ui';
 import { track } from '@/lib/telemetry';
 import { CalendarDays, MapPin, ArrowLeftRight, PackageX, Upload } from 'lucide-react';
+import { useUaeInsights } from '@/lib/queries/uae';
 
 const AED = (n: number) => `AED ${n.toLocaleString('en-AE', { maximumFractionDigits: 0 })}`;
 
-interface CalEvent { key: string; name: string; start: string; end: string; approx: boolean;
-  note: string; active?: boolean; days_until?: number; }
-interface Emirate { emirate: string; units: number; revenue_aed: number; stores: number; }
-interface Transfer { item_name: string; from_store: string; to_store: string; suggested_qty: number; reason: string; }
-interface DeadEmirate { emirate: string; dead_value_aed: number; dead_skus: number; }
-
 export default function UaeInsightsPage() {
-  const { authFetch } = useAuth();
-  const [upcoming, setUpcoming] = useState<CalEvent[]>([]);
-  const [emirates, setEmirates] = useState<Emirate[]>([]);
-  const [transfers, setTransfers] = useState<Transfer[]>([]);
-  const [dead, setDead] = useState<DeadEmirate[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const get = async (p: string) => { const r = await authFetch(p); return r.ok ? r.json() : {}; };
-      const [c, e, t, d] = await Promise.all([
-        get('/api/uae-intelligence/calendar'),
-        get('/api/uae-intelligence/emirate-performance'),
-        get('/api/uae-intelligence/transfer-suggestions'),
-        get('/api/uae-intelligence/dead-stock-by-emirate'),
-      ]);
-      setUpcoming(c.upcoming ?? []); setEmirates(e.emirates ?? []);
-      setTransfers(t.suggestions ?? []); setDead(d.emirates ?? []);
-    } catch { /* ignore */ } finally { setLoading(false); }
-  }, [authFetch]);
-  useEffect(() => { load(); }, [load]);
+  const { upcoming, emirates, transfers, dead, loading } = useUaeInsights();
 
   const maxRev = Math.max(1, ...emirates.map((e) => e.revenue_aed));
 

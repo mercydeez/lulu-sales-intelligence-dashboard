@@ -5,44 +5,27 @@
  * approve / reject. The classic "approval inbox" workflow pattern sitting on top
  * of the procure-to-pay engine.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { Inbox, Check, X, CheckCheck, Loader2, TrendingUp } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Button, Badge, Stagger, RevealItem } from '@/components/ui';
-
-interface PO {
-  id: number; po_number: string; status: string; total_amount: number;
-  currency: string; source: string; supplier_name: string; line_count: number;
-  created_at: string | null;
-}
-interface Inbox { count: number; total_value: number; currency: string; purchase_orders: PO[]; }
+import { useApprovalInbox, useDecidePO, type PO } from '@/lib/queries/procurement';
 
 export default function ApprovalsPage() {
-  const { authFetch } = useAuth();
-  const [data, setData] = useState<Inbox | null>(null);
-  const [busy, setBusy] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
-
-  const load = useCallback(async () => {
-    try {
-      const res = await authFetch('/api/procurement/approvals');
-      if (res.ok) setData(await res.json());
-    } catch { /* ignore */ }
-  }, [authFetch]);
-  useEffect(() => { load(); }, [load]);
+  const { data } = useApprovalInbox();
+  const decidePO = useDecidePO();
+  // Per-PO spinner: the mutation is single-flight, so the row being decided is
+  // the one whose id matches the in-flight variables.
+  const busy = decidePO.isPending ? decidePO.variables?.id ?? null : null;
 
   const decide = async (po: PO, status: 'approved' | 'cancelled') => {
-    setBusy(po.id);
     try {
-      const res = await authFetch(`/api/procurement/purchase-orders/${po.id}/status`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); setMsg(d.message || 'Action failed'); }
-      else setMsg(status === 'approved' ? `${po.po_number} approved.` : `${po.po_number} rejected.`);
-      await load();
-    } finally { setBusy(null); }
+      await decidePO.mutateAsync({ id: po.id, status });
+      setMsg(status === 'approved' ? `${po.po_number} approved.` : `${po.po_number} rejected.`);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Action failed');
+    }
   };
 
   const approveAll = async () => {
@@ -54,7 +37,7 @@ export default function ApprovalsPage() {
   };
 
   const money = (n: number) => `${data?.currency ?? 'AED'} ${new Intl.NumberFormat('en-AE', { maximumFractionDigits: 0 }).format(n)}`;
-  const pos = data?.purchase_orders ?? [];
+  const pos: PO[] = data?.purchase_orders ?? [];
 
   return (
     <main className="min-h-screen p-4 md:p-8">
