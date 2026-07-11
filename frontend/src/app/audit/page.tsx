@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
@@ -9,12 +9,7 @@ import {
 } from '@/components/ui';
 import type { BadgeVariant } from '@/components/ui';
 import { ScrollText, Download, RefreshCw } from 'lucide-react';
-
-interface AuditEvent {
-  id: number; occurred_at: string; event_type: string; severity: string;
-  category: string; actor_email: string | null; ip_address: string | null;
-  method: string | null; path: string | null; detail: string | null;
-}
+import { useAuditEvents, type AuditEvent } from '@/lib/queries/security';
 
 const SEV_TONE: Record<string, BadgeVariant> = {
   critical: 'danger', high: 'danger', medium: 'amber', low: 'neutral', info: 'neutral',
@@ -32,26 +27,16 @@ export default function AuditPage() {
   const { t } = useLanguage();
   const isAdmin = ['super_admin', 'admin'].includes(user?.role ?? '');
 
-  const [events, setEvents] = useState<AuditEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [hours, setHours] = useState('720');
   const [severity, setSeverity] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true); setError(null);
-    try {
-      const qs = new URLSearchParams({ category: 'audit', hours, limit: '500' });
-      if (severity) qs.set('severity', severity);
-      const res = await authFetch(`/api/security/events?${qs.toString()}`);
-      if (res.ok) setEvents((await res.json()).data ?? []);
-      else setError('Failed to load audit log');
-    } catch {
-      setError('Failed to load audit log');
-    } finally { setLoading(false); }
-  }, [authFetch, hours, severity]);
-
-  useEffect(() => { if (isAdmin) load(); else setLoading(false); }, [isAdmin, load]);
+  // Reactive audit feed — refetches automatically when the window/severity
+  // filters change; gated on admin access via `enabled`.
+  const eventsQuery = useAuditEvents(hours, severity, isAdmin);
+  const events: AuditEvent[] = eventsQuery.data ?? [];
+  const loading = isAdmin && eventsQuery.isLoading;
+  const error = eventsQuery.isError ? 'Failed to load audit log' : null;
+  const load = () => eventsQuery.refetch();
 
   const exportLog = async (fmt: 'csv' | 'json') => {
     const qs = new URLSearchParams({ category: 'audit', hours, fmt });

@@ -1,30 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Badge, Button, SkeletonCard, Stagger, RevealItem } from '@/components/ui';
 import { Tag, Check } from 'lucide-react';
-
-interface Plan { plan: string; tagline: string; monthly_price_aed: number | null; custom_pricing: boolean;
-  limits: { users: number | null; api_requests_month: number | null; sage_messages_month: number | null };
-  features: string[]; }
+import { usePlans, type Plan } from '@/lib/queries/billing';
 
 const TITLE: Record<string, string> = { free: 'Trial', starter: 'Starter', growth: 'Growth', enterprise: 'Enterprise' };
 
 export default function PricingPage() {
-  const { authFetch } = useAuth();
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await authFetch('/api/billing/plans');
-      if (r.ok) setPlans((await r.json()).plans ?? []);
-    } catch { /* ignore */ } finally { setLoading(false); }
-  }, [authFetch]);
-  useEffect(() => { load(); }, [load]);
+  const plansQuery = usePlans();
+  const plans: Plan[] = plansQuery.data ?? [];
+  const loading = plansQuery.isLoading;
 
   const price = (p: Plan) =>
     p.custom_pricing ? 'Custom' : p.monthly_price_aed === 0 ? 'Free' : `AED ${p.monthly_price_aed!.toLocaleString('en-AE')}`;

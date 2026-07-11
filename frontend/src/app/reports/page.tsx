@@ -1,55 +1,32 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { FileText, Download, RefreshCw } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Button, Select, ErrorState, Card, Stagger, RevealItem } from '@/components/ui';
-import { fetchStores } from '@/lib/api';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { track } from '@/lib/telemetry';
-import { Store } from '@/types';
+import type { Store } from '@/types';
+import { useStores } from '@/lib/queries/common';
+import { useSalesReport } from '@/lib/queries/reports';
 import {
   ReportKpiCards, ReportTrendPanel, ReportCategoryPanel, ReportTopItemsPanel, ReportStoreTable,
-  SalesReport, ReportRange, REPORT_RANGE_DAYS,
+  SalesReport, ReportRange,
 } from '@/components/reports';
 
 const RANGE_LABEL: Record<ReportRange, string> = { '7d': 'Last 7 Days', '30d': 'Last 30 Days', '90d': 'Last 90 Days' };
 
 export default function ReportsPage() {
-  const { authFetch } = useAuth();
   const [range, setRange] = useState<ReportRange>('7d');
   const [storeId, setStoreId] = useState<number | null>(null);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [report, setReport] = useState<SalesReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  useEffect(() => {
-    fetchStores().then(setStores).catch(() => setStores([]));
-  }, []);
-
-  const loadReport = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      const params = new URLSearchParams({ days: String(REPORT_RANGE_DAYS[range]) });
-      if (storeId) params.append('store_id', String(storeId));
-      const res = await authFetch(`/api/reports/sales?${params}`);
-      if (res.ok) setReport(await res.json());
-      else { setReport(null); setError(true); }
-    } catch (err) {
-      console.error('Failed to load report:', err);
-      setReport(null);
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [authFetch, range, storeId]);
-
-  useEffect(() => {
-    loadReport();
-  }, [loadReport]);
+  const stores: Store[] = useStores().data ?? [];
+  // Reactive report — refetches automatically when range/store changes.
+  const reportQuery = useSalesReport(range, storeId);
+  const report: SalesReport | null = reportQuery.data ?? null;
+  const loading = reportQuery.isLoading;
+  const error = reportQuery.isError;
+  const loadReport = () => reportQuery.refetch();
 
   const handleExport = async () => {
     if (!report) return;

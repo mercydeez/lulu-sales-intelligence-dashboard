@@ -1,50 +1,19 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Activity, RefreshCw } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Button, Badge } from '@/components/ui';
 import {
   StatusPill, HealthChecksGrid, SystemStatsCards, MetricsPanel,
-  HealthCheck, SystemStats, MetricsData,
 } from '@/components/monitoring';
+import { useMonitoring } from '@/lib/queries/monitoring';
 
 export default function MonitoringPage() {
-  const { authFetch } = useAuth();
-  const [health, setHealth] = useState<HealthCheck | null>(null);
-  const [stats, setStats] = useState<SystemStats | null>(null);
-  const [metrics, setMetrics] = useState<MetricsData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-
-  const fetchData = useCallback(async () => {
-    try {
-      const [healthRes, statsRes, metricsRes] = await Promise.all([
-        authFetch('/api/monitoring/health/detailed'),
-        authFetch('/api/monitoring/stats'),
-        authFetch('/api/monitoring/metrics/json'),
-      ]);
-      if (healthRes.ok) setHealth(await healthRes.json());
-      if (statsRes.ok) setStats(await statsRes.json());
-      if (metricsRes.ok) setMetrics(await metricsRes.json());
-      setLastUpdated(new Date());
-    } catch (err) {
-      console.error('Failed to fetch monitoring data:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [authFetch]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, fetchData]);
+  // Reactive health/stats/metrics — the 10s poll is driven by refetchInterval
+  // inside the hook (toggled by autoRefresh), replacing the manual setInterval.
+  const { health, stats, metrics, loading, lastUpdated, refetch } = useMonitoring(autoRefresh);
+  const fetchData = refetch;
 
   return (
     <main className="min-h-screen p-4 md:p-8">
