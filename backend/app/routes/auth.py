@@ -885,6 +885,12 @@ async def issue_stream_ticket(user: dict = Depends(get_current_user)):
             "user_id": user['id'],
             "email": user['email'],
             "role": user['role'],
+            # Carry tenant_id like every other access token: resolve_request_tenant
+            # reads it from a ?ticket= to bind the RLS GUC. Without it the ticket
+            # branch there resolves to the default tenant — harmless today (no
+            # ticket-authed route opens an RLS DB session) but a defense-in-depth
+            # gap the moment one does. Keep the ticket consistent with the contract.
+            "tenant_id": user.get('tenant_id'),
             "ticket": True,  # marks this as a stream ticket
         },
         expires_delta=timedelta(seconds=60)

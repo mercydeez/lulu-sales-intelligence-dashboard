@@ -151,3 +151,21 @@ async def test_c2_refreshed_user_row_includes_tenant_id(fake_redis):
 
     assert tokens is not None
     assert tokens.user.get("tenant_id") == 3
+
+
+# ---------------------------------------------------------------------------
+# Hardening (discovered during the High review) — the SSE stream ticket is an
+# access-typed token, so it must carry tenant_id like every other access token;
+# resolve_request_tenant reads it from a ?ticket= to bind the RLS GUC.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_stream_ticket_carries_tenant_id():
+    from app.routes.auth import issue_stream_ticket
+    res = await issue_stream_ticket(user={
+        "id": 1, "email": "u@t.example", "role": "analyst", "tenant_id": 5,
+    })
+    td = decode_token(res["ticket"])
+    assert td is not None and td.tenant_id == 5
+    # And it round-trips through the RLS tenant resolver via the ticket transport.
+    assert await resolve_request_tenant(_req(query={"ticket": res["ticket"]})) == 5
