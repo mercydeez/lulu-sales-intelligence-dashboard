@@ -1,5 +1,5 @@
 import {
-  Sale, SalesAggregation, DashboardMetrics, Prediction, Store, Item, BacktestResult, TrendPoint,
+  Sale, SalesAggregation, DashboardMetrics, AnalyticsKpis, Prediction, Store, Item, BacktestResult, TrendPoint,
   StoreDistributionPoint, CategoryBreakdownPoint, TopItemPoint, RevenueProjection,
   Finding, FindingsSummary,
 } from '@/types';
@@ -76,6 +76,12 @@ export async function fetchItems(): Promise<Item[]> {
 
 export async function fetchKPIs(): Promise<DashboardMetrics> {
   return cachedFetch<DashboardMetrics>('/api/kpis', 'kpis');
+}
+
+/** Full /api/kpis payload (AED revenue, data range, unique counts) — the richer
+ *  view the analytics dashboard needs. Same endpoint as fetchKPIs, wider type. */
+export async function fetchAnalyticsKpis(): Promise<AnalyticsKpis> {
+  return cachedFetch<AnalyticsKpis>('/api/kpis', 'kpis');
 }
 
 /** Forward revenue projection (B1.7) — the forecasting engine valued at the

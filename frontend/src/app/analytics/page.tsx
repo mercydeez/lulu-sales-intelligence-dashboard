@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { BarChart3, LineChart, RefreshCw, Download, Activity } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Tabs, Button, Select, Reveal, Stagger, RevealItem } from '@/components/ui';
@@ -12,48 +13,39 @@ import {
   TopItemsPanel,
   StorePerformanceTable,
   ForecastPanel,
-  AnalyticsKpis,
   DateRange,
   RANGE_DAYS,
   formatCurrency,
 } from '@/components/analytics';
 import { fetchTrend, fetchCategoryBreakdown, clearCache } from '@/lib/api';
+import { useAnalyticsKpis, analyticsKeys } from '@/lib/queries/analytics';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { track } from '@/lib/telemetry';
 
 type Tab = 'overview' | 'forecast';
 
 export default function AnalyticsPage() {
-  const { user, authFetch, hasRole } = useAuth();
+  const { user, hasRole } = useAuth();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [range, setRange] = useState<DateRange>('30d');
-  const [kpis, setKpis] = useState<AnalyticsKpis | null>(null);
-  const [kpisLoading, setKpisLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [exporting, setExporting] = useState(false);
+
+  // Reactive KPI band — dedups/refetches through TanStack Query. `kpis` is null
+  // until first load; the cards render em-dashes while loading or on error.
+  const { data: kpis = null, isLoading: kpisLoading } = useAnalyticsKpis();
 
   // Regional/super admins can compare across stores; store managers see only theirs.
   const showStoreComparison = hasRole(['super_admin', 'regional_manager']);
   const defaultStoreId = user?.accessible_stores?.[0] ?? 1;
 
-  const loadKpis = useCallback(async () => {
-    setKpisLoading(true);
-    try {
-      const res = await authFetch('/api/kpis');
-      if (res.ok) setKpis(await res.json());
-    } catch {
-      // KPI cards fall back to em-dashes on failure.
-    } finally {
-      setKpisLoading(false);
-    }
-  }, [authFetch]);
-
-  useEffect(() => {
-    loadKpis();
-  }, [loadKpis, refreshKey]);
-
   const handleRefresh = () => {
     clearCache();
+    // Invalidate every analytics query (KPIs + all panels) so the button forces
+    // a real refetch — previously it only cleared the apiClient cache, which the
+    // query-backed panels ignore until their own staleTime elapsed.
+    queryClient.invalidateQueries({ queryKey: analyticsKeys.all });
     setRefreshKey((k) => k + 1);
   };
 

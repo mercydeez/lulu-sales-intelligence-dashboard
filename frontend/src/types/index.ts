@@ -52,6 +52,30 @@ export interface DashboardMetrics {
   streaming_records_count: number;
 }
 
+// Full shape returned by GET /api/kpis (backend KPIResponse) — richer than
+// DashboardMetrics (adds AED revenue fields, data range, unique counts). Lives
+// here (not under components/) so lib/api + lib/queries can type it without a
+// component dependency; re-exported from components/analytics/types for back-compat.
+export interface AnalyticsKpis {
+  total_historical_records: number;
+  total_streaming_records: number;
+  total_sales_today: number;
+  total_sales_week: number;
+  total_sales_month: number;
+  average_daily_sales: number;
+  total_revenue_today: number;
+  total_revenue_week: number;
+  total_revenue_month: number;
+  average_daily_revenue: number;
+  unique_stores: number;
+  unique_items: number;
+  data_range_start: string | null;
+  data_range_end: string | null;
+  last_stream_timestamp: string | null;
+  sales_trend: 'up' | 'down' | 'stable';
+  revenue_trend: 'up' | 'down' | 'stable';
+}
+
 export interface RevenueProjectionPoint {
   date: string;
   units: number;

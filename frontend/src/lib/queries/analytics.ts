@@ -13,16 +13,25 @@
  * invalidate together (e.g. `queryClient.invalidateQueries({ queryKey: ['analytics'] })`).
  */
 import { useQuery } from '@tanstack/react-query';
-import { fetchTopItems, fetchStoreDistribution, fetchCategoryBreakdown, fetchTrend } from '@/lib/api';
-import type { TopItemPoint, StoreDistributionPoint, CategoryBreakdownPoint, TrendPoint } from '@/types';
+import { fetchTopItems, fetchStoreDistribution, fetchCategoryBreakdown, fetchTrend, fetchAnalyticsKpis } from '@/lib/api';
+import type { TopItemPoint, StoreDistributionPoint, CategoryBreakdownPoint, TrendPoint, AnalyticsKpis } from '@/types';
 
 export const analyticsKeys = {
   all: ['analytics'] as const,
+  kpis: () => ['analytics', 'kpis'] as const,
   topItems: (limit: number) => ['analytics', 'top-items', limit] as const,
   storeDistribution: () => ['analytics', 'store-distribution'] as const,
   categoryBreakdown: () => ['analytics', 'category-breakdown'] as const,
   trend: (days: number, forecast: boolean) => ['analytics', 'trend', days, forecast] as const,
 };
+
+/** Dashboard KPI band (AED revenue, volumes, unique counts) for the analytics screen. */
+export function useAnalyticsKpis() {
+  return useQuery<AnalyticsKpis>({
+    queryKey: analyticsKeys.kpis(),
+    queryFn: () => fetchAnalyticsKpis(),
+  });
+}
 
 /** Daily sales trend. Query-keyed so panels that fetch the same window (chart +
  *  KPI sparkline) DEDUP to one request — a concrete win of the reactive layer. */
