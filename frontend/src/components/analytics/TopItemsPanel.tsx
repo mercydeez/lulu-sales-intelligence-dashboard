@@ -34,6 +34,8 @@ export function TopItemsPanel({ limit = 10 }: TopItemsPanelProps) {
     };
   }, [limit]);
 
+  const topThree = data.slice(0, 3).map((d) => axisItemLabel(d.item_name)).join(', ');
+
   return (
     <ChartFrame
       title={`Top ${limit} Items`}
@@ -41,6 +43,20 @@ export function TopItemsPanel({ limit = 10 }: TopItemsPanelProps) {
       height={hbarHeight(data.length)}
       loading={loading}
       empty={!loading && (error || data.length === 0)}
+      ariaSummary={
+        data.length
+          ? `Horizontal bar chart of the top ${data.length} items by revenue. Leaders: ${topThree}.`
+          : undefined
+      }
+      tableData={
+        data.length
+          ? {
+              caption: `Top ${data.length} items by revenue`,
+              columns: ['Item', 'Category', 'Revenue (AED)'],
+              rows: data.map((d) => [axisItemLabel(d.item_name), d.category ?? '—', formatCurrency(d.total_revenue)]),
+            }
+          : undefined
+      }
     >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} layout="vertical" margin={HBAR_MARGIN}>
