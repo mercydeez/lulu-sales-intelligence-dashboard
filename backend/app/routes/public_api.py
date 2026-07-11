@@ -92,6 +92,15 @@ async def get_api_context(
     from app.services import isolation
     await isolation.enforce_tenant_isolation(db, ctx["tenant_id"])
 
+    # B7: per-tenant kill-switch for the whole public API surface. Fail-open when
+    # the flag engine is unavailable (a customization must never take the surface
+    # down by accident); checked in this shared dependency so every public
+    # endpoint inherits it, and BEFORE metering so a refused request does not
+    # consume the quota that refused it.
+    from app.services.flag_enforcement import flag_allows
+    if not await flag_allows(ctx["tenant_id"], "integrations.public_api"):
+        raise HTTPException(status_code=403, detail="The public API is disabled for this workspace")
+
     # E8-3: every authenticated public call is one metered `api_request`. This is
     # the only place the dimension can be counted exactly once per request, and it
     # was previously advertised in the usage summary while nothing ever recorded
