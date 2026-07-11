@@ -180,9 +180,17 @@ async def resolve_request_tenant(request: Request) -> int:
     dependency still enforces auth and returns 401 on a bad token/key. It only
     resolves the tenant for connection scoping, failing safe to tenant 1.
 
-    Resolution order: JWT `tenant_id` claim (no DB hit) → API key (looked up on the
-    OWNER session so the cross-tenant key→tenant lookup isn't itself RLS-filtered)
-    → SSE stream ticket. Lazy imports avoid a circular import with auth_service.
+    Token transports (all access-typed JWTs carrying the tenant_id claim):
+      - Authorization: Bearer header  — API / legacy clients
+      - `access_token` httpOnly cookie — the browser's ONLY transport since E0-5
+      - `?ticket=` query param         — SSE EventSource streams
+    Plus per-tenant API keys (x-api-key header or an `lsk_`-prefixed bearer),
+    looked up on the OWNER session so the cross-tenant key→tenant lookup isn't
+    itself RLS-filtered. Lazy imports avoid a circular import with auth_service.
+
+    NOTE: the cookie MUST be read here. Missing it was a tenant-isolation defect —
+    every browser request (cookie-only since E0-5) fell through to tenant 1 and
+    bound the RLS GUC to tenant 1, regardless of the caller's real tenant.
     """
     tenant_id = 1
     try:
@@ -194,20 +202,19 @@ async def resolve_request_tenant(request: Request) -> int:
         api_key = request.headers.get("x-api-key") or (
             bearer if bearer and bearer.startswith(f"{api_key_service.KEY_LABEL}_") else None
         )
+        # Cookie name mirrors routes.auth.ACCESS_COOKIE ("access_token"); kept as a
+        # literal so this low-level service never imports the routes layer.
+        cookie_token = request.cookies.get("access_token")
 
         if api_key:
             async with async_session() as s:  # owner session: not RLS-filtered
                 resolved = await api_key_service.tenant_for_key(s, api_key)
                 if resolved:
                     tenant_id = resolved
-        elif bearer:
-            td = decode_token(bearer)  # access-typed; returns None otherwise
-            if td and td.tenant_id:
-                tenant_id = td.tenant_id
         else:
-            ticket = request.query_params.get("ticket")
-            if ticket:
-                td = decode_token(ticket)
+            access = bearer or cookie_token or request.query_params.get("ticket")
+            if access:
+                td = decode_token(access)  # access-typed; returns None otherwise
                 if td and td.tenant_id:
                     tenant_id = td.tenant_id
     except Exception:

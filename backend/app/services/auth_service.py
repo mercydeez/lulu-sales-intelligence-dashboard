@@ -662,7 +662,8 @@ class AuthService:
             from sqlalchemy import text
             result = await session.execute(
                 text("""
-                    SELECT id, email, first_name, last_name, role, status, job_title, department
+                    SELECT id, email, first_name, last_name, role, status, job_title, department,
+                           tenant_id
                     FROM users WHERE id = :id AND status = 'active'
                 """),
                 {"id": token_data.user_id}
@@ -673,6 +674,11 @@ class AuthService:
                 return None
 
             user = dict(user_row._mapping)
+            # tenant_id MUST be selected above: create_tokens embeds it as the JWT
+            # claim the request path reads to bind the RLS tenant GUC, and
+            # _get_user_permissions scopes a super_admin's accessible stores to it.
+            # Omitting it minted refreshed tokens with tenant_id=None (RLS fell back
+            # to tenant 1) and gave super_admins cross-tenant store access.
             permissions = await AuthService._get_user_permissions(session, user['id'], user['role'], user.get('tenant_id'))
 
             user_data = {**user, "permissions": permissions}
