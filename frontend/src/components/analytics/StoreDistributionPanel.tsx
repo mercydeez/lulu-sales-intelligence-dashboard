@@ -1,34 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { ChartFrame, singleLineTick } from '@/components/ui';
-import { fetchStoreDistribution } from '@/lib/api';
+import { useStoreDistribution } from '@/lib/queries/analytics';
 import { StoreDistributionPoint } from '@/types';
 import { CATEGORICAL, CHART, HBAR_MARGIN, Y_AXIS_CATEGORY_WIDTH, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatCompact, formatCurrency, shortStoreLabel } from './format';
 
 export function StoreDistributionPanel() {
-  const [data, setData] = useState<StoreDistributionPoint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchStoreDistribution()
-      .then((res) => {
-        if (!cancelled) setData(res.data ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const query = useStoreDistribution();
+  const data: StoreDistributionPoint[] = query.data ?? [];
+  const loading = query.isLoading;
+  const error = query.isError;
 
   return (
     <ChartFrame
@@ -37,6 +20,12 @@ export function StoreDistributionPanel() {
       height={320}
       loading={loading}
       empty={!loading && (error || data.length === 0)}
+      ariaSummary={data.length ? `Bar chart of revenue across ${data.length} stores.` : undefined}
+      tableData={data.length ? {
+        caption: 'Revenue by store',
+        columns: ['Store', 'Revenue (AED)'],
+        rows: data.map((d) => [shortStoreLabel(d.store_name), formatCurrency(d.total_revenue)]),
+      } : undefined}
     >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} layout="vertical" margin={HBAR_MARGIN}>

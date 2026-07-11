@@ -13,12 +13,14 @@
  * invalidate together (e.g. `queryClient.invalidateQueries({ queryKey: ['analytics'] })`).
  */
 import { useQuery } from '@tanstack/react-query';
-import { fetchTopItems } from '@/lib/api';
-import type { TopItemPoint } from '@/types';
+import { fetchTopItems, fetchStoreDistribution, fetchCategoryBreakdown } from '@/lib/api';
+import type { TopItemPoint, StoreDistributionPoint, CategoryBreakdownPoint } from '@/types';
 
 export const analyticsKeys = {
   all: ['analytics'] as const,
   topItems: (limit: number) => ['analytics', 'top-items', limit] as const,
+  storeDistribution: () => ['analytics', 'store-distribution'] as const,
+  categoryBreakdown: () => ['analytics', 'category-breakdown'] as const,
 };
 
 /** Top-selling items by revenue. */
@@ -26,5 +28,21 @@ export function useTopItems(limit = 10) {
   return useQuery<TopItemPoint[]>({
     queryKey: analyticsKeys.topItems(limit),
     queryFn: async () => (await fetchTopItems(limit)).data ?? [],
+  });
+}
+
+/** Revenue distribution across stores. */
+export function useStoreDistribution() {
+  return useQuery<StoreDistributionPoint[]>({
+    queryKey: analyticsKeys.storeDistribution(),
+    queryFn: async () => (await fetchStoreDistribution()).data ?? [],
+  });
+}
+
+/** Revenue breakdown by category. */
+export function useCategoryBreakdown() {
+  return useQuery<CategoryBreakdownPoint[]>({
+    queryKey: analyticsKeys.categoryBreakdown(),
+    queryFn: async () => (await fetchCategoryBreakdown()).data ?? [],
   });
 }

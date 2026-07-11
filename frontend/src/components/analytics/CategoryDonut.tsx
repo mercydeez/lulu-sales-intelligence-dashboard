@@ -1,34 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { ChartFrame } from '@/components/ui';
-import { fetchCategoryBreakdown } from '@/lib/api';
+import { useCategoryBreakdown } from '@/lib/queries/analytics';
 import { CategoryBreakdownPoint } from '@/types';
 import { CATEGORICAL, topNWithOther, tooltipContent as tooltipStyle } from '@/lib/chart';
 import { formatCurrency } from './format';
 
 export function CategoryDonut() {
-  const [data, setData] = useState<CategoryBreakdownPoint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchCategoryBreakdown()
-      .then((res) => {
-        if (!cancelled) setData(res.data ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const query = useCategoryBreakdown();
+  const data: CategoryBreakdownPoint[] = query.data ?? [];
+  const loading = query.isLoading;
+  const error = query.isError;
 
   // 7 + "Other": one full palette cycle — 20+ raw categories repeat the 8-hue
   // palette and their legend overflows (clips) the card bottom.
@@ -41,6 +24,12 @@ export function CategoryDonut() {
       height={320}
       loading={loading}
       empty={!loading && (error || data.length === 0)}
+      ariaSummary={data.length ? `Donut chart of revenue share across ${data.length} product categories.` : undefined}
+      tableData={data.length ? {
+        caption: 'Revenue share by category',
+        columns: ['Category', 'Share', 'Revenue (AED)'],
+        rows: data.map((d) => [d.category, `${Math.round(d.percentage)}%`, formatCurrency(d.total_revenue)]),
+      } : undefined}
     >
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
