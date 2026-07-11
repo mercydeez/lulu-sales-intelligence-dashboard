@@ -22,7 +22,7 @@ export interface SidebarProps {
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { hasRole, hasPermission, authFetch, isAuthenticated } = useAuth();
+  const { hasRole, hasPermission, authFetch, isAuthenticated, user } = useAuth();
   const { t } = useLanguage();
   const { config, loading: experienceLoading } = useExperience();
 
@@ -110,7 +110,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   // Role Experience Engine: when the server config carries a nav manifest,
   // render THAT (jobs-based, role-curated). nav === null → full built-in
   // sidebar, exactly today's behavior.
-  const filteredNavItems: NavItem[] = config?.nav
+  const baseNavItems: NavItem[] = config?.nav
     ? config.nav.map((m) => ({
         label: m.label,
         tKey: m.tKey,
@@ -118,6 +118,18 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         icon: NAV_ICONS[m.icon] ?? NAV_ICONS.LayoutDashboard,
       }))
     : navItems.filter(canAccessItem);
+
+  // Platform Console is a per-USER surface (the internal platform team), NOT a
+  // role or a manifest entry — every self-signup owner is a super_admin, so the
+  // role-curated manifest above would never carry it. Append it whenever the
+  // viewer is a platform developer, deduped by href so the fallback-nav branch
+  // (which already includes it via canAccessItem) is never doubled.
+  const filteredNavItems: NavItem[] = (() => {
+    if (!user?.is_platform_developer) return baseNavItems;
+    if (baseNavItems.some((i) => i.href === '/platform-console')) return baseNavItems;
+    const pc = navItems.find((i) => i.href === '/platform-console');
+    return pc ? [...baseNavItems, pc] : baseNavItems;
+  })();
 
   return (
     <div className="flex flex-col h-full">
