@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Manrope, IBM_Plex_Mono } from 'next/font/google';
 import './globals.css';
 import AIProvider from '@/components/AIProvider';
+import QueryProvider from '@/components/QueryProvider';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ExperienceProvider } from '@/contexts/ExperienceContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
@@ -93,6 +94,7 @@ export default function RootLayout({
         <ServiceWorkerRegister />
         <ChunkLoadRecovery />
         <div className="min-h-screen">
+          <QueryProvider>
           <ThemeProvider>
           <LanguageProvider>
             <AuthProvider>
@@ -108,6 +110,7 @@ export default function RootLayout({
             </AuthProvider>
           </LanguageProvider>
           </ThemeProvider>
+          </QueryProvider>
         </div>
       </body>
     </html>

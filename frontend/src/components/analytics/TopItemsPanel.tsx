@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChartFrame, singleLineTick } from '@/components/ui';
-import { fetchTopItems } from '@/lib/api';
+import { useTopItems } from '@/lib/queries/analytics';
 import { TopItemPoint } from '@/types';
 import { CHART, HBAR_MARGIN, Y_AXIS_CATEGORY_WIDTH, hbarHeight, tooltipContent as tooltipStyle, tooltipLabelStyle } from '@/lib/chart';
 import { formatCompact, formatCurrency, axisItemLabel } from './format';
@@ -13,26 +12,12 @@ interface TopItemsPanelProps {
 }
 
 export function TopItemsPanel({ limit = 10 }: TopItemsPanelProps) {
-  const [data, setData] = useState<TopItemPoint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchTopItems(limit)
-      .then((res) => {
-        if (!cancelled) setData(res.data ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [limit]);
+  // Reactive data via TanStack Query (dedup, SWR, background refetch) — replaces
+  // the hand-rolled useEffect+useState triad. Transport/auth stay in apiClient.
+  const query = useTopItems(limit);
+  const data: TopItemPoint[] = query.data ?? [];
+  const loading = query.isLoading;
+  const error = query.isError;
 
   const topThree = data.slice(0, 3).map((d) => axisItemLabel(d.item_name)).join(', ');
 
