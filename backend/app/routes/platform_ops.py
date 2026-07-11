@@ -138,13 +138,18 @@ async def ops_status(user: dict = Depends(require_platform_developer)) -> Dict[s
         except Exception:  # noqa: BLE001 — liveness boolean, never raises
             return False
 
+    # environment + demo_mode are surfaced FLAT at the top level (the console UI
+    # reads status.environment as a string and status.demo_mode as a bool), not
+    # nested under an "environment" section.
+    env = await _section(_environment)
     return {
         "payments": await _section(_payments),
         "pos": await _section(_pos),
         "einvoicing": await _section(_einvoicing),
         "quotas": await _section(_quotas),
         "security": await _section(_security),
-        "environment": await _section(_environment),
+        "environment": env.get("environment") if isinstance(env, dict) else None,
+        "demo_mode": env.get("demo_mode") if isinstance(env, dict) else None,
         "worker": await _section(_worker_status),
         "db": await _section(_db),
         "redis": await _section(_redis),

@@ -584,6 +584,10 @@ async def get_current_user_info(user: dict = Depends(get_current_user)):
         "job_title": user.get('job_title'),
         "department": user.get('department'),
         "last_login_at": user.get('last_login_at'),
+        # Platform-operator boundary (Platform Console). The frontend gates the
+        # console page + sidebar nav on this; it must ride the profile or a
+        # platform developer sees an empty page even though the API authorizes them.
+        "is_platform_developer": bool(user.get('is_platform_developer')),
         "permissions": user.get('permissions', {}),
         "accessible_stores": user.get('permissions', {}).get('accessible_stores', []),
         "accessible_regions": user.get('permissions', {}).get('accessible_regions', [])

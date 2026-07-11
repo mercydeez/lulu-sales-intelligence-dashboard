@@ -135,12 +135,15 @@ def test_the_panel_survives_missing_infrastructure():
     out = asyncio.run(platform_ops.ops_status(user={"id": 1, "email": "dev@example.com"}))
     assert set(out) == {
         "payments", "pos", "einvoicing", "quotas", "security",
-        "environment", "worker", "db", "redis",
+        "environment", "demo_mode", "worker", "db", "redis",
     }
     # Config-only sections work without infrastructure — a flag, never config text.
     assert set(out["quotas"]) == {"enforcement_on"}
     assert isinstance(out["quotas"]["enforcement_on"], bool)
-    assert out["environment"]["environment"] == "testing"
+    # environment + demo_mode are FLAT top-level fields (the console UI reads them
+    # as a bare string / bool), not a nested section.
+    assert out["environment"] == "testing"
+    assert isinstance(out["demo_mode"], bool)
     sec = out["security"]
     assert set(sec) == {"warnings", "critical"}
     assert isinstance(sec["warnings"], int) and isinstance(sec["critical"], int)
