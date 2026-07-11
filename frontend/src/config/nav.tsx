@@ -44,6 +44,7 @@ import {
   Sunrise,
   Scale,
   ClipboardCheck,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -81,6 +82,10 @@ export const navItems: NavItem[] = [
   { label: 'Import Data', tKey: 'nav.imports', href: '/imports', icon: <UploadCloud className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Data Sources', tKey: 'nav.dataSources', href: '/data-sources', icon: <Database className="w-5 h-5" />, roles: ['super_admin', 'regional_manager'] },
   { label: 'Developers', tKey: 'nav.developers', href: '/developers', icon: <Code2 className="w-5 h-5" />, roles: ['super_admin', 'regional_manager'] },
+  // Platform Console (internal): this roles gate is only the fallback-nav
+  // visibility floor — Sidebar force-appends the item for any user with
+  // `is_platform_developer`, and the page itself gates on that flag.
+  { label: 'Platform Console', tKey: 'nav.platformConsole', href: '/platform-console', icon: <SlidersHorizontal className="w-5 h-5" />, roles: ['super_admin', 'regional_manager', 'store_manager'] },
   { label: 'Monitoring', tKey: 'nav.monitoring', href: '/monitoring', icon: <Activity className="w-5 h-5" />, permission: 'is_admin' },
 ];
 
