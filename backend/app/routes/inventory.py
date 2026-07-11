@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.database import get_db, async_session
 from app.services.data_sync import DataSyncService
 from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE_TTL
-from app.routes.auth import get_current_user, require_permission
+from app.auth_deps import get_current_user, require_permission
 from app.config import logger
 
 router = APIRouter(tags=["Inventory Management"])
@@ -521,7 +521,7 @@ async def get_reorder_suggestions(
 
     Where an item has too little history to measure σ, no safety stock is claimed —
     the suggestion falls back to days-of-cover and says so (`needs`)."""
-    from app.routes.auth import get_accessible_store_ids
+    from app.auth_deps import get_accessible_store_ids
     from app.services.forecast_service import reorder_suggestions
 
     accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])

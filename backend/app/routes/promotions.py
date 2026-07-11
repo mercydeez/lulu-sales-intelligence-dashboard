@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.database import get_db, async_session
 from app.services.data_sync import DataSyncService
 from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE_TTL
-from app.routes.auth import get_current_user
+from app.auth_deps import get_current_user
 from app.config import logger
 
 router = APIRouter(tags=["Promotions & Pricing"])
@@ -30,7 +30,7 @@ async def get_uplift_baseline(
     Promotion uplift = actual demand − this forecast baseline, so the engine,
     not a flat historical average, anchors promo ROI. Pass `actual_units` to get
     the uplift directly."""
-    from app.routes.auth import get_accessible_store_ids
+    from app.auth_deps import get_accessible_store_ids
     from app.services.forecast_service import demand_baseline, expected_uplift
 
     tenant_id = current_user.get("tenant_id") or 1
@@ -57,7 +57,7 @@ async def measure_uplift_window(
     baseline, plus whether the category peers paid for it (E7-5).
 
     Works without a stored promotion — useful for a promo run outside the product."""
-    from app.routes.auth import get_accessible_store_ids
+    from app.auth_deps import get_accessible_store_ids
     from app.services.promotion_uplift import measure_promotion_uplift
 
     def _ids(raw: str) -> List[int]:
@@ -85,7 +85,7 @@ async def get_promotion_uplift(
     Returns an explicit `insufficient_baseline` state rather than a number when the
     matched pre-promo window has no sales, and reports cannibalisation as a flag
     with its basis, never as a causal claim."""
-    from app.routes.auth import get_accessible_store_ids
+    from app.auth_deps import get_accessible_store_ids
     from app.services.promotion_uplift import measure_promotion_by_id
 
     tenant_id = current_user.get("tenant_id") or 1

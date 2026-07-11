@@ -20,7 +20,7 @@ from sqlalchemy import text
 
 from app.services.database import async_session
 from app.services import csv_import as imp
-from app.routes.auth import get_current_user
+from app.auth_deps import get_current_user
 from app.config import logger
 
 router = APIRouter(tags=["Imports"])

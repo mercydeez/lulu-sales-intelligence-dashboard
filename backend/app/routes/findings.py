@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.database import get_db
 from app.services.decision_center import enrich_finding
-from app.routes.auth import get_current_user
+from app.auth_deps import get_current_user
 
 router = APIRouter()
 

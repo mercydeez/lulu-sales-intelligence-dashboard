@@ -13,8 +13,8 @@ import asyncio
 import logging
 
 from app.services.database import async_session
-from app.routes.kpis import compute_and_cache_kpis
-from app.routes.analytics import compute_and_cache_store_distribution
+from app.services.kpi_service import compute_and_cache_kpis
+from app.services.forecast_lab import compute_and_cache_store_distribution
 
 logger = logging.getLogger(__name__)
 

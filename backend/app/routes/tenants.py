@@ -21,7 +21,7 @@ from app.services.database import async_session
 from app.services.plan_limits import usage_for_tenant
 from app.services.uae_profile import EDITABLE_FIELDS, validate_profile
 from app.services.tenant_lifecycle import change_tenant_status, STATES
-from app.routes.auth import get_current_user
+from app.auth_deps import get_current_user
 from app.services.platform_access import require_platform_developer
 from app.config import logger
 

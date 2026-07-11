@@ -10,7 +10,7 @@ from app.config import get_settings, logger
 from app.services.metrics import get_metrics
 from app.services.database import engine, async_session
 from app.services.redis_client import get_redis, cache_get, cache_set
-from app.routes.auth import get_current_user, require_role
+from app.auth_deps import get_current_user, require_role
 from sqlalchemy import text
 
 
@@ -248,7 +248,7 @@ async def forecast_methodology() -> Dict[str, Any]:
     if not getattr(s, "forecast_methodology_public", True):
         raise HTTPException(status_code=404, detail="forecast_methodology_disabled")
 
-    from app.routes.analytics import model_metrics_cache_key
+    from app.services.forecast_lab import model_metrics_cache_key
     from app.services.cache import get_cached
 
     cached = await get_cached(model_metrics_cache_key(s.demo_tenant_id, None, 14))

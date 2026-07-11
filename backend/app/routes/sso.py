@@ -204,7 +204,7 @@ async def oidc_callback(
 
         # 7. Issue local tokens (reuses the standard token/permission path).
         from app.services.auth_service import AuthService
-        from app.routes.auth import set_auth_cookies, LoginResponse
+        from app.auth_deps import set_auth_cookies, LoginResponse
         issued = await AuthService.create_tokens(user_data, remember_me=False)
         set_auth_cookies(response, issued)
         await _event("sso_login_succeeded", request, severity="low", category="audit",
@@ -235,7 +235,7 @@ async def oidc_callback(
 # Local JWT auth, admin-level role, tenant-scoped. Never returns secrets.
 # ===========================================================================
 from fastapi import Body  # noqa: E402
-from app.routes.auth import require_role  # noqa: E402
+from app.auth_deps import require_role  # noqa: E402
 
 _SSO_ADMIN = require_role("super_admin", "admin", "owner")
 

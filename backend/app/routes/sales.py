@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from app.services.database import get_db
 from app.services.predictor import SalesPredictor
 from app.models.sales import Sale, Store, Item
-from app.routes.auth import get_current_user, can_access_store, get_accessible_store_ids
+from app.auth_deps import get_current_user, can_access_store, get_accessible_store_ids
 
 
 # Pydantic schemas

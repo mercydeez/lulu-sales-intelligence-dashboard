@@ -23,7 +23,7 @@ from typing import Set
 from fastapi import Depends, HTTPException
 
 from app.config import get_settings
-from app.routes.auth import get_current_user
+from app.auth_deps import get_current_user
 
 
 def developer_allowlist() -> Set[str]:

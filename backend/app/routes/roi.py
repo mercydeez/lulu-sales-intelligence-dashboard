@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.database import get_db
 from app.services.roi import roi_summary, build_report_html, build_report_csv
-from app.routes.auth import get_current_user, get_accessible_store_ids
+from app.auth_deps import get_current_user, get_accessible_store_ids
 
 router = APIRouter(tags=["ROI"])
 

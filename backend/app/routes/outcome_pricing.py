@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.database import get_db, async_session
 from app.services import outcome_pricing as svc
-from app.routes.auth import get_current_user
+from app.auth_deps import get_current_user
 
 router = APIRouter(tags=["Outcome Pricing"])
 

@@ -24,7 +24,7 @@ from app.config import logger
 from app.services.database import get_db
 from app.services import scim as scim_svc
 from app.services.scim import SCIMError
-from app.routes.auth import require_role
+from app.auth_deps import require_role
 
 router = APIRouter()
 

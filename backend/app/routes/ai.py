@@ -28,7 +28,7 @@ from app.services.voice_service import (
 )
 from app.services.guardrails import screen_input, input_block_reason
 from app.services.flag_enforcement import flag_allows
-from app.routes.auth import get_current_user, get_accessible_store_ids
+from app.auth_deps import get_current_user, get_accessible_store_ids
 
 router = APIRouter()
 

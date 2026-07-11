@@ -19,7 +19,7 @@ from app.models.employee import (
 from app.models.sales import Store
 from app.services.employee_performance_streamer import get_live_employee_metrics
 from app.config import logger
-from app.routes.auth import get_current_user, get_current_user_from_ticket
+from app.auth_deps import get_current_user, get_current_user_from_ticket
 
 router = APIRouter()
 
@@ -117,7 +117,7 @@ async def get_employees(
     try:
         async with async_session() as session:
             # Enforce RBAC
-            from app.routes.auth import get_accessible_store_ids, can_access_store
+            from app.auth_deps import get_accessible_store_ids, can_access_store
             if store_id:
                 if not can_access_store(current_user, store_id):
                     raise HTTPException(status_code=403, detail="Access denied to this store")
@@ -216,7 +216,7 @@ async def get_employee(employee_id: int, current_user: dict = Depends(get_curren
             if not employee:
                 raise HTTPException(status_code=404, detail="Employee not found")
                 
-            from app.routes.auth import can_access_store
+            from app.auth_deps import can_access_store
             if employee.store_id and not can_access_store(current_user, employee.store_id):
                 raise HTTPException(status_code=403, detail="Access denied to this employee's store")
             
@@ -654,7 +654,7 @@ async def get_top_performers(
             if role:
                 query = query.where(Employee.role == role)
             
-            from app.routes.auth import get_accessible_store_ids
+            from app.auth_deps import get_accessible_store_ids
             allowed_stores = get_accessible_store_ids(current_user)
             if allowed_stores:
                 query = query.where(Employee.store_id.in_(allowed_stores))
@@ -691,7 +691,7 @@ async def get_employee_summary(current_user: dict = Depends(get_current_user)):
     """Get overall employee statistics summary"""
     try:
         async with async_session() as session:
-            from app.routes.auth import get_accessible_store_ids
+            from app.auth_deps import get_accessible_store_ids
             allowed_stores = get_accessible_store_ids(current_user)
             
             # Total employees by status
@@ -769,7 +769,7 @@ async def get_live_metrics(current_user: dict = Depends(get_current_user)):
     """Get live employee performance metrics from cache"""
     try:
         metrics = await get_live_employee_metrics()
-        from app.routes.auth import get_accessible_store_ids
+        from app.auth_deps import get_accessible_store_ids
         allowed_stores = get_accessible_store_ids(current_user)
         if allowed_stores:
             metrics["by_store"] = {k: v for k, v in metrics.get("by_store", {}).items() if int(k) in allowed_stores}
@@ -790,7 +790,7 @@ async def stream_employee_performance(
     from app.services.redis_client import get_redis
     
     async def event_generator():
-        from app.routes.auth import can_access_store, get_accessible_store_ids
+        from app.auth_deps import can_access_store, get_accessible_store_ids
         redis = await get_redis()
         pubsub = redis.pubsub()
         await pubsub.subscribe("employee_performance")
@@ -864,7 +864,7 @@ async def get_performance_chart_data(
                 EmployeePerformance.period_type == period_type
             )
             
-            from app.routes.auth import get_accessible_store_ids, can_access_store
+            from app.auth_deps import get_accessible_store_ids, can_access_store
             if store_id:
                 if not can_access_store(current_user, store_id):
                     raise HTTPException(status_code=403, detail="Access denied to this store")

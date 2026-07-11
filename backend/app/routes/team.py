@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 from app.services.database import async_session
 from app.services.plan_limits import limits_for_plan
-from app.routes.auth import get_current_user
+from app.auth_deps import get_current_user
 from app.config import logger
 
 router = APIRouter(tags=["Team"])

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.database import get_db
 from app.services.decision_center import list_decisions, summarize, sort_decisions, triage_view
 from app.services.role_experience import decision_scope_for
-from app.routes.auth import get_current_user, get_accessible_store_ids
+from app.auth_deps import get_current_user, get_accessible_store_ids
 
 router = APIRouter(tags=["Decisions"])
 

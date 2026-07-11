@@ -18,7 +18,7 @@ import logging
 
 from app.config import get_settings
 from app.services.database import async_session
-from app.routes.analytics import compute_and_cache_model_metrics
+from app.services.forecast_lab import compute_and_cache_model_metrics
 
 logger = logging.getLogger(__name__)
 

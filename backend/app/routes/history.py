@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from app.services.database import get_db, get_read_db
 from app.models.sales import Sale, SalesHistorical, Store, Item
-from app.routes.auth import get_current_user, can_access_store, get_accessible_store_ids
+from app.auth_deps import get_current_user, can_access_store, get_accessible_store_ids
 
 router = APIRouter()
 

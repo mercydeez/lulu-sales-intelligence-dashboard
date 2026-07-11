@@ -19,7 +19,7 @@ is unavailable the role config ships unchanged.
 """
 from fastapi import APIRouter, Depends
 
-from app.routes.auth import get_current_user, get_accessible_store_ids
+from app.auth_deps import get_current_user, get_accessible_store_ids
 from app.services.flag_enforcement import effective_flags
 from app.services.role_experience import resolve_config, VALID_ASSISTANT_MODES
 

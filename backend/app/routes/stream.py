@@ -17,7 +17,7 @@ from app.config import logger
 from app.services.database import get_db
 from app.services.redis_client import get_redis, CHANNEL_SALES_STREAM, CHANNEL_ALERTS_STREAM, CHANNEL_INVENTORY_STREAM, CHANNEL_SECURITY_STREAM, publish_alert, publish_inventory_update
 from app.models.sales import Sale, Store, Item
-from app.routes.auth import get_current_user, get_current_user_optional, get_current_user_from_ticket, can_access_store, get_accessible_store_ids
+from app.auth_deps import get_current_user, get_current_user_optional, get_current_user_from_ticket, can_access_store, get_accessible_store_ids
 
 router = APIRouter()
 

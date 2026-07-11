@@ -22,7 +22,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from pydantic import BaseModel
 
 from app.config import logger
-from app.routes.auth import require_role
+from app.auth_deps import require_role
 from app.services.ingest import ingest_csv_file, job_status
 
 router = APIRouter()

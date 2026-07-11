@@ -219,15 +219,17 @@ def _real_client(monkeypatch, **lifecycle_kw):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from app.services.database import get_db
-    import app.routes.kpis as kpis_mod
+    # public_api resolves these from the service layer at call time (the
+    # compute/cache layer moved out of routes.kpis into services.kpi_service).
+    import app.services.kpi_service as kpi_service_mod
 
     _patch_settings(monkeypatch, _settings(**lifecycle_kw))
 
     async def _fake_kpis(db, *a, **k):
         return {"total_units": 1}
 
-    monkeypatch.setattr(kpis_mod, "compute_and_cache_kpis", _fake_kpis)
-    monkeypatch.setattr(kpis_mod, "_serialize_kpi_dates", lambda d: d)
+    monkeypatch.setattr(kpi_service_mod, "compute_and_cache_kpis", _fake_kpis)
+    monkeypatch.setattr(kpi_service_mod, "_serialize_kpi_dates", lambda d: d)
 
     app = FastAPI()
     app.include_router(public_api.router, prefix="/api/public")

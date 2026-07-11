@@ -248,10 +248,12 @@ class TestCookieAuth:
         assert all("Secure" not in h for h in _set_cookie_headers(resp))
 
     def test_prod_cookies_are_secure(self, production_settings):
-        from app.routes import auth as auth_routes
+        # set_auth_cookies lives in app.auth_deps (routes.auth re-exports it),
+        # so the settings lookup to patch is auth_deps' module global.
+        from app import auth_deps
         resp = Response()
-        with patch.object(auth_routes, "get_settings", return_value=production_settings):
-            auth_routes.set_auth_cookies(resp, self._tokens())
+        with patch.object(auth_deps, "get_settings", return_value=production_settings):
+            auth_deps.set_auth_cookies(resp, self._tokens())
         assert all("Secure" in h for h in _set_cookie_headers(resp))
 
     def test_clear_auth_cookies_expires_both(self):
