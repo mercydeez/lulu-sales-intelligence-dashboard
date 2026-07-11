@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Tag, Plus, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Button, Stagger, RevealItem } from '@/components/ui';
@@ -11,69 +12,28 @@ import {
   PromotionsList,
   PromotionFormModal,
   Promotion,
-  PromotionSummary,
-  CategoryPerformance,
   PromotionTab,
 } from '@/components/promotions';
+import { usePromotionOverview, usePromotionList, promotionsKeys } from '@/lib/queries/promotions';
 
 export default function PromotionsPage() {
-  const { authFetch, hasPermission } = useAuth();
+  const { hasPermission } = useAuth();
+  const queryClient = useQueryClient();
   const canManagePromotions = hasPermission('can_manage_promotions');
 
-  const [summary, setSummary] = useState<PromotionSummary | null>(null);
-  const [activePromotions, setActivePromotions] = useState<Promotion[]>([]);
-  const [categories, setCategories] = useState<CategoryPerformance[]>([]);
-  const [listPromotions, setListPromotions] = useState<Promotion[]>([]);
-
-  const [loading, setLoading] = useState(true);
-  const [listLoading, setListLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState<PromotionTab>('active');
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
 
-  const loadOverview = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [summaryRes, activeRes, categoriesRes] = await Promise.all([
-        authFetch('/api/promotions/summary'),
-        authFetch('/api/promotions/active'),
-        authFetch('/api/promotions/categories'),
-      ]);
-      if (summaryRes.ok) setSummary(await summaryRes.json());
-      if (activeRes.ok) setActivePromotions((await activeRes.json()).promotions ?? []);
-      if (categoriesRes.ok) setCategories((await categoriesRes.json()).categories ?? []);
-    } catch (err) {
-      console.error('Failed to load promotions overview:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [authFetch]);
+  const { summary, activePromotions, categories, loading } = usePromotionOverview();
+  const listQuery = usePromotionList(selectedTab);
+  const listPromotions: Promotion[] = listQuery.data ?? [];
+  const listLoading = listQuery.isLoading;
 
-  const loadList = useCallback(async () => {
-    setListLoading(true);
-    try {
-      const status = selectedTab === 'all' ? '' : selectedTab;
-      const res = await authFetch(`/api/promotions/list?status=${status}&limit=100`);
-      if (res.ok) setListPromotions((await res.json()).promotions ?? []);
-      else setListPromotions([]);
-    } catch (err) {
-      console.error('Failed to load promotions list:', err);
-      setListPromotions([]);
-    } finally {
-      setListLoading(false);
-    }
-  }, [authFetch, selectedTab]);
-
-  useEffect(() => {
-    loadOverview();
-  }, [loadOverview, refreshKey]);
-
-  useEffect(() => {
-    loadList();
-  }, [loadList, refreshKey]);
-
-  const handleCreated = () => setRefreshKey((k) => k + 1);
+  // Refresh / post-create: invalidate the whole promotions domain so overview +
+  // list both refetch (replaces the old refreshKey remount).
+  const refreshAll = () => queryClient.invalidateQueries({ queryKey: promotionsKeys.all });
+  const handleCreated = refreshAll;
 
   return (
     <main className="min-h-screen p-4 md:p-8">
@@ -84,7 +44,7 @@ export default function PromotionsPage() {
           icon={<Tag className="w-5 h-5" />}
           actions={
             <>
-              <Button variant="secondary" size="md" onClick={() => setRefreshKey((k) => k + 1)} aria-label="Refresh">
+              <Button variant="secondary" size="md" onClick={refreshAll} aria-label="Refresh">
                 <RefreshCw className="w-4 h-4" />
               </Button>
               {canManagePromotions && (

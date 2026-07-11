@@ -1,25 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader, Card, Button, SkeletonCard, ErrorState, Stagger, RevealItem, NoPermissionState } from '@/components/ui';
-import { apiGet, authFetch, ApiError } from '@/lib/apiClient';
+import { authFetch, ApiError } from '@/lib/apiClient';
+import { useRoiSummary, type RoiSummary } from '@/lib/queries/roi';
 import { TrendingUp, RefreshCw, Info, UploadCloud, Download, Sparkles, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 const AED = (n: number | null | undefined, dp = 0) =>
   n == null ? '—' : `AED ${n.toLocaleString('en-AE', { maximumFractionDigits: dp, minimumFractionDigits: dp })}`;
-
-interface Metric { aed?: number | null; value?: number | null; count?: number; per_day_aed?: number;
-  projection_days?: number; label: string; needs?: string | null; is_estimate?: boolean;
-  gross_margin_90d_aed?: number | null; }
-interface RoiSummary {
-  currency: string;
-  metrics: Record<string, Metric>;
-  context: { revenue_90d_aed: number; below_reorder_count: number; total_skus: number;
-    total_stock_units: number; has_cost_data: boolean };
-  headline: { label: string; aed: number };
-}
 
 /**
  * Sage's read of the numbers — composed deterministically from the summary the
@@ -51,17 +41,13 @@ export default function ValuePage() {
   const { user } = useAuth();
   const isAdmin = ['super_admin', 'admin', 'regional_manager', 'store_manager'].includes(user?.role ?? '')
     || !!user?.permissions?.can_manage_inventory;
-  const [roi, setRoi] = useState<RoiSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true); setError(null);
-    try { setRoi(await apiGet<RoiSummary>('/api/roi/summary')); }
-    catch (e) { setError(e instanceof ApiError ? e.message : 'Failed to load value summary'); }
-    finally { setLoading(false); }
-  }, []);
-  useEffect(() => { if (isAdmin) load(); else setLoading(false); }, [isAdmin, load]);
+  const roiQuery = useRoiSummary(isAdmin);
+  const roi: RoiSummary | null = roiQuery.data ?? null;
+  const loading = isAdmin && roiQuery.isLoading;
+  const error = roiQuery.error instanceof ApiError ? roiQuery.error.message
+    : roiQuery.isError ? 'Failed to load value summary' : null;
+  const load = () => roiQuery.refetch();
 
   const downloadReport = async (fmt: 'html' | 'csv') => {
     const res = await authFetch(`/api/roi/report?fmt=${fmt}`);
