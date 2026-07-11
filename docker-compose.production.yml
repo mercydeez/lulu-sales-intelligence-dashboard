@@ -107,6 +107,17 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT secret required}
       SECRET_KEY: ${SECRET_KEY:?App secret required}
       LOG_JSON: ${LOG_JSON:-true}
+      # Role-password sync (services/role_password_sync) runs at the END of the
+      # migration pass IN THIS PROCESS: it ALTERs the non-owner roles' passwords
+      # to match what backend/worker/sage connect with. These MUST be present
+      # here — the migrations (re)assert dev-default passwords on app_rw /
+      # worker_rw / sage_ro, and without these vars the sync has nothing to read,
+      # so those roles keep the dev passwords and every backend-RLS / worker /
+      # sage connection fails auth on a real deploy. Same values the backend and
+      # worker services receive below; empty default keeps dev a silent no-op.
+      RLS_DATABASE_URL: ${RLS_DATABASE_URL:-}
+      WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:-}
+      SAGE_DATABASE_URL: ${SAGE_DATABASE_URL:-}
     volumes:
       - ./database/migrations:/app/database/migrations:ro
     depends_on:
