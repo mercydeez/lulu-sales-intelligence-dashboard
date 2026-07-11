@@ -990,6 +990,31 @@ async def get_model_metrics(
     return _empty_model_metrics("warming")
 
 
+@router.post("/model-metrics/recompute")
+async def recompute_model_metrics(
+    horizon: int = Query(14, ge=7, le=60),
+    current_user: dict = Depends(get_current_user),
+):
+    """Real-time retrain: train every forecasting model NOW (synchronously) for
+    this caller's scope and return the fresh metrics — the "Retrain now" action in
+    the Forecast Lab. Unlike GET (which reads cache + warms in the background),
+    this awaits the CPU-bound training (offloaded to a thread inside
+    compute_and_cache_model_metrics) so the response carries the just-computed
+    result. Bounded by the same horizon guard; the standard rate limiter caps abuse.
+    """
+    tenant_id = current_user.get("tenant_id") or 1
+    allowed = get_accessible_store_ids(current_user)
+    try:
+        from app.services.database import async_session
+        async with async_session() as session:
+            result = await compute_and_cache_model_metrics(
+                session, tenant_id=tenant_id, allowed=allowed, horizon=horizon)
+    except Exception as exc:  # noqa: BLE001 — never 500 the Lab; report honestly
+        logger.error(f"[analytics] real-time model recompute failed: {exc!r}")
+        raise HTTPException(status_code=503, detail="Model retraining failed — try again shortly")
+    return result or _empty_model_metrics("warming")
+
+
 # =============================================================================
 # Root-cause decomposition (E7-4) — the deterministic "Diagnose" layer.
 # Explains why a metric changed vs a comparison window, attributing each

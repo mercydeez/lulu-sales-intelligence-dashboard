@@ -22,13 +22,95 @@ from .engine import (
     _feature_columns,
     SeasonalTrend,
     LightGBMForecaster,
+    ENSEMBLE_NAME,
     _mape,
     _wape,
 )
 from .calendar_features import uae_calendar_features, calendar_feature_summary
 
-FORECASTING_VERSION = "v2_uae_calendar"
+FORECASTING_VERSION = "v3_ensemble"
 BASELINE_MODEL = "seasonal_naive"
+
+# ML/DL algorithm catalogue — the Technical view renders this so the model names
+# in the leaderboard carry real, teachable descriptions (family, how it learns,
+# key hyper-parameters). Keys match engine model `.name`. This is documentation
+# of algorithms that ACTUALLY run in engine.py / deep.py, not marketing.
+ALGORITHMS: Dict[str, Dict[str, str]] = {
+    "seasonal_naive": {
+        "label": "Seasonal Naive", "family": "Statistical baseline",
+        "detail": "Repeats the value from 7 days earlier. The honesty baseline every "
+                  "learned model must beat.",
+        "hyperparams": "period = 7 days",
+    },
+    "seasonal_trend": {
+        "label": "Seasonal Trend", "family": "Classical decomposition",
+        "detail": "Multiplicative day-of-week seasonal indices × an OLS linear trend "
+                  "(np.polyfit). Fast, robust, no training loop.",
+        "hyperparams": "7 DoW indices + linear trend (deg 1)",
+    },
+    "lightgbm": {
+        "label": "LightGBM", "family": "Gradient-boosted decision trees (ML)",
+        "detail": "Gradient boosting over lag/rolling/UAE-calendar features, forecast "
+                  "recursively. Also yields the feature-importance chart.",
+        "hyperparams": "300 trees · lr 0.05 · 31 leaves · subsample 0.9",
+    },
+    "lstm": {
+        "label": "LSTM", "family": "Recurrent neural network (Deep learning)",
+        "detail": "Long Short-Term Memory network over 28-day windows; gated cells "
+                  "carry seasonal memory across the sequence.",
+        "hyperparams": "window 28 · hidden 32 · Adam · MSE · 60 epochs",
+    },
+    "gru": {
+        "label": "GRU", "family": "Recurrent neural network (Deep learning)",
+        "detail": "Gated Recurrent Unit — a lighter LSTM variant with fewer gates; "
+                  "trains faster on short series.",
+        "hyperparams": "window 28 · hidden 32 · Adam · MSE · 60 epochs",
+    },
+    "cnn": {
+        "label": "Temporal CNN", "family": "Convolutional neural network (Deep learning)",
+        "detail": "1-D convolutions slide learned kernels over the demand window to "
+                  "detect local demand shapes (spikes, weekend humps).",
+        "hyperparams": "2× Conv1d · window 28 · Adam · 60 epochs",
+    },
+    "tcn": {
+        "label": "TCN", "family": "Temporal Convolutional Network (Deep learning)",
+        "detail": "Dilated CAUSAL convolutions (dilations 1/2/4) give a wide receptive "
+                  "field without leaking the future — strong long-range seasonality.",
+        "hyperparams": "dilations 1·2·4 · causal chomp · window 28",
+    },
+    "transformer": {
+        "label": "Transformer", "family": "Self-attention network (Deep learning)",
+        "detail": "Multi-head self-attention with sinusoidal positional encodings "
+                  "weighs which past days matter most for each horizon step.",
+        "hyperparams": "heads 4 · d_model 32 · sinusoidal pos-enc · window 28",
+    },
+    "nbeats": {
+        "label": "N-BEATS", "family": "Deep residual basis expansion (Deep learning)",
+        "detail": "Doubly-residual fully-connected blocks that iteratively subtract a "
+                  "backcast and add a forecast — a purpose-built forecasting net.",
+        "hyperparams": "3 residual blocks · backcast/forecast heads · window 28",
+    },
+    "ensemble": {
+        "label": "Ensemble (blend)", "family": "Model stacking / blending",
+        "detail": "Inverse-error-weighted average of the top-3 learners. Because the "
+                  "members make independent errors, the blend usually beats any single "
+                  "model — the classic bias/variance win.",
+        "hyperparams": "top-3 by WAPE · weights ∝ 1/WAPE",
+    },
+}
+
+
+def algorithms_for(leaderboard: List[dict]) -> List[dict]:
+    """Algorithm cards for exactly the models that competed this run, best-first,
+    each annotated with whether it was the selected winner."""
+    out = []
+    for row in leaderboard:
+        meta = ALGORITHMS.get(row.get("model"))
+        if not meta:
+            continue
+        out.append({"model": row["model"], "accuracy": row.get("accuracy"),
+                    "tier": row.get("tier"), **meta})
+    return out
 METHODOLOGY_NOTE = (
     "Forecasts compare the selected model's error against a seasonal-naive baseline "
     "(WAPE/MAPE on held-out actuals). E7-1 adds UAE retail-calendar features "
@@ -158,6 +240,10 @@ def forecast_summary(history: pd.DataFrame, horizon: int = 14) -> dict:
         "wape_improvement_vs_baseline_pct": wape_improvement_vs_baseline_pct(baseline_wape, selected_wape),
         "calendar_feature_summary": calendar_feature_summary(uses_weather=False),
         "methodology_note": METHODOLOGY_NOTE,
+        # v3: real ML/DL algorithm cards for the Technical view + the members that
+        # make up the ensemble blend when the ensemble was selected.
+        "algorithms": algorithms_for(leaderboard),
+        "ensemble_members": (scores.get(ENSEMBLE_NAME) or {}).get("members", []),
     }
     summary.update(ramadan_window_accuracy(summary["backtest"]))
     return summary

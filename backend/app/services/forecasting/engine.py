@@ -218,6 +218,79 @@ class LightGBMForecaster(BaseForecaster):
         return dict(zip(self._cols, [float(v) for v in self.model.feature_importances_]))
 
 
+# Blending / model-stacking configuration. The ensemble averages the best few
+# single learners, weighted by inverse holdout error, so a stronger model pulls
+# the blend harder. `ensemble` is NOT in available_models() — it is derived from
+# the other models' predictions during backtest_and_select (below).
+ENSEMBLE_NAME = "ensemble"
+ENSEMBLE_K = 3
+# Models excluded from the blend: the naive baseline exists to be BEATEN, not to
+# drag the ensemble toward a dumb 7-day-ago repeat.
+_ENSEMBLE_EXCLUDE = {"seasonal_naive"}
+
+
+def _blend(preds: List[np.ndarray], weights: List[float]) -> np.ndarray:
+    w = np.asarray(weights, dtype=float)
+    w = w / w.sum() if w.sum() > 0 else np.ones(len(w)) / max(len(w), 1)
+    stacked = np.vstack(preds)
+    return np.clip((w[:, None] * stacked).sum(axis=0), 0, None)
+
+
+def _ensemble_members(scores: Dict[str, Dict], preds_by_model: Dict[str, np.ndarray]) -> List[str]:
+    """Top-K models by holdout WAPE that have a usable prediction, excluding the
+    baseline. Returns [] when fewer than two candidates exist (a blend of one is
+    just that one model)."""
+    ranked = sorted(
+        (n for n, s in scores.items()
+         if isinstance(s, dict) and isinstance(s.get("wape"), (int, float))
+         and n in preds_by_model and n not in _ENSEMBLE_EXCLUDE),
+        key=lambda n: scores[n]["wape"],
+    )
+    members = ranked[:ENSEMBLE_K]
+    return members if len(members) >= 2 else []
+
+
+def _ensemble_weights(scores: Dict[str, Dict], members: List[str]) -> List[float]:
+    return [1.0 / max(float(scores[n]["wape"]), 1e-6) for n in members]
+
+
+def _ensemble_from_scores(scores, preds_by_model, actual) -> Optional[Dict]:
+    """Score the inverse-error-weighted blend of the top-K models on the held-out
+    window. Returns {"score", "pred", "members"} or None if no blend is possible."""
+    members = _ensemble_members(scores, preds_by_model)
+    if not members:
+        return None
+    weights = _ensemble_weights(scores, members)
+    blend = _blend([preds_by_model[n] for n in members], weights)
+    return {
+        "score": {"mape": _mape(actual, blend), "wape": _wape(actual, blend),
+                  "tier": "ensemble", "members": members},
+        "pred": blend,
+        "members": members,
+    }
+
+
+def _fit_ensemble_forward(series: pd.Series, horizon: int,
+                          members: List[str], weights: List[float]) -> Optional[np.ndarray]:
+    """Refit each ensemble member on the FULL series and blend the forward
+    forecasts with the holdout-derived weights. None if no member refits."""
+    by_name = {m.name: m for m in available_models()}
+    member_preds, member_weights = [], []
+    for name, w in zip(members, weights):
+        mdl = by_name.get(name)
+        if mdl is None:
+            continue
+        try:
+            mdl.fit(series)
+            member_preds.append(mdl.predict(horizon))
+            member_weights.append(w)
+        except Exception:
+            continue
+    if not member_preds:
+        return None
+    return _blend(member_preds, member_weights)
+
+
 def available_models() -> List[BaseForecaster]:
     """Instantiate every model that can run in this environment. The DL tier is
     imported lazily so torch is only loaded if it's installed."""
@@ -327,6 +400,19 @@ def backtest_and_select(history: pd.DataFrame, horizon: int = 14) -> ForecastRes
     if best_name is None:
         best_name = "seasonal_trend"
 
+    # --- Ensemble (blending / model stacking) --------------------------------
+    # Inverse-error-weighted average of the top-K single learners. Because the
+    # members make INDEPENDENT errors (a tree model and a Transformer are wrong
+    # in different ways), their weighted blend often beats any one of them — the
+    # classic bias/variance argument for ensembling. Reuses the holdout
+    # predictions already computed above, so it costs almost nothing to score.
+    ens = _ensemble_from_scores(scores, preds_by_model, actual)
+    if ens is not None:
+        scores[ENSEMBLE_NAME] = ens["score"]
+        preds_by_model[ENSEMBLE_NAME] = ens["pred"]
+        if ens["score"]["wape"] is not None and ens["score"]["wape"] < best_wape:
+            best_wape, best_name = ens["score"]["wape"], ENSEMBLE_NAME
+
     # The winner's held-out predictions vs the real values + the residual spread
     # that sizes the forward band (both reuse values already computed above).
     win_pred = preds_by_model.get(best_name)
@@ -341,9 +427,18 @@ def backtest_and_select(history: pd.DataFrame, horizon: int = 14) -> ForecastRes
         ]
         resid_std = float(np.std(np.asarray(actual, dtype=float) - win_pred))
 
-    winner = next((m for m in available_models() if m.name == best_name), SeasonalTrend())
-    winner.fit(series)
-    forecast = winner.predict(horizon)
+    if best_name == ENSEMBLE_NAME:
+        members = scores[ENSEMBLE_NAME].get("members", [])
+        forecast = _fit_ensemble_forward(series, horizon, members,
+                                         _ensemble_weights(scores, members))
+        if forecast is None:  # every member failed to refit — fall back safely
+            best_name = "seasonal_trend"
+            winner = SeasonalTrend().fit(series)
+            forecast = winner.predict(horizon)
+    else:
+        winner = next((m for m in available_models() if m.name == best_name), SeasonalTrend())
+        winner.fit(series)
+        forecast = winner.predict(horizon)
     return _result(best_name, series, forecast, horizon, scores,
                    backtest=backtest_points, resid_std=resid_std)
 

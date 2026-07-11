@@ -219,7 +219,7 @@ def test_forecast_summary_short_history_is_backward_compatible_and_v2():
     for k in ("selected_model", "accuracy", "mape", "leaderboard", "forecast", "backtest", "interval_pct"):
         assert k in summ
     # v2 additive fields present with safe/honest defaults
-    assert summ["forecasting_version"] == "v2_uae_calendar"
+    assert summ["forecasting_version"] == "v3_ensemble"
     assert summ["baseline_model"] == "seasonal_naive"
     assert summ["calendar_feature_summary"]["uses_uae_calendar"] is True
     assert summ["calendar_feature_summary"]["lunar_dates_approximate"] is True
@@ -253,7 +253,7 @@ def test_compute_model_metrics_sync_populates_v2_fields():
         for d, v in zip(_series(30).index, _series(30).values)
     ]
     out = _compute_model_metrics_sync(hist_records, [], [], [], avg_price=10.0, horizon=14)
-    assert out["forecasting_version"] == "v2_uae_calendar"
+    assert out["forecasting_version"] == "v3_ensemble"
     assert "ramadan_accuracy_reason" in out
     assert out["calendar_feature_summary"]["lunar_dates_approximate"] is True
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Brain, RefreshCw, TrendingUp } from 'lucide-react';
+import { Brain, RefreshCw, TrendingUp, Cpu } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
   ComposedChart, Area, Legend, ReferenceLine,
@@ -50,6 +50,13 @@ interface Metrics {
     uses_uae_calendar?: boolean; uses_weather_features?: boolean; lunar_dates_approximate?: boolean;
   };
   methodology_note?: string;
+  // v3: ML/DL algorithm cards for the Technical view + the blended ensemble members.
+  algorithms?: Algo[];
+  ensemble_members?: string[];
+}
+interface Algo {
+  model: string; label: string; family: string; detail: string; hyperparams: string;
+  accuracy: number | null; tier?: string;
 }
 
 // Human-readable reasons for an absent Ramadan number — never fabricate accuracy.
@@ -64,6 +71,7 @@ const MODEL_LABEL: Record<string, string> = {
   lightgbm: 'LightGBM (ML)', lstm: 'LSTM (Deep learning)', gru: 'GRU / RNN (Deep learning)',
   cnn: 'CNN (Deep learning)', tcn: 'TCN (Deep learning)', transformer: 'Transformer (Deep learning)',
   nbeats: 'N-BEATS (Deep learning)', seasonal_trend: 'Seasonal trend', seasonal_naive: 'Naive baseline',
+  ensemble: 'Ensemble blend (stacking)',
 };
 
 function accColor(a: number | null): string {
@@ -88,6 +96,7 @@ export default function ForecastLabPage() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'exec' | 'tech'>('exec');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [retraining, setRetraining] = useState(false);
 
   const fetchMetrics = useCallback(async () => {
     setLoading(true);
@@ -108,6 +117,22 @@ export default function ForecastLabPage() {
 
   useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
 
+  // Real-time retrain: POST triggers a synchronous train of every model NOW and
+  // returns the fresh metrics (vs GET which reads cache + warms in the background).
+  const retrainNow = useCallback(async () => {
+    setRetraining(true);
+    setError(null);
+    try {
+      const res = await authFetch('/api/analytics/model-metrics/recompute?horizon=14', { method: 'POST' });
+      if (res.ok) setData(await res.json());
+      else setError(`Retrain failed (${res.status})`);
+    } catch {
+      setError('Could not reach the forecasting service');
+    } finally {
+      setRetraining(false);
+    }
+  }, [authFetch]);
+
   // Models train off the request path; a cold scope returns status "warming".
   // Poll until the background trainer has cached the result.
   const warming = data?.status === 'warming';
@@ -119,6 +144,7 @@ export default function ForecastLabPage() {
 
   const acc = data?.accuracy ?? null;
   const h = health(acc);
+  const isTech = view === 'tech';
   const clf = data?.classifier ?? {};
   const hasClf = !!(clf.matrix && clf.matrix.length === 2);
   const bi = data?.business_impact;
@@ -137,6 +163,11 @@ export default function ForecastLabPage() {
                 value={view}
                 onChange={(id) => setView(id as 'exec' | 'tech')}
               />
+              <Button variant="secondary" size="md" onClick={retrainNow} disabled={retraining}
+                title="Retrain every model now (real-time)">
+                <Cpu className={`w-4 h-4 ${retraining ? 'animate-pulse' : ''}`} />
+                <span className="ms-1 hidden sm:inline">{retraining ? 'Training…' : 'Retrain'}</span>
+              </Button>
               <Button variant="secondary" size="md" onClick={fetchMetrics} aria-label="Refresh">
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
@@ -164,25 +195,50 @@ export default function ForecastLabPage() {
           </Card>
         ) : (
           <Reveal>
+            {/* Headline row. EXECUTIVE = plain outcomes (accuracy + money). TECHNICAL
+                = model internals (selected model + MAPE). This is the real split. */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid rgb(var(--a-teal))' }}>
                 <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Forecast accuracy</div>
                 <div className="text-3xl font-semibold text-ink tabular-nums">{acc !== null ? `${acc}%` : '—'}</div>
                 <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${h.cls}`}>{h.label}</span>
               </div>
-              <div className="bg-surface border border-line rounded-lg p-5">
-                <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Model in use</div>
-                <div className="text-xl font-medium text-ink">{MODEL_LABEL[data.selected_model || ''] || data.selected_model || '—'}</div>
-                <div className="text-xs text-ink-muted mt-1">auto-picked by backtest</div>
-              </div>
-              <div className="bg-surface border border-line rounded-lg p-5">
-                <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Error (MAPE)</div>
-                <div className="text-3xl font-semibold text-ink tabular-nums">{data.mape !== null ? `${data.mape}%` : '—'}</div>
-                <div className="text-xs text-ink-muted mt-1">lower is better</div>
-              </div>
+              {isTech ? (
+                <>
+                  <div className="bg-surface border border-line rounded-lg p-5">
+                    <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Model in use</div>
+                    <div className="text-xl font-medium text-ink">{MODEL_LABEL[data.selected_model || ''] || data.selected_model || '—'}</div>
+                    <div className="text-xs text-ink-muted mt-1">auto-picked by backtest (lowest WAPE)</div>
+                  </div>
+                  <div className="bg-surface border border-line rounded-lg p-5">
+                    <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Error (MAPE)</div>
+                    <div className="text-3xl font-semibold text-ink tabular-nums">{data.mape !== null ? `${data.mape}%` : '—'}</div>
+                    <div className="text-xs text-ink-muted mt-1">lower is better</div>
+                  </div>
+                </>
+              ) : bi && bi.projected_revenue_aed != null ? (
+                <>
+                  <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid rgb(var(--a-teal))' }}>
+                    <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Projected revenue · next {bi.horizon_days}d</div>
+                    <div className="text-2xl font-semibold text-ink tabular-nums">AED {Number(bi.projected_revenue_aed).toLocaleString()}</div>
+                    <div className="text-xs text-ink-muted mt-1">what we expect to sell</div>
+                  </div>
+                  <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid rgb(var(--a-amber))' }}>
+                    <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Revenue exposure caught</div>
+                    <div className="text-2xl font-semibold text-ink tabular-nums">AED {Number(bi.revenue_protected_aed).toLocaleString()}</div>
+                    <div className="text-xs text-ink-muted mt-1">at-risk sales the forecast flagged early</div>
+                  </div>
+                </>
+              ) : (
+                <div className="bg-surface border border-line rounded-lg p-5 sm:col-span-2">
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">What it means</div>
+                  <div className="text-sm text-ink-soft mt-1">The system predicts demand for the next two weeks and flags where stock is at risk.</div>
+                </div>
+              )}
             </div>
 
-            {bi && bi.projected_revenue_aed != null && (
+            {/* Technical view keeps the money cards + the exact formulas. */}
+            {isTech && bi && bi.projected_revenue_aed != null && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                 <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid rgb(var(--a-teal))' }}>
                   <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Projected revenue · next {bi.horizon_days}d</div>
@@ -197,8 +253,29 @@ export default function ForecastLabPage() {
               </div>
             )}
 
+            {/* EXECUTIVE: a single plain Ramadan-readiness stat, no WAPE jargon. */}
+            {!isTech && (
+              <Card variant="solid" padding="md" className="mb-4">
+                <h3 className="text-base font-medium text-ink mb-1">Ramadan readiness</h3>
+                {data.ramadan_accuracy != null ? (
+                  <p className="text-sm text-ink-soft">
+                    Over the last Ramadan days we can measure, demand predictions were{' '}
+                    <span className="font-semibold" style={{ color: accColor(data.ramadan_accuracy) }}>
+                      {data.ramadan_accuracy}% accurate
+                    </span>. The model uses UAE retail-calendar signals (Ramadan, Eid, DSF, National Day).
+                  </p>
+                ) : (
+                  <p className="text-sm text-ink-muted">
+                    {RAMADAN_REASON_LABEL[data.ramadan_accuracy_reason || 'not_computed'] ||
+                      'Ramadan accuracy is not measured yet.'} We never show a fabricated seasonal number.
+                  </p>
+                )}
+              </Card>
+            )}
+
             {/* Forecasting v2 (E7-1): UAE-calendar accuracy vs seasonal-naive baseline,
                 Ramadan window reported separately + honestly. Feeds E7-2 publication. */}
+            {isTech && (
             <Card variant="solid" padding="md" className="mb-4">
               <div className="flex items-center justify-between mb-1">
                 <h3 className="text-base font-medium text-ink">Ramadan &amp; UAE-calendar accuracy</h3>
@@ -285,8 +362,11 @@ export default function ForecastLabPage() {
                 </div>
               )}
             </Card>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+              {/* "Which model won" is a technical comparison of algorithms — Technical only. */}
+              {isTech && (
               <Card variant="solid" padding="md">
                 <h3 className="text-base font-medium text-ink mb-4">Which model won</h3>
                 {data.leaderboard.length === 0 ? (
@@ -296,7 +376,12 @@ export default function ForecastLabPage() {
                     {data.leaderboard.map((m) => (
                       <div key={m.model}>
                         <div className="flex justify-between text-sm mb-1">
-                          <span className="text-ink-soft">{MODEL_LABEL[m.model] || m.model}</span>
+                          <span className="text-ink-soft">
+                            {MODEL_LABEL[m.model] || m.model}
+                            {m.model === data.selected_model && (
+                              <span className="ms-1 text-[10px] text-teal-700">● winner</span>
+                            )}
+                          </span>
                           <span className="text-ink tabular-nums">{m.accuracy ?? '—'}%</span>
                         </div>
                         <div className="h-1.5 bg-surface-2 rounded-full">
@@ -307,8 +392,9 @@ export default function ForecastLabPage() {
                   </div>
                 )}
               </Card>
+              )}
 
-              <Card variant="solid" padding="md">
+              <Card variant="solid" padding="md" className={isTech ? '' : 'lg:col-span-2'}>
                 <h3 className="text-base font-medium text-ink mb-4">Accuracy by store</h3>
                 {data.heatmap.length === 0 ? (
                   <p className="text-sm text-ink-muted">No per-store breakdown available yet.</p>
@@ -337,6 +423,51 @@ export default function ForecastLabPage() {
 
             {view === 'tech' && (
               <div className="space-y-4">
+                {/* Models & Algorithms — the ML/DL methods that actually ran this
+                    backtest, best-first, with the selected winner + ensemble members. */}
+                {data.algorithms && data.algorithms.length > 0 && (
+                  <Card variant="solid" padding="md">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Cpu className="w-4 h-4 text-ink-muted" />
+                      <h3 className="text-base font-medium text-ink">Models &amp; algorithms</h3>
+                    </div>
+                    <p className="text-xs text-ink-muted mb-3">
+                      Every model below trained on this data and competed on the same held-out days.
+                      The winner is auto-selected by lowest WAPE; the ensemble blends the top learners.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {data.algorithms.map((a) => {
+                        const isWinner = a.model === data.selected_model;
+                        const isMember = (data.ensemble_members || []).includes(a.model);
+                        return (
+                          <div key={a.model}
+                            className={`rounded-lg border p-3 ${isWinner ? 'border-teal-400 bg-teal-50/40' : 'border-line bg-surface'}`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-medium text-ink truncate">{a.label}</span>
+                                {isWinner && <Badge variant="teal">selected</Badge>}
+                                {isMember && !isWinner && <Badge variant="violet">in ensemble</Badge>}
+                              </div>
+                              <span className="text-sm tabular-nums shrink-0" style={{ color: accColor(a.accuracy) }}>
+                                {a.accuracy != null ? `${a.accuracy}%` : '—'}
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono uppercase tracking-wide text-ink-muted mt-0.5">{a.family}</div>
+                            <p className="text-xs text-ink-soft mt-1.5 leading-relaxed">{a.detail}</p>
+                            <p className="text-[11px] text-ink-muted mt-1.5 font-mono">{a.hyperparams}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {data.ensemble_members && data.ensemble_members.length > 0 && (
+                      <p className="text-xs text-ink-muted mt-3">
+                        <span className="font-medium text-ink-soft">Ensemble blend:</span>{' '}
+                        {data.ensemble_members.map((m) => MODEL_LABEL[m] || m).join(' + ')} — weighted by inverse error (1/WAPE).
+                      </p>
+                    )}
+                  </Card>
+                )}
+
                 <Card variant="solid" padding="md">
                   <h3 className="text-base font-medium text-ink mb-1">Model comparison</h3>
                   <p className="text-xs text-ink-muted mb-3">Every model scored on the same held-out days. Higher accuracy / lower MAPE is better.</p>

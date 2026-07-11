@@ -77,12 +77,26 @@ def test_new_dl_model_predicts_valid_horizon(cls):
 
 
 def test_backtest_selects_a_registered_model():
-    valid = {m.name for m in available_models()}
+    # `ensemble` is derived from the other models' predictions (not in
+    # available_models()), so it is a legitimate winner on top of the registry.
+    valid = {m.name for m in available_models()} | {"ensemble"}
     result = backtest_and_select(_synthetic_history(), horizon=14)
     assert result.model in valid
     assert len(result.points) == 14
     # the new DL models should have competed (have a score entry)
     assert {"tcn", "transformer", "nbeats"}.issubset(set(result.scores))
+
+
+def test_ensemble_competes_and_blends_top_models():
+    """The ensemble is scored on the same held-out window and, when selected,
+    its members are the top learners (never the naive baseline)."""
+    result = backtest_and_select(_synthetic_history(), horizon=14)
+    assert "ensemble" in result.scores
+    ens = result.scores["ensemble"]
+    assert ens.get("wape") is not None and ens.get("tier") == "ensemble"
+    members = ens.get("members") or []
+    assert 2 <= len(members) <= 3
+    assert "seasonal_naive" not in members  # the baseline is excluded from the blend
 
 
 def test_backtest_returns_held_out_actual_vs_predicted():
