@@ -29,10 +29,13 @@ interface StatusEvent { from_status: string; to_status: string; reason: string |
 interface Note { id: number; note: string; author_email: string | null; created_at: string | null; }
 
 export default function TenantConsolePage() {
-  const { hasRole, authFetch } = useAuth();
+  const { user, authFetch } = useAuth();
   const { t } = useLanguage();
   const { show } = useToast();
-  const isSuper = hasRole(['super_admin']);
+  // Platform Console boundary: the backend gates these endpoints on the
+  // is_platform_developer flag, NOT on role — every self-signup owner is a
+  // super_admin, so a role gate here would show customers an empty console.
+  const isPlatformDev = Boolean(user?.is_platform_developer);
 
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [metrics, setMetrics] = useState<{ tenants_active: number; estimated_mrr_aed: number;
@@ -69,7 +72,7 @@ export default function TenantConsolePage() {
     setNotes(noteRes.ok ? (await noteRes.json()).notes ?? [] : []);
   }, [authFetch]);
 
-  useEffect(() => { if (isSuper) loadTenants(); else setLoading(false); }, [isSuper, loadTenants]);
+  useEffect(() => { if (isPlatformDev) loadTenants(); else setLoading(false); }, [isPlatformDev, loadTenants]);
 
   const applyStatus = async () => {
     if (!selected || !targetStatus) return;
@@ -109,14 +112,14 @@ export default function TenantConsolePage() {
     }
   };
 
-  if (!isSuper) {
+  if (!isPlatformDev) {
     return (
       <main className="min-h-screen p-4 md:p-8">
         <div className="max-w-3xl mx-auto">
           <Card padding="none">
             <NoPermissionState
-              title="Super-admin access required"
-              description="Tenant management is limited to super-admins."
+              title="Platform developer access required"
+              description="Tenant management is limited to platform developers."
             />
           </Card>
         </div>
