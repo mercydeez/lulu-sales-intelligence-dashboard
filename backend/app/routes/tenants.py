@@ -1,8 +1,15 @@
 """
 Tenant management API (multi-tenancy foundation).
 
-Mounted at /api/tenants by main.py. Super-admin only for now; once tenant-scoped
-auth lands, tenant admins will manage their own tenant here.
+Mounted at /api/tenants. Two distinct audiences share this router:
+
+- TENANT-SCOPED self-service (branding, usage, billing profile): a tenant admin
+  operating on their OWN tenant — gated by role, bound to current_user.tenant_id.
+- CROSS-TENANT operator surfaces (list all tenants, platform metrics, tenant
+  creation, lifecycle, support notes): Platform Console only. These gate on
+  `require_platform_developer`, NEVER on role — `super_admin` is a tenant role
+  that every self-signup owner holds (services/tenant_provisioning.py), so a
+  role check here would hand every customer the whole customer list.
 """
 import re
 from typing import Any, Dict, Optional
@@ -15,6 +22,7 @@ from app.services.plan_limits import usage_for_tenant
 from app.services.uae_profile import EDITABLE_FIELDS, validate_profile
 from app.services.tenant_lifecycle import change_tenant_status, STATES
 from app.routes.auth import get_current_user
+from app.services.platform_access import require_platform_developer
 from app.config import logger
 
 router = APIRouter(tags=["Tenants"])
@@ -239,11 +247,8 @@ def _row_to_tenant(row) -> dict:
 
 
 @router.get("")
-async def list_tenants(current_user: dict = Depends(get_current_user)):
-    """List all tenants (super-admin only)."""
-    if current_user.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-
+async def list_tenants(current_user: dict = Depends(require_platform_developer)):
+    """List all tenants (platform developers only — this is the entire customer list)."""
     async with async_session() as session:
         try:
             result = await session.execute(text("""
@@ -261,12 +266,10 @@ async def list_tenants(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/metrics")
-async def platform_metrics(current_user: dict = Depends(get_current_user)):
-    """Cross-tenant operator metrics (super-admin): tenant counts by status + plan,
-    total users, and an estimated MRR from list prices (enterprise counted separately
-    since it's custom-priced)."""
-    if current_user.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Super-admin access required")
+async def platform_metrics(current_user: dict = Depends(require_platform_developer)):
+    """Cross-tenant operator metrics (platform developers only): tenant counts by
+    status + plan, total users, and an estimated MRR from list prices (enterprise
+    counted separately since it's custom-priced)."""
     from app.services.billing import PLAN_PRICES_AED
     async with async_session() as session:
         by_status = {r.status: r.n for r in (await session.execute(text(
@@ -301,11 +304,8 @@ async def platform_metrics(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("", status_code=201)
-async def create_tenant(payload: TenantCreate, current_user: dict = Depends(get_current_user)):
-    """Create a new tenant (super-admin only)."""
-    if current_user.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-
+async def create_tenant(payload: TenantCreate, current_user: dict = Depends(require_platform_developer)):
+    """Create a new tenant (platform developers only)."""
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Tenant name is required")
@@ -336,7 +336,7 @@ async def create_tenant(payload: TenantCreate, current_user: dict = Depends(get_
             )
             row = result.fetchone()
             await session.commit()
-            logger.info(f"Super-admin {current_user.get('email')} created tenant '{slug}'")
+            logger.info(f"Platform developer {current_user.get('email')} created tenant '{slug}'")
             return _row_to_tenant(row)
         except HTTPException:
             raise
@@ -346,9 +346,9 @@ async def create_tenant(payload: TenantCreate, current_user: dict = Depends(get_
             raise HTTPException(status_code=500, detail="Failed to create tenant")
 
 
-# --- Platform-admin: tenant lifecycle + support notes (Phase 2) --------------
-# Super-admin (operator) only. Cross-tenant by design — these are operator
-# controls, not tenant self-service.
+# --- Platform Console: tenant lifecycle + support notes (Phase 2) ------------
+# Platform developers only. Cross-tenant by design — these are operator
+# controls, not tenant self-service, and they read/write other tenants' rows.
 
 class StatusChange(BaseModel):
     status: str
@@ -359,18 +359,12 @@ class NoteCreate(BaseModel):
     note: str
 
 
-def _require_super_admin(current_user: dict) -> None:
-    if current_user.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Super-admin access required")
-
-
 @router.patch("/{tenant_id}/status")
 async def change_status(tenant_id: int, payload: StatusChange,
-                        current_user: dict = Depends(get_current_user)):
+                        current_user: dict = Depends(require_platform_developer)):
     """Transition a tenant's lifecycle state (suspend / reactivate / cancel / …).
     Validated against the allowed-transition graph and audited in
     tenant_status_events."""
-    _require_super_admin(current_user)
     target = (payload.status or "").strip().lower()
     if target not in STATES:
         raise HTTPException(status_code=422,
@@ -387,7 +381,7 @@ async def change_status(tenant_id: int, payload: StatusChange,
             code = 404 if error == "Tenant not found" else 409
             raise HTTPException(status_code=code, detail=error)
         await session.commit()
-    logger.info(f"Super-admin {current_user.get('email')} set tenant {tenant_id} "
+    logger.info(f"Platform developer {current_user.get('email')} set tenant {tenant_id} "
                 f"-> {target} ({payload.reason or 'no reason'})")
     from app.services.security_events import record_event
     await record_event("tenant_status_changed", category="audit", severity="medium",
@@ -407,9 +401,8 @@ async def change_status(tenant_id: int, payload: StatusChange,
 
 @router.get("/{tenant_id}/status-events")
 async def list_status_events(tenant_id: int,
-                             current_user: dict = Depends(get_current_user)):
+                             current_user: dict = Depends(require_platform_developer)):
     """Lifecycle transition history for a tenant (operator audit view)."""
-    _require_super_admin(current_user)
     async with async_session() as session:
         rows = (await session.execute(text("""
             SELECT from_status, to_status, reason, changed_email, created_at
@@ -425,9 +418,8 @@ async def list_status_events(tenant_id: int,
 
 
 @router.get("/{tenant_id}/notes")
-async def list_notes(tenant_id: int, current_user: dict = Depends(get_current_user)):
+async def list_notes(tenant_id: int, current_user: dict = Depends(require_platform_developer)):
     """Operator support notes for a tenant."""
-    _require_super_admin(current_user)
     async with async_session() as session:
         rows = (await session.execute(text("""
             SELECT id, note, author_email, created_at
@@ -444,9 +436,8 @@ async def list_notes(tenant_id: int, current_user: dict = Depends(get_current_us
 
 @router.post("/{tenant_id}/notes", status_code=201)
 async def add_note(tenant_id: int, payload: NoteCreate,
-                   current_user: dict = Depends(get_current_user)):
+                   current_user: dict = Depends(require_platform_developer)):
     """Add an operator support note to a tenant."""
-    _require_super_admin(current_user)
     note = (payload.note or "").strip()
     if not note:
         raise HTTPException(status_code=400, detail="Note cannot be empty")

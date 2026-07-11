@@ -1,8 +1,11 @@
-"""E10-2 — tenant isolation-tier provisioning (super-admin control plane).
+"""E10-2 — tenant isolation-tier provisioning (platform control plane).
 
 Mounted at /api/admin/provisioning. This is cross-tenant infrastructure control,
-so every route is super-admin only. It governs the lifecycle that isolation.py
-enforces: a dedicated tier is served only once it is provisioned `active` here.
+so every route is platform-developer only (`require_platform_developer`) — NEVER
+role-gated: `super_admin` is a tenant role every self-signup owner holds, so a
+role check here would let any customer drive other tenants' provisioning. It
+governs the lifecycle that isolation.py enforces: a dedicated tier is served
+only once it is provisioned `active` here.
 """
 from typing import Optional
 
@@ -11,16 +14,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.database import get_db, async_session
-from app.routes.auth import get_current_user
+from app.services.platform_access import require_platform_developer
 from app.services import provisioning as prov
 from app.config import logger
 
 router = APIRouter(tags=["Provisioning"])
-
-
-def _require_super_admin(user: dict) -> None:
-    if user.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Super-admin access required")
 
 
 class TierRequest(BaseModel):
@@ -29,9 +27,8 @@ class TierRequest(BaseModel):
 
 
 @router.get("/provisioning")
-async def list_provisioning(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def list_provisioning(user: dict = Depends(require_platform_developer), db: AsyncSession = Depends(get_db)):
     """Every tenant's provisioning state."""
-    _require_super_admin(user)
     from sqlalchemy import text
     rows = (await db.execute(text("""
         SELECT tenant_id, tier, status, schema_name, db_ref, error,
@@ -49,8 +46,7 @@ async def list_provisioning(user: dict = Depends(get_current_user), db: AsyncSes
 
 
 @router.get("/provisioning/{tenant_id}")
-async def get_one(tenant_id: int, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    _require_super_admin(user)
+async def get_one(tenant_id: int, user: dict = Depends(require_platform_developer), db: AsyncSession = Depends(get_db)):
     rec = await prov.get_provisioning(db, tenant_id)
     if not rec:
         return {"tenant_id": tenant_id, "tier": "shared", "status": "none",
@@ -59,12 +55,11 @@ async def get_one(tenant_id: int, user: dict = Depends(get_current_user), db: As
 
 
 @router.post("/provisioning/request")
-async def request_tier(body: TierRequest, user: dict = Depends(get_current_user),
+async def request_tier(body: TierRequest, user: dict = Depends(require_platform_developer),
                        db: AsyncSession = Depends(get_db)):
     """Record intent to move a tenant onto `tier`. Does not provision yet."""
-    _require_super_admin(user)
     try:
-        rec = await prov.request_tier(db, body.tenant_id, body.tier, actor=user.get("email") or "super_admin")
+        rec = await prov.request_tier(db, body.tenant_id, body.tier, actor=user.get("email") or "platform_developer")
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     from app.services.security_events import record_event
@@ -76,13 +71,12 @@ async def request_tier(body: TierRequest, user: dict = Depends(get_current_user)
 
 
 @router.post("/provisioning/{tenant_id}/provision")
-async def provision(tenant_id: int, user: dict = Depends(get_current_user)):
+async def provision(tenant_id: int, user: dict = Depends(require_platform_developer)):
     """Execute the data-plane provisioning for the tenant's requested tier.
 
     dedicated_schema is provisioned in full here (schema + isolated core tables).
     dedicated_db returns the operator runbook step, recorded as `provisioning`.
     """
-    _require_super_admin(user)
     async with async_session() as db:
         try:
             rec = await prov.provision(db, tenant_id)
@@ -101,9 +95,8 @@ async def provision(tenant_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.post("/provisioning/{tenant_id}/deprovision")
-async def deprovision(tenant_id: int, force: bool = False, user: dict = Depends(get_current_user)):
+async def deprovision(tenant_id: int, force: bool = False, user: dict = Depends(require_platform_developer)):
     """Tear down a tenant's dedicated infrastructure and return them to shared."""
-    _require_super_admin(user)
     async with async_session() as db:
         try:
             rec = await prov.deprovision(db, tenant_id, force=force)
