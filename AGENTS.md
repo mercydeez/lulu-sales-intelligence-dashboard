@@ -17,9 +17,11 @@ Start with `docs/README.md` for the organized documentation index. If you need t
 docker compose up -d
 
 # Migrations now auto-apply on startup (services/migration_runner.run_migrations, called
-# from main.py lifespan) — no manual psql step. init.sql seeds a fresh volume; db_seeder
-# bulk-loads train.csv and date-shifts history so the latest day is "yesterday". No alembic
-# despite the alembic/ dir. To re-trigger a clean seed: docker compose down -v.
+# from main.py lifespan) — no manual psql step. db_seeder execs init.sql idempotently at
+# startup (no postgres-entrypoint mount in dev), bulk-loads train.csv and date-shifts
+# history so the latest day is "yesterday". alembic/ holds only the E6-2 baseline squash
+# (validated by test_alembic_baseline.py + the CI migrations job) — runtime migrations
+# stay plain SQL. To re-trigger a clean seed: docker compose down -v.
 
 # Full rebuild (Windows)
 ./rebuild.ps1
@@ -61,7 +63,7 @@ FastAPI (async SQLAlchemy 2 + asyncpg) + PostgreSQL 15 + Redis 7 + Next.js 14 Ap
 
 **Auth (post-pull):** `routes/auth.py` defines `get_current_user` / `require_role` / `require_permission`, and the data routers (`sales`, `kpis`, `analytics`, `history`, `inventory`, `promotions`, `reports`, `employees`, `procurement`, etc.) now depend on them with tenant + accessible-store scoping. `public_api` is API-key-authenticated (per-tenant `lsk_` keys). RBAC data (`users`, `user_permissions`, region→store expansion) lives in `init.sql`; permission aggregation is in `services/auth_service.py`. JWTs embed permissions at login; logout blacklists token hashes in Redis (checked by `SessionInvalidationMiddleware`, which fails open if Redis is down). Multi-tenancy: app-layer `tenant_id` scoping + Postgres RLS (migrations 010–012, FORCE-RLS opt-in via `USE_RLS_ROLE`).
 
-**Schema is managed three ways:** `database/init.sql` (auto-runs only on a fresh postgres volume — includes CSV bulk load and demo users), manual `database/migrations/00*.sql`, and a runtime employee migration (`services/employee_seeder.py` called from lifespan). `backend/alembic/` is empty/unused. To re-trigger init.sql: `docker compose down -v`.
+**Schema is managed three ways:** `database/init.sql` (executed idempotently by `db_seeder` at startup — includes CSV bulk load and demo users), `database/migrations/0*.sql` (auto-applied by the migration runner), and a runtime employee migration (`services/employee_seeder.py` called from lifespan). `backend/alembic/` carries only the E6-2 baseline squash used by CI — not runtime migrations. To re-trigger a clean seed: `docker compose down -v`.
 
 **Config:** `app/config.py` (pydantic-settings, env vars, `.env`). `settings.validate_security()` runs at startup and **raises in production/staging** on default secrets or `salespass` in the DB URL — set `JWT_SECRET_KEY`/`SECRET_KEY` ≥32 chars when testing with `ENVIRONMENT=production`.
 
@@ -74,8 +76,7 @@ FastAPI (async SQLAlchemy 2 + asyncpg) + PostgreSQL 15 + Redis 7 + Next.js 14 Ap
 - **Units vs currency (active accuracy focus).** The raw `sales` values are **units** (Kaggle store-item demand dataset, 10 stores × 50 items). Migration 005 added `items.unit_price_aed`, so AED **revenue is derived** as `SUM(sales * unit_price_aed)` (see `routes/kpis.py` — the reference implementation). The product convention is: VOLUME metrics in units, VALUE metrics in AED, **never mixed on one axis**. Phase 1 audited/enforced this across every sales reader and panel (see "Resolved" below); keep new code aligned with `routes/kpis.py`.
 - **Local test env drift.** `requirements.txt` pins `httpx==0.26.0`; a newer global `httpx` (≥0.28) removed the `app=` kwarg and breaks starlette's `TestClient`, failing the ~7 TestClient-based suites. Run `pytest` in a venv installed from `requirements.txt` (or in the container) — CI/Docker are unaffected.
 - Compose volume mounts suggest hot reload, but uvicorn lacks `--reload` and the frontend image serves a pre-built standalone bundle — rebuild containers (or run `npm run dev` on host) to see changes.
-- `database/seed_data.sql` is empty (0 bytes) yet mounted by the production compose; production compose also mounts `train.csv` at a path `init.sql`'s COPY doesn't read.
-**Resolved since the June 2026 audit** (don't re-report): the bare `RAISE NOTICE` in `init.sql` is now inside a `DO` block; `main.py` imports `EventSourceResponse` (working SSE is `/stream/sales`; `useSSE.ts` was deleted in favor of `hooks/useEventStream.ts`); migrations auto-apply on startup; history is date-shifted so "today/this week" KPIs are populated; CI now runs the full `pytest tests/` suite **and** `tsc --noEmit` (no longer `|| true`); **Phase 1 accuracy pass done** — units/AED audited & enforced across all sales readers/panels (fixed: admin Stores "Revenue (30d)" and "Sales Today" cards rendered units as AED; `KPICards` "Avg Daily Sales" mislabeled an AED value; `ai_assistant` store list now matches the `init.sql` seed and the prompt carries an explicit units≠AED convention).
+**Resolved since the June 2026 audit** (don't re-report): **E0-4** the stale prod-compose mounts are gone — `seed_data.sql` was deleted (nothing mounted it) and `train.csv` is intentionally NOT mounted in production, with `test_deploy_config.py` guarding both; the bare `RAISE NOTICE` in `init.sql` is now inside a `DO` block; `main.py` imports `EventSourceResponse` (working SSE is `/stream/sales`; `useSSE.ts` was deleted in favor of `hooks/useEventStream.ts`); migrations auto-apply on startup; history is date-shifted so "today/this week" KPIs are populated; CI now runs the full `pytest tests/` suite **and** `tsc --noEmit` (no longer `|| true`); **Phase 1 accuracy pass done** — units/AED audited & enforced across all sales readers/panels (fixed: admin Stores "Revenue (30d)" and "Sales Today" cards rendered units as AED; `KPICards` "Avg Daily Sales" mislabeled an AED value; `ai_assistant` store list now matches the `init.sql` seed and the prompt carries an explicit units≠AED convention).
 
 
 
