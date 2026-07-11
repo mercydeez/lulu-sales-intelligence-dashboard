@@ -27,6 +27,7 @@ from app.services.voice_service import (
     get_voices
 )
 from app.services.guardrails import screen_input, input_block_reason
+from app.services.flag_enforcement import flag_allows
 from app.routes.auth import get_current_user, get_accessible_store_ids
 
 router = APIRouter()
@@ -116,6 +117,11 @@ async def chat(request: ChatRequest, current_user: dict = Depends(require_ai_cha
     """
     Send a message to the AI chatbot (non-streaming)
     """
+    # B7: per-tenant customization kill-switch (fail-open when the flag engine is
+    # unavailable; the require_ai_chat role gate above stays the fail-closed floor).
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.ai_chat"):
+        raise HTTPException(status_code=403, detail="The AI assistant is disabled for this workspace")
+
     session_id = request.session_id or str(uuid.uuid4())
 
     if not request.message.strip():
@@ -203,6 +209,10 @@ async def chat_stream(request: ChatRequest, current_user: dict = Depends(require
     """
     Send a message to the AI chatbot with SSE streaming response
     """
+    # B7: per-tenant customization kill-switch (fail-open; see /chat).
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.ai_chat"):
+        raise HTTPException(status_code=403, detail="The AI assistant is disabled for this workspace")
+
     session_id = request.session_id or str(uuid.uuid4())
 
     if not request.message.strip():
@@ -291,6 +301,12 @@ async def voice_transcribe(request: VoiceTranscribeRequest, current_user: dict =
     """
     Transcribe audio to text using Deepgram STT
     """
+    # B7: voice needs both the assistant and the voice flag (fail-open).
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.ai_chat"):
+        raise HTTPException(status_code=403, detail="The AI assistant is disabled for this workspace")
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.voice"):
+        raise HTTPException(status_code=403, detail="Voice chat is disabled for this workspace")
+
     try:
         audio_data = base64.b64decode(request.audio_base64)
     except Exception:
@@ -319,6 +335,12 @@ async def voice_transcribe_file(
     """
     Transcribe uploaded audio file to text
     """
+    # B7: voice needs both the assistant and the voice flag (fail-open).
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.ai_chat"):
+        raise HTTPException(status_code=403, detail="The AI assistant is disabled for this workspace")
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.voice"):
+        raise HTTPException(status_code=403, detail="Voice chat is disabled for this workspace")
+
     audio_data = await audio.read()
     mimetype = audio.content_type or "audio/webm"
     
@@ -340,6 +362,12 @@ async def voice_synthesize(request: VoiceSynthesizeRequest, current_user: dict =
     """
     Synthesize text to speech using Deepgram TTS
     """
+    # B7: voice needs both the assistant and the voice flag (fail-open).
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.ai_chat"):
+        raise HTTPException(status_code=403, detail="The AI assistant is disabled for this workspace")
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.voice"):
+        raise HTTPException(status_code=403, detail="Voice chat is disabled for this workspace")
+
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
@@ -359,6 +387,12 @@ async def get_available_voices(current_user: dict = Depends(require_voice_chat))
     """
     Get list of available TTS voices
     """
+    # B7: voice needs both the assistant and the voice flag (fail-open).
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.ai_chat"):
+        raise HTTPException(status_code=403, detail="The AI assistant is disabled for this workspace")
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.voice"):
+        raise HTTPException(status_code=403, detail="Voice chat is disabled for this workspace")
+
     return {"voices": get_voices()}
 
 
@@ -374,6 +408,12 @@ async def voice_chat(
     """
     Complete voice chat: transcribe audio, get AI response, synthesize speech
     """
+    # B7: voice needs both the assistant and the voice flag (fail-open).
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.ai_chat"):
+        raise HTTPException(status_code=403, detail="The AI assistant is disabled for this workspace")
+    if not await flag_allows(current_user.get("tenant_id"), "assistant.voice"):
+        raise HTTPException(status_code=403, detail="Voice chat is disabled for this workspace")
+
     session_id = session_id or str(uuid.uuid4())
     
     # 1. Transcribe audio
