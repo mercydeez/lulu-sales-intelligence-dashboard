@@ -2,6 +2,8 @@
 
 import { DollarSign, TrendingUp, CalendarDays, ShoppingCart, Store, Activity } from 'lucide-react';
 import { StatCard } from '@/components/ui';
+import { useSalesTrend } from '@/lib/queries/analytics';
+import type { TrendPoint } from '@/types';
 import { formatCurrency, formatCompact } from './format';
 import { AnalyticsKpis } from './types';
 
@@ -17,6 +19,15 @@ function trendOf(t?: 'up' | 'down' | 'stable'): 'up' | 'down' | 'flat' {
 }
 
 export function AnalyticsKpiCards({ kpis, loading }: AnalyticsKpiCardsProps) {
+  // Real daily-revenue micro-trend for the KPI sparklines (last ~14 days of
+  // actuals). Dedups with SalesTrendPanel's identical query via TanStack Query.
+  const { data: trend } = useSalesTrend(30, false);
+  const revenueSeries = ((trend ?? []) as TrendPoint[])
+    .map((d) => d.sales)
+    .filter((v): v is number => v != null)
+    .slice(-14);
+  const spark = revenueSeries.length >= 2 ? revenueSeries : undefined;
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
       <StatCard
@@ -35,6 +46,7 @@ export function AnalyticsKpiCards({ kpis, loading }: AnalyticsKpiCardsProps) {
         icon={<CalendarDays className="w-5 h-5" />}
         trend={trendOf(kpis?.revenue_trend)}
         trendLabel={kpis?.revenue_trend === 'stable' ? 'steady' : 'wk/wk'}
+        sparkline={spark}
         loading={loading}
       />
       <StatCard
@@ -42,6 +54,7 @@ export function AnalyticsKpiCards({ kpis, loading }: AnalyticsKpiCardsProps) {
         label="Avg Daily Revenue"
         value={loading ? '—' : formatCurrency(kpis?.average_daily_revenue ?? 0)}
         icon={<TrendingUp className="w-5 h-5" />}
+        sparkline={spark}
         loading={loading}
       />
       <StatCard

@@ -13,15 +13,25 @@
  * invalidate together (e.g. `queryClient.invalidateQueries({ queryKey: ['analytics'] })`).
  */
 import { useQuery } from '@tanstack/react-query';
-import { fetchTopItems, fetchStoreDistribution, fetchCategoryBreakdown } from '@/lib/api';
-import type { TopItemPoint, StoreDistributionPoint, CategoryBreakdownPoint } from '@/types';
+import { fetchTopItems, fetchStoreDistribution, fetchCategoryBreakdown, fetchTrend } from '@/lib/api';
+import type { TopItemPoint, StoreDistributionPoint, CategoryBreakdownPoint, TrendPoint } from '@/types';
 
 export const analyticsKeys = {
   all: ['analytics'] as const,
   topItems: (limit: number) => ['analytics', 'top-items', limit] as const,
   storeDistribution: () => ['analytics', 'store-distribution'] as const,
   categoryBreakdown: () => ['analytics', 'category-breakdown'] as const,
+  trend: (days: number, forecast: boolean) => ['analytics', 'trend', days, forecast] as const,
 };
+
+/** Daily sales trend. Query-keyed so panels that fetch the same window (chart +
+ *  KPI sparkline) DEDUP to one request — a concrete win of the reactive layer. */
+export function useSalesTrend(days = 30, includeForecast = true) {
+  return useQuery<TrendPoint[]>({
+    queryKey: analyticsKeys.trend(days, includeForecast),
+    queryFn: async () => (await fetchTrend(days, includeForecast)).data ?? [],
+  });
+}
 
 /** Top-selling items by revenue. */
 export function useTopItems(limit = 10) {
