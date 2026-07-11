@@ -7,11 +7,16 @@
  * (what matters / do first / approve / AI can do / cost of ignoring) and fetch
  * ONLY existing endpoints. A new role's homepage = a new config, not a new page.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useExperience, KpiDescriptor } from '@/contexts/ExperienceContext';
-import { Button, ErrorState, SkeletonCard, Stagger, RevealItem } from '@/components/ui';
+import { Button, ErrorState, SkeletonCard } from '@/components/ui';
 import { apiGet } from '@/lib/apiClient';
+import { useBriefing } from '@/lib/queries/briefing';
+import { useDecisionTriage, type TriageDecision } from '@/lib/queries/decisions';
+import { useInventorySummary } from '@/lib/queries/inventory';
+import { useApprovalInbox } from '@/lib/queries/procurement';
 import { registerWidgets, resolveWidget, type WidgetProps } from '@/components/copilot/registry';
 // Side-effect import: the Copilot feed widgets (business_health, risks,
 // opportunities/growth, recommendations) register before zones resolve.
@@ -39,17 +44,20 @@ export default function TodayPage() {
           <ErrorState title="Couldn't load your workspace" description="Your role experience is unavailable."
             onRetry={() => setReloadKey((k) => k + 1)} />
         ) : (
-          <Stagger key={reloadKey} className="space-y-6">
+          <div key={reloadKey} className="space-y-6">
             {/* v2 homepage envelope with a v1 fallback, resolved against the open
                 widget registry. Unknown types (widgets a build doesn't ship yet)
-                degrade silently. */}
+                degrade silently. Each zone reveals INDEPENDENTLY (its own on-mount
+                animation) rather than through a parent stagger — the zones now
+                re-render as their query hooks resolve, which would interrupt a
+                parent-propagated stagger and leave later zones stuck hidden. */}
             {(config.homepage?.zones ?? config.zones).map((zone, i) => {
               const Zone = resolveWidget(zone.type);
               if (!Zone) return null;
               return (
-                <RevealItem key={`${zone.type}-${i}`}>
+                <div key={`${zone.type}-${i}`}>
                   <Zone config={config} spec={zone} />
-                </RevealItem>
+                </div>
               );
             })}
             <div className="flex items-center justify-between pt-2">
@@ -61,7 +69,7 @@ export default function TodayPage() {
                 <RefreshCw className="w-4 h-4" />
               </Button>
             </div>
-          </Stagger>
+          </div>
         )}
       </div>
     </main>
@@ -96,17 +104,8 @@ function ZoneError({ label, onRetry }: { label: string; onRetry: () => void }) {
 
 /* ── Q1: What matters to me now? — the persona verdict ── */
 function VerdictZone({ config }: ZoneProps) {
-  const [b, setB] = useState<{ greeting: string; tldr: string; headline: { summary: string } } | null>(null);
-  const [status, setStatus] = useState<ZoneStatus>('loading');
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let active = true;
-    setStatus('loading');
-    apiGet<typeof b>('/api/briefing')
-      .then((d) => { if (active) { setB(d); setStatus('ok'); } })
-      .catch(() => { if (active) setStatus('error'); });
-    return () => { active = false; };
-  }, [tick]);
+  const { data: b, isLoading, isError, refetch } = useBriefing();
+  const status: ZoneStatus = isLoading ? 'loading' : isError ? 'error' : 'ok';
   const p = config.persona;
   const headline =
     status === 'ok' && b ? b.headline.summary
@@ -130,7 +129,7 @@ function VerdictZone({ config }: ZoneProps) {
         </h1>
         {status === 'ok' && b?.tldr && <p className="mt-2 text-sm italic" style={white(0.75)}>{b.tldr}</p>}
         {status === 'error' && (
-          <button onClick={() => setTick((t) => t + 1)}
+          <button onClick={() => refetch()}
             className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 ring-1 ring-white/25 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/25 transition">
             <RefreshCw className="w-3.5 h-3.5" /> Try again
           </button>
@@ -163,17 +162,17 @@ const SOURCE_ENDPOINTS: Record<KpiDescriptor['source'], string> = {
 };
 
 function KpiZone({ config }: ZoneProps) {
-  const [data, setData] = useState<SourceData>({});
   const sources = Array.from(new Set(config.kpis.map((k) => k.source)));
-  const load = useCallback(() => {
-    sources.forEach((src) => {
-      apiGet<Record<string, unknown>>(SOURCE_ENDPOINTS[src])
-        .then((d) => setData((prev) => ({ ...prev, [src]: d })))
-        .catch(() => setData((prev) => ({ ...prev, [src]: null })));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.kpis.map((k) => k.source).join(',')]);
-  useEffect(() => { load(); }, [load]);
+  // One deduped query per distinct KPI source; useQueries handles the dynamic set.
+  const results = useQueries({
+    queries: sources.map((src) => ({
+      queryKey: ['today', 'kpi-source', src] as const,
+      queryFn: () => apiGet<Record<string, unknown>>(SOURCE_ENDPOINTS[src]),
+      staleTime: 30000,
+    })),
+  });
+  const data: SourceData = {};
+  sources.forEach((src, i) => { data[src] = results[i].data ?? null; });
 
   return (
     <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -194,11 +193,6 @@ function KpiZone({ config }: ZoneProps) {
 }
 
 /* ── Q2+Q3: decide first — top of the role-scoped triage ── */
-interface TriageDecision {
-  id: number | null; severity: string; problem: string;
-  impact: { aed: number | null; units: number | null; per: string | null };
-  recommended_action: string; href?: string; kind?: string;
-}
 const SEV_HEX: Record<string, string> = {
   critical: '#f43f5e', high: '#f97316', medium: '#f59e0b', low: 'var(--brand)',
 };
@@ -206,18 +200,9 @@ const SEV_HEX: Record<string, string> = {
 function DecisionsZone({ spec }: ZoneProps) {
   const limit = Number(spec.props?.limit ?? 3);
   const title = String(spec.props?.title ?? 'Decide now');
-  const [t, setT] = useState<{ total: number; executive: { decisions: TriageDecision[] } } | null>(null);
-  const [status, setStatus] = useState<ZoneStatus>('loading');
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let active = true;
-    setStatus('loading');
-    apiGet<typeof t>('/api/decisions/triage')
-      .then((d) => { if (active) { setT(d); setStatus('ok'); } })
-      .catch(() => { if (active) setStatus('error'); });
-    return () => { active = false; };
-  }, [tick]);
-  const decisions = t?.executive.decisions.slice(0, limit) ?? [];
+  const { data: t, isLoading, isError, refetch } = useDecisionTriage();
+  const status: ZoneStatus = isLoading ? 'loading' : isError ? 'error' : 'ok';
+  const decisions: TriageDecision[] = t?.executive.decisions.slice(0, limit) ?? [];
 
   return (
     <section>
@@ -225,7 +210,7 @@ function DecisionsZone({ spec }: ZoneProps) {
       {status === 'loading' ? (
         <SkeletonCard />
       ) : status === 'error' ? (
-        <ZoneError label="Couldn't load your decisions" onRetry={() => setTick((v) => v + 1)} />
+        <ZoneError label="Couldn't load your decisions" onRetry={() => refetch()} />
       ) : decisions.length === 0 ? (
         <div className="rounded-2xl bg-surface border border-line p-6 text-center">
           <Inbox className="w-6 h-6 text-teal-600 mx-auto mb-2" />
@@ -266,18 +251,9 @@ function DecisionsZone({ spec }: ZoneProps) {
 
 /* ── Q3 (regional): PO approvals waiting ── */
 function ApprovalsZone(_: ZoneProps) {
-  const [count, setCount] = useState<number | null>(null);
-  const [status, setStatus] = useState<ZoneStatus>('loading');
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let active = true;
-    setStatus('loading');
-    apiGet<{ count?: number }>('/api/procurement/approvals')
-      .then((d) => { if (active) { setCount(d.count ?? 0); setStatus('ok'); } })
-      .catch(() => { if (active) setStatus('error'); });
-    return () => { active = false; };
-  }, [tick]);
-  if (status === 'error') return <ZoneError label="Couldn't check approvals" onRetry={() => setTick((v) => v + 1)} />;
+  const { data, isError, refetch } = useApprovalInbox();
+  const count = data ? data.count : null;
+  if (isError) return <ZoneError label="Couldn't check approvals" onRetry={() => refetch()} />;
   return (
     <section className="rounded-2xl bg-surface border border-line shadow-card p-5 flex items-center justify-between gap-4">
       <div className="flex items-center gap-3 min-w-0">
@@ -300,18 +276,8 @@ function ApprovalsZone(_: ZoneProps) {
 
 /* ── Q5 (store): stockouts right now ── */
 function StockZone(_: ZoneProps) {
-  const [summary, setSummary] = useState<{ out_of_stock_count?: number; low_stock_count?: number } | null>(null);
-  const [status, setStatus] = useState<ZoneStatus>('loading');
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let active = true;
-    setStatus('loading');
-    apiGet<typeof summary>('/api/inventory/summary')
-      .then((d) => { if (active) { setSummary(d); setStatus('ok'); } })
-      .catch(() => { if (active) setStatus('error'); });
-    return () => { active = false; };
-  }, [tick]);
-  if (status === 'error') return <ZoneError label="Couldn't check your shelves" onRetry={() => setTick((v) => v + 1)} />;
+  const { data: summary, isError, refetch } = useInventorySummary();
+  if (isError) return <ZoneError label="Couldn't check your shelves" onRetry={() => refetch()} />;
   const out = summary?.out_of_stock_count ?? 0;
   const low = summary?.low_stock_count;
   return (
