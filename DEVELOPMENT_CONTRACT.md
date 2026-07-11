@@ -27,8 +27,9 @@ somewhere in this repo.
 
 1. **One source of truth per fact.** A business fact is computed in exactly one place and
    read everywhere else.
-   - Revenue is derived only via the SQL view / `backend/app/routes/kpis.py` (the
-     reference implementation) — never recomputed in JS or in another reader.
+   - Revenue is derived only via the SQL view / `backend/app/services/kpi_service.py` (the
+     reference implementation, re-exported by `routes/kpis.py`) — never recomputed in JS
+     or in another reader.
    - Product/brand naming lives in `frontend/src/lib/brand.ts` and
      `settings.product_name`, not in scattered string literals.
    - Role behavior lives in `role_experience._CONFIGS` (one record per role), not in
@@ -163,7 +164,7 @@ contexts, `config/nav.tsx`, `LanguageContext.tsx`, `types/index.ts`.
 
 **Contract seams** (cross-owner, change via small fast PR): `forecast_service.py` public
 API (Krishna → Atharva's briefing/decisions); the role_experience nav-manifest shape
-(Atharva config → Yash rendering); `routes/kpis.py` units/AED reference impl.
+(Atharva config → Yash rendering); `services/kpi_service.py` units/AED reference impl.
 
 ### AI / Sage
 `services/{llm,nl2sql,sage2,sage3,rag,federation}`, `routes/ai.py`, `routes/search.py`.

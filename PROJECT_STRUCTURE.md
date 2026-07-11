@@ -113,8 +113,10 @@ docs/                # architecture, product, production, runbooks, security, le
 (frontend).
 
 **Cross-layer edges to watch:**
-- `cache_warmer.py` & `forecast_trainer.py` import from `routes/kpis.py` &
-  `routes/analytics.py` (route modules double as service logic — Krishna owns both ends).
+- `cache_warmer.py` & `forecast_trainer.py` import from `services/kpi_service.py` &
+  `services/forecast_lab.py` (the compute layer extracted from the kpis/analytics routes
+  in July 2026 — services no longer import route modules; guarded by
+  `tests/test_dependency_direction.py`).
 - `briefing` (Atharva) depends on `roi` + `forecast_service` + `uae_intelligence`.
 - Frontend `Sidebar` renders the server `role_experience` nav manifest — the config is
   Atharva's, the rendering is Yash's; the manifest shape is the shared contract.
@@ -135,7 +137,7 @@ docs/                # architecture, product, production, runbooks, security, le
 
 - **Units vs AED (ADR-002):** raw `sales` are **units**; AED is derived
   (`SUM(units × unit_price_aed)`). VOLUME in units, VALUE in AED, **never mixed on one
-  axis**. `routes/kpis.py` is the reference implementation.
+  axis**. `services/kpi_service.py` is the reference implementation (re-exported by `routes/kpis.py`).
 - **Only build UI the backend supports** (ADR-007/008). No mock-backed surfaces in prod.
 - **Migrations are additive & idempotent** (ADR-005). No down-migrations.
 - **Middleware order** (main.py): SecurityHeaders → CSRF → BodySizeLimit →

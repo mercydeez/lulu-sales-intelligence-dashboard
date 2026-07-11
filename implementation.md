@@ -19,7 +19,7 @@ lives in git history and is not re-tracked here. Strategic/product rationale liv
   deferred until go-to-market.
 - **Accuracy is the product.** Every number Sage or a panel shows must be derivable and correct.
   Convention: VOLUME metrics in **units**, VALUE metrics in **AED**, never mixed on one axis
-  (reference: `backend/app/routes/kpis.py`).
+  (reference: `backend/app/services/kpi_service.py`).
 
 ## Status legend
 ✅ done · 🟡 in progress · ❌ not started · ⏭️ deferred

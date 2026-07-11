@@ -44,7 +44,7 @@ scans. **A PR merges only when CI is green and the CODEOWNERS reviewer approves.
 
 - **Units vs AED.** Raw `sales` are **units**; AED revenue is derived
   (`SUM(units × unit_price_aed)`). VOLUME in units, VALUE in AED, never mixed on one
-  axis. Align new sales code to `backend/app/routes/kpis.py`.
+  axis. Align new sales code to `backend/app/services/kpi_service.py` (re-exported by `routes/kpis.py`).
 - **Local test env drift.** `requirements.txt` pins `httpx==0.26.0`; a newer global
   httpx (≥0.28) removes the `app=` kwarg and breaks starlette's `TestClient`. Run
   `pytest` in a venv installed from `requirements.txt`, or in the container.
