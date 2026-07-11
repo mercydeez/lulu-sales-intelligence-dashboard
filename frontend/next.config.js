@@ -41,40 +41,18 @@ const nextConfig = {
       : SECURITY_HEADERS;
     return [{ source: '/:path*', headers }];
   },
-  // Reduce chunk size issues
+  // Tree-shake big barrel packages (Vercel-recommended for lucide-react/recharts).
   experimental: {
     optimizePackageImports: ['lucide-react', 'recharts'],
   },
-  // Webpack optimizations
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.optimization.splitChunks = {
-        chunks: 'all',
-        maxSize: 200000,
-        cacheGroups: {
-          default: false,
-          vendors: false,
-          // Vendor chunk
-          vendor: {
-            name: 'vendor',
-            chunks: 'all',
-            test: /node_modules/,
-            priority: 20,
-          },
-          // Common chunk
-          common: {
-            name: 'common',
-            minChunks: 2,
-            chunks: 'all',
-            priority: 10,
-            reuseExistingChunk: true,
-            enforce: true,
-          },
-        },
-      };
-    }
-    return config;
-  },
+  // NOTE: do NOT override webpack `optimization.splitChunks` here. The App Router
+  // ships its own splitChunks tuned to keep the RSC client-reference manifest and
+  // client-module chunks resolvable across navigations. A custom override
+  // (previously a `default:false, vendors:false` + broad `vendor` cacheGroup) mis-
+  // chunked those client modules, so prefetching a route's RSC payload failed with
+  // "Failed to fetch RSC payload … TypeError: a[e] is not a function" and every
+  // cross-page nav silently fell back to a full-page reload. Next's defaults are
+  // already well-tuned; leave chunking to the framework.
 }
 
 module.exports = nextConfig
