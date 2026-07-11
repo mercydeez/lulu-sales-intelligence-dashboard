@@ -70,17 +70,31 @@ html.light {
   --chart-tooltip-bg: #ffffff;
   --chart-tooltip-border: #e6e6e0;
 
-  /* Categorical chart palette — distinct, AA-contrast hues for color-coding
-     series/categories. Mirrored in lib/chart.ts (CHART_SERIES) so SVG fills and
-     Tailwind classes stay in sync. */
-  --series-1: #0f766e;  /* teal (brand)   */
-  --series-2: #6d49cf;  /* violet          */
-  --series-3: #d97706;  /* amber           */
-  --series-4: #c8451f;  /* coral           */
-  --series-5: #2563eb;  /* blue            */
-  --series-6: #0f8f73;  /* emerald         */
-  --series-7: #db2777;  /* pink            */
-  --series-8: #475569;  /* slate           */
+  /* Categorical chart palette — COLORBLIND-SAFE (based on the Wong 8-colour
+     palette, Nature Methods 2011), with series-1 kept as the brand teal so charts
+     still lead with brand and the ubiquitous actual-vs-forecast (1 vs 2) pair is
+     teal↔orange — distinguishable under protanopia/deuteranopia/tritanopia.
+     Never rely on colour alone (WCAG 1.4.1): pair with markers/dashes/patterns.
+     Consumed via var(--series-N) / var(--color-chart-N) in lib/chart.ts. */
+  --series-1: #0F766E;  /* brand teal (anchor)        */
+  --series-2: #E69F00;  /* Wong orange                */
+  --series-3: #0072B2;  /* Wong blue                  */
+  --series-4: #D55E00;  /* Wong vermillion            */
+  --series-5: #CC79A7;  /* Wong reddish-purple        */
+  --series-6: #56B4E9;  /* Wong sky blue              */
+  --series-7: #B8860B;  /* dark gold (Wong yellow, darkened for light-bg AA) */
+  --series-8: #3A3A3A;  /* near-black grey (Wong black, softened) */
+
+  /* Semantic chart-token aliases (2026 shadcn/Recharts convention). New charts
+     should reference --color-chart-N; they resolve to the Wong series above. */
+  --color-chart-1: var(--series-1);
+  --color-chart-2: var(--series-2);
+  --color-chart-3: var(--series-3);
+  --color-chart-4: var(--series-4);
+  --color-chart-5: var(--series-5);
+  --color-chart-6: var(--series-6);
+  --color-chart-7: var(--series-7);
+  --color-chart-8: var(--series-8);
 
   /* Accent channels (rgb) for tints via rgb(var(--a-x) / <alpha>) */
   --a-teal: 15 118 110;
@@ -152,15 +166,17 @@ html.dark {
   --chart-tooltip-bg: #1b1f21;
   --chart-tooltip-border: #2c3236;
 
-  /* Categorical palette, one step brighter for dark surfaces (AA for graphics) */
-  --series-1: #2da88a;  /* teal (brand)   */
-  --series-2: #a78bfa;  /* violet          */
-  --series-3: #f0a13c;  /* amber           */
-  --series-4: #e87a55;  /* coral           */
-  --series-5: #60a5fa;  /* blue            */
-  --series-6: #34c39c;  /* emerald         */
-  --series-7: #f472b6;  /* pink            */
-  --series-8: #94a3b8;  /* slate           */
+  /* Colorblind-safe Wong palette, brightened for dark surfaces (AA for graphics).
+     series-1 stays brand teal; series-8 becomes light grey (Wong black is invisible
+     on dark). Mirrors the light-mode order so charts theme-swap cleanly. */
+  --series-1: #2DD4BF;  /* brand teal (bright)   */
+  --series-2: #F0A400;  /* orange                 */
+  --series-3: #4EA6DC;  /* blue                   */
+  --series-4: #FF7043;  /* vermillion             */
+  --series-5: #E38EC4;  /* reddish-purple         */
+  --series-6: #7FC7EF;  /* sky blue               */
+  --series-7: #F0E442;  /* Wong yellow (OK on dark) */
+  --series-8: #CBD5E1;  /* light slate            */
 
   --a-teal: 45 168 138;
   --a-violet: 167 139 250;

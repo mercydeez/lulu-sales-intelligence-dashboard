@@ -12,7 +12,12 @@
  *   <Bar dataKey="revenue" fill={seriesColor(0)} radius={[6,6,0,0]} />
  */
 
-/** Distinct, AA-contrast categorical hues (brand teal leads).
+/** COLORBLIND-SAFE categorical hues — the Wong palette (Nature Methods 2011)
+ * with series-1 kept as the brand teal. Chosen so the sequence stays distinct
+ * under protanopia/deuteranopia/tritanopia; the common actual-vs-forecast pair
+ * (1 vs 2) is teal↔orange, distinguishable under every CVD type. Always pair
+ * colour with a second channel (dash/marker/pattern) — never colour alone
+ * (WCAG 1.4.1).
  *
  * These resolve through the CSS `--series-*` vars so every chart follows the
  * active theme (globals.css defines light values + brightened dark values)
@@ -20,14 +25,14 @@
  * do NOT string-manipulate these (no `+ '33'` alpha suffixes); use
  * stopOpacity/fillOpacity props for transparency instead. */
 export const CHART_SERIES = [
-  'var(--series-1)', // teal (brand)
-  'var(--series-2)', // violet
-  'var(--series-3)', // amber
-  'var(--series-4)', // coral
-  'var(--series-5)', // blue
-  'var(--series-6)', // emerald
-  'var(--series-7)', // pink
-  'var(--series-8)', // slate
+  'var(--series-1)', // brand teal (anchor)
+  'var(--series-2)', // orange
+  'var(--series-3)', // blue
+  'var(--series-4)', // vermillion
+  'var(--series-5)', // reddish-purple
+  'var(--series-6)', // sky blue
+  'var(--series-7)', // gold / yellow
+  'var(--series-8)', // grey
 ] as const;
 
 /** Cycle the categorical palette by index. */
@@ -44,19 +49,21 @@ const GRID = 'var(--chart-grid)';
 const AXIS_TEXT = 'var(--chart-text)';
 
 /**
- * Brand-aligned named chart colors. Replaces the retired
- * `components/analytics/chartTheme.ts` ("Sunset Pop") palette. Teal leads as the
- * primary/brand hue; coral is reserved for attention/returns signals only.
+ * Named chart colours by SEMANTIC ROLE (stable API for consumers). The keys are
+ * legacy names; they now resolve to the colorblind-safe Wong palette (see
+ * CHART_SERIES) — e.g. `violet` is the 2nd series (orange) used for
+ * forecast/predicted, `coral` is the 4th (vermillion) reserved for
+ * attention/returns. Keep referencing by role; the underlying hue is CVD-safe.
  */
 export const CHART = {
-  teal: CHART_SERIES[0],   // brand / primary series (sales, actual)
-  violet: CHART_SERIES[1], // forecast / predicted
-  amber: CHART_SERIES[2],  // secondary
-  coral: CHART_SERIES[3],  // attention / returns ONLY
-  blue: CHART_SERIES[4],
-  emerald: CHART_SERIES[5],
-  pink: CHART_SERIES[6],
-  slate: CHART_SERIES[7],
+  teal: CHART_SERIES[0],   // brand / primary series (sales, actual) — teal
+  violet: CHART_SERIES[1], // forecast / predicted — Wong orange
+  amber: CHART_SERIES[2],  // secondary — Wong blue
+  coral: CHART_SERIES[3],  // attention / returns ONLY — Wong vermillion
+  blue: CHART_SERIES[4],   // Wong reddish-purple
+  emerald: CHART_SERIES[5],// Wong sky blue
+  pink: CHART_SERIES[6],   // gold
+  slate: CHART_SERIES[7],  // grey
   grid: GRID,
   axis: AXIS_TEXT,
 } as const;
