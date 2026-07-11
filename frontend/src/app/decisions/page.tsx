@@ -9,7 +9,8 @@
  * no price), evidence, confidence, action, and expected outcome. Approve/dismiss
  * reuse the findings endpoints so the measure loop proves whether it worked.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -79,33 +80,38 @@ const LANE_ICON = { regional: MapPin, store: Store, automate: Bot } as const;
 export default function DecisionsPage() {
   const { user } = useAuth();
   const { show } = useToast();
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<'pending' | 'decided'>('pending');
-  const [triage, setTriage] = useState<Triage | null>(null);
-  const [decided, setDecided] = useState<DecidedResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   // Single-slot undo for the last dismissal (acknowledge() reopens it server-side).
   const [undoable, setUndoable] = useState<{ id: number; problem: string } | null>(null);
 
-  const fetchAll = useCallback(async () => {
-    const [t, d] = await Promise.all([
-      apiGet<Triage>('/api/decisions/triage'),
-      apiGet<DecidedResponse>('/api/decisions?state=decided'),
-    ]);
-    setTriage(t); setDecided(d);
-  }, []);
+  // Reactive triage + decided log. Rich page-local types (Triage/DecidedResponse)
+  // differ from the Today zone's lighter view of /api/decisions/triage, so these
+  // queries stay local rather than sharing lib/queries/decisions.
+  const triageQuery = useQuery<Triage>({
+    queryKey: ['decisions', 'triage-full'],
+    queryFn: () => apiGet<Triage>('/api/decisions/triage'),
+  });
+  const decidedQuery = useQuery<DecidedResponse>({
+    queryKey: ['decisions', 'decided'],
+    queryFn: () => apiGet<DecidedResponse>('/api/decisions?state=decided'),
+  });
+  const triage: Triage | null = triageQuery.data ?? null;
+  const decided: DecidedResponse | null = decidedQuery.data ?? null;
+  const loading = triageQuery.isLoading || decidedQuery.isLoading;
+  const queryErr = triageQuery.error ?? decidedQuery.error;
+  const error = queryErr instanceof ApiError ? queryErr.message
+    : (triageQuery.isError || decidedQuery.isError) ? 'Failed to load decisions' : null;
 
-  const load = useCallback(async () => {
-    setLoading(true); setError(null); setUndoable(null);
-    try { await fetchAll(); }
-    catch (e) { setError(e instanceof ApiError ? e.message : 'Failed to load decisions'); }
-    finally { setLoading(false); }
-  }, [fetchAll]);
-  useEffect(() => { load(); }, [load]);
+  const load = () => {
+    setUndoable(null);
+    triageQuery.refetch();
+    decidedQuery.refetch();
+  };
 
   // After acting, silently re-triage so the next-ranked decision promotes in.
-  const refresh = useCallback(() => { fetchAll().catch(() => {}); }, [fetchAll]);
+  const refresh = () => { queryClient.invalidateQueries({ queryKey: ['decisions'] }); };
 
   const act = async (d: Decision, kind: 'approve' | 'dismiss' | 'draft') => {
     if (d.id == null) return;
@@ -146,7 +152,7 @@ export default function DecisionsPage() {
     onApprove: () => act(d, 'approve'), onDismiss: () => act(d, 'dismiss'), onDraft: () => act(d, 'draft'),
   });
   const firstName = (user?.email ?? '').split('@')[0].split(/[._-]/)[0];
-  const exec = triage?.executive.decisions ?? [];
+  const exec: Decision[] = triage?.executive.decisions ?? [];
 
   return (
     <main className="min-h-screen px-4 md:px-8 py-6 md:py-10">

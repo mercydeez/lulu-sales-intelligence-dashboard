@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import {
@@ -23,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button, Badge, Card, ErrorState, SkeletonCard, Stagger, RevealItem, Tabs } from '@/components/ui';
-import { apiGet, ApiError } from '@/lib/apiClient';
+import { apiGet } from '@/lib/apiClient';
 import { ROLE_DISPLAY_NAMES, type UserRole } from '@/types/auth';
 
 type PersonaKey = 'senior_vp' | 'store_manager' | 'storekeeper';
@@ -259,43 +260,37 @@ function roleToPersona(role?: UserRole): PersonaKey {
 export default function RoleWorkbenchPage() {
   const { user } = useAuth();
   const [activeRole, setActiveRole] = useState<PersonaKey>(() => roleToPersona(user?.role));
-  const [data, setData] = useState<WorkbenchData>({ kpis: null, decisions: null, inventory: null, approvals: null });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [doneChecks, setDoneChecks] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setActiveRole(roleToPersona(user?.role));
   }, [user?.role]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [kpis, decisions, inventory, approvals] = await Promise.allSettled([
-        apiGet<Kpis>('/api/kpis'),
-        apiGet<DecisionsSummary>('/api/decisions/summary'),
-        apiGet<InventorySummary>('/api/inventory/summary'),
-        apiGet<ApprovalsSummary>('/api/procurement/approvals'),
-      ]);
-      setData({
-        kpis: kpis.status === 'fulfilled' ? kpis.value : null,
-        decisions: decisions.status === 'fulfilled' ? decisions.value : null,
-        inventory: inventory.status === 'fulfilled' ? inventory.value : null,
-        approvals: approvals.status === 'fulfilled' ? approvals.value : null,
-      });
-      const failed = [kpis, decisions, inventory, approvals].filter((r) => r.status === 'rejected').length;
-      if (failed === 4) setError('Could not load role workbench data.');
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not load role workbench data.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Four independent reads, each tolerant of failure (the panel for a missing
+  // source just shows em-dashes); only a total wipeout surfaces a page error.
+  const kpisQuery = useQuery<Kpis>({ queryKey: ['role-workbench', 'kpis'], queryFn: () => apiGet<Kpis>('/api/kpis') });
+  const decisionsQuery = useQuery<DecisionsSummary>({ queryKey: ['role-workbench', 'decisions-summary'], queryFn: () => apiGet<DecisionsSummary>('/api/decisions/summary') });
+  const inventoryQuery = useQuery<InventorySummary>({ queryKey: ['role-workbench', 'inventory-summary'], queryFn: () => apiGet<InventorySummary>('/api/inventory/summary') });
+  const approvalsQuery = useQuery<ApprovalsSummary>({ queryKey: ['role-workbench', 'approvals'], queryFn: () => apiGet<ApprovalsSummary>('/api/procurement/approvals') });
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const data: WorkbenchData = {
+    kpis: kpisQuery.data ?? null,
+    decisions: decisionsQuery.data ?? null,
+    inventory: inventoryQuery.data ?? null,
+    approvals: approvalsQuery.data ?? null,
+  };
+  // Gate on the combined loading flag so the animated content mounts once (after
+  // all four settle) rather than re-rendering per-query mid-entrance.
+  const loading = kpisQuery.isLoading || decisionsQuery.isLoading || inventoryQuery.isLoading || approvalsQuery.isLoading;
+  const allFailed = kpisQuery.isError && decisionsQuery.isError && inventoryQuery.isError && approvalsQuery.isError;
+  const error = allFailed ? 'Could not load role workbench data.' : null;
+
+  const load = () => {
+    kpisQuery.refetch();
+    decisionsQuery.refetch();
+    inventoryQuery.refetch();
+    approvalsQuery.refetch();
+  };
 
   const role = useMemo(() => ROLE_SPECS.find((r) => r.key === activeRole) ?? ROLE_SPECS[0], [activeRole]);
   const currentRole = user?.role ? ROLE_DISPLAY_NAMES[user.role] || user.role : 'Demo viewer';
