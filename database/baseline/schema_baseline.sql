@@ -789,6 +789,37 @@ CREATE SEQUENCE public.basket_associations_id_seq
 
 ALTER SEQUENCE public.basket_associations_id_seq OWNED BY public.basket_associations.id;
 
+CREATE TABLE public.bespoke_requests (
+    id integer NOT NULL,
+    tenant_id integer,
+    title text NOT NULL,
+    client_description text NOT NULL,
+    status text DEFAULT 'requested'::text NOT NULL,
+    priority text DEFAULT 'medium'::text NOT NULL,
+    scoping_notes text,
+    estimate text,
+    ai_suggestion jsonb,
+    delivered_at timestamp with time zone,
+    created_by text,
+    updated_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT bespoke_declined_has_reason CHECK (((status <> 'declined'::text) OR (scoping_notes IS NOT NULL))),
+    CONSTRAINT bespoke_delivered_has_timestamp CHECK (((status <> 'delivered'::text) OR (delivered_at IS NOT NULL))),
+    CONSTRAINT bespoke_requests_priority_check CHECK ((priority = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'vip'::text]))),
+    CONSTRAINT bespoke_requests_status_check CHECK ((status = ANY (ARRAY['requested'::text, 'scoped'::text, 'approved'::text, 'building'::text, 'delivered'::text, 'declined'::text])))
+);
+
+CREATE SEQUENCE public.bespoke_requests_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.bespoke_requests_id_seq OWNED BY public.bespoke_requests.id;
+
 CREATE TABLE public.company_targets (
     id bigint NOT NULL,
     tenant_id integer DEFAULT 1 NOT NULL,
@@ -3505,10 +3536,13 @@ CREATE TABLE public.users (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     tenant_id integer DEFAULT 1 NOT NULL,
     two_factor_backup_codes jsonb DEFAULT '[]'::jsonb NOT NULL,
-    email_verified boolean DEFAULT true NOT NULL
+    email_verified boolean DEFAULT true NOT NULL,
+    is_platform_developer boolean DEFAULT false NOT NULL
 );
 
 ALTER TABLE ONLY public.users FORCE ROW LEVEL SECURITY;
+
+COMMENT ON COLUMN public.users.is_platform_developer IS 'Platform-operator boundary (Platform Console). TRUE only for the vendor''s own developers — never for tenant admins. Checked by services/platform_access.py, which may additionally require membership in the PLATFORM_DEVELOPER_EMAILS allowlist. A tenant super_admin does NOT imply this.';
 
 CREATE SEQUENCE public.users_id_seq
     AS integer
@@ -3596,6 +3630,8 @@ ALTER TABLE ONLY public.audit_log ALTER COLUMN id SET DEFAULT nextval('public.au
 ALTER TABLE ONLY public.auth_tokens ALTER COLUMN id SET DEFAULT nextval('public.auth_tokens_id_seq'::regclass);
 
 ALTER TABLE ONLY public.basket_associations ALTER COLUMN id SET DEFAULT nextval('public.basket_associations_id_seq'::regclass);
+
+ALTER TABLE ONLY public.bespoke_requests ALTER COLUMN id SET DEFAULT nextval('public.bespoke_requests_id_seq'::regclass);
 
 ALTER TABLE ONLY public.company_targets ALTER COLUMN id SET DEFAULT nextval('public.company_targets_id_seq'::regclass);
 
@@ -3782,6 +3818,9 @@ ALTER TABLE ONLY public.auth_tokens
 
 ALTER TABLE ONLY public.basket_associations
     ADD CONSTRAINT basket_associations_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.bespoke_requests
+    ADD CONSTRAINT bespoke_requests_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.company_targets
     ADD CONSTRAINT company_targets_pkey PRIMARY KEY (id);
@@ -4478,6 +4517,10 @@ CREATE INDEX ix_action_drafts_finding ON public.action_drafts USING btree (findi
 
 CREATE INDEX ix_action_drafts_tenant_status ON public.action_drafts USING btree (tenant_id, status, created_at DESC);
 
+CREATE INDEX ix_bespoke_requests_status ON public.bespoke_requests USING btree (status);
+
+CREATE INDEX ix_bespoke_requests_tenant ON public.bespoke_requests USING btree (tenant_id);
+
 CREATE INDEX ix_data_requests_status ON public.data_requests USING btree (status) WHERE (status = 'pending'::text);
 
 CREATE INDEX ix_data_requests_tenant ON public.data_requests USING btree (tenant_id, created_at DESC);
@@ -4718,6 +4761,9 @@ ALTER TABLE ONLY public.basket_associations
 
 ALTER TABLE ONLY public.basket_associations
     ADD CONSTRAINT basket_associations_item_b_id_fkey FOREIGN KEY (item_b_id) REFERENCES public.items(id);
+
+ALTER TABLE ONLY public.bespoke_requests
+    ADD CONSTRAINT bespoke_requests_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.competitor_prices
     ADD CONSTRAINT competitor_prices_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);

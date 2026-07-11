@@ -163,7 +163,10 @@ async def test_chat_route_refuses_when_tenant_flag_disabled(monkeypatch):
     finally:
         app.dependency_overrides.clear()
     assert resp.status_code == 403
-    assert "disabled for this workspace" in resp.json()["detail"]
+    # The app's exception handler wraps HTTPException.detail as `message` in a
+    # structured envelope ({error, status_code, message, path, timestamp}).
+    body = resp.json()
+    assert "disabled for this workspace" in (body.get("message") or body.get("detail") or "")
 
 
 # --------------------------------------------------------------------------
