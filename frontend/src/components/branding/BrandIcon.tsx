@@ -1,4 +1,5 @@
 import { SVGProps } from 'react';
+import { PRODUCT_NAME } from '@/lib/brand';
 
 export interface BrandIconProps extends Omit<SVGProps<SVGSVGElement>, 'viewBox' | 'width' | 'height'> {
   /** pixel size (width & height); default 32 */
@@ -10,13 +11,13 @@ export interface BrandIconProps extends Omit<SVGProps<SVGSVGElement>, 'viewBox' 
 }
 
 /**
- * RetailIQ mark — ascending growth bars fused into a bold "R".
+ * Brand mark — ascending growth bars fused into a bold "R".
  *
  * Single-color (currentColor) so it adapts to context: set the color via
  * `className` (e.g. `text-[#17284B]`, `text-white`) or let it inherit. Geometry
  * lives here and in `public/branding/*.svg` — keep the two in sync if edited.
  */
-export function BrandIcon({ size = 32, title = 'RetailIQ', decorative = false, ...props }: BrandIconProps) {
+export function BrandIcon({ size = 32, title = PRODUCT_NAME, decorative = false, ...props }: BrandIconProps) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
