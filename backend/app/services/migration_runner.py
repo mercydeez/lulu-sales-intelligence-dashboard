@@ -127,3 +127,14 @@ async def run_migrations():
                 logger.error(f"Failed to apply migration {filename}: {e}")
                 # Since we are in engine.begin() context manager, this transaction will automatically rollback.
                 raise e
+
+    # Deploy blocker fix: migrations 020/029/035 (re)assert hardcoded DEV
+    # passwords on the least-privilege roles (app_rw / worker_rw), while a real
+    # deployment hands the API/worker operator-chosen secrets via
+    # RLS_DATABASE_URL / WORKER_DB_PASSWORD. After every migration pass — this
+    # function is the choke point for BOTH `python -m app.commands.migrate` and
+    # the RUN_MIGRATIONS_ON_STARTUP lifespan path — re-sync the role passwords
+    # from the environment so those services can actually authenticate. No-op
+    # when the env vars are unset (dev); idempotent; never raises.
+    from app.services.role_password_sync import sync_role_passwords
+    await sync_role_passwords()

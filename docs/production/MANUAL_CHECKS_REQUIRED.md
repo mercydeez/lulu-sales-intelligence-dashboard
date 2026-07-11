@@ -10,6 +10,15 @@
 - [ ] Set strong `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `WORKER_DB_PASSWORD`
       (no `salespass`, no defaults). Confirm `validate_security()` boots clean in
       `ENVIRONMENT=production`.
+- [ ] Set `WORKER_DB_PASSWORD` and `RLS_DATABASE_URL` (and `SAGE_DATABASE_URL`
+      if used) **before first boot** — the `worker_rw` / `app_rw` / `sage_ro`
+      DB role passwords are **synced automatically at migrate time** from those
+      env values (no manual `ALTER ROLE` needed). They must be present in the
+      **migrate job's** environment; a production migrate run without them logs
+      a WARNING and leaves the dev passwords in place. Verify by connection,
+      not inspection: `psql -c "\du"` never shows passwords — confirm
+      `/health/ready` passes and the worker connects without
+      `password authentication failed`.
 - [ ] Set `CORS_ORIGINS` to the real frontend origin(s) — never `*`.
 - [ ] Confirm `DEMO_MODE=false` for a real-data pilot (and `LIVE_GENERATOR_ENABLED`
       stays off without demo mode).

@@ -9,8 +9,9 @@
 -- (re)asserts the dev password so already-migrated volumes match the password the
 -- compose file hands the worker via WORKER_DATABASE_URL.
 --
--- Production: the dev default mirrors WORKER_DB_PASSWORD's default. If you override
--- that env var, re-assert it once after migrations: ALTER ROLE worker_rw PASSWORD '...'.
+-- Production: this dev default is overwritten automatically after every migration
+-- pass — backend/app/services/role_password_sync.py re-asserts the password from
+-- WORKER_DB_PASSWORD (and app_rw's from RLS_DATABASE_URL). No manual ALTER ROLE.
 
 DO $$
 BEGIN

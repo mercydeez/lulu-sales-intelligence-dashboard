@@ -18,6 +18,9 @@ async def _main() -> int:
     logger.info("[migrate] applying database migrations…")
     await init_db()
     try:
+        # run_migrations also syncs the least-privilege role passwords (app_rw,
+        # worker_rw) from RLS_DATABASE_URL / WORKER_DB_PASSWORD after the
+        # migration loop — see services/role_password_sync.py.
         await run_migrations()
         logger.info("[migrate] migrations applied successfully")
         return 0
