@@ -1,9 +1,17 @@
 'use client';
 
-import { Modal } from '@/components/ui';
+import dynamic from 'next/dynamic';
+import { createElement } from 'react';
+import { Modal, Skeleton } from '@/components/ui';
 import { Employee } from './types';
 import { EmployeeBioCard } from './EmployeeBioCard';
-import { EmployeePerformanceChart } from './EmployeePerformanceChart';
+
+// Recharts-backed — split out so the employees route doesn't ship it up front;
+// the chart only renders inside this modal once an employee is selected.
+const EmployeePerformanceChart = dynamic(
+  () => import('./EmployeePerformanceChart').then((m) => m.EmployeePerformanceChart),
+  { ssr: false, loading: () => createElement(Skeleton, { className: 'h-64 w-full rounded-2xl' }) },
+);
 
 interface EmployeeDetailModalProps {
   employee: Employee | null;
