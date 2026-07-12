@@ -4,7 +4,7 @@ Branch: `feature/design-system-v3`, merged into
 `prototype-evolution-accuracy-bullmq`. Phase: Executive Briefing / Home (all three
 Home surfaces: `/today`, `/briefing`, `/copilot`).
 
-## Status: foundation shipped; `/briefing` adopted; `/today` + `/copilot` next
+## Status: ✅ done — all three Home surfaces adopted
 
 P1 delivers "one Home system." That system is a small set of **shared components**
 every Home surface composes. This commit ships those components (additive,
@@ -45,24 +45,41 @@ white-on-mesh text handled so the hero stays legible; sentence case; RTL-safe.
   every state. **B06** (loading skeleton) and **B07** (empty, now on `HeroVerdict`)
   standardized.
 
-### ▶️ Next — remaining Home surfaces (focused step)
-- **`/today`** — the `verdict` zone adopts `HeroVerdict` + `useBriefing` and the
-  `kpis` zone adopts `MetricStrip`, editing the registered widgets (not the page
-  shell). Kept registry-safe. Plus **B04** (experience-fallback state).
-- **`/copilot`** — wrap in `HomeTemplate`; feed widgets + ask box keep working, framed
-  by the shared hero/answer grammar.
+### ✅ Done — `/today` adopted
+- **`VerdictZone`** now renders through `HeroVerdict` instead of hand-rolled
+  `hero-mesh` markup. Data source unchanged (`useBriefing` from
+  `lib/queries/briefing`) — only presentation moved onto the shared component.
+  Registry-safe: still registered under `verdict`/`briefing_hero`, page shell
+  (the zone-map loop reading `config.homepage?.zones ?? config.zones`) untouched.
+- **`KpiZone`** now renders through `MetricStrip` instead of a hand-rolled grid;
+  `formatKpi` still supplies formatted text, `MetricStrip` now owns the
+  trend icon/color instead of `KpiZone` inlining one.
+- **B04** (experience-fallback state) added: when the config loads but resolves
+  to zero homepage zones (missing/degraded manifest), the page now renders
+  `EmptyState` with a refresh action instead of a silent blank page.
 
-Rationale for splitting the phase here: the three pages are 1,024 lines total and
-two are already polished; a rushed same-session rewrite risked regression. The
-shared system is the high-value, low-risk core and is best reviewed before the
-page refactors land on top of it.
+### ✅ Done — `/copilot` adopted
+- Page now wraps in `HomeTemplate` (same `min-h-screen`/`max-w-3xl` container it
+  already used, now shared).
+- Persona header rebuilt on `HeroVerdict`; the `ai_context` scope/focus pills use
+  the `chips` slot and the embedded ask box + suggested prompts use the `cta`
+  slot (a full-width block), so they still render inside the same hero card.
+- Loading/error states now match the `/briefing` reference pattern exactly
+  (`HomeTemplate` wrapping `SkeletonCard`s / `ErrorState`).
+- Proactive feed (non-verdict zones) unchanged: same registry, same filter,
+  same `Stagger`/`RevealItem` reveal.
+
+All three Home surfaces (`/today`, `/briefing`, `/copilot`) now compose the same
+`HeroVerdict` → `MetricStrip`/feed → `AiAnswerBlock` anatomy. P1 exit criteria met:
+one AI grammar across all three; B04 added; B06/B07 already covered by `/briefing`.
 
 ## Files
 **Added:** `components/ui/{HeroVerdict,MetricStrip}.tsx`, `components/ai/{AiAnswerBlock,index}.ts(x)`,
 `components/templates/{HomeTemplate,index}.ts(x)`, `design/progress/P1_HOME.md`.
-**Modified:** `components/ui/index.ts` (exports), `design/IMPLEMENTATION_PLAN.md` (status).
+**Modified:** `components/ui/index.ts` (exports), `app/today/page.tsx`,
+`app/copilot/page.tsx`, `design/IMPLEMENTATION_PLAN.md` (status).
 
 ## Guardrails met
-`tsc` ✅ · `next build` ✅ (46/46; `/today`, `/briefing`, `/copilot` compile) · routes,
-RBAC, SSE, API contracts preserved · backend frozen · no page rewritten for structure
-alone.
+`tsc --noEmit` ✅ · `next build` ✅ (51/51; `/today`, `/briefing`, `/copilot` compile) ·
+routes, RBAC, SSE, API contracts preserved · backend frozen · no page rewritten for
+structure alone.

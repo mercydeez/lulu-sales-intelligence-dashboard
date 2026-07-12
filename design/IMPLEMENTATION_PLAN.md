@@ -8,7 +8,7 @@ sequence.
 |---|---|---|
 | **P0 Foundation** | ✅ **done + approved** | `feature/design-system-v3`; report: `design/progress/P0_FOUNDATION.md` |
 | **P0.5 Foundation hardening** | ✅ **done** | nav module split + `ARCHITECTURE.md` + `COMPONENT_GRAPH.md` + `features/` seed; report: `design/progress/P0_5_FOUNDATION_HARDENING.md` |
-| **P1 Home** | 🔨 **in progress** | Shared Home foundation shipped (HeroVerdict · MetricStrip · AiAnswerBlock · HomeTemplate); **`/briefing` adopted** (reference implementation, states B06/B07); `/today` + `/copilot` adoption next. Report: `design/progress/P1_HOME.md` |
+| **P1 Home** | ✅ **done** | Shared Home foundation (HeroVerdict · MetricStrip · AiAnswerBlock · HomeTemplate); all three surfaces adopted — `/briefing` (reference implementation, states B06/B07), `/today` (+ B04 fallback), `/copilot`. Report: `design/progress/P1_HOME.md` |
 | P2 Workflows … P7 | ⏳ queued | one phase at a time |
 
 **Foundation docs (root):** `ARCHITECTURE.md` (system + backend-freeze + layers),
