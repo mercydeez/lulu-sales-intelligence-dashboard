@@ -112,13 +112,11 @@ html.light {
   --signal-down: #c8451f;
   --signal-neutral: #5f6660;
 
-  /* Immersive canvas: solid base + soft tinted mesh, themeable so dark mode can
-     swap in a near-black canvas with subtler tints (see body below). */
+  /* A quiet brand wash keeps the workspace from feeling flat without competing
+     with the data. Product accents belong to status and charts, not the canvas. */
   --canvas-bg: #f7f7f3;
   --canvas-mesh:
-    radial-gradient(900px 500px at 8% -8%, rgba(15, 118, 110, 0.07), transparent 60%),
-    radial-gradient(820px 480px at 102% 0%, rgba(109, 73, 207, 0.06), transparent 58%),
-    radial-gradient(700px 600px at 50% 120%, rgba(217, 119, 6, 0.05), transparent 60%);
+    radial-gradient(900px 500px at 8% -8%, rgba(15, 118, 110, 0.055), transparent 62%);
 }
 
 /* ===============================================
@@ -178,9 +176,7 @@ html.dark {
 
   --canvas-bg: #0a0c0d;
   --canvas-mesh:
-    radial-gradient(900px 500px at 8% -8%, rgba(45, 168, 138, 0.06), transparent 60%),
-    radial-gradient(820px 480px at 102% 0%, rgba(167, 139, 250, 0.05), transparent 58%),
-    radial-gradient(700px 600px at 50% 120%, rgba(240, 161, 60, 0.04), transparent 60%);
+    radial-gradient(900px 500px at 8% -8%, rgba(45, 168, 138, 0.05), transparent 62%);
 }
 
 /* ===============================================
@@ -333,7 +329,7 @@ html.dark .on-sunset.text-white { color: #ffffff !important; }
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #ff9d8e;
+  background: #99c2bb;
 }
 
 body {
@@ -346,6 +342,27 @@ body {
   background-attachment: fixed;
   min-height: 100vh;
   overflow-x: hidden;
+}
+
+/* Every authenticated route gets the same workspace gutter. Individual pages
+   can still own their content width; this removes the accidental 16px/32px/40px
+   drift that made neighbouring SaaS screens feel like separate products. */
+#main-content,
+#main-content > div,
+#main-content > div > main {
+  min-width: 0;
+}
+
+#main-content > div > main {
+  padding-block: 1.5rem;
+  padding-inline: 1rem;
+}
+
+@media (min-width: 768px) {
+  #main-content > div > main {
+    padding-block: 2rem;
+    padding-inline: 2rem;
+  }
 }
 
 button,
@@ -363,6 +380,24 @@ html.dark *::-webkit-scrollbar-thumb { background: #2e3437; }
 html.dark *::-webkit-scrollbar-thumb:hover { background: #3c5a53; }
 
 @layer utilities {
+  /* Shared tactile feedback for controls that navigate or commit an action.
+     It is intentionally small, works with keyboard focus, and is disabled for
+     people who request reduced motion. */
+  .pressable {
+    will-change: transform;
+    transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .pressable:hover {
+      transform: translateY(-1px);
+    }
+  }
+
+  .pressable:active {
+    transform: scale(0.975);
+  }
+
   /* Fade in animation */
   .animate-fade-in {
     animation: fadeIn 0.5s ease-in-out;
@@ -441,14 +476,11 @@ html.dark *::-webkit-scrollbar-thumb:hover { background: #3c5a53; }
     box-shadow: 0 2px 6px rgba(20, 29, 33, 0.06), 0 20px 40px -24px rgba(20, 29, 33, 0.28);
   }
 
-  /* Immersive hero / emphasis surface — deep brand mesh with a subtle sheen.
-     Pair with `.on-sunset` so text/icons stay white (see light overrides). */
+  /* Shared emphasis surface: intentionally restrained so operational screens
+     read as a product workspace, not a marketing landing page. */
   .hero-mesh {
     background-color: #0f766e;
     background-image:
-      radial-gradient(900px 400px at 0% 0%, rgba(45, 212, 191, 0.55), transparent 55%),
-      radial-gradient(700px 500px at 100% 0%, rgba(109, 73, 207, 0.45), transparent 55%),
-      radial-gradient(600px 600px at 70% 120%, rgba(251, 191, 36, 0.30), transparent 55%),
       linear-gradient(135deg, #0f766e 0%, #115e59 100%);
     color: #fff;
   }
@@ -468,8 +500,8 @@ html.dark *::-webkit-scrollbar-thumb:hover { background: #3c5a53; }
     color: var(--text-primary);
   }
 
-  /* Hero brand panels — richer, dimensional brand gradients for emphasis cards. */
-  .sunset-gradient { background: linear-gradient(135deg, #0f766e 0%, #0d8b73 55%, #14a085 100%); }
+  /* Brand emphasis is deliberately monochrome; use semantic colours for data. */
+  .sunset-gradient { background: #0f766e; }
   .sunset-warm { background: linear-gradient(135deg, #0f766e 0%, #115e59 100%); }
   .sunset-cool { background: linear-gradient(135deg, #0d7d68 0%, #0f766e 100%); }
   .grad-violet { background: linear-gradient(135deg, #6d49cf 0%, #8b5cf6 100%); }

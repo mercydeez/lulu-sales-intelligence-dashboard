@@ -34,7 +34,7 @@ export function DomainRail({
         href="/today"
         onClick={onNavigate}
         aria-label={`${PRODUCT_NAME} home`}
-        className="w-11 h-11 rounded-2xl sunset-gradient flex items-center justify-center shadow-sunset shrink-0 mb-2"
+        className="pressable w-11 h-11 rounded-2xl sunset-gradient flex items-center justify-center shadow-sunset shrink-0 mb-2"
       >
         <BrandIcon size={20} decorative className="text-white" />
       </Link>
@@ -51,7 +51,7 @@ export function DomainRail({
             aria-current={active ? 'page' : undefined}
             title={t(g.tKey)}
             className={cn(
-              'relative w-14 flex flex-col items-center gap-1 py-2 rounded-xl text-[11px] font-medium transition-colors',
+              'pressable relative w-14 flex flex-col items-center gap-1 py-2 rounded-xl text-[11px] font-medium transition-colors',
               active ? 'text-teal-700' : 'text-ink-muted hover:text-ink hover:bg-surface-2',
             )}
           >

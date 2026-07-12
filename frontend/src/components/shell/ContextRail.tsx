@@ -31,7 +31,7 @@ function PageLink({
       onClick={onNavigate}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+        'pressable relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
         active ? 'text-teal-700' : 'text-ink-muted hover:text-ink hover:bg-surface-2',
       )}
     >
@@ -99,7 +99,7 @@ export function ContextRail({
         <Link
           href="/settings"
           onClick={onNavigate}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-surface-2 transition-colors"
+          className="pressable flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-surface-2 transition-colors"
         >
           <Settings className="w-5 h-5" />
           {t('nav.preferences') || 'Preferences'}

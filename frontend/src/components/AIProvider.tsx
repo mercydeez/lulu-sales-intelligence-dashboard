@@ -1,8 +1,8 @@
 'use client';
 
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { useExperience } from '@/contexts/ExperienceContext';
+import { useAuth } from '@/contexts/AuthContext';
 import ChatBot from './ChatBot';
 import AIToggleButton from './AIToggleButton';
 
@@ -34,19 +34,25 @@ export function useAI(): AIContextValue {
 export default function AIProvider({ children }: AIProviderProps) {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string | undefined>(undefined);
-  const { config } = useExperience();
+  const { isAuthenticated, isLoading } = useAuth();
 
-  // Experience-driven assistant shell. `hidden` removes the Sage affordance
-  // entirely for the role; `copilot` keeps the panel machinery (openChat from
-  // the /copilot surface and nudges still works) but retires the floating pill
-  // — the dedicated surface is the entry point. `panel` is the default, and
-  // absent config fails open to it.
-  const assistantMode = config?.assistant_mode ?? 'panel';
-  if (assistantMode === 'hidden') {
-    return <>{children}</>;
-  }
+  // Sage's shell is controlled by session state only. Role/experience config
+  // may shape its persona and capabilities, but must never hide the launcher.
+  const isSageVisible = isAuthenticated && !isLoading;
+
+  // A logout must also clear UI state so a later login never reopens a panel
+  // that belonged to the previous session.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setIsChatOpen(false);
+      setPendingPrompt(undefined);
+    }
+  }, [isAuthenticated]);
 
   const openChat = (initialPrompt?: string) => {
+    // AI is an authenticated, tenant-scoped surface. Keeping this guard here
+    // prevents public pages from opening a client panel during auth redirects.
+    if (!isAuthenticated || isLoading) return;
     setPendingPrompt(initialPrompt);
     setIsChatOpen(true);
   };
@@ -56,14 +62,14 @@ export default function AIProvider({ children }: AIProviderProps) {
   };
 
   return (
-    <AIContext.Provider value={{ isChatOpen, openChat, closeChat }}>
+    <AIContext.Provider value={{ isChatOpen: isSageVisible && isChatOpen, openChat, closeChat }}>
       {/* Main content with adjusted width when chat is open */}
-      <div className={`transition-all duration-300 ${isChatOpen ? 'lg:me-[400px]' : ''}`}>
+      <div className={`transition-all duration-300 ${isSageVisible && isChatOpen ? 'lg:me-[400px]' : ''}`}>
         {children}
       </div>
 
-      {/* AI Toggle Button — retired in copilot mode (§3.4) */}
-      {assistantMode !== 'copilot' && (
+      {/* Authenticated users always keep the global Sage entry point. */}
+      {isSageVisible && (
         <AIToggleButton
           isOpen={isChatOpen}
           onClick={() => openChat()}
@@ -72,7 +78,7 @@ export default function AIProvider({ children }: AIProviderProps) {
 
       {/* ChatBot Panel — AnimatePresence drives the slide in/out */}
       <AnimatePresence>
-        {isChatOpen && (
+        {isSageVisible && isChatOpen && (
           <ChatBot
             key="sage-chat"
             isOpen={isChatOpen}

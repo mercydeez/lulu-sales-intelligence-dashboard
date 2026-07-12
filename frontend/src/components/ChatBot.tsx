@@ -826,7 +826,7 @@ export default function ChatBot({ isOpen, onToggle, initialPrompt }: ChatBotProp
         {!isMinimized && (
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-surface/20 flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-white" />
+              <Bot className="w-5 h-5 text-white" />
             </div>
             <div>
               <h2 className="text-white font-semibold">{CHATBOT_NAME}</h2>

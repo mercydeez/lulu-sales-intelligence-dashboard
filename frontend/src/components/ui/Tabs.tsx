@@ -31,12 +31,14 @@ export function Tabs({ items, value, onChange, className, ...props }: TabsProps)
       {items.map((item) => {
         const active = item.id === value;
         return (
-          <button
+          <motion.button
             key={item.id}
             type="button"
             role="tab"
             aria-selected={active}
             onClick={() => onChange(item.id)}
+            whileTap={{ scale: 0.97 }}
+            transition={{ duration: 0.12 }}
             className={cn(
               'relative flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50',
@@ -55,7 +57,7 @@ export function Tabs({ items, value, onChange, className, ...props }: TabsProps)
               {item.label}
               {item.badge}
             </span>
-          </button>
+          </motion.button>
         );
       })}
     </div>

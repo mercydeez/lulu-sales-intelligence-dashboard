@@ -24,25 +24,30 @@ import { Reveal, ScrollReveal, Stagger, RevealItem } from '@/components/ui';
 import { track } from '@/lib/telemetry';
 import { RotateCcw } from 'lucide-react';
 
-type Density = 'standard' | 'executive';
+type DashboardView = 'focus' | 'full';
+
+const dashboardViews: Array<{ value: DashboardView; label: string }> = [
+  { value: 'focus', label: 'Focus view' },
+  { value: 'full', label: 'Full dashboard' },
+];
 
 export default function Home() {
   const { hasRole, authFetch } = useAuth();
   const { t } = useLanguage();
 
-  // Executive mode (E4-6): one number, one trend, one anomaly surface —
-  // the analytics wall becomes drill-down. Persisted per browser.
-  const [density, setDensity] = useState<Density>(() => {
+  // The default is a short decision queue: one metric, one trend and the next
+  // action. The complete operational wall remains one click away.
+  const [view, setDashboardView] = useState<DashboardView>(() => {
     if (typeof window !== 'undefined') {
-      const saved = window.localStorage.getItem('dashboard.density');
-      if (saved === 'executive' || saved === 'standard') return saved;
+      const saved = window.localStorage.getItem('dashboard.view.v2');
+      if (saved === 'focus' || saved === 'full') return saved;
     }
-    return 'standard';
+    return 'focus';
   });
-  const setMode = (mode: Density) => {
-    setDensity(mode);
-    try { window.localStorage.setItem('dashboard.density', mode); } catch { /* private mode */ }
-    track('exec_mode_toggled', { mode });
+  const setView = (nextView: DashboardView) => {
+    setDashboardView(nextView);
+    try { window.localStorage.setItem('dashboard.view.v2', nextView); } catch { /* private mode */ }
+    track('exec_mode_toggled', { mode: nextView });
   };
 
   const [alertStats, setAlertStats] = useState<AlertStats>({
@@ -77,32 +82,30 @@ export default function Home() {
   }, [authFetch]);
 
   return (
-    <main className="min-h-screen p-4 md:p-8">
+    <main className="min-h-screen px-4 py-6 md:px-6 md:py-8">
       <Reveal>
-        <HomeHero />
-      </Reveal>
-
-      <Stagger className="max-w-7xl mx-auto space-y-8">
-        {/* Density toggle (E4-6) — mirrors the language/theme segment pattern */}
-        <RevealItem>
-          <div className="flex justify-end">
-            <div role="group" aria-label="Dashboard density" className="flex items-center rounded-lg border border-line overflow-hidden">
-              {(['standard', 'executive'] as const).map((mode) => (
+        <HomeHero
+          controls={
+            <div role="group" aria-label="Dashboard view" className="flex overflow-hidden rounded-lg border border-white/20 bg-black/10">
+              {dashboardViews.map(({ value, label }) => (
                 <button
-                  key={mode}
+                  key={value}
                   type="button"
-                  onClick={() => setMode(mode)}
-                  aria-pressed={density === mode}
-                  className={`px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
-                    density === mode ? 'bg-teal-600 text-white' : 'text-ink-muted hover:bg-surface-2'
+                  onClick={() => setView(value)}
+                  aria-pressed={view === value}
+                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    view === value ? 'bg-white text-teal-800' : 'text-white/80 hover:bg-white/10'
                   }`}
                 >
-                  {mode}
+                  {label}
                 </button>
               ))}
             </div>
-          </div>
-        </RevealItem>
+          }
+        />
+      </Reveal>
+
+      <Stagger className="max-w-7xl mx-auto space-y-6">
 
         {/* Sage first-run nudge (A1) — both densities, disappears once used */}
         <RevealItem>
@@ -114,7 +117,7 @@ export default function Home() {
           <NpsPulse />
         </RevealItem>
 
-        {density === 'executive' ? (
+        {view === 'focus' ? (
           <>
             {/* Executive view: one number, one trend, one anomaly surface */}
             <RevealItem>
@@ -128,12 +131,8 @@ export default function Home() {
             </RevealItem>
             <RevealItem>
               <div className="text-center">
-                <button
-                  type="button"
-                  onClick={() => setMode('standard')}
-                  className="text-sm font-medium text-teal-700 hover:text-teal-600 dark:text-teal-300 transition-colors"
-                >
-                  Show the full dashboard →
+                <button type="button" onClick={() => setView('full')} className="text-sm font-medium text-teal-700 hover:text-teal-600 dark:text-teal-300 transition-colors">
+                  Open full dashboard →
                 </button>
               </div>
             </RevealItem>

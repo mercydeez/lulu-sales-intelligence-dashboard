@@ -17,9 +17,9 @@ import { BrandIcon } from '@/components/branding/BrandIcon';
 // Labels/features are translation keys (src/locales/auth.ts) — resolved with
 // t() at render so the screen is fully EN/AR (E4-4 core screen).
 const DEMO_ACCOUNTS = [
-  { labelKey: 'auth.demo.superAdmin', email: 'atharva@retaildemo.app', grad: 'sunset-gradient' },
-  { labelKey: 'auth.demo.regional', email: 'krishna@retaildemo.app', grad: 'grad-violet' },
-  { labelKey: 'auth.demo.store', email: 'yash@retaildemo.app', grad: 'grad-amber' },
+  { labelKey: 'auth.demo.superAdmin', email: 'atharva@retaildemo.app' },
+  { labelKey: 'auth.demo.regional', email: 'krishna@retaildemo.app' },
+  { labelKey: 'auth.demo.store', email: 'yash@retaildemo.app' },
 ];
 
 const FEATURES = [
@@ -98,36 +98,20 @@ export default function LoginPage() {
 
   const displayError = error || localError;
   const inputCls =
-    'w-full ps-12 pe-4 py-3.5 rounded-2xl bg-surface border border-line text-ink placeholder-ink-muted ' +
+    'w-full ps-12 pe-4 py-3 rounded-xl bg-surface border border-line text-ink placeholder-ink-muted ' +
     'shadow-sm focus:outline-none focus:ring-4 focus:ring-teal-500/15 focus:border-teal-500 transition-all';
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2">
+    <div className="min-h-screen bg-canvas lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       {/* ============================= BRAND PANEL ============================= */}
-      <div className="relative hidden lg:flex flex-col justify-between overflow-hidden hero-mesh p-12 text-white">
-        {/* Animated floating orbs for depth/motion */}
-        {[
-          { c: 'rgba(45,212,191,0.45)', s: 380, x: '-12%', y: '-10%', d: 0 },
-          { c: 'rgba(139,92,246,0.40)', s: 320, x: '70%', y: '8%', d: 1.2 },
-          { c: 'rgba(251,191,36,0.30)', s: 300, x: '30%', y: '62%', d: 2.4 },
-        ].map((o, i) => (
-          <motion.div
-            key={i}
-            aria-hidden
-            className="pointer-events-none absolute rounded-full blur-3xl"
-            style={{ width: o.s, height: o.s, left: o.x, top: o.y, background: o.c }}
-            animate={{ y: [0, -22, 0], x: [0, 14, 0], scale: [1, 1.08, 1] }}
-            transition={{ duration: 9 + i * 1.5, repeat: Infinity, ease: 'easeInOut', delay: o.d }}
-          />
-        ))}
-
+      <aside className="relative hidden lg:flex flex-col justify-between overflow-hidden hero-mesh p-12 text-white">
         {/* Brand */}
         <motion.div
           initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: EASE }}
           className="relative z-10 flex items-center gap-3"
         >
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-sm ring-1 ring-white/30">
+          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-white/10 ring-1 ring-white/25">
             <BrandIcon size={24} decorative className="text-white" />
           </div>
           <span className="text-xl font-bold tracking-tight">{PRODUCT_NAME}</span>
@@ -139,11 +123,8 @@ export default function LoginPage() {
             initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55, ease: EASE, delay: 0.05 }}
           >
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur-sm ring-1 ring-white/25 mb-5">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/80" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
-              </span>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium ring-1 ring-white/20 mb-5">
+              <span className="inline-flex h-2 w-2 rounded-full bg-emerald-300" />
               {t('auth.badge')}
             </div>
             <h1 className="text-4xl font-bold leading-tight mb-4">
@@ -154,19 +135,14 @@ export default function LoginPage() {
             </p>
           </motion.div>
 
-          {/* Feature pills (staggered) */}
-          <motion.div
-            className="mt-8 space-y-3"
-            initial="hidden" animate="show"
-            variants={{ show: { transition: { staggerChildren: 0.1, delayChildren: 0.25 } } }}
-          >
+          <motion.div className="mt-10 space-y-4" initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.08, delayChildren: 0.2 } } }}>
             {FEATURES.map(({ icon: Icon, textKey }) => (
               <motion.div
                 key={textKey}
                 variants={{ hidden: { opacity: 0, x: -16 }, show: { opacity: 1, x: 0, transition: { ease: EASE } } }}
-                className="flex items-center gap-3"
+                className="flex items-center gap-3 text-sm"
               >
-                <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/15 backdrop-blur-sm ring-1 ring-white/25">
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 ring-1 ring-white/15">
                   <Icon className="w-4 h-4" />
                 </div>
                 <span className="text-white/90 text-sm">{t(textKey)}</span>
@@ -178,22 +154,22 @@ export default function LoginPage() {
         <div className="relative z-10 text-white/70 text-xs">
           {t('auth.footnote')}
         </div>
-      </div>
+      </aside>
 
       {/* ============================= FORM PANEL ============================= */}
-      <div className="flex items-center justify-center p-6 sm:p-12">
+      <div className="flex min-h-screen items-center justify-center bg-surface px-6 py-10 sm:px-12 lg:min-h-0 lg:border-s lg:border-line">
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: EASE }}
-          className="w-full max-w-md"
+          className="w-full max-w-[25.5rem]"
         >
           {/* Language toggle — the Topbar only renders when authenticated, so
               the login screen needs its own EN/AR switch (E4-4). */}
-          <div className="flex justify-end mb-4">
+          <div className="flex justify-end mb-8">
             <button
               type="button"
               onClick={toggleLang}
-              className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold text-ink-muted hover:bg-surface-2 transition-colors"
+              className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted hover:bg-surface-2 transition-colors"
             >
               {t('lang.toggle')}
             </button>
@@ -201,7 +177,7 @@ export default function LoginPage() {
 
           {/* Mobile brand */}
           <div className="lg:hidden text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-sunset">
+            <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-teal-700">
               <BrandIcon size={32} decorative className="text-white" />
             </div>
             <h1 className="text-2xl font-bold text-ink">{PRODUCT_NAME}</h1>
@@ -209,15 +185,16 @@ export default function LoginPage() {
           </div>
 
           <div className="mb-8">
-            <h2 className="text-3xl font-bold text-ink mb-2">{t('auth.welcome')}</h2>
-            <p className="text-ink-soft">{t('auth.signInSub')}</p>
+            <p className="mb-2 text-sm font-semibold text-teal-700">{PRODUCT_NAME}</p>
+            <h2 className="text-3xl font-bold tracking-tight text-ink mb-2">{t('auth.welcome')}</h2>
+            <p className="text-sm leading-6 text-ink-soft">{t('auth.signInSub')}</p>
           </div>
 
           {/* Error / info alerts */}
           {displayError && (
             <motion.div
               initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-              className="mb-6 p-4 rounded-2xl bg-coral-50 border border-coral-200 flex items-start gap-3"
+              className="mb-6 flex items-start gap-3 rounded-xl border border-coral-200 bg-coral-50 p-4"
             >
               <AlertCircle className="w-5 h-5 text-coral-600 flex-shrink-0 mt-0.5" />
               <p className="text-coral-700 text-sm">{displayError}</p>
@@ -226,7 +203,7 @@ export default function LoginPage() {
           {forgotMsg && (
             <motion.div
               initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-              className="mb-6 p-4 rounded-2xl bg-teal-50 border border-teal-200 flex items-start gap-3"
+              className="mb-6 flex items-start gap-3 rounded-xl border border-teal-200 bg-teal-50 p-4"
             >
               <ShieldCheck className="w-5 h-5 text-teal-600 flex-shrink-0 mt-0.5" />
               <p className="text-teal-700 text-sm">{forgotMsg}</p>
@@ -235,7 +212,7 @@ export default function LoginPage() {
 
           {mfaToken ? (
             <form onSubmit={handleVerify} className="space-y-5">
-              <div className="flex items-center gap-3 p-4 rounded-2xl bg-teal-50 border border-teal-100">
+              <div className="flex items-center gap-3 rounded-xl border border-teal-100 bg-teal-50 p-4">
                 <ShieldCheck className="w-5 h-5 text-teal-600 shrink-0" />
                 <p className="text-sm text-teal-800 dark:text-teal-200">
                   {t('auth.mfaNotice')}
@@ -350,21 +327,22 @@ export default function LoginPage() {
               <span className="text-xs font-medium text-ink-muted">{t('auth.tryDemo')}</span>
               <span className="h-px flex-1 bg-line" />
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {DEMO_ACCOUNTS.map((acc) => (
+            <div className="space-y-2">
+              {DEMO_ACCOUNTS.map((acc, index) => (
                 <motion.button
                   key={acc.email}
                   type="button"
-                  whileHover={{ y: -3 }}
-                  whileTap={{ scale: 0.97 }}
-                  transition={{ type: 'spring', stiffness: 320, damping: 24 }}
                   onClick={() => fillDemo(acc.email)}
                   disabled={isLoading}
-                  className="rounded-2xl border border-line bg-surface p-3 text-start hover:border-teal-300 hover:shadow-card disabled:opacity-60"
+                  className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2.5 text-start transition-colors hover:border-teal-300 hover:bg-teal-50/40 disabled:opacity-60"
                 >
-                  <div className={`w-7 h-7 rounded-lg ${acc.grad} mb-2`} />
-                  <p className="text-xs font-semibold text-ink leading-tight">{t(acc.labelKey)}</p>
-                  <p className="text-[10px] text-ink-muted truncate">{acc.email}</p>
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-2 font-mono text-xs font-semibold text-teal-700">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-semibold leading-tight text-ink">{t(acc.labelKey)}</span>
+                    <span className="block truncate text-[11px] text-ink-muted">{acc.email}</span>
+                  </span>
                 </motion.button>
               ))}
             </div>
@@ -386,22 +364,19 @@ export default function LoginPage() {
   );
 }
 
-/** Primary CTA with brand gradient, hover lift, and a loading state. */
+/** Primary authentication action — intentionally calm and direct. */
 function SubmitButton({ isLoading, idle, busy }: { isLoading: boolean; idle: string; busy: string }) {
   return (
-    <motion.button
+    <button
       type="submit"
       disabled={isLoading}
-      whileHover={{ y: -2 }}
-      whileTap={{ scale: 0.99 }}
-      transition={{ type: 'spring', stiffness: 320, damping: 24 }}
-      className="sunset-gradient text-white w-full py-3.5 px-4 rounded-2xl font-semibold flex items-center justify-center gap-2 shadow-soft disabled:opacity-60 disabled:cursor-not-allowed"
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-3 font-semibold text-white transition-colors hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {isLoading ? (
         <><Loader2 className="w-5 h-5 animate-spin" /> {busy}</>
       ) : (
         <>{idle} <ArrowRight className="w-5 h-5" /></>
       )}
-    </motion.button>
+    </button>
   );
 }
