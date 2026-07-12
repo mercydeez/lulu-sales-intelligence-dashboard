@@ -11,7 +11,8 @@ import { useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useExperience, KpiDescriptor } from '@/contexts/ExperienceContext';
-import { Button, ErrorState, SkeletonCard } from '@/components/ui';
+import { Button, ErrorState, EmptyState, SkeletonCard, HeroVerdict, MetricStrip } from '@/components/ui';
+import type { MetricItem } from '@/components/ui';
 import { apiGet } from '@/lib/apiClient';
 import { useBriefing } from '@/lib/queries/briefing';
 import { useDecisionTriage, type TriageDecision } from '@/lib/queries/decisions';
@@ -28,12 +29,10 @@ import {
 const AED = (n: number | null | undefined, dp = 0) =>
   n == null ? '—' : `AED ${n.toLocaleString('en-AE', { maximumFractionDigits: dp, minimumFractionDigits: dp })}`;
 
-const white = (o = 1): React.CSSProperties =>
-  ({ color: `rgba(255,255,255,${o})`, WebkitTextFillColor: `rgba(255,255,255,${o})` });
-
 export default function TodayPage() {
   const { config, loading } = useExperience();
   const [reloadKey, setReloadKey] = useState(0);
+  const zones = config?.homepage?.zones ?? config?.zones ?? [];
 
   return (
     <main className="min-h-screen px-4 md:px-8 py-6 md:py-10">
@@ -43,6 +42,17 @@ export default function TodayPage() {
         ) : !config ? (
           <ErrorState title="Couldn't load your workspace" description="Your role experience is unavailable."
             onRetry={() => setReloadKey((k) => k + 1)} />
+        ) : zones.length === 0 ? (
+          // B04 — experience manifest loaded but has no homepage modules (missing/degraded config).
+          <EmptyState
+            title="Your workspace isn't set up yet"
+            description="We couldn't find any homepage modules for your role. Try refreshing, or contact your admin if this continues."
+            action={
+              <Button variant="secondary" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
+                <RefreshCw className="w-4 h-4 me-1.5" /> Refresh
+              </Button>
+            }
+          />
         ) : (
           <div key={reloadKey} className="space-y-6">
             {/* v2 homepage envelope with a v1 fallback, resolved against the open
@@ -51,7 +61,7 @@ export default function TodayPage() {
                 animation) rather than through a parent stagger — the zones now
                 re-render as their query hooks resolve, which would interrupt a
                 parent-propagated stagger and leave later zones stuck hidden. */}
-            {(config.homepage?.zones ?? config.zones).map((zone, i) => {
+            {zones.map((zone, i) => {
               const Zone = resolveWidget(zone.type);
               if (!Zone) return null;
               return (
@@ -102,7 +112,10 @@ function ZoneError({ label, onRetry }: { label: string; onRetry: () => void }) {
   );
 }
 
-/* ── Q1: What matters to me now? — the persona verdict ── */
+/* ── Q1: What matters to me now? — the persona verdict ──
+   Adopts the shared HeroVerdict (DESIGN_SYSTEM §6.1) so Today/Briefing/Copilot
+   read as one Home system. Data source unchanged (useBriefing from
+   lib/queries/briefing) — only the presentation moved onto the shared component. */
 function VerdictZone({ config }: ZoneProps) {
   const { data: b, isLoading, isError, refetch } = useBriefing();
   const status: ZoneStatus = isLoading ? 'loading' : isError ? 'error' : 'ok';
@@ -112,30 +125,19 @@ function VerdictZone({ config }: ZoneProps) {
       : status === 'error' ? "I couldn't read your stores just now."
         : 'Reading your data…';
   return (
-    <section className="hero-mesh relative overflow-hidden rounded-3xl p-6 md:p-8 shadow-elevated">
-      <div className="relative z-10">
-        <div className="flex items-center gap-2.5">
-          <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-white/15 ring-1 ring-white/25">
-            <Sparkles className="w-4 h-4 text-white" />
-          </span>
-          <div className="leading-tight">
-            <p className="text-sm font-semibold" style={white()}>{p.name}</p>
-            <p className="text-[11px]" style={white(0.7)}>{p.title}</p>
-          </div>
-        </div>
-        <p className="mt-5 text-sm" style={white(0.75)}>{b?.greeting ?? 'Good day'} — {p.greeting}</p>
-        <h1 className="mt-1 text-xl md:text-2xl font-semibold leading-snug max-w-[46ch]" style={white()}>
-          {headline}
-        </h1>
-        {status === 'ok' && b?.tldr && <p className="mt-2 text-sm italic" style={white(0.75)}>{b.tldr}</p>}
-        {status === 'error' && (
-          <button onClick={() => refetch()}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 ring-1 ring-white/25 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/25 transition">
-            <RefreshCw className="w-3.5 h-3.5" /> Try again
-          </button>
-        )}
-      </div>
-    </section>
+    <HeroVerdict
+      name={p.name}
+      title={p.title}
+      greeting={<>{b?.greeting ?? 'Good day'} — {p.greeting}</>}
+      verdict={headline}
+      tagline={status === 'ok' ? b?.tldr : undefined}
+      cta={status === 'error' ? (
+        <button onClick={() => refetch()}
+          className="inline-flex items-center gap-1.5 rounded-full bg-white/15 ring-1 ring-white/25 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/25 transition">
+          <RefreshCw className="w-3.5 h-3.5" /> Try again
+        </button>
+      ) : undefined}
+    />
   );
 }
 
@@ -174,20 +176,22 @@ function KpiZone({ config }: ZoneProps) {
   const data: SourceData = {};
   sources.forEach((src, i) => { data[src] = results[i].data ?? null; });
 
+  // Adopts MetricStrip (DESIGN_SYSTEM §8.3) — same descriptors/formatting, the
+  // strip now owns iconography (trend arrow) instead of formatKpi inlining one.
+  const items: MetricItem[] = config.kpis.map((kpi) => {
+    const src = data[kpi.source];
+    const raw = src ? src[kpi.field] : undefined;
+    if (kpi.format === 'trend') {
+      const s = raw == null ? null : String(raw);
+      const trend: MetricItem['trend'] = s === 'up' ? 'up' : s === 'down' ? 'down' : 'flat';
+      return { key: kpi.key, label: kpi.label, value: s ? s.charAt(0).toUpperCase() + s.slice(1) : '—', trend };
+    }
+    return { key: kpi.key, label: kpi.label, value: formatKpi(raw, kpi.format).text };
+  });
+
   return (
-    <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-      {config.kpis.map((kpi) => {
-        const src = data[kpi.source];
-        const { text, icon } = formatKpi(src ? src[kpi.field] : undefined, kpi.format);
-        return (
-          <div key={kpi.key} className="rounded-2xl bg-surface border border-line shadow-card p-3.5">
-            <p className="text-[11px] uppercase tracking-widest text-ink-muted">{kpi.label}</p>
-            <p className="mt-1 text-lg font-bold text-ink tabular-nums flex items-center gap-1.5">
-              {icon}{text}
-            </p>
-          </div>
-        );
-      })}
+    <section>
+      <MetricStrip items={items} />
     </section>
   );
 }
