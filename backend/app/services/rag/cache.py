@@ -67,14 +67,18 @@ async def answer_cache_get(query: str, acl_filter_hash: str, tenant_id: int) -> 
 
 async def answer_cache_set(query: str, acl_filter_hash: str, tenant_id: int,
                            answer: str, citations: List[str], ttl: int = _ANS_TTL,
-                           confidence: float = 1.0) -> None:
+                           confidence: float = 1.0, chunks: Optional[List[dict]] = None) -> None:
     """Cache a VERIFIED answer scoped to this authorization. Callers must only
     cache answers that PASSED the output guardrails (grounded + cited).
     `confidence` (stage-4 score) rides along so a cache hit reports the same
-    evidence strength as the original answer."""
+    evidence strength as the original answer. `chunks` (the source text) rides
+    along too so a cache hit can still be checked by sage3's critic/
+    cross_validator — without it a cached answer looks unevidenced and gets a
+    false "unverified" caveat."""
     from app.services.redis_client import cache_set
     await cache_set(
         answer_key(query, acl_filter_hash, tenant_id),
-        {"answer": answer, "citations": list(citations), "confidence": confidence},
+        {"answer": answer, "citations": list(citations), "confidence": confidence,
+         "chunks": chunks or []},
         expire=ttl,
     )

@@ -19,10 +19,16 @@ from .prompts import CRITIC_SYSTEM
 
 
 def evidence_rows(state: AgentState) -> List[dict]:
-    """Flatten the rows the answer was built from, for grounding checks."""
+    """Flatten the rows/chunks the answer was built from, for grounding checks."""
     route = state.get("route")
     if route == "sql":
         return (state.get("sql_result") or {}).get("rows") or []
+    if route == "rag":
+        # Row-shaped like SQL evidence (dicts of stringifiable values) so the
+        # shared LLM-prompt formatting and numeric-containment check both work
+        # unchanged: each retrieved chunk's own text is what the numbers must
+        # trace to, not an empty SQL result set.
+        return (state.get("rag_result") or {}).get("chunks") or []
     if route == "hybrid":
         rows: List[dict] = []
         for p in (state.get("hybrid_result") or {}).get("parts", []):

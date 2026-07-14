@@ -28,7 +28,7 @@ async def rag_agent_node(state: AgentState) -> AgentState:
     )
     state["rag_result"] = {
         "ok": g.ok, "answer": g.answer,
-        "citations": g.citations, "chunks": [],
+        "citations": g.citations, "chunks": g.chunks,
         "confidence": g.confidence, "refused": g.refused,
     }
     if g.ok:

@@ -64,6 +64,10 @@ class GroundedAnswer:
     refusal_reason: str = ""
     cached: bool = False
     trace: dict = field(default_factory=dict)
+    # The chunk(s) the answer was generated from — downstream validation
+    # (sage3 critic/cross_validator) needs real text to check numbers against,
+    # not just citation labels.
+    chunks: List[dict] = field(default_factory=list)
 
 
 async def answer_grounded(
@@ -102,7 +106,7 @@ async def answer_grounded(
             trace.cache_hit = True
             trace.emit()
             return GroundedAnswer(ok=True, cached=True, **{
-                k: hit[k] for k in ("answer", "citations", "confidence") if k in hit})
+                k: hit[k] for k in ("answer", "citations", "confidence", "chunks") if k in hit})
 
     # ── Hybrid retrieval (2) + confidence filter/gate (4, 7) ────────────────
     trace.start("retrieval")
@@ -154,8 +158,10 @@ async def answer_grounded(
     trace.faithfulness = conf
     trace.answer_chars = len(answer)
     trace.citations = len(citations)
+    evidence_chunks = [{"title": c.get("title"), "chunk_no": c.get("chunk_no"),
+                        "content": c.get("content")} for c in kept]
     if use_cache:
         await answer_cache_set(query, acl.filter_hash, tenant_id,
-                               answer, citations, confidence=conf)
+                               answer, citations, confidence=conf, chunks=evidence_chunks)
     return GroundedAnswer(ok=True, answer=answer, citations=citations,
-                          confidence=conf, trace=trace.emit())
+                          confidence=conf, trace=trace.emit(), chunks=evidence_chunks)

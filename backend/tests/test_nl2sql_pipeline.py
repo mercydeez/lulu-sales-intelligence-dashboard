@@ -84,3 +84,48 @@ async def test_tenant_isolation_through_pipeline():
 async def test_no_provider_falls_back():
     res = await answer_question("anything", tenant_id=1, providers=[])
     assert not res.ok and "no LLM" in res.reason
+
+
+class RepairingProvider:
+    """First SQL attempt references a column that doesn't exist on the view
+    (the exact real-world mistake: adding a date filter to a no-date
+    performance view); the repair call — recognizable by the error text fed
+    back in the user message — returns valid SQL."""
+    name = "fake"
+
+    def __init__(self, bad_sql: str, good_sql: str, narration_out: str = "Here is your answer."):
+        self.bad_sql = bad_sql
+        self.good_sql = good_sql
+        self.narration_out = narration_out
+        self.sql_calls = 0
+
+    async def complete(self, messages: List[Dict[str, str]]) -> str:
+        system = messages[0]["content"] if messages else ""
+        user = messages[-1]["content"] if messages else ""
+        if "SQL writer" not in system:
+            return self.narration_out
+        self.sql_calls += 1
+        return self.good_sql if "failed" in user else self.bad_sql
+
+    async def stream(self, messages):  # pragma: no cover - unused here
+        yield await self.complete(messages)
+
+
+async def test_execution_error_self_repairs_once():
+    p = RepairingProvider(
+        bad_sql="SELECT store_name, revenue_aed FROM sage_store_performance "
+                "WHERE date >= CURRENT_DATE - INTERVAL '30 days'",  # no `date` column: errors
+        good_sql="SELECT store_name, revenue_aed FROM sage_store_performance "
+                 "ORDER BY revenue_aed DESC LIMIT 5",
+    )
+    res = await answer_question("top stores this month", tenant_id=1, providers=[p])
+    assert res.ok, res.reason
+    assert p.sql_calls == 2, "expected exactly one repair attempt after the execution error"
+
+
+async def test_unrepairable_error_still_falls_back_after_one_retry():
+    p = RepairingProvider(bad_sql="SELECT * FROM sage_sales WHERE nonexistent_col = 1",
+                          good_sql="SELECT * FROM sage_sales WHERE also_nonexistent = 1")
+    res = await answer_question("broken query", tenant_id=1, providers=[p])
+    assert not res.ok
+    assert p.sql_calls == 2  # gives up after the single repair attempt, no infinite loop

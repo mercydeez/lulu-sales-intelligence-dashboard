@@ -19,7 +19,9 @@ from app.services.llm import LLMError, LLMProvider, get_provider_chain
 
 from .executor import SageExecutionError, execute_sage_sql
 from .guard import SqlGuardError, validate_sql
-from .prompt import build_narration_messages, build_sql_messages, extract_sql
+from .prompt import (
+    build_narration_messages, build_repair_messages, build_sql_messages, extract_sql,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +35,15 @@ class SageResult:
     reason: str = ""  # why it failed / fell back (for logs + debugging)
 
 
-async def _generate_sql(question: str, providers: List[LLMProvider]) -> Optional[str]:
+async def _generate_sql(
+    question: str, providers: List[LLMProvider],
+    failed_sql: Optional[str] = None, error: Optional[str] = None,
+) -> Optional[str]:
+    messages = (build_sql_messages(question) if failed_sql is None
+                else build_repair_messages(question, failed_sql, error or ""))
     for provider in providers:
         try:
-            raw = await provider.complete(build_sql_messages(question))
+            raw = await provider.complete(messages)
             sql = extract_sql(raw)
             if sql:
                 return sql
@@ -97,17 +104,32 @@ async def answer_question(
     if not sql:
         return SageResult(ok=False, reason="LLM produced no SQL")
 
-    try:
-        safe_sql = validate_sql(sql, settings.sage_max_rows)
-    except SqlGuardError as e:
-        logger.info(f"Sage guard rejected SQL: {e} | sql={sql!r}")
-        return SageResult(ok=False, sql=sql, reason=f"guard: {e}")
+    # Two attempts total: the original SQL, then one self-repair with the
+    # guard/DB error fed back — most schema mistakes (wrong column, wrong view)
+    # are fixable, and giving up on attempt one meant a real question always fell
+    # through to the generic rule-based template.
+    for attempt in range(2):
+        try:
+            safe_sql = validate_sql(sql, settings.sage_max_rows)
+        except SqlGuardError as e:
+            logger.info(f"Sage guard rejected SQL: {e} | sql={sql!r}")
+            if attempt == 0:
+                sql = await _generate_sql(question, providers, failed_sql=sql, error=f"guard: {e}")
+                if sql:
+                    continue
+            return SageResult(ok=False, sql=sql, reason=f"guard: {e}")
 
-    try:
-        rows = await execute_sage_sql(safe_sql, tenant_id, allowed_stores)
-    except SageExecutionError as e:
-        logger.info(f"Sage execution failed: {e}")
-        return SageResult(ok=False, sql=safe_sql, reason=f"exec: {e}")
+        try:
+            rows = await execute_sage_sql(safe_sql, tenant_id, allowed_stores)
+        except SageExecutionError as e:
+            logger.info(f"Sage execution failed: {e}")
+            if attempt == 0:
+                sql = await _generate_sql(question, providers, failed_sql=safe_sql, error=str(e))
+                if sql:
+                    continue
+            return SageResult(ok=False, sql=safe_sql, reason=f"exec: {e}")
 
-    answer = await _narrate(question, rows, providers)
-    return SageResult(ok=True, answer=answer, sql=safe_sql, rows=rows)
+        answer = await _narrate(question, rows, providers)
+        return SageResult(ok=True, answer=answer, sql=safe_sql, rows=rows)
+
+    return SageResult(ok=False, sql=sql, reason="repair attempt exhausted")

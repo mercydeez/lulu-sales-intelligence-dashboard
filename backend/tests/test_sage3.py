@@ -14,6 +14,7 @@ import pytest
 pytest.importorskip("langgraph", reason="langgraph not installed (USE_SAGE_V3 path)")
 
 from app.services.sage3.graph.router import decide_route  # noqa: E402
+from app.services.sage3.graph.critic import evidence_rows  # noqa: E402
 from app.services.sage3.state import initial_state  # noqa: E402
 from app.services.sage3 import run_sage3, get_graph  # noqa: E402
 
@@ -48,6 +49,20 @@ def test_initial_state_empty_stores_means_all():
     st = initial_state(session_id="s", user_query="q", tenant_id=1,
                        role="super_admin", allowed_stores=None)
     assert st["allowed_stores"] == []  # [] => no store restriction (super_admin)
+
+
+# --- evidence grounding -----------------------------------------------------
+def test_evidence_rows_reads_rag_chunks():
+    # A RAG-routed answer's evidence is retrieved document chunks, not SQL rows.
+    # Before this was wired up, the critic/cross_validator always saw `[]` for
+    # route='rag' and downgraded every correctly-cited answer as "unverified".
+    state = {"route": "rag", "rag_result": {"chunks": [{"content": "revenue AED 8B"}]}}
+    assert evidence_rows(state) == [{"content": "revenue AED 8B"}]
+
+
+def test_evidence_rows_rag_missing_chunks_is_empty_not_error():
+    state = {"route": "rag", "rag_result": {}}
+    assert evidence_rows(state) == []
 
 
 # --- graph compile + run ---------------------------------------------------

@@ -40,6 +40,24 @@ def build_sql_messages(question: str) -> List[Dict[str, str]]:
     ]
 
 
+def build_repair_messages(question: str, failed_sql: str, error: str) -> List[Dict[str, str]]:
+    """Messages that hand the model its own failing SQL + the DB/guard error, so a
+    fixable mistake (wrong column, wrong view) gets corrected instead of the caller
+    giving up and dropping to the rule-based fallback."""
+    shots = "\n".join(f"Q: {s['q']}\nSQL: {s['sql']}" for s in FEW_SHOTS)
+    return [
+        {"role": "system", "content": _SQL_SYSTEM.format(schema=SCHEMA_PROMPT)},
+        {
+            "role": "user",
+            "content": (
+                f"Examples:\n{shots}\n\nQ: {question}\nSQL:\n{failed_sql}\n\n"
+                f"That query failed:\n{error}\n\n"
+                "Write ONE corrected SELECT that fixes the problem. Output ONLY the SQL."
+            ),
+        },
+    ]
+
+
 def extract_sql(raw: str) -> str:
     """Pull the SQL out of a model response: strip markdown fences / leading 'sql:'."""
     if not raw:

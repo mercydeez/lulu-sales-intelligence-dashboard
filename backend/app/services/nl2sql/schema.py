@@ -41,13 +41,13 @@ VIEW sage_sales        -- one row per sale line (the grain)
 VIEW sage_daily_sales  -- per-day totals
   date DATE, units BIGINT, revenue_aed NUMERIC, line_count BIGINT
 
-VIEW sage_store_performance  -- per store
+VIEW sage_store_performance  -- per store, ALL-TIME totals (NO date column)
   store_id INT, store_name TEXT, units BIGINT, revenue_aed NUMERIC, line_count BIGINT
 
-VIEW sage_category_performance  -- per category
+VIEW sage_category_performance  -- per category, ALL-TIME totals (NO date column)
   category TEXT, units BIGINT, revenue_aed NUMERIC
 
-VIEW sage_item_performance  -- per item
+VIEW sage_item_performance  -- per item, ALL-TIME totals (NO date column)
   item_id INT, item_name TEXT, category TEXT, unit_price_aed NUMERIC,
   units BIGINT, revenue_aed NUMERIC
 
@@ -67,6 +67,11 @@ VIEW sage_targets        -- company strategy targets
 VIEW sage_zones          -- list of zones: zone TEXT
 
 CONVENTIONS (critical for correctness):
+- The sage_*_performance views (store/category/item) have NO date column — they
+  are all-time totals. For a TIME-WINDOWED ranking or breakdown ("this month",
+  "last week", "today"), do NOT add a date filter to them (it will error). Instead
+  query sage_sales directly and GROUP BY the dimension (store_name / category /
+  item_name) with the date filter there — see the few-shot examples below.
 - Pick the RIGHT view for the domain: sales/revenue -> sage_*sales/performance;
   "distributors serving X zone" -> sage_distributors WHERE zone = 'X';
   "CRM pipeline / expected revenue" -> sage_crm_pipeline (SUM(expected_revenue));
@@ -92,6 +97,12 @@ FEW_SHOTS: list[dict[str, str]] = [
         "q": "Top 5 stores by revenue",
         "sql": "SELECT store_name, revenue_aed FROM sage_store_performance "
                "ORDER BY revenue_aed DESC LIMIT 5",
+    },
+    {
+        "q": "Top 5 stores by revenue this month",
+        "sql": "SELECT store_name, SUM(revenue_aed) AS revenue_aed FROM sage_sales "
+               "WHERE date >= CURRENT_DATE - INTERVAL '30 days' AND NOT is_return "
+               "GROUP BY store_name ORDER BY revenue_aed DESC LIMIT 5",
     },
     {
         "q": "How many units did we sell per category?",

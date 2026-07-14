@@ -58,14 +58,23 @@ async def search_documents(
 
     async with async_session() as s:
         # ── FTS arm (ACL-filtered) ──────────────────────────────────────────
+        # plainto_tsquery AND-combines every lexeme, so a natural-language
+        # question ("According to our strategy document, what's the 2030
+        # target?") misses a chunk that doesn't literally contain "document" —
+        # even though it's the obvious answer. Rebuild it as an OR query for
+        # recall; ts_rank still favors chunks that match MORE terms, so the
+        # confidence gate downstream still separates strong from weak matches.
         fts_ids: List[int] = []
         if query and query.strip():
             fts_ids = [r.id for r in (await s.execute(text(f"""
                 SELECT d.id
-                FROM documents d
+                FROM documents d,
+                     to_tsquery('english',
+                         replace(plainto_tsquery('english', :q)::text, ' & ', ' | ')
+                     ) AS q
                 WHERE {acl.where_sql}
-                  AND d.tsv @@ plainto_tsquery('english', :q)
-                ORDER BY ts_rank(d.tsv, plainto_tsquery('english', :q)) DESC
+                  AND d.tsv @@ q
+                ORDER BY ts_rank(d.tsv, q) DESC
                 LIMIT {_FTS_CANDIDATES}
             """), {**acl.params, "q": query})).all()]
 
@@ -89,7 +98,12 @@ async def search_documents(
                         LIMIT {_VEC_CANDIDATES}
                     """), {**acl.params, "emb_model": emb.model, "qvec": qlit})).all()]
             except Exception:
-                # pgvector/embedder unavailable → FTS-only, no crash.
+                # pgvector/embedder unavailable → FTS-only, no crash. A failed
+                # statement aborts the rest of this session's transaction in
+                # Postgres even though the Python exception is caught here, so
+                # roll back or every later query on `s` (including the final
+                # row fetch below) fails with "transaction is aborted".
+                await s.rollback()
                 vec_ids = []
 
         # ── Fuse (down-weight the vector arm when it's the hashed fallback) ──
