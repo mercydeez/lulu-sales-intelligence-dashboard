@@ -60,6 +60,7 @@ from app.routes import experience as experience_routes
 from app.routes import findings as findings_routes
 from app.routes import search as search_routes
 from app.routes import copilot as copilot_routes
+from app.routes import retention as retention_routes
 
 
 # A router, its mount prefix, and its OpenAPI tags.
@@ -122,4 +123,5 @@ ROUTERS: List[RouterSpec] = [
     (findings_routes.router, "/api/findings", ["Diagnostics"]),
     (search_routes.router, "/api/search", ["Search"]),
     (copilot_routes.router, "/api/ai/copilot", ["Sage Copilot"]),
+    (retention_routes.router, "/api/retention", ["Retention Orchestration"]),
 ]
