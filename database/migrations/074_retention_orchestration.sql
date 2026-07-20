@@ -250,7 +250,13 @@ FROM (VALUES
 ) AS a(ord, archetype, n, recency, interval_days, n_purch, consent, contacts_used)
 CROSS JOIN LATERAL generate_series(1, a.n) AS gs(n)
 CROSS JOIN (SELECT array_agg(id ORDER BY id) AS ids FROM stores WHERE tenant_id = 1) st
-WHERE NOT EXISTS (SELECT 1 FROM customers WHERE tenant_id = 1);
+-- Guard added: on a FRESH deploy the migrate job runs BEFORE the app seeder, so
+-- tenant 1 has no stores yet and array_agg(...) is NULL. Indexing a NULL array
+-- yields NULL home_store_id and the NOT NULL constraint aborts the whole
+-- migration — this file could not be applied to a clean database at all.
+-- Mirrors the guard already used on the tenant-2 block below.
+WHERE EXISTS (SELECT 1 FROM stores WHERE tenant_id = 1)
+  AND NOT EXISTS (SELECT 1 FROM customers WHERE tenant_id = 1);
 
 -- Purchase histories: for customer c with archetype params, purchases at
 -- CURRENT_DATE - recency - k*interval for k in 0..n-1; the item cycles through
@@ -283,6 +289,9 @@ JOIN (VALUES
 CROSS JOIN LATERAL generate_series(0, p.n_purch - 1) AS k(k)
 CROSS JOIN (SELECT array_agg(id ORDER BY id) AS ids FROM items WHERE tenant_id = 1) it
 WHERE c.tenant_id = 1
+  -- Same fresh-deploy guard: no tenant-1 items yet means no catalogue to
+  -- cycle through, and the array index would be NULL.
+  AND EXISTS (SELECT 1 FROM items WHERE tenant_id = 1)
   AND NOT EXISTS (SELECT 1 FROM customer_purchases WHERE tenant_id = 1);
 
 -- Small tenant-2 cohort so tenant-isolation is demonstrable (guarded: only if

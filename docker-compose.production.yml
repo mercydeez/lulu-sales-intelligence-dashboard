@@ -228,7 +228,12 @@ services:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      # The backend image is python:slim and does NOT ship curl, so the
+      # previous curl-based probe could never succeed: the container sat
+      # permanently "unhealthy" and nginx + frontend, which depend on
+      # service_healthy, never left "Created". Python is guaranteed present.
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health/ready', timeout=5).status==200 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -413,7 +418,10 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      # Same reason as the backend probe: the Next standalone image is
+      # node:slim with no curl. Node is guaranteed present.
+      test: ["CMD", "node", "-e",
+             "require('http').get('http://localhost:3000', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
