@@ -37,6 +37,17 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SEED = 42
 
+#: Lowest demand weight any day may carry. A quiet trading day should make a
+#: purchase unlikely, not impossible — at zero the acceptance loop below could
+#: never place a purchase there and would burn its whole slide budget.
+DEMAND_FLOOR = 0.15
+
+#: How many days a proposed purchase may slide forward looking for a busier
+#: day. Small on purpose: this is meant to nudge a date onto a realistic
+#: trading day, not to relocate it into a different week and corrupt the
+#: interpurchase gap the churn model reads.
+DEMAND_SLIDE_LIMIT = 4
+
 # ---------------------------------------------------------------------------
 # The ten archetypes (§9). Each is a distinct GENERATIVE PROCESS, described by
 # the parameters the generator actually uses — not a cosmetic label.
@@ -127,7 +138,56 @@ async def _reference_data(db: AsyncSession, tenant_id: int) -> Dict[str, Any]:
     for sid, store_id, item_id, sale_date in sale_rows:
         sales_index.setdefault((int(store_id), int(item_id)), []).append((int(sid), sale_date))
 
-    return {"stores": stores, "items": items, "sales_index": sales_index}
+    demand = await _demand_index(db, tenant_id)
+
+    return {"stores": stores, "items": items, "sales_index": sales_index,
+            "demand": demand}
+
+
+async def _demand_index(
+    db: AsyncSession, tenant_id: int
+) -> Dict[int, Dict[date, float]]:
+    """Per-store daily demand weight in [DEMAND_FLOOR, 1.0], from the REAL data.
+
+    This is the bridge between the dataset and the synthetic customer layer.
+    Without it, purchase dates come from a bare `gauss(gap_days, sigma)` draw —
+    statistically tidy but blind to the actual business. The generated
+    population then has no weekday rhythm, no seasonality and no store-level
+    trend, because none of those exist in a gaussian.
+
+    Each store is normalised against its OWN 95th percentile, not a global
+    maximum: store volumes here differ by roughly an order of magnitude, and a
+    global scale would pin every smaller store near the floor — effectively
+    excluding it. Using p95 rather than the max stops one freak trading day
+    flattening the rest of the year.
+
+    Weights are FLOORED, never zeroed. A quiet day should be unlikely, not
+    impossible, and a hard zero would make the acceptance loop below spin
+    against days it can never accept.
+    """
+    rows = (await db.execute(
+        text("""SELECT store_id, date, SUM(sales)::float AS units
+                  FROM sales_historical
+                 WHERE tenant_id = :t
+                 GROUP BY store_id, date"""),
+        {"t": tenant_id},
+    )).fetchall()
+
+    by_store: Dict[int, Dict[date, float]] = {}
+    for store_id, day, units in rows:
+        by_store.setdefault(int(store_id), {})[day] = float(units or 0)
+
+    index: Dict[int, Dict[date, float]] = {}
+    for store_id, days in by_store.items():
+        if not days:
+            continue
+        ordered = sorted(days.values())
+        p95 = ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))] or 1.0
+        index[store_id] = {
+            day: max(DEMAND_FLOOR, min(1.0, units / p95))
+            for day, units in days.items()
+        }
+    return index
 
 
 async def seed_customers(
@@ -241,9 +301,50 @@ async def seed_customers(
         event_batch: List[Dict[str, Any]] = []
         purchase_index = 0
 
+        store_demand = ref["demand"].get(home_store, {})
+
         while cursor < stop_at:
             gap = max(1, int(crng.gauss(spec["gap_days"], spec["gap_sigma"])))
             cursor += timedelta(days=gap)
+            if cursor >= stop_at:
+                break
+
+            # ── Bend the date toward when this store is ACTUALLY busy ───────
+            #
+            # THE CONSTRAINT THAT SHAPES THIS: the archetype's cadence — mean
+            # gap, volatility, and the drift that makes a declining customer
+            # decline — IS the churn signal the model has to learn. Sampling
+            # dates directly from the demand curve would produce beautifully
+            # realistic seasonality and destroy that signal entirely, because
+            # every customer would then share one arrival process.
+            #
+            # So the gap process still PROPOSES the date and real demand only
+            # NUDGES it, within a SYMMETRIC window around the proposal.
+            #
+            # The window is symmetric because an earlier forward-only version
+            # was measurably biased: a rejected day always slid to the day
+            # AFTER it, so mass drained off the weekly trough onto its
+            # successor. Measured against the real profile, Monday's shortfall
+            # reappeared as a Tuesday surplus of +2.0 points that exists in no
+            # real store. Choosing among neighbouring days weighted by their
+            # actual demand has no preferred direction, so the rhythm is
+            # inherited without inventing that artefact.
+            window = [
+                cursor + timedelta(days=offset)
+                for offset in range(-DEMAND_SLIDE_LIMIT, DEMAND_SLIDE_LIMIT + 1)
+            ]
+            window = [d for d in window if window_start <= d < stop_at]
+            if window:
+                weights = [store_demand.get(d, 1.0) for d in window]
+                total = sum(weights)
+                if total > 0:
+                    pick = crng.random() * total
+                    running = 0.0
+                    for day, weight in zip(window, weights):
+                        running += weight
+                        if pick <= running:
+                            cursor = day
+                            break
             if cursor >= stop_at:
                 break
 

@@ -180,6 +180,60 @@ regardless of model quality.
 A **negative** Qini is reported as-is: it means targeting the top decile would be
 worse than targeting at random, which is a finding, not a bug to hide.
 
+## 6.7 Purchase timing is now drawn from the real dataset
+
+Customer purchase dates originally came from a bare `gauss(gap_days, sigma)`
+draw. Statistically tidy, and blind to the business: the generated population
+had no weekday rhythm, no seasonality and no store-level trend, because none of
+those exist in a gaussian. Measured, the generated weekday profile was flat
+(13.8-14.8%) against a real profile spanning 11.3% Monday to 17.0% Sunday.
+
+The gap process still PROPOSES each date - that cadence is the churn signal the
+model must learn, and sampling dates straight from the demand curve would give
+every customer one shared arrival process and destroy it. Real demand only
+NUDGES the proposal, choosing among neighbouring days weighted by that store's
+actual daily volume from `sales_historical`.
+
+| Generator | Correlation with real weekday profile | Mean abs deviation |
+|---|---|---|
+| Gaussian (flat) | ~0.00 | 1.51 pts |
+| Forward-slide (first attempt) | +0.657 | 1.36 pts |
+| **Symmetric window (shipped)** | **+0.980** | **0.54 pts** |
+
+The middle row is kept deliberately. Sliding a rejected day only FORWARD drained
+mass off the weekly trough onto its successor and invented a +2.0-point Tuesday
+surplus that exists in no real store. A symmetric window has no preferred
+direction. The artefact was found by measuring against the real profile, not by
+inspection - which is the argument for measuring generator output at all.
+
+**Cadence survived**, which was the binding constraint: mean interpurchase gap
+still separates cleanly by archetype (loyal_frequent 5.5d -> declining 13.5d ->
+seasonal 25.1d -> lapsed 37.1d), with volatility tracking it. The persuadable
+middle improved from 80 to 96 of 300.
+
+Normalisation is per-store against that store's own 95th percentile. Store
+volumes here differ by roughly an order of magnitude, so a global scale would
+pin smaller stores near the floor and effectively exclude them; p95 rather than
+the max stops one freak trading day flattening the year.
+
+**Still synthetic.** This imports *when the business is busy* into the customer
+layer. It does not make the customers real - `train.csv` is
+`date,store,item,sales` with no customer column, so customer-level churn cannot
+be derived from it, only layered on top of it.
+
+## 6.8 A third reshuffle, and a negative Qini
+
+Retraining after this change produced a THIRD different winner (LightGBM;
+earlier runs gave GRU then FT-Transformer), and the uplift Qini swung from
+**+1.1296 to -3.80** - from informative to actively anti-informative.
+
+This is not evidence that demand-weighted timing harmed the models. It is
+further evidence for the instability in the results table above: at n=300 with
+~16 positives in the test split, none of these metrics are stable enough to
+support a claim in either direction. A negative Qini is reported rather than
+suppressed precisely because suppressing it would leave the impression the
+uplift model is dependable. It is not, at this sample size.
+
 ## 7.1 The rule tier was bimodal, and that broke targeting
 
 Measured on 300 live customers, the uncalibrated rule scorer put **195 in the

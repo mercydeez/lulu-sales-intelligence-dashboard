@@ -21,6 +21,7 @@ EXISTING_ROUTES = {
     "/procurement", "/approvals", "/alerts", "/reports", "/value", "/analytics",
     "/uae-insights", "/action-drafts", "/imports", "/employees", "/promotions",
     "/forecast-lab", "/settings", "/copilot", "/role-workbench",
+    "/flywheel", "/retention",
 }
 
 
@@ -72,7 +73,8 @@ def test_super_admin_gets_executive_experience():
     # The curated executive nav (labels driven by tKey on the client); includes
     # the Role Workbench audit surface after the briefing.
     hrefs = [n["href"] for n in cfg["nav"]]
-    assert hrefs == ["/today", "/briefing", "/role-workbench", "/value", "/decisions", "/analytics", "/copilot"]
+    assert hrefs == ["/today", "/briefing", "/role-workbench", "/value",
+                     "/decisions", "/analytics", "/flywheel", "/copilot"]
     assert cfg["capabilities"] == {"ai_chat": True, "voice": True}
     assert cfg["quick_actions"] and all(a["href"] in EXISTING_ROUTES for a in cfg["quick_actions"])
     # Phase 2b: the exec homepage names the Copilot feed widgets (which read one
