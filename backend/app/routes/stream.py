@@ -604,3 +604,73 @@ async def stream_inventory(
     - event: inventory_update - Inventory level change
     """
     return EventSourceResponse(inventory_event_generator(request, current_user))
+
+
+async def flywheel_event_generator(request: Request, current_user: dict):
+    """Stream Flywheel campaign/approval/budget/offer events for the viewer's scope.
+
+    FILTERING IS SERVER-SIDE AND FAILS CLOSED (§21). Every event carries the
+    tenant it belongs to and, where relevant, a store id. We forward an event
+    only when BOTH match the viewer: same tenant, and — for store-scoped events —
+    a store the viewer can actually access. A store manager watching this stream
+    must never see another store's redemptions, so an event whose scope we cannot
+    establish is dropped rather than forwarded.
+
+    Events are published by the transactional outbox relay
+    (services/flywheel/outbox.py), never directly by the code that moved the money —
+    so a live dashboard reflects only COMMITTED state.
+    """
+    from app.services.flywheel.outbox import ALL_CHANNELS
+    from app.auth_deps import get_accessible_store_ids
+
+    redis = await get_redis()
+    pubsub = redis.pubsub()
+    for channel in ALL_CHANNELS:
+        await pubsub.subscribe(channel)
+
+    viewer_tenant = current_user.get("tenant_id") or 1
+    # Empty list means super_admin (all stores) — mirrors auth_deps semantics.
+    accessible = get_accessible_store_ids(current_user)
+
+    yield {"event": "connected",
+           "data": json.dumps({"message": "Connected to Flywheel stream",
+                               "channels": list(ALL_CHANNELS)})}
+
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message and message['type'] == 'message':
+                try:
+                    evt = json.loads(message['data'])
+                    if int(evt.get("tenant_id", -1)) != int(viewer_tenant):
+                        continue
+                    event_store = evt.get("store_id")
+                    if event_store is not None and accessible and int(event_store) not in accessible:
+                        continue
+                    yield {"event": evt.get("event", "flywheel"), "data": message['data']}
+                except Exception as e:
+                    logger.warning(f"Error filtering Flywheel event: {e}")
+            await asyncio.sleep(0.1)
+    finally:
+        for channel in ALL_CHANNELS:
+            await pubsub.unsubscribe(channel)
+        await pubsub.close()
+
+
+@router.get("/flywheel")
+async def stream_flywheel(
+    request: Request,
+    current_user: dict = Depends(get_current_user_from_ticket)
+):
+    """SSE endpoint for the Flywheel live control centre.
+
+    Example: GET /stream/flywheel?ticket=<stream ticket>
+
+    Events: `connected`, then one per outbox event —
+    `campaign.activated`, `campaign.auto_paused`, `campaign.measured`,
+    `approval.requested`, `approval.decided`, `offer.issued`,
+    `offer.redeemed`, `inventory.decremented`.
+    """
+    return EventSourceResponse(flywheel_event_generator(request, current_user))

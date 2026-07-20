@@ -45,3 +45,6 @@ venv/
 
 # Claude local settings
 .claude/settings.local.json
+
+# Editor/cloud-sync conflict copies ("file 2.py"). Never source.
+* 2.*

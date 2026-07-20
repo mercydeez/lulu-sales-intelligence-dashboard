@@ -61,6 +61,7 @@ from app.routes import findings as findings_routes
 from app.routes import search as search_routes
 from app.routes import copilot as copilot_routes
 from app.routes import retention as retention_routes
+from app.routes import flywheel as flywheel_routes
 
 
 # A router, its mount prefix, and its OpenAPI tags.
@@ -124,4 +125,8 @@ ROUTERS: List[RouterSpec] = [
     (search_routes.router, "/api/search", ["Search"]),
     (copilot_routes.router, "/api/ai/copilot", ["Sage Copilot"]),
     (retention_routes.router, "/api/retention", ["Retention Orchestration"]),
+    # Flywheel — closed-loop retention decisioning (churn -> uplift -> EIV ->
+    # stock/budget/approval -> execution -> measured lift). Distinct prefix from
+    # /api/retention above; the two modules do not share tables or routes.
+    (flywheel_routes.router, "/api/flywheel", ["Flywheel"]),
 ]

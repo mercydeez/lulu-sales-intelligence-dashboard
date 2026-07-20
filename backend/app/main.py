@@ -169,6 +169,17 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Import scheduler disabled (IMPORT_SCHEDULER_ENABLED=false)")
 
+    # Flywheel transactional-outbox relay. Safe in every API worker for the SAME
+    # reason as the import scheduler: it claims rows with `FOR UPDATE SKIP
+    # LOCKED`, so N workers partition pending events rather than each publishing
+    # all of them. A failure here degrades dashboard freshness, never
+    # correctness — money and stock already committed with their outbox row.
+    try:
+        from app.services.flywheel.outbox import relay_loop as flywheel_relay_loop
+        _track("flywheel_outbox_relay", flywheel_relay_loop())
+    except Exception as e:
+        logger.warning(f"Flywheel outbox relay not started: {e}")
+
     logger.info("Sales Dashboard API is ready!")
 
     yield

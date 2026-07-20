@@ -45,6 +45,7 @@ import {
   Scale,
   ClipboardCheck,
   SlidersHorizontal,
+  Repeat,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -72,6 +73,7 @@ export const navItems: NavItem[] = [
   { label: 'Sage Copilot', tKey: 'nav.sageCopilot', href: '/copilot', icon: <Lightbulb className="w-5 h-5" />, roles: ['super_admin'] },
   { label: 'Action Drafts', tKey: 'nav.actionDrafts', href: '/action-drafts', icon: <Wand2 className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Retention', tKey: 'nav.retention', href: '/retention', icon: <Users className="w-5 h-5" />, permission: 'can_manage_promotions' },
+  { label: 'Flywheel', tKey: 'nav.flywheel', href: '/flywheel', icon: <Repeat className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Forecast Lab', tKey: 'nav.forecastLab', href: '/forecast-lab', icon: <Brain className="w-5 h-5" /> },
   { label: 'UAE Insights', tKey: 'nav.uaeInsights', href: '/uae-insights', icon: <MapPin className="w-5 h-5" /> },
   { label: 'Employees', tKey: 'nav.employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
