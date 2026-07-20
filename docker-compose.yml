@@ -159,6 +159,18 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        # Passed EXPLICITLY, not left to the Dockerfile ARG default.
+        # NEXT_PUBLIC_* is inlined into the JS bundle at BUILD time, so an
+        # image built once with the production origin keeps calling that
+        # origin forever — the runtime `environment:` value below is read
+        # by nothing in the browser. Running the production compose without
+        # `-p` rebuilt this very image name with http://localhost/api baked
+        # in, and every dev login then failed with a network error against
+        # a port nothing was listening on. Being explicit makes the dev
+        # build deterministic regardless of what touched the image last.
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_SSE_URL: http://localhost:8000/stream/sales
       dockerfile: Dockerfile
     container_name: ${PROJECT_PREFIX:-sales}_frontend
     security_opt:
