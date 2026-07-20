@@ -46,6 +46,8 @@ import {
   ClipboardCheck,
   SlidersHorizontal,
   Repeat,
+  GitCompare,
+  ShieldCheck,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 
@@ -74,6 +76,11 @@ export const navItems: NavItem[] = [
   { label: 'Action Drafts', tKey: 'nav.actionDrafts', href: '/action-drafts', icon: <Wand2 className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Retention', tKey: 'nav.retention', href: '/retention', icon: <Users className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Flywheel', tKey: 'nav.flywheel', href: '/flywheel', icon: <Repeat className="w-5 h-5" />, permission: 'can_manage_promotions' },
+  // HORIZON 1 — the surfaces that make the programme provable. Each one exposes a capability that already existed in the backend with no way to see it.
+  { label: 'Incrementality', tKey: 'nav.incrementality', href: '/flywheel/incrementality', icon: <TrendingUp className="w-5 h-5" />, permission: 'can_manage_promotions' },
+  { label: 'Holdout', tKey: 'nav.holdout', href: '/flywheel/holdout', icon: <Scale className="w-5 h-5" />, permission: 'can_manage_promotions' },
+  { label: 'Contact Governance', tKey: 'nav.governance', href: '/flywheel/governance', icon: <ShieldCheck className="w-5 h-5" />, permission: 'can_manage_promotions' },
+  { label: 'Shadow Mode', tKey: 'nav.shadowMode', href: '/flywheel/models/shadow', icon: <GitCompare className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Forecast Lab', tKey: 'nav.forecastLab', href: '/forecast-lab', icon: <Brain className="w-5 h-5" /> },
   { label: 'UAE Insights', tKey: 'nav.uaeInsights', href: '/uae-insights', icon: <MapPin className="w-5 h-5" /> },
   { label: 'Employees', tKey: 'nav.employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
@@ -96,6 +103,8 @@ export const navItems: NavItem[] = [
 // strings — resolve them here. Unknown icon names degrade to LayoutDashboard.
 export const NAV_ICONS: Record<string, ReactNode> = {
   Repeat: <Repeat className="w-5 h-5" />,
+  ShieldCheck: <ShieldCheck className="w-5 h-5" />,
+  GitCompare: <GitCompare className="w-5 h-5" />,
   Sunrise: <Sunrise className="w-5 h-5" />,
   Scale: <Scale className="w-5 h-5" />,
   ClipboardCheck: <ClipboardCheck className="w-5 h-5" />,

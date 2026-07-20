@@ -277,3 +277,119 @@ async def contact_status(
         "all_channels_ceiling": ceiling["week"],
         "headroom": max(0, ceiling["week"] - int(total_week)),
     }
+
+
+async def overview(db: AsyncSession, *, tenant_id: int) -> Dict[str, Any]:
+    """Everything the Contact Governance surface needs, in one call.
+
+    WHY THIS EXISTS. All four gates above, the policy table and the suppression
+    ledger have been enforced since migration 076 and have never been visible in
+    the product. A marketer could not see the caps they were subject to, could
+    not see who was suppressed, and could not see how often the system declined
+    to send. Enforcement they cannot inspect is enforcement they will not trust,
+    and the first thing an operator does with a system they do not trust is
+    route around it.
+
+    THE SUPPRESSED COUNT IS A FEATURE. It is the system declining to
+    over-contact people, which is the whole purpose of the module. Rendered as
+    a failure metric it would train operators to raise the caps until it went
+    away, so it is labelled here rather than left for the UI to interpret.
+    """
+    policies = (await db.execute(
+        text("""SELECT channel, max_contacts_per_week, max_contacts_per_day,
+                       cooldown_days_after_ignores, ignores_before_cooldown,
+                       is_active
+                  FROM flywheel_contact_policy
+                 WHERE tenant_id = :t
+                 ORDER BY channel"""),
+        {"t": tenant_id},
+    )).fetchall()
+
+    # Contact volume by channel over the trailing week.
+    volume = (await db.execute(
+        text("""SELECT channel,
+                       COUNT(*) FILTER (WHERE contacted_at >= now() - interval '1 day'),
+                       COUNT(*) FILTER (WHERE contacted_at >= now() - interval '7 days'),
+                       COUNT(DISTINCT customer_id)
+                         FILTER (WHERE contacted_at >= now() - interval '7 days')
+                  FROM flywheel_contact_log
+                 WHERE tenant_id = :t
+                 GROUP BY channel
+                 ORDER BY channel"""),
+        {"t": tenant_id},
+    )).fetchall()
+    volume_by_channel = {
+        r[0]: {"last_24h": int(r[1]), "last_7d": int(r[2]),
+               "distinct_customers_7d": int(r[3])}
+        for r in volume
+    }
+
+    # FATIGUE. Customers nearest their weekly ceiling — the people most at risk
+    # of being over-contacted, which is what an operator actually wants to see.
+    fatigue = (await db.execute(
+        text("""SELECT customer_id, COUNT(*) AS contacts,
+                       MAX(contacted_at) AS last_contact
+                  FROM flywheel_contact_log
+                 WHERE tenant_id = :t
+                   AND contacted_at >= now() - interval '7 days'
+                 GROUP BY customer_id
+                 HAVING COUNT(*) >= 2
+                 ORDER BY COUNT(*) DESC, MAX(contacted_at) DESC
+                 LIMIT 50"""),
+        {"t": tenant_id},
+    )).fetchall()
+
+    suppressions = (await db.execute(
+        text("""SELECT reason_code, COUNT(*)
+                  FROM flywheel_offer_suppressions
+                 WHERE tenant_id = :t
+                   AND created_at >= now() - interval '30 days'
+                 GROUP BY reason_code
+                 ORDER BY COUNT(*) DESC"""),
+        {"t": tenant_id},
+    )).fetchall()
+
+    recent_suppressions = (await db.execute(
+        text("""SELECT s.customer_id, s.suppressed_campaign_id, s.winning_campaign_id,
+                       s.reason_code, s.detail, s.created_at,
+                       sc.name, wc.name
+                  FROM flywheel_offer_suppressions s
+                  LEFT JOIN flywheel_campaigns sc ON sc.id = s.suppressed_campaign_id
+                  LEFT JOIN flywheel_campaigns wc ON wc.id = s.winning_campaign_id
+                 WHERE s.tenant_id = :t
+                 ORDER BY s.created_at DESC
+                 LIMIT 25"""),
+        {"t": tenant_id},
+    )).fetchall()
+
+    total_suppressed = sum(int(r[1]) for r in suppressions)
+
+    return {
+        "policies": [{
+            "channel": r[0], "max_per_week": int(r[1]), "max_per_day": int(r[2]),
+            "cooldown_days_after_ignores": int(r[3]),
+            "ignores_before_cooldown": int(r[4]), "is_active": bool(r[5]),
+            "volume": volume_by_channel.get(r[0], {"last_24h": 0, "last_7d": 0,
+                                                   "distinct_customers_7d": 0}),
+        } for r in policies],
+        "fatigue": [{
+            "customer_id": int(r[0]), "contacts_7d": int(r[1]),
+            "last_contact": r[2].isoformat() if r[2] else None,
+        } for r in fatigue],
+        "suppressions_by_reason": {r[0]: int(r[1]) for r in suppressions},
+        "suppressed_30d": total_suppressed,
+        "recent_suppressions": [{
+            "customer_id": int(r[0]),
+            "suppressed_campaign_id": int(r[1]) if r[1] is not None else None,
+            "winning_campaign_id": int(r[2]) if r[2] is not None else None,
+            "reason_code": r[3], "detail": r[4],
+            "created_at": r[5].isoformat() if r[5] else None,
+            "suppressed_campaign_name": r[6], "winning_campaign_name": r[7],
+        } for r in recent_suppressions],
+        "interpretation": (
+            f"{total_suppressed} contacts were withheld in the last 30 days by "
+            f"policy. That is the system working: each one is a message a "
+            f"customer did not receive because they had already heard enough. "
+            f"A rising number is not a fault to be tuned away."
+        ),
+    }

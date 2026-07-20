@@ -25,10 +25,11 @@ from app.auth_deps import (
 )
 from app.services.database import get_db
 from app.services.flywheel import (
-    approvals, budget as budget_service, campaign_state, campaigns as campaign_service,
-    churn as churn_service, contact_governance, decisioning,
-    features as feature_service, guardrails, inventory_atp, liability, measurement,
-    optimizer, outbox, procurement, seeder, tax, uplift as uplift_service,
+    allocator, approvals, budget as budget_service, campaign_state,
+    campaigns as campaign_service, churn as churn_service, contact_governance,
+    decisioning, erasure, features as feature_service, guardrails, inventory_atp,
+    liability, measurement, optimizer, outbox, procurement, readout, seeder,
+    sequential, shadow, tax, uplift as uplift_service,
 )
 from app.services.flywheel.budget import BudgetError, InsufficientBudget
 from app.services.flywheel.campaign_state import TransitionError
@@ -1112,3 +1113,284 @@ async def flywheel_health(
         "outbox_healthy": pending < 500,
         "synthetic": True,
     }
+
+
+# ===========================================================================
+# HORIZON 1 — proving it.
+#
+# Everything below serves the four surfaces added in Horizon 1: Incrementality,
+# Holdout, Contact Governance and Shadow Mode. See
+# docs/MASTER_IMPLEMENTATION_PLAN_C_LEVEL.md Addendum A.
+# ===========================================================================
+
+class PreregistrationIn(BaseModel):
+    """What we commit to measuring, BEFORE the campaign runs."""
+    primary_metric: str = Field("incremental_retention")
+    window_days: int = Field(60, ge=1, le=365)
+    alpha: float = Field(0.05, gt=0, lt=0.5)
+    min_detectable_effect: float = Field(0.02, ge=0, le=1)
+    planned_treatment_n: int = Field(0, ge=0)
+    planned_control_n: int = Field(0, ge=0)
+    control_pct: Decimal = Field(Decimal("10.00"), ge=0, le=50)
+    notes: Optional[str] = None
+
+
+@router.get("/incrementality", summary="Tenant-wide incrementality roll-up")
+async def incrementality_summary(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The headline: incremental margin per AED spent, proven against control."""
+    return await readout.portfolio_summary(db, tenant_id=_tenant(user))
+
+
+@router.get("/campaigns/{campaign_id}/readout", summary="Latest incrementality readout")
+async def campaign_readout(
+    campaign_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = _tenant(user)
+    latest = await readout.latest(db, tenant_id=tenant_id, campaign_id=campaign_id)
+    if not latest:
+        # NOT a 404. A campaign with no readout yet is a normal, expected state
+        # early in its life; returning an error would make the UI render a
+        # failure where the honest answer is "not yet".
+        return {"campaign_id": campaign_id, "state": "not_yet_measured",
+                "readout": None,
+                "note": "No readout computed yet. The scheduler measures hourly."}
+
+    prereg = await readout.get_preregistration(
+        db, tenant_id=tenant_id, campaign_id=campaign_id)
+    mde = float(prereg["min_detectable_effect"]) if prereg else 0.0
+    cs = sequential.difference_of_proportions(
+        treatment_converted=latest["treatment_converted"],
+        treatment_n=latest["treatment_n"],
+        control_converted=latest["control_converted"],
+        control_n=latest["control_n"],
+        alpha=float(prereg["alpha"]) if prereg else sequential.DEFAULT_ALPHA,
+    )
+    return {
+        "campaign_id": campaign_id, "state": "measured", "readout": latest,
+        "interpretation": sequential.interpret(cs, min_detectable_effect=mde),
+        "preregistration": prereg,
+    }
+
+
+@router.get("/campaigns/{campaign_id}/readout/history",
+            summary="Readout time series — how evidence accumulated")
+async def campaign_readout_history(
+    campaign_id: int,
+    limit: int = Query(90, ge=1, le=365),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return {
+        "campaign_id": campaign_id,
+        "series": await readout.history(
+            db, tenant_id=_tenant(user), campaign_id=campaign_id, limit=limit),
+        "note": ("The interval is anytime-valid: it is correct however often it "
+                 "was checked. Watching it narrow is the intended use."),
+    }
+
+
+@router.post("/campaigns/{campaign_id}/readout/recompute",
+             summary="Recompute this campaign's readout now")
+async def campaign_readout_recompute(
+    campaign_id: int,
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await readout.compute_and_store(
+        db, tenant_id=_tenant(user), campaign_id=campaign_id, computed_by="api")
+
+
+@router.get("/campaigns/{campaign_id}/preregistration",
+            summary="What this campaign committed to measuring")
+async def campaign_preregistration(
+    campaign_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    prereg = await readout.get_preregistration(
+        db, tenant_id=_tenant(user), campaign_id=campaign_id)
+    if not prereg:
+        return {"campaign_id": campaign_id, "preregistered": False,
+                "warning": ("This campaign was NOT pre-registered. Its results can "
+                            "still be read, but the metric and stopping rule were "
+                            "not fixed in advance, so they carry less weight.")}
+    return {"campaign_id": campaign_id, "preregistered": True, **prereg}
+
+
+@router.post("/campaigns/{campaign_id}/preregistration",
+             summary="Pre-register the measurement plan")
+async def create_preregistration(
+    campaign_id: int,
+    payload: PreregistrationIn,
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await readout.preregister(
+            db, tenant_id=_tenant(user), campaign_id=campaign_id,
+            primary_metric=payload.primary_metric, window_days=payload.window_days,
+            alpha=payload.alpha, min_detectable_effect=payload.min_detectable_effect,
+            planned_treatment_n=payload.planned_treatment_n,
+            planned_control_n=payload.planned_control_n,
+            control_pct=payload.control_pct,
+            registered_by=user.get("id"), notes=payload.notes)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@router.get("/campaigns/{campaign_id}/holdout",
+            summary="Holdout health and covariate balance")
+async def campaign_holdout(
+    campaign_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = _tenant(user)
+    balance = await readout.check_balance(
+        db, tenant_id=tenant_id, campaign_id=campaign_id, persist=False)
+
+    arms = (await db.execute(
+        text("""SELECT assignment, COUNT(*)
+                  FROM flywheel_campaign_audience
+                 WHERE tenant_id = :t AND campaign_id = :c
+                 GROUP BY assignment"""),
+        {"t": tenant_id, "c": campaign_id},
+    )).fetchall()
+    sizes = {row[0]: int(row[1]) for row in arms}
+
+    return {
+        "campaign_id": campaign_id,
+        "arms": {"treatment": sizes.get("treatment", 0),
+                 "control": sizes.get("control", 0)},
+        "balance": balance,
+        "assignment_method": (
+            "BLAKE2b stable hash of (tenant, campaign, customer). Stable across "
+            "processes and releases, so a restart can never reassign anyone — "
+            "Python's built-in hash() is salted per process and would silently "
+            "destroy the experiment."),
+    }
+
+
+@router.get("/holdout", summary="Holdout health across all campaigns")
+async def holdout_overview(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = _tenant(user)
+    rows = (await db.execute(
+        text("""SELECT c.id, c.name, c.status,
+                       COUNT(*) FILTER (WHERE a.assignment = 'treatment'),
+                       COUNT(*) FILTER (WHERE a.assignment = 'control')
+                  FROM flywheel_campaigns c
+                  LEFT JOIN flywheel_campaign_audience a
+                    ON a.campaign_id = c.id AND a.tenant_id = c.tenant_id
+                 WHERE c.tenant_id = :t
+                 GROUP BY c.id, c.name, c.status
+                 ORDER BY c.id DESC"""),
+        {"t": tenant_id},
+    )).fetchall()
+
+    campaigns = []
+    for r in rows:
+        treatment, control = int(r[3]), int(r[4])
+        campaigns.append({
+            "campaign_id": int(r[0]), "name": r[1], "status": r[2],
+            "treatment_n": treatment, "control_n": control,
+            "control_share": (round(control / (treatment + control), 4)
+                              if (treatment + control) else 0.0),
+            "adequate": control >= 30,
+        })
+    return {"campaigns": campaigns,
+            "note": ("Control groups below 30 are flagged: they can still be "
+                     "read, but the estimate is directional only.")}
+
+
+@router.get("/governance", summary="Contact governance — caps, suppressions, fatigue")
+async def governance_overview(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Surface the restraint the system is exercising.
+
+    The suppressed count is a FEATURE, not a loss: it is the system declining to
+    over-contact people. Presenting it as a failure metric would train operators
+    to disable the protection.
+    """
+    tenant_id = _tenant(user)
+    return await contact_governance.overview(db, tenant_id=tenant_id)
+
+
+@router.get("/models/shadow", summary="Rule tier vs shadow models")
+async def shadow_overview(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = _tenant(user)
+    return {
+        "comparison": await shadow.comparison(db, tenant_id=tenant_id),
+        "promotion": await shadow.promotion_standing(db, tenant_id=tenant_id),
+        "governing_rule": (
+            "The deterministic rule tier is the production decision path. Models "
+            "run in shadow and are promoted only when a pre-registered holdout "
+            "beats rules with a confidence interval excluding zero. This is a "
+            "governance control, not a limitation: model ranking is currently "
+            "unstable at this data volume (three training runs produced three "
+            "different winners; Qini ranged +1.13 to -3.80 at n=300)."),
+    }
+
+
+@router.get("/campaigns/{campaign_id}/allocation",
+            summary="Portfolio allocation vs per-customer greedy")
+async def campaign_allocation(
+    campaign_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = _tenant(user)
+    rows = (await db.execute(
+        text("""SELECT id, mode, is_shadow, budget_limit_aed, customers_considered,
+                       candidates_considered, actions_selected, total_eiv_aed,
+                       total_cost_aed, binding_constraint, eiv_delta_vs_greedy_aed,
+                       solver, runtime_ms, created_at
+                  FROM flywheel_allocation_runs
+                 WHERE tenant_id = :t AND campaign_id = :c
+                 ORDER BY created_at DESC LIMIT 20"""),
+        {"t": tenant_id, "c": campaign_id},
+    )).fetchall()
+
+    return {
+        "campaign_id": campaign_id,
+        "runs": [{
+            "id": int(r[0]), "mode": r[1], "is_shadow": bool(r[2]),
+            "budget_limit_aed": str(money(r[3])),
+            "customers_considered": int(r[4]), "candidates_considered": int(r[5]),
+            "actions_selected": int(r[6]), "total_eiv_aed": str(money(r[7])),
+            "total_cost_aed": str(money(r[8])), "binding_constraint": r[9],
+            "eiv_delta_vs_greedy_aed": str(money(r[10])) if r[10] is not None else None,
+            "solver": r[11], "runtime_ms": int(r[12]) if r[12] is not None else None,
+            "created_at": r[13].isoformat() if r[13] else None,
+        } for r in rows],
+        "note": ("Positive eiv_delta_vs_greedy_aed is margin the per-customer "
+                 "path left on the table. Zero is CORRECT when no constraint "
+                 "binds — the allocator must not differ in the easy case."),
+    }
+
+
+@router.post("/models/shadow/score", summary="Run a shadow scoring pass")
+async def shadow_score(
+    campaign_id: Optional[int] = Query(None),
+    limit: int = Query(1000, ge=1, le=5000),
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Score every customer through BOTH paths and record the disagreements.
+
+    Touches no money, no stock and no customer — it records an opinion.
+    """
+    return await shadow.score_pass(
+        db, tenant_id=_tenant(user), campaign_id=campaign_id, limit=limit)

@@ -281,6 +281,16 @@ class Settings(BaseSettings):
     # singletons container (exactly one process), never per web worker.
     pos_sync_enabled: bool = True
 
+    # HORIZON 1: the Flywheel incrementality readout scheduler. Recomputes every
+    # measurable campaign's treatment-vs-control outcome and writes an immutable
+    # row with an anytime-valid confidence interval. Runs in the singletons
+    # container (exactly one process). Readouts are idempotent per
+    # (campaign, window_end), so a missed pass self-heals on the next tick.
+    flywheel_readout_scheduler_enabled: bool = True
+    #: Seconds between passes. A 60-day retention window does not move hourly;
+    #: anything faster is churn for its own sake.
+    flywheel_readout_interval_seconds: int = 3600
+
     # Platform Console: optional comma-separated email allowlist AND-gated with
     # users.is_platform_developer (services/platform_access.py). Empty = the DB
     # flag alone decides (dev convenience); set it in production so a tampered

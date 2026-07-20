@@ -22,6 +22,9 @@ EXISTING_ROUTES = {
     "/uae-insights", "/action-drafts", "/imports", "/employees", "/promotions",
     "/forecast-lab", "/settings", "/copilot", "/role-workbench",
     "/flywheel", "/retention",
+    # Horizon 1 surfaces (migration 077 / plan Addendum A).
+    "/flywheel/incrementality", "/flywheel/holdout",
+    "/flywheel/governance", "/flywheel/models/shadow",
 }
 
 
@@ -73,8 +76,12 @@ def test_super_admin_gets_executive_experience():
     # The curated executive nav (labels driven by tKey on the client); includes
     # the Role Workbench audit surface after the briefing.
     hrefs = [n["href"] for n in cfg["nav"]]
+    # Incrementality follows Flywheel: the executive manifest carries the PROOF
+    # surface but not the operator tooling (Holdout, Contact Governance, Shadow
+    # Mode), which lives in the main sidebar. See role_experience.py.
     assert hrefs == ["/today", "/briefing", "/role-workbench", "/value",
-                     "/decisions", "/analytics", "/flywheel", "/copilot"]
+                     "/decisions", "/analytics", "/flywheel",
+                     "/flywheel/incrementality", "/copilot"]
     assert cfg["capabilities"] == {"ai_chat": True, "voice": True}
     assert cfg["quick_actions"] and all(a["href"] in EXISTING_ROUTES for a in cfg["quick_actions"])
     # Phase 2b: the exec homepage names the Copilot feed widgets (which read one

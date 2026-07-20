@@ -129,6 +129,12 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"key": "decisions", "tKey": "nav.decisions", "label": "Decisions", "href": "/decisions", "icon": "Scale"},
             {"key": "growth", "tKey": "nav.growth", "label": "Growth", "href": "/analytics", "icon": "BarChart3"},
             {"key": "flywheel", "tKey": "nav.flywheel", "label": "Flywheel", "href": "/flywheel", "icon": "Repeat"},
+            # Horizon 1: ONLY the proof surface belongs in an executive manifest.
+            # Holdout, Contact Governance and Shadow Mode are operator tools —
+            # they are registered in the main sidebar (config/nav.tsx) and reached
+            # from there. An executive nav that lists every sub-page stops being a
+            # curated view and becomes a second, worse sitemap.
+            {"key": "incrementality", "tKey": "nav.incrementality", "label": "Incrementality", "href": "/flywheel/incrementality", "icon": "TrendingUp"},
             {"key": "sage", "tKey": "nav.sageCopilot", "label": "Sage Copilot", "href": "/copilot", "icon": "Lightbulb"},
         ],
         "quick_actions": [

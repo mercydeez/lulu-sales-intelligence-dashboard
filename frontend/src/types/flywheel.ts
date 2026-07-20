@@ -396,3 +396,196 @@ export interface FlywheelHealth {
   outbox_healthy: boolean;
   synthetic: boolean;
 }
+
+// ── Horizon 1: proving it ──────────────────────────────────────────────────
+
+/** How a readout should be presented. `not_measurable` and `inconclusive` are
+ *  NORMAL states, not errors — styling them as failures trains users to stop
+ *  campaigns early, which is exactly what the confidence sequence exists to
+ *  make unnecessary. */
+export type ReadoutState =
+  | 'not_measurable' | 'inconclusive' | 'significant_but_small' | 'significant';
+
+export interface Interpretation {
+  state: ReadoutState;
+  headline: string;
+  detail: string;
+  actionable: boolean;
+}
+
+export interface ReadoutPoint {
+  window_start: string;
+  window_end: string;
+  treatment_n: number;
+  control_n: number;
+  treatment_converted: number;
+  control_converted: number;
+  incremental_retention: number;
+  /** Anytime-valid bounds. Null when the arms are too small to say anything. */
+  ci_lower: number | null;
+  ci_upper: number | null;
+  log_e_value: number | null;
+  is_significant: boolean;
+  meets_mde: boolean;
+  incremental_margin_aed: string;
+  total_cost_aed: string;
+  margin_per_aed_spent: string | null;
+  validity_warnings: string[];
+  computed_at: string | null;
+}
+
+export interface Preregistration {
+  id: number;
+  primary_metric: string;
+  window_days: number;
+  stopping_rule: string;
+  alpha: number;
+  min_detectable_effect: number;
+  planned_treatment_n: number;
+  planned_control_n: number;
+  control_pct: string;
+  registered_at: string | null;
+  notes: string | null;
+}
+
+export interface CampaignReadout {
+  campaign_id: number;
+  state: 'measured' | 'not_yet_measured';
+  readout: ReadoutPoint | null;
+  interpretation?: Interpretation;
+  preregistration?: Preregistration | null;
+  note?: string;
+}
+
+export interface IncrementalitySummary {
+  campaigns_measured: number;
+  significant: number;
+  proven_positive: number;
+  proven_negative: number;
+  inconclusive: number;
+  incremental_margin_aed: string;
+  total_spend_aed: string;
+  margin_per_aed_spent: string | null;
+  note: string;
+}
+
+export interface BalanceCheckRow {
+  covariate: string;
+  treatment_mean: number;
+  control_mean: number;
+  pooled_sd: number;
+  smd: number;
+  threshold: number;
+  is_balanced: boolean;
+}
+
+export interface BalanceSummary {
+  status: 'balanced' | 'imbalanced' | 'unknown';
+  checked: number;
+  imbalanced: string[];
+  note: string;
+}
+
+export interface CampaignHoldout {
+  campaign_id: number;
+  arms: { treatment: number; control: number };
+  balance: { checks: BalanceCheckRow[]; summary: BalanceSummary };
+  assignment_method: string;
+}
+
+export interface HoldoutOverviewRow {
+  campaign_id: number;
+  name: string;
+  status: string;
+  treatment_n: number;
+  control_n: number;
+  control_share: number;
+  adequate: boolean;
+}
+
+export interface HoldoutOverview {
+  campaigns: HoldoutOverviewRow[];
+  note: string;
+}
+
+export interface ContactPolicyRow {
+  channel: string;
+  max_per_week: number;
+  max_per_day: number;
+  cooldown_days_after_ignores: number;
+  ignores_before_cooldown: number;
+  is_active: boolean;
+  volume: { last_24h: number; last_7d: number; distinct_customers_7d: number };
+}
+
+export interface GovernanceOverview {
+  policies: ContactPolicyRow[];
+  fatigue: { customer_id: number; contacts_7d: number; last_contact: string | null }[];
+  suppressions_by_reason: Record<string, number>;
+  suppressed_30d: number;
+  recent_suppressions: {
+    customer_id: number;
+    suppressed_campaign_id: number | null;
+    winning_campaign_id: number | null;
+    reason_code: string;
+    detail: string | null;
+    created_at: string | null;
+    suppressed_campaign_name: string | null;
+    winning_campaign_name: string | null;
+  }[];
+  interpretation: string;
+}
+
+export interface ShadowComparisonRow {
+  model_label: string;
+  scored: number;
+  disagreements: number;
+  disagreement_rate: number;
+  /** True when the "model" IS the rule tier — 0% disagreement is then an
+   *  identity, not a result. The UI must say so. */
+  is_self_comparison: boolean;
+  self_comparison_warning: string | null;
+  by_kind: { action: number; magnitude: number; both: number };
+  rule_eiv_aed: string;
+  shadow_eiv_aed: string;
+  claimed_eiv_delta_aed: string;
+  claimed_delta_note: string;
+}
+
+export interface PromotionStanding {
+  model_label: string;
+  status: string;
+  readouts_passed: number;
+  readouts_required: number;
+  min_ci_lower: number;
+  disagreement_rate: number | null;
+  max_disagreement_rate: number;
+  scored: number;
+  eligible_for_promotion: boolean;
+  blockers: string[];
+  blocked_reason: string | null;
+  updated_at: string | null;
+}
+
+export interface ShadowOverview {
+  comparison: ShadowComparisonRow[];
+  promotion: PromotionStanding[];
+  governing_rule: string;
+}
+
+export interface AllocationRun {
+  id: number;
+  mode: 'greedy' | 'portfolio';
+  is_shadow: boolean;
+  budget_limit_aed: string;
+  customers_considered: number;
+  candidates_considered: number;
+  actions_selected: number;
+  total_eiv_aed: string;
+  total_cost_aed: string;
+  binding_constraint: string | null;
+  eiv_delta_vs_greedy_aed: string | null;
+  solver: string;
+  runtime_ms: number | null;
+  created_at: string | null;
+}

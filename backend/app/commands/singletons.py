@@ -122,6 +122,30 @@ async def _main() -> int:
         from app.services.pos_connectors import pos_sync_loop
         _track("pos_sync", pos_sync_loop())
 
+    # HORIZON 1: recompute every campaign's incrementality readout on a schedule.
+    #
+    # This is what closes the loop. `measurement.measure()` has computed
+    # treatment-vs-control correctly for a while, but nothing ran it and nothing
+    # kept the answer — the product could measure lift and could not learn from
+    # it. Each pass writes an immutable row to `flywheel_readouts` with an
+    # anytime-valid confidence interval attached.
+    #
+    # Lives HERE and not in the API lifespan for the reason stated at the top of
+    # this file: under `gunicorn --workers N` the API is N processes, and a
+    # scheduler started there would run N times. Readouts are idempotent per
+    # (campaign, window_end) so duplicate passes would be harmless rather than
+    # corrupting — but harmless waste is still waste, and single-instance is the
+    # honest home for a continuous loop.
+    if settings.flywheel_readout_scheduler_enabled:
+        from app.services.database import async_session
+        from app.services.flywheel.readout import scheduler_loop as flywheel_readout_loop
+        _track("flywheel_readouts",
+               flywheel_readout_loop(async_session,
+                                     tenant_id=settings.demo_tenant_id))
+    else:
+        logger.info("[singletons] flywheel_readouts NOT started "
+                    "(FLYWHEEL_READOUT_SCHEDULER_ENABLED=false)")
+
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

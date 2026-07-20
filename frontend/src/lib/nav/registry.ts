@@ -49,6 +49,12 @@ export const ROUTE_MAP: Record<string, RoutePlacement> = {
   // the retention counterpart to the promotion catalogue, and an operator
   // reasoning about one is usually reasoning about the other.
   '/flywheel':       { domain: 'operations', order: 4 },
+  // Horizon 1 surfaces sit immediately after Flywheel so the proof lives next
+  // to the thing it proves. Fractional orders avoid renumbering the domain.
+  '/flywheel/incrementality': { domain: 'operations', order: 4.1 },
+  '/flywheel/holdout':        { domain: 'operations', order: 4.2 },
+  '/flywheel/governance':     { domain: 'operations', order: 4.3 },
+  '/flywheel/models/shadow':  { domain: 'operations', order: 4.4 },
   '/retention':      { domain: 'operations', order: 5 },
   '/employees':      { domain: 'operations', order: 6 },
   // Intelligence

@@ -15,6 +15,9 @@ import type {
   BudgetOverview, CampaignDetail, CampaignSummary, CustomerDetail, DecisionTrace,
   EvaluateResult, FlywheelCustomer, FlywheelHealth, LiveMetrics, MeasurementResult,
   ModelVersion, RedeemResult, Requisition, SimulationResult,
+  AllocationRun, CampaignHoldout, CampaignReadout, GovernanceOverview,
+  HoldoutOverview, IncrementalitySummary, Preregistration, ReadoutPoint,
+  ShadowComparisonRow, ShadowOverview,
 } from '@/types/flywheel';
 
 const TTL = {
@@ -232,4 +235,62 @@ export const LADDER_LABELS: Record<string, string> = {
   d_non_stock_reward: 'Non-inventory reward',
   e_procurement: 'Procurement requisition',
   f_suppress: 'Suppress offer',
+};
+
+// ── Horizon 1: proving it ──────────────────────────────────────────────────
+//
+// NONE of these are cached. A readout is evidence and a balance check is a
+// safety diagnostic; serving either from cache would let an operator act on a
+// number that has since moved, which is the exact failure the money endpoints
+// already avoid.
+
+export const fetchIncrementality = () =>
+  apiRequest<IncrementalitySummary>('/api/flywheel/incrementality', { ttl: TTL.none });
+
+export const fetchCampaignReadout = (id: number) =>
+  apiRequest<CampaignReadout>(`/api/flywheel/campaigns/${id}/readout`, { ttl: TTL.none });
+
+export const fetchReadoutHistory = (id: number, limit = 90) =>
+  apiRequest<{ campaign_id: number; series: ReadoutPoint[]; note: string }>(
+    `/api/flywheel/campaigns/${id}/readout/history?limit=${limit}`, { ttl: TTL.none });
+
+export const recomputeReadout = (id: number) =>
+  apiRequest<Record<string, unknown>>(
+    `/api/flywheel/campaigns/${id}/readout/recompute`, { method: 'POST' });
+
+export const fetchPreregistration = (id: number) =>
+  apiRequest<Preregistration & { preregistered: boolean; warning?: string }>(
+    `/api/flywheel/campaigns/${id}/preregistration`, { ttl: TTL.none });
+
+export const createPreregistration = (id: number, body: Record<string, unknown>) =>
+  apiRequest<Preregistration>(`/api/flywheel/campaigns/${id}/preregistration`,
+    { method: 'POST', body: JSON.stringify(body) });
+
+export const fetchCampaignHoldout = (id: number) =>
+  apiRequest<CampaignHoldout>(`/api/flywheel/campaigns/${id}/holdout`, { ttl: TTL.none });
+
+export const fetchHoldoutOverview = () =>
+  apiRequest<HoldoutOverview>('/api/flywheel/holdout', { ttl: TTL.none });
+
+export const fetchGovernance = () =>
+  apiRequest<GovernanceOverview>('/api/flywheel/governance', { ttl: TTL.none });
+
+export const fetchShadow = () =>
+  apiRequest<ShadowOverview>('/api/flywheel/models/shadow', { ttl: TTL.none });
+
+export const runShadowScore = () =>
+  apiRequest<{ scored: number; comparison: ShadowComparisonRow[] }>(
+    '/api/flywheel/models/shadow/score', { method: 'POST' });
+
+export const fetchAllocationRuns = (id: number) =>
+  apiRequest<{ campaign_id: number; runs: AllocationRun[]; note: string }>(
+    `/api/flywheel/campaigns/${id}/allocation`, { ttl: TTL.none });
+
+/** Tone for a readout state. `inconclusive` is deliberately NEUTRAL, never a
+ *  warning colour — "still measuring" is not a problem to be fixed. */
+export const READOUT_TONE: Record<string, 'neutral' | 'success' | 'amber' | 'danger'> = {
+  not_measurable: 'neutral',
+  inconclusive: 'neutral',
+  significant_but_small: 'amber',
+  significant: 'success',
 };
