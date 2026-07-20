@@ -129,6 +129,9 @@ class ReasonCode(str, Enum):
     INSUFFICIENT_STOCK = "INSUFFICIENT_STOCK"
     INSUFFICIENT_BUDGET = "INSUFFICIENT_BUDGET"
     NO_CONSENT = "NO_CONSENT"
+    #: The data subject exercised their PDPL right to object to automated
+    #: profiling. A legal exclusion, not a commercial trade-off.
+    PROFILING_OBJECTION = "PROFILING_OBJECTION"
     CONTACT_CAP_REACHED = "CONTACT_CAP_REACHED"
     CONTROL_GROUP = "CONTROL_GROUP"
     CAMPAIGN_NOT_ACTIVE = "CAMPAIGN_NOT_ACTIVE"

@@ -387,6 +387,12 @@ async def score_customers(
         )
         scored += 1
 
+    # METER the scoring run. Customers scored is a billable dimension under the
+    # hybrid pricing model. Best-effort; a metering failure never fails scoring.
+    if scored:
+        from app.services.flywheel import metering
+        await metering.record(tenant_id, metering.EVENT_CUSTOMER_SCORED, quantity=scored)
+
     logger.info("flywheel.churn tenant=%s as_of=%s scored=%s tier=%s",
                 tenant_id, as_of, scored, tier_used)
     return {

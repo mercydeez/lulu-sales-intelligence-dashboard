@@ -135,6 +135,8 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             # from there. An executive nav that lists every sub-page stops being a
             # curated view and becomes a second, worse sitemap.
             {"key": "incrementality", "tKey": "nav.incrementality", "label": "Incrementality", "href": "/flywheel/incrementality", "icon": "TrendingUp"},
+            # Track B lands in the exec manifest only as the trade-promotion entry point; operator tooling stays in the sidebar.
+            {"key": "trade", "tKey": "nav.trade", "label": "Trade Promotion", "href": "/flywheel/trade", "icon": "Coins"},
             {"key": "sage", "tKey": "nav.sageCopilot", "label": "Sage Copilot", "href": "/copilot", "icon": "Lightbulb"},
         ],
         "quick_actions": [

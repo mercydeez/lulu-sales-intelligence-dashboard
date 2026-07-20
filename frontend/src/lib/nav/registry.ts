@@ -55,6 +55,8 @@ export const ROUTE_MAP: Record<string, RoutePlacement> = {
   '/flywheel/holdout':        { domain: 'operations', order: 4.2 },
   '/flywheel/governance':     { domain: 'operations', order: 4.3 },
   '/flywheel/models/shadow':  { domain: 'operations', order: 4.4 },
+  '/flywheel/trade':          { domain: 'operations', order: 4.5 },
+  '/flywheel/cannibalization':{ domain: 'operations', order: 4.6 },
   '/retention':      { domain: 'operations', order: 5 },
   '/employees':      { domain: 'operations', order: 6 },
   // Intelligence

@@ -35,8 +35,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.flywheel import (
     budget as budget_service, churn as churn_service, contact_governance,
-    features as feature_service, inventory_atp, liability, optimizer, outbox,
-    tax, trace, uplift as uplift_service,
+    features as feature_service, inventory_atp, liability, metering, objections,
+    optimizer, outbox, tax, trace, uplift as uplift_service,
 )
 from app.services.flywheel.campaign_state import LIVE_STATES
 from app.services.flywheel.types import (
@@ -121,6 +121,16 @@ async def evaluate(
                           f"Customer {customer_id} not found in this tenant")
     if customer[2] == "opted_out":
         return _no_action(ReasonCode.NO_CONSENT, "Customer has opted out entirely")
+
+    # --- PDPL: the right to object to automated profiling -----------------
+    # Checked BEFORE any scoring. An objecting customer is excluded from
+    # automated decisions entirely — this is a legal instruction (UAE PDPL),
+    # not a value judgement, so it short-circuits ahead of every commercial gate.
+    if await objections.is_objected(db, tenant_id=tenant_id, customer_id=customer_id):
+        return _no_action(
+            ReasonCode.PROFILING_OBJECTION,
+            "Customer has objected to automated profiling (PDPL); excluded from "
+            "automated decisions until the objection is withdrawn")
 
     # --- an ACTIVE campaign covering this customer ------------------------
     campaign_filter = "AND c.id = :cid" if campaign_id else ""
@@ -328,6 +338,12 @@ async def evaluate(
          "trace": trace.ensure_trace_id(request_id)},
     )).fetchone()
     decision_id = int(decision[0])
+
+    # METER the decision. Every decision served is a billable event under the
+    # hybrid pricing model. Best-effort and in its own session — a metering
+    # failure must never fail the decision (see metering.record).
+    await metering.record(tenant_id, metering.EVENT_DECISION,
+                          metadata={"decision_id": decision_id, "campaign_id": int(camp_id)})
 
     if winner.action_type == ActionType.NO_ACTION:
         # The optimizer's own codes are authoritative and may include values

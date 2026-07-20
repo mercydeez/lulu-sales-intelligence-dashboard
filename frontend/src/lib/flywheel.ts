@@ -18,6 +18,7 @@ import type {
   AllocationRun, CampaignHoldout, CampaignReadout, GovernanceOverview,
   HoldoutOverview, IncrementalitySummary, Preregistration, ReadoutPoint,
   ShadowComparisonRow, ShadowOverview,
+  CannibalizationResult, MeteringSummary, SupplierDashboard, TradeOverview,
 } from '@/types/flywheel';
 
 const TTL = {
@@ -293,4 +294,28 @@ export const READOUT_TONE: Record<string, 'neutral' | 'success' | 'amber' | 'dan
   inconclusive: 'neutral',
   significant_but_small: 'amber',
   significant: 'success',
+};
+
+// ── Horizon 3: two tracks ───────────────────────────────────────────────────
+
+export const fetchTradeOverview = () =>
+  apiRequest<TradeOverview>('/api/flywheel/trade', { ttl: TTL.none });
+
+export const fetchSupplierDashboard = (supplierId: number) =>
+  apiRequest<SupplierDashboard>(`/api/flywheel/suppliers/${supplierId}/dashboard`, { ttl: TTL.none });
+
+export const fetchCannibalization = (campaignId: number) =>
+  apiRequest<CannibalizationResult>(`/api/flywheel/campaigns/${campaignId}/cannibalization`, { ttl: TTL.none });
+
+export const recomputeCannibalization = (campaignId: number) =>
+  apiRequest<Record<string, unknown>>(
+    `/api/flywheel/campaigns/${campaignId}/cannibalization/recompute`, { method: 'POST' });
+
+export const fetchMetering = () =>
+  apiRequest<MeteringSummary>('/api/flywheel/metering', { ttl: TTL.none });
+
+/** Funding-status tone for badges. */
+export const FUNDING_TONE: Record<string, 'neutral' | 'amber' | 'teal' | 'success' | 'danger'> = {
+  proposed: 'neutral', committed: 'teal', active: 'success',
+  settled: 'success', disputed: 'danger', cancelled: 'neutral',
 };

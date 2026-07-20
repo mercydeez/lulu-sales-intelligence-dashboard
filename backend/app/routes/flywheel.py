@@ -26,10 +26,11 @@ from app.auth_deps import (
 from app.services.database import get_db
 from app.services.flywheel import (
     allocator, approvals, budget as budget_service, campaign_state,
-    campaigns as campaign_service, churn as churn_service, contact_governance,
-    decisioning, erasure, features as feature_service, guardrails, inventory_atp,
-    jobs, liability, measurement, optimizer, outbox, procurement, readout,
-    registry, seeder, sequential, shadow, tax, trace, uplift as uplift_service,
+    campaigns as campaign_service, cannibalization, churn as churn_service,
+    contact_governance, decisioning, erasure, features as feature_service,
+    guardrails, identity, inventory_atp, jobs, liability, measurement, metering,
+    objections, optimizer, outbox, procurement, readout, registry, seeder,
+    sequential, shadow, tax, trade, trace, uplift as uplift_service,
 )
 from app.services.flywheel.budget import BudgetError, InsufficientBudget
 from app.services.flywheel.campaign_state import TransitionError
@@ -1481,3 +1482,186 @@ async def decision_trace_timeline(
     if not result:
         raise HTTPException(404, "Decision not found")
     return result
+
+
+# ===========================================================================
+# HORIZON 3 — two tracks over one engine.
+#
+# Track A (retention) reuses the retailer-funded path already in place. Track B
+# (supplier-funded trade promotion) is new: funding, settlement, cannibalization,
+# and a supplier-scoped view. Shared: metering, PDPL objections, identity.
+# ===========================================================================
+
+class FundingIn(BaseModel):
+    supplier_id: int
+    funding_type: str = Field(..., pattern="^(co_op|scan_down|fixed_fee)$")
+    committed_aed: Decimal
+    item_ids: List[int] = Field(..., min_length=1)
+    rebate_per_unit_aed: Decimal = Decimal("0")
+    agreement_ref: Optional[str] = None
+
+
+class SettlementIn(BaseModel):
+    period_start: date
+    period_end: date
+
+
+class ObjectionIn(BaseModel):
+    customer_id: int
+    note: Optional[str] = None
+
+
+@router.post("/campaigns/{campaign_id}/funding", summary="Propose supplier funding (Track B)")
+async def create_funding(
+    campaign_id: int, body: FundingIn,
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await trade.propose_funding(
+            db, tenant_id=_tenant(user), supplier_id=body.supplier_id,
+            campaign_id=campaign_id, funding_type=body.funding_type,
+            committed_aed=body.committed_aed, item_ids=body.item_ids,
+            rebate_per_unit_aed=body.rebate_per_unit_aed,
+            agreement_ref=body.agreement_ref, created_by=user.get("id"))
+    except trade.TradeError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@router.post("/funding/{funding_id}/transition", summary="Advance a funding's lifecycle")
+async def funding_transition(
+    funding_id: int, target: str = Query(..., pattern="^(committed|active|settled|disputed|cancelled)$"),
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await trade.transition_funding(db, tenant_id=_tenant(user),
+                                              funding_id=funding_id, target=target)
+    except trade.TradeError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@router.post("/funding/{funding_id}/settle", summary="Issue an audit-defensible settlement")
+async def issue_funding_settlement(
+    funding_id: int, body: SettlementIn,
+    user: dict = Depends(require_permission("can_view_financials")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await trade.issue_settlement(
+            db, tenant_id=_tenant(user), funding_id=funding_id,
+            period_start=body.period_start, period_end=body.period_end)
+    except trade.TradeError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@router.get("/suppliers/{supplier_id}/dashboard", summary="Supplier-scoped trade view (Track B)")
+async def supplier_trade_dashboard(
+    supplier_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Everything a supplier is entitled to see — and nothing they are not.
+    Every figure is intersected with the supplier's funded-SKU scope."""
+    return await trade.supplier_dashboard(db, tenant_id=_tenant(user), supplier_id=supplier_id)
+
+
+@router.get("/trade", summary="Trade-promotion overview across suppliers")
+async def trade_overview(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    tenant_id = _tenant(user)
+    rows = (await db.execute(
+        text("""SELECT f.id, f.supplier_id, sup.name, f.campaign_id, c.name,
+                       f.funding_type, f.status, f.committed_aed, f.spent_aed, f.settled_aed
+                  FROM flywheel_supplier_funding f
+                  JOIN suppliers sup ON sup.id = f.supplier_id AND sup.tenant_id = f.tenant_id
+                  JOIN flywheel_campaigns c ON c.id = f.campaign_id AND c.tenant_id = f.tenant_id
+                 WHERE f.tenant_id = :t
+                 ORDER BY f.created_at DESC"""),
+        {"t": tenant_id},
+    )).fetchall()
+    return {
+        "fundings": [{
+            "funding_id": int(r[0]), "supplier_id": int(r[1]), "supplier_name": r[2],
+            "campaign_id": int(r[3]), "campaign_name": r[4], "funding_type": r[5],
+            "status": r[6], "committed_aed": str(money(r[7])),
+            "spent_aed": str(money(r[8])), "settled_aed": str(money(r[9])),
+        } for r in rows],
+        "note": ("Supplier-funded trade promotion. Each funding is settled on "
+                 "measured, cannibalization-adjusted incremental performance — a "
+                 "supplier pays only for demand the promotion genuinely created."),
+    }
+
+
+@router.get("/campaigns/{campaign_id}/cannibalization", summary="Cannibalization (Track B)")
+async def campaign_cannibalization(
+    campaign_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await cannibalization.latest(db, tenant_id=_tenant(user), campaign_id=campaign_id)
+
+
+@router.post("/campaigns/{campaign_id}/cannibalization/recompute",
+             summary="Recompute cannibalization now")
+async def recompute_cannibalization(
+    campaign_id: int,
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await cannibalization.estimate(db, tenant_id=_tenant(user), campaign_id=campaign_id)
+
+
+@router.get("/metering", summary="Flywheel metered usage + hybrid pricing")
+async def metering_summary(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await metering.summary(db, tenant_id=_tenant(user))
+
+
+@router.get("/objections", summary="PDPL profiling objections")
+async def list_profiling_objections(
+    active_only: bool = Query(True),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await objections.list_objections(db, tenant_id=_tenant(user), active_only=active_only)
+
+
+@router.post("/objections", summary="Record a PDPL objection to automated profiling")
+async def create_objection(
+    body: ObjectionIn,
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await objections.record_objection(
+        db, tenant_id=_tenant(user), customer_id=body.customer_id, note=body.note)
+
+
+@router.delete("/objections/{customer_id}", summary="Withdraw a PDPL objection")
+async def withdraw_profiling_objection(
+    customer_id: int,
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await objections.withdraw_objection(db, tenant_id=_tenant(user), customer_id=customer_id)
+
+
+@router.get("/identity/stats", summary="POS→loyalty identity resolution stats")
+async def identity_stats(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await identity.resolution_stats(db, tenant_id=_tenant(user))
+
+
+@router.post("/identity/resolve", summary="Resolve pending POS transactions")
+async def resolve_identities(
+    batch: int = Query(500, ge=1, le=5000),
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await identity.resolve_pending(db, tenant_id=_tenant(user), batch=batch)

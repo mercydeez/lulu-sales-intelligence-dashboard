@@ -397,3 +397,66 @@ exactly once. Cross-tenant queries fail at the database, not the application.
 Horizon 3 (Track A retention + Track B trade promotion) remains blocked on the
 three open questions in §7: pricing, whether real customer data is reachable, and
 scope confirmation.
+
+---
+
+# Addendum C — Horizon 3 delivered (21 July 2026)
+
+Horizon 3 ("expand the wedge") shipped, **both tracks over one engine**, per the
+owner's parallel-markets ruling. Migration **079**; next free is 080. Two open
+questions were resolved by default and flagged: pricing → hybrid metering + a
+supplier-funded settlement mechanism (built); data → the real ingestion +
+identity-resolution path is built and exercised with synthetic POS rows, since no
+real pilot feed exists yet.
+
+**Track B — supplier-funded trade promotion.** `services/flywheel/trade.py` +
+five tables. A supplier funds a promotion of THEIR SKUs and pays against a
+jointly-agreed uplift. Supplier money has its own lifecycle (proposed → committed
+→ active → settled) with spend ≤ commitment and settlement ≤ spend enforced at
+the database. A supplier's view is scoped to their funded SKUs — a second tenancy
+axis inside a tenant — and a funding cannot be created over a SKU the supplier
+does not supply (proven with an adversarial integration test). Settlements are
+computed from measured, cannibalization-adjusted incremental margin, carry their
+evidence bundle, and are **immutable once issued** (a supplier query is a dispute
+transition, never a silent edit).
+
+**Cannibalization (A.3.3), pulled forward to Track B's critical path.**
+`services/flywheel/cannibalization.py` — difference-in-differences on category
+totals: promoted-SKU lift minus category lift, treatment vs control. Answers the
+question a supplier actually asks — "did you create demand or move it from my
+other SKU?" — and a supplier is charged only on the genuinely incremental
+category units. Small control arms are flagged directional, never dressed as
+decisive. Verified live: 120/60 arms, reliable flag correct, honest "no lift"
+when there is none.
+
+**Shared.** Flywheel metering (`metering.py`) hooks decisions-served and
+customers-scored into `usage_events`; a hybrid pricing summary (platform fee +
+metered decisioning) is visible before any invoice. PDPL: `objections.py` records
+a data subject's objection to automated profiling and `decisioning.evaluate`
+honours it BEFORE scoring — an objecting customer is excluded entirely (proven
+live). Identity resolution (`identity.py`) links deterministically on loyalty id,
+probabilistically above a high threshold, and **leaves a record unlinked rather
+than guessing** when ambiguous — a wrong merge corrupts the feature store,
+holdout and consent ledger at once. A DPIA (`docs/flywheel/DPIA.md`) records the
+processing, risks, and the mitigations already in code.
+
+**Surfaces.** Two new tabs, the ruled exception to "no new pages": Trade
+Promotion (the supplier-facing view) and Cannibalization. Registered in all three
+nav layers. Track A (retention) reuses the retailer-funded path already in place.
+
+**Verification.** 291 unit tests pass across touched suites; 4 new live Gate-3
+integration tests (supplier scope survives an adversarial probe, overspend
+blocked at the DB, objection excludes a customer, identity declines to guess).
+Full suite: **66 failures, unchanged from the Horizon-2 baseline — zero new
+regressions.** `tsc --noEmit` exits 0; both tabs build and serve 200.
+
+**What is NOT in code, stated plainly.** Two Gate-3 items are real-world processes
+that cannot be manufactured: the **SOC 2 Type II observation window** (a calendar
+process that must simply be started) and an **actual pilot tenant's real POS
+feed** (none exists yet — the ingestion path is built and ready). A real-data
+pilot and counsel review of the DPIA remain before Gate 3 fully closes.
+
+The Flywheel is now provable (H1), operable (H2), and sellable across both markets
+(H3). Horizon 4 remains: coalition attribution, Ramadan/seasonality, perishables
+in the allocator, and the revisit of outcome-based pricing after two clean
+quarters of holdout readouts.

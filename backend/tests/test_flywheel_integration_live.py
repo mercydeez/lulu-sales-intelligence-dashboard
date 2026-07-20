@@ -401,3 +401,172 @@ async def test_readout_portfolio_summary_runs():
         summary = await readout.portfolio_summary(s, tenant_id=1)
     assert "campaigns_measured" in summary
     assert "inconclusive" in summary
+
+
+# ===========================================================================
+# HORIZON 3 — Track B and shared services, against live SQL.
+# ===========================================================================
+
+@pytest.mark.asyncio
+async def test_supplier_funding_scope_survives_adversarial_probe():
+    """Gate 3, the adversarial half: a supplier's scope is exactly their funded
+    SKUs, and a funding cannot be created over a SKU the supplier does not
+    supply. The second is the attack a dishonest retailer would try — billing a
+    supplier for a competitor's SKU — and it must be refused."""
+    from sqlalchemy import text
+    from app.services.flywheel import trade
+    import uuid as _uuid
+
+    sm = _owner_sessionmaker()
+    created = {"supplier": None, "funding": None, "link_item": None}
+    tag = _uuid.uuid4().hex[:8]
+    try:
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            supplier_id = int((await s.execute(text(
+                "INSERT INTO suppliers (tenant_id,name,status) VALUES (1,:n,'active') RETURNING id"),
+                {"n": f"IT Supplier {tag}"})).scalar())
+            created["supplier"] = supplier_id
+            # link ONE item to this supplier
+            owned = int((await s.execute(text("SELECT id FROM items WHERE tenant_id=1 ORDER BY id LIMIT 1"))).scalar())
+            not_owned = int((await s.execute(text("SELECT id FROM items WHERE tenant_id=1 ORDER BY id DESC LIMIT 1"))).scalar())
+            await s.execute(text("""INSERT INTO product_suppliers (tenant_id,item_id,supplier_id,unit_cost,moq,lead_time_days)
+                                    VALUES (1,:i,:s,5,1,7) ON CONFLICT DO NOTHING"""),
+                            {"i": owned, "s": supplier_id})
+            created["link_item"] = owned
+            campaign_id = int((await s.execute(text("SELECT id FROM flywheel_campaigns WHERE tenant_id=1 ORDER BY id LIMIT 1"))).scalar())
+            await s.commit()
+
+        # ADVERSARIAL: funding a SKU the supplier does not supply must be refused.
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            with pytest.raises(trade.TradeError, match="does not supply"):
+                await trade.propose_funding(
+                    s, tenant_id=1, supplier_id=supplier_id, campaign_id=campaign_id,
+                    funding_type="co_op", committed_aed=__import__("decimal").Decimal("100"),
+                    item_ids=[not_owned])
+            await s.rollback()
+
+        # Legitimate funding on the owned SKU, then scope == exactly that SKU.
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            f = await trade.propose_funding(
+                s, tenant_id=1, supplier_id=supplier_id, campaign_id=campaign_id,
+                funding_type="co_op", committed_aed=__import__("decimal").Decimal("500"),
+                item_ids=[owned])
+            created["funding"] = f["funding_id"]
+            await s.commit()
+
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            scope = await trade.supplier_scope(s, tenant_id=1, supplier_id=supplier_id)
+        assert scope == [owned], f"supplier scope {scope} != funded SKU [{owned}]"
+    finally:
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            if created["funding"]:
+                await s.execute(text("DELETE FROM flywheel_supplier_funding WHERE id=:f"), {"f": created["funding"]})
+            if created["supplier"]:
+                await s.execute(text("DELETE FROM product_suppliers WHERE tenant_id=1 AND supplier_id=:s"), {"s": created["supplier"]})
+                await s.execute(text("DELETE FROM suppliers WHERE id=:s"), {"s": created["supplier"]})
+            await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_supplier_money_cannot_be_overspent_at_the_db():
+    """The invariant, proven at the database rather than in the service."""
+    from sqlalchemy import text
+    import asyncpg
+    dsn = _app_rw_dsn()
+    sm = _owner_sessionmaker()
+    supplier_id = funding_id = None
+    try:
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            supplier_id = int((await s.execute(text(
+                "INSERT INTO suppliers (tenant_id,name,status) VALUES (1,'IT overspend','active') RETURNING id"))).scalar())
+            campaign_id = int((await s.execute(text("SELECT id FROM flywheel_campaigns WHERE tenant_id=1 ORDER BY id LIMIT 1"))).scalar())
+            funding_id = int((await s.execute(text("""INSERT INTO flywheel_supplier_funding
+                (tenant_id,supplier_id,campaign_id,funding_type,committed_aed,status)
+                VALUES (1,:s,:c,'co_op',1000,'committed') RETURNING id"""),
+                {"s": supplier_id, "c": campaign_id})).scalar())
+            await s.commit()
+
+        conn = await asyncpg.connect(dsn)
+        try:
+            await conn.execute("SELECT set_config('app.tenant_id','1',false)")
+            with pytest.raises(asyncpg.exceptions.CheckViolationError):
+                await conn.execute(
+                    "UPDATE flywheel_supplier_funding SET spent_aed = 5000 WHERE id = $1", funding_id)
+        finally:
+            await conn.close()
+    finally:
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            if funding_id:
+                await s.execute(text("DELETE FROM flywheel_supplier_funding WHERE id=:f"), {"f": funding_id})
+            if supplier_id:
+                await s.execute(text("DELETE FROM suppliers WHERE id=:s"), {"s": supplier_id})
+            await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_profiling_objection_excludes_customer_from_decisions():
+    """PDPL: an objecting customer is excluded from automated decisions."""
+    from sqlalchemy import text
+    from app.services.flywheel import objections, decisioning, trace
+    sm = _owner_sessionmaker()
+    cust = None
+    try:
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            row = (await s.execute(text(
+                "SELECT id, home_store_id FROM flywheel_customers WHERE tenant_id=1 AND status='active' ORDER BY id LIMIT 1"))).fetchone()
+            cust, store = int(row[0]), int(row[1])
+            await objections.record_objection(s, tenant_id=1, customer_id=cust)
+            await s.commit()
+
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            trace.trace_context.set(None)
+            res = await decisioning.evaluate(s, tenant_id=1, customer_id=cust, store_id=store,
+                                             request_id="it-obj")
+        assert res.get("reason_code") == "PROFILING_OBJECTION" or \
+            "PROFILING_OBJECTION" in str(res.get("reason_codes", [])), \
+            "objecting customer was not excluded"
+    finally:
+        if cust:
+            async with sm() as s:
+                await _set_tenant(s, 1)
+                await s.execute(text("DELETE FROM flywheel_profiling_objections WHERE tenant_id=1 AND customer_id=:c"), {"c": cust})
+                await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_identity_declines_to_guess_when_ambiguous():
+    """A wrong merge corrupts the feature store, holdout and consent ledger at
+    once, so an ambiguous match must resolve to unlinked, never a coin-flip."""
+    from sqlalchemy import text
+    from datetime import datetime, timezone
+    from app.services.flywheel import identity
+    sm = _owner_sessionmaker()
+    try:
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            item = int((await s.execute(text("SELECT id FROM items WHERE tenant_id=1 LIMIT 1"))).scalar())
+            now = datetime.now(timezone.utc)
+            # a transaction with no loyalty_ref and no store -> cannot be linked
+            await identity.ingest_pos_row(s, tenant_id=1, external_txn_id="IT-ANON",
+                                          occurred_at=now, item_id=item, units=1, amount_aed=10)
+            await s.commit()
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            r = await identity.resolve_pending(s, tenant_id=1)
+            await s.commit()
+        # The anonymous row must be unlinked, not force-matched.
+        assert r["outcomes"].get("unlinked", 0) >= 1
+    finally:
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            await s.execute(text("DELETE FROM flywheel_pos_staging WHERE tenant_id=1 AND external_txn_id='IT-ANON'"))
+            await s.commit()

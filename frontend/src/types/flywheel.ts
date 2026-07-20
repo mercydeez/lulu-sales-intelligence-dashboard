@@ -589,3 +589,87 @@ export interface AllocationRun {
   runtime_ms: number | null;
   created_at: string | null;
 }
+
+// ── Horizon 3: two tracks ───────────────────────────────────────────────────
+
+export interface TradeFunding {
+  funding_id: number;
+  supplier_id: number;
+  supplier_name: string;
+  campaign_id: number;
+  campaign_name: string;
+  funding_type: 'co_op' | 'scan_down' | 'fixed_fee';
+  status: string;
+  committed_aed: string;
+  spent_aed: string;
+  settled_aed: string;
+}
+
+export interface TradeOverview {
+  fundings: TradeFunding[];
+  note: string;
+}
+
+export interface Settlement {
+  settlement_id: number;
+  period: { from: string; to: string };
+  amount_due_aed: string;
+  status: string;
+  incremental_units: number;
+  incremental_margin_aed: string;
+}
+
+export interface SupplierFundingRow {
+  funding_id: number;
+  campaign_id: number;
+  campaign_name: string;
+  funding_type: string;
+  status: string;
+  committed_aed: string;
+  spent_aed: string;
+  settled_aed: string;
+  starts_on: string | null;
+  ends_on: string | null;
+  settlements: Settlement[];
+}
+
+export interface SupplierDashboard {
+  supplier_id: number;
+  funded_sku_count: number;
+  totals: { committed_aed: string; settled_aed: string };
+  fundings: SupplierFundingRow[];
+  confidentiality_note: string;
+}
+
+export interface CannibalizationRow {
+  category: string;
+  promoted_item_id: number | null;
+  promoted_lift_units: number;
+  category_net_lift_units: number;
+  cannibalized_units: number;
+  cannibalization_rate: number | null;
+  net_incremental_margin_aed: string;
+  is_reliable: boolean;
+  note: string;
+  window_end: string;
+}
+
+export interface CannibalizationResult {
+  campaign_id: number;
+  results: CannibalizationRow[];
+}
+
+export interface MeteringSummary {
+  period: { from: string; to: string };
+  usage: { decisions_served: number; customers_scored: number };
+  included: { decisions: number; customers_scored: number };
+  billable: { decisions: number; customers_scored: number };
+  charges_aed: {
+    platform_fee: string;
+    metered_decisions: string;
+    metered_scoring: string;
+    total: string;
+  };
+  pricing: Record<string, unknown>;
+  note: string;
+}

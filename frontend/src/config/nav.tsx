@@ -47,6 +47,8 @@ import {
   SlidersHorizontal,
   Repeat,
   GitCompare,
+  GitMerge,
+  Coins,
   ShieldCheck,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
@@ -81,6 +83,11 @@ export const navItems: NavItem[] = [
   { label: 'Holdout', tKey: 'nav.holdout', href: '/flywheel/holdout', icon: <Scale className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Contact Governance', tKey: 'nav.governance', href: '/flywheel/governance', icon: <ShieldCheck className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Shadow Mode', tKey: 'nav.shadowMode', href: '/flywheel/models/shadow', icon: <GitCompare className="w-5 h-5" />, permission: 'can_manage_promotions' },
+  // HORIZON 3 · Track B — supplier-funded trade promotion. Trade is the one
+  // permitted new surface (the supplier-facing view); Cannibalization is the
+  // number its settlements are computed from.
+  { label: 'Trade Promotion', tKey: 'nav.trade', href: '/flywheel/trade', icon: <Coins className="w-5 h-5" />, permission: 'can_manage_promotions' },
+  { label: 'Cannibalization', tKey: 'nav.cannibalization', href: '/flywheel/cannibalization', icon: <GitMerge className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Forecast Lab', tKey: 'nav.forecastLab', href: '/forecast-lab', icon: <Brain className="w-5 h-5" /> },
   { label: 'UAE Insights', tKey: 'nav.uaeInsights', href: '/uae-insights', icon: <MapPin className="w-5 h-5" /> },
   { label: 'Employees', tKey: 'nav.employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
@@ -105,6 +112,8 @@ export const NAV_ICONS: Record<string, ReactNode> = {
   Repeat: <Repeat className="w-5 h-5" />,
   ShieldCheck: <ShieldCheck className="w-5 h-5" />,
   GitCompare: <GitCompare className="w-5 h-5" />,
+  Coins: <Coins className="w-5 h-5" />,
+  GitMerge: <GitMerge className="w-5 h-5" />,
   Sunrise: <Sunrise className="w-5 h-5" />,
   Scale: <Scale className="w-5 h-5" />,
   ClipboardCheck: <ClipboardCheck className="w-5 h-5" />,
