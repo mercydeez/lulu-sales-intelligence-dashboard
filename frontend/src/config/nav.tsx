@@ -49,6 +49,8 @@ import {
   GitCompare,
   GitMerge,
   Coins,
+  CalendarClock,
+  Network,
   ShieldCheck,
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
@@ -88,6 +90,10 @@ export const navItems: NavItem[] = [
   // number its settlements are computed from.
   { label: 'Trade Promotion', tKey: 'nav.trade', href: '/flywheel/trade', icon: <Coins className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Cannibalization', tKey: 'nav.cannibalization', href: '/flywheel/cannibalization', icon: <GitMerge className="w-5 h-5" />, permission: 'can_manage_promotions' },
+  // HORIZON 4 — expand. Coalition attribution (the named H4 surface) and the
+  // demand context: seasonality + shelf-life.
+  { label: 'Coalition', tKey: 'nav.coalition', href: '/flywheel/coalition', icon: <Network className="w-5 h-5" />, permission: 'can_manage_promotions' },
+  { label: 'Seasonality', tKey: 'nav.seasonality', href: '/flywheel/seasonality', icon: <CalendarClock className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Forecast Lab', tKey: 'nav.forecastLab', href: '/forecast-lab', icon: <Brain className="w-5 h-5" /> },
   { label: 'UAE Insights', tKey: 'nav.uaeInsights', href: '/uae-insights', icon: <MapPin className="w-5 h-5" /> },
   { label: 'Employees', tKey: 'nav.employees', href: '/employees', icon: <Users className="w-5 h-5" />, permission: 'can_manage_inventory' },
@@ -113,6 +119,8 @@ export const NAV_ICONS: Record<string, ReactNode> = {
   ShieldCheck: <ShieldCheck className="w-5 h-5" />,
   GitCompare: <GitCompare className="w-5 h-5" />,
   Coins: <Coins className="w-5 h-5" />,
+  Network: <Network className="w-5 h-5" />,
+  CalendarClock: <CalendarClock className="w-5 h-5" />,
   GitMerge: <GitMerge className="w-5 h-5" />,
   Sunrise: <Sunrise className="w-5 h-5" />,
   Scale: <Scale className="w-5 h-5" />,

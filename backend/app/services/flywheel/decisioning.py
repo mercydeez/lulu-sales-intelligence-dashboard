@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.flywheel import (
     budget as budget_service, churn as churn_service, contact_governance,
     features as feature_service, inventory_atp, liability, metering, objections,
-    optimizer, outbox, tax, trace, uplift as uplift_service,
+    optimizer, outbox, seasonality, tax, trace, uplift as uplift_service,
 )
 from app.services.flywheel.campaign_state import LIVE_STATES
 from app.services.flywheel.types import (
@@ -231,6 +231,17 @@ async def evaluate(
     unit_cost = await _unit_cost(db, tenant_id, item_id)
 
     monthly_value = money(feats.get("monetary_90d_aed", 0)) / Decimal("3")
+
+    # SEASONALITY (Horizon 4). Scale the customer's forward value by the demand
+    # multiplier in force today — a retention offer made before Ramadan is worth
+    # more because the customer's near-term value genuinely is. Deterministic
+    # policy from the seasonality calendar; the optimizer never sees it as
+    # anything but a value, so its determinism and "no model" guarantee hold. A
+    # neutral 1.0 (the default when no season applies) leaves the value untouched.
+    season_factor = await seasonality.factor_for(
+        db, tenant_id=tenant_id, category=category)
+    if season_factor != Decimal("1.000"):
+        monthly_value = money(monthly_value * season_factor)
 
     # --- FRESH stock and budget guards ------------------------------------
     if not await inventory_atp.inventory_freshness_ok(db, store_id=store_id, item_id=item_id):

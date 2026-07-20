@@ -460,3 +460,65 @@ The Flywheel is now provable (H1), operable (H2), and sellable across both marke
 (H3). Horizon 4 remains: coalition attribution, Ramadan/seasonality, perishables
 in the allocator, and the revisit of outcome-based pricing after two clean
 quarters of holdout readouts.
+
+---
+
+# Addendum D — Horizon 4 delivered (21 July 2026)
+
+Horizon 4 ("expand") shipped — the demand context the engine used to decide
+without. Migration **080**; next free is 081. This completes the plan: the
+Flywheel is provable (H1), operable (H2), sellable across both markets (H3), and
+now context-aware (H4).
+
+**Seasonality (Ramadan/Eid/summer as a first-class demand factor).**
+`services/flywheel/seasonality.py` + a seeded UAE calendar. Ramadan carries a
+1.85× demand multiplier, the summer lull 0.85×; `decisioning` scales a customer's
+forward value by the factor in force BEFORE the optimizer sees the candidate, so
+a retention offer is valued for the season it is made in, not an average week.
+Deterministic policy, not a model — the optimizer's determinism and "no model"
+guarantee are untouched. Verified live: today reads 0.85× (Summer Lull), Ramadan
+1.85×, a flat week 1.00×.
+
+**Coalition attribution (GCC table stakes) — the named H4 surface.**
+`services/flywheel/coalition.py`. Gulf loyalty is coalition-shaped (SHARE, ADNOC,
+e& Smiles span grocery, fuel, hospitality, travel), so a retained customer's value
+is not the retailer's alone. Three deterministic attribution models (linear,
+time-decay, position) split incremental margin across the partners a customer
+engaged with, and **the weights sum to exactly 1** — the retailer never
+double-counts value a partner delivered (proven live for all three models, margins
+summing to the fils).
+
+**Perishables & shelf-life in the allocator.** `services/flywheel/shelf_life.py`.
+For a grocer, clearing stock three days from expiry can outrank a retention offer:
+promote it now and recover most of its margin, or write off 100%. Near-expiry
+batches are ranked by value at risk with a recommended markdown, and
+`markdown_boost_for` exposes the value as an explicit allocator input (preserving
+the allocator's determinism rather than mutating it invisibly).
+
+**Outcome-based pricing, revisited and GATED.**
+`services/flywheel/outcome_pricing.py`. The plan deferred outcome pricing until two
+clean quarters of holdout readouts. The mechanism is built but INERT: a plan
+cannot bill until `evaluate_gate` confirms enough significant, positive holdout
+readouts (from the immutable Horizon-1 records), and `compute_charge` REFUSES
+otherwise. The gate is computed from evidence, never set by hand — that refusal is
+the integrity of the thing. Verified live: gate closed, charge refused.
+
+**Surfaces.** Two new tabs: Coalition (the named H4 surface) and Seasonality &
+Shelf-life. Registered in all three nav layers.
+
+**A bug caught and fixed during build:** the seasonality seed duplicated on
+re-apply — the classic NULL-in-unique-constraint trap (`UNIQUE(tenant,name,category)`
+does not dedupe NULL categories, and `ON CONFLICT` never fires). Fixed with a
+COALESCE unique index plus a NOT EXISTS seed guard; the live rows were deduped and
+re-applying the migration is now provably idempotent. A migration test guards the
+fix.
+
+**Verification.** 291 unit tests + 11 migration-080 structural + 8 H4 logic + 3 new
+live integration tests. Full suite: **66 failures, unchanged from every prior
+baseline — zero new regressions.** `tsc --noEmit` exits 0; both tabs build and
+serve 200. The bind-mount trap was respected throughout.
+
+The four-horizon plan is complete. What remains is not code: the SOC 2 observation
+window (a calendar process), a real pilot's POS feed, counsel review of the DPIA,
+and — for outcome pricing to actually charge — two quarters of real holdout
+evidence, which only real data and time can produce.

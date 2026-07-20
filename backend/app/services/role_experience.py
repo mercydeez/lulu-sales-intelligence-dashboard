@@ -137,6 +137,7 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"key": "incrementality", "tKey": "nav.incrementality", "label": "Incrementality", "href": "/flywheel/incrementality", "icon": "TrendingUp"},
             # Track B lands in the exec manifest only as the trade-promotion entry point; operator tooling stays in the sidebar.
             {"key": "trade", "tKey": "nav.trade", "label": "Trade Promotion", "href": "/flywheel/trade", "icon": "Coins"},
+            {"key": "coalition", "tKey": "nav.coalition", "label": "Coalition", "href": "/flywheel/coalition", "icon": "Network"},
             {"key": "sage", "tKey": "nav.sageCopilot", "label": "Sage Copilot", "href": "/copilot", "icon": "Lightbulb"},
         ],
         "quick_actions": [

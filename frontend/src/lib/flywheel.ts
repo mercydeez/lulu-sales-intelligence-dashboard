@@ -19,6 +19,7 @@ import type {
   HoldoutOverview, IncrementalitySummary, Preregistration, ReadoutPoint,
   ShadowComparisonRow, ShadowOverview,
   CannibalizationResult, MeteringSummary, SupplierDashboard, TradeOverview,
+  CoalitionAttribution, OutcomePricingStatus, SeasonalityCalendar, ShelfLifeResult,
 } from '@/types/flywheel';
 
 const TTL = {
@@ -318,4 +319,25 @@ export const fetchMetering = () =>
 export const FUNDING_TONE: Record<string, 'neutral' | 'amber' | 'teal' | 'success' | 'danger'> = {
   proposed: 'neutral', committed: 'teal', active: 'success',
   settled: 'success', disputed: 'danger', cancelled: 'neutral',
+};
+
+// ── Horizon 4: expand ────────────────────────────────────────────────────────
+
+export const fetchSeasonality = () =>
+  apiRequest<SeasonalityCalendar>('/api/flywheel/seasonality', { ttl: TTL.none });
+
+export const fetchShelfLife = (storeId?: number) =>
+  apiRequest<ShelfLifeResult>(
+    `/api/flywheel/shelf-life${storeId ? `?store_id=${storeId}` : ''}`, { ttl: TTL.none });
+
+export const fetchCoalitionAttribution = (campaignId: number) =>
+  apiRequest<CoalitionAttribution>(`/api/flywheel/campaigns/${campaignId}/coalition`, { ttl: TTL.none });
+
+export const fetchOutcomePricing = () =>
+  apiRequest<OutcomePricingStatus>('/api/flywheel/outcome-pricing', { ttl: TTL.none });
+
+/** Partner-type tone for badges. */
+export const PARTNER_TONE: Record<string, 'neutral' | 'teal' | 'amber' | 'violet' | 'success'> = {
+  grocery: 'success', fuel: 'amber', hospitality: 'violet', travel: 'teal',
+  retail: 'neutral', dining: 'violet', other: 'neutral',
 };

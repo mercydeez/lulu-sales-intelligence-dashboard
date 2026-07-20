@@ -673,3 +673,77 @@ export interface MeteringSummary {
   pricing: Record<string, unknown>;
   note: string;
 }
+
+// ── Horizon 4: expand ────────────────────────────────────────────────────────
+
+export interface SeasonEntry {
+  id: number;
+  name: string;
+  kind: string;
+  starts_on: string;
+  ends_on: string;
+  demand_multiplier: string;
+  category: string | null;
+  note: string | null;
+  active: boolean;
+}
+
+export interface SeasonalityCalendar {
+  calendar: SeasonEntry[];
+  active_now: SeasonEntry[];
+  current_factor: string;
+  note: string;
+}
+
+export interface ShelfLifeCandidate {
+  batch_id: number;
+  store_id: number;
+  store_name: string;
+  item_id: number;
+  item_name: string;
+  category: string;
+  batch_ref: string;
+  units: number;
+  expires_on: string;
+  days_to_expiry: number;
+  urgency: number;
+  value_at_risk_aed: string;
+  recommended_markdown_pct: string;
+  recommendation: string;
+}
+
+export interface ShelfLifeResult {
+  candidates: ShelfLifeCandidate[];
+  count: number;
+  total_value_at_risk_aed: string;
+  note: string;
+}
+
+export interface CoalitionPartnerRow {
+  partner_name: string;
+  partner_type: string;
+  customers: number;
+  attributed_margin_aed: string;
+  avg_weight: number | null;
+}
+
+export interface CoalitionAttribution {
+  campaign_id: number;
+  by_partner: CoalitionPartnerRow[];
+}
+
+export interface OutcomePlan {
+  plan_id: number;
+  plan_name: string;
+  margin_share_pct: string;
+  gate_readouts_required: number;
+  gate_met: boolean;
+  chargeable: boolean;
+  status: string;
+  gate_evidence: Record<string, unknown>;
+}
+
+export interface OutcomePricingStatus {
+  plans: OutcomePlan[];
+  note: string;
+}

@@ -27,6 +27,8 @@ EXISTING_ROUTES = {
     "/flywheel/governance", "/flywheel/models/shadow",
     # Horizon 3 · Track B surfaces (migration 079 / plan Addendum C).
     "/flywheel/trade", "/flywheel/cannibalization",
+    # Horizon 4 surfaces (migration 080 / plan Addendum D).
+    "/flywheel/coalition", "/flywheel/seasonality",
 }
 
 
@@ -84,7 +86,8 @@ def test_super_admin_gets_executive_experience():
     # (Holdout, Governance, Shadow, Cannibalization), which lives in the sidebar.
     assert hrefs == ["/today", "/briefing", "/role-workbench", "/value",
                      "/decisions", "/analytics", "/flywheel",
-                     "/flywheel/incrementality", "/flywheel/trade", "/copilot"]
+                     "/flywheel/incrementality", "/flywheel/trade",
+                     "/flywheel/coalition", "/copilot"]
     assert cfg["capabilities"] == {"ai_chat": True, "voice": True}
     assert cfg["quick_actions"] and all(a["href"] in EXISTING_ROUTES for a in cfg["quick_actions"])
     # Phase 2b: the exec homepage names the Copilot feed widgets (which read one

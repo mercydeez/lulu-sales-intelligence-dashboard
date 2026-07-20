@@ -27,10 +27,11 @@ from app.services.database import get_db
 from app.services.flywheel import (
     allocator, approvals, budget as budget_service, campaign_state,
     campaigns as campaign_service, cannibalization, churn as churn_service,
-    contact_governance, decisioning, erasure, features as feature_service,
+    coalition, contact_governance, decisioning, erasure, features as feature_service,
     guardrails, identity, inventory_atp, jobs, liability, measurement, metering,
-    objections, optimizer, outbox, procurement, readout, registry, seeder,
-    sequential, shadow, tax, trade, trace, uplift as uplift_service,
+    objections, optimizer, outbox, outcome_pricing, procurement, readout, registry,
+    seasonality, seeder, sequential, shadow, shelf_life, tax, trade, trace,
+    uplift as uplift_service,
 )
 from app.services.flywheel.budget import BudgetError, InsufficientBudget
 from app.services.flywheel.campaign_state import TransitionError
@@ -1665,3 +1666,109 @@ async def resolve_identities(
     db: AsyncSession = Depends(get_db),
 ):
     return await identity.resolve_pending(db, tenant_id=_tenant(user), batch=batch)
+
+
+# ===========================================================================
+# HORIZON 4 — expand: seasonality, coalition, shelf-life, gated outcome pricing.
+# ===========================================================================
+
+class PartnerIn(BaseModel):
+    partner_name: str = Field(..., min_length=2, max_length=120)
+    partner_type: str = Field(..., pattern="^(grocery|fuel|hospitality|travel|retail|dining|other)$")
+    external_ref: Optional[str] = None
+
+
+class OutcomePlanIn(BaseModel):
+    plan_name: str = Field(..., min_length=2, max_length=80)
+    margin_share_pct: Decimal = Field(..., gt=0, le=Decimal("0.5"))
+    gate_readouts_required: int = Field(2, ge=1)
+
+
+@router.get("/seasonality", summary="Seasonality calendar + current demand factor")
+async def seasonality_calendar(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The demand-multiplier calendar (Ramadan, Eid, summer lull, …) that scales
+    a customer's forward value in the EIV calculation."""
+    return await seasonality.calendar(db, tenant_id=_tenant(user))
+
+
+@router.get("/shelf-life", summary="Near-expiry stock + markdown recommendations")
+async def shelf_life_candidates(
+    store_id: Optional[int] = Query(None),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Perishables near expiry, ranked by value at risk, with a recommended
+    markdown — for a grocer, clearing this can outrank a retention offer."""
+    return await shelf_life.markdown_candidates(db, tenant_id=_tenant(user), store_id=store_id)
+
+
+@router.get("/coalition/partners", summary="Coalition partners")
+async def coalition_partners(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return {"partners": await coalition.partners(db, tenant_id=_tenant(user))}
+
+
+@router.post("/coalition/partners", summary="Register a coalition partner")
+async def register_coalition_partner(
+    body: PartnerIn,
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await coalition.register_partner(
+        db, tenant_id=_tenant(user), partner_name=body.partner_name,
+        partner_type=body.partner_type, external_ref=body.external_ref)
+
+
+@router.get("/campaigns/{campaign_id}/coalition", summary="Coalition attribution for a campaign")
+async def campaign_coalition_attribution(
+    campaign_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """How a campaign's retained value split across coalition partners — table
+    stakes in the GCC, where loyalty spans grocery, fuel, hospitality and travel."""
+    return await coalition.campaign_attribution(db, tenant_id=_tenant(user), campaign_id=campaign_id)
+
+
+@router.get("/outcome-pricing", summary="Outcome-based pricing plans + gate status")
+async def outcome_pricing_status(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Outcome-based pricing charges a share of measured incremental margin — but
+    only once the evidence gate (significant holdout readouts) is met."""
+    return await outcome_pricing.status(db, tenant_id=_tenant(user))
+
+
+@router.post("/outcome-pricing", summary="Propose an outcome-pricing plan (inert until gated)")
+async def create_outcome_plan(
+    body: OutcomePlanIn,
+    user: dict = Depends(require_permission("can_view_financials")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await outcome_pricing.propose_plan(
+            db, tenant_id=_tenant(user), plan_name=body.plan_name,
+            margin_share_pct=body.margin_share_pct,
+            gate_readouts_required=body.gate_readouts_required)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@router.post("/outcome-pricing/{plan_id}/evaluate-gate", summary="Recompute the evidence gate")
+async def evaluate_outcome_gate(
+    plan_id: int,
+    user: dict = Depends(require_permission("can_view_financials")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recompute whether the plan has earned the right to charge — from the
+    immutable holdout readouts. The gate is never set by hand."""
+    try:
+        return await outcome_pricing.evaluate_gate(db, tenant_id=_tenant(user), plan_id=plan_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))

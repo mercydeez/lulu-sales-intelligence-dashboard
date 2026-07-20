@@ -570,3 +570,108 @@ async def test_identity_declines_to_guess_when_ambiguous():
             await _set_tenant(s, 1)
             await s.execute(text("DELETE FROM flywheel_pos_staging WHERE tenant_id=1 AND external_txn_id='IT-ANON'"))
             await s.commit()
+
+
+# ===========================================================================
+# HORIZON 4 — expand, against live SQL.
+# ===========================================================================
+
+@pytest.mark.asyncio
+async def test_seasonality_factor_reflects_the_calendar():
+    """The seeded UAE calendar returns the right multiplier by date — 1.0 outside
+    any window, the Ramadan factor inside it."""
+    from datetime import date
+    from app.services.flywheel import seasonality
+    sm = _owner_sessionmaker()
+    async with sm() as s:
+        await _set_tenant(s, 1)
+        ramadan = await seasonality.factor_for(s, tenant_id=1, on=date(2026, 3, 1))
+        flat = await seasonality.factor_for(s, tenant_id=1, on=date(2026, 6, 10))
+    assert ramadan > 1, f"Ramadan factor should exceed 1, got {ramadan}"
+    assert flat == __import__("decimal").Decimal("1.000"), \
+        f"a flat week should be neutral, got {flat}"
+
+
+@pytest.mark.asyncio
+async def test_coalition_attribution_weights_sum_to_one():
+    """The central invariant: across the partners a customer engaged with, the
+    attribution weights sum to 1 — so the retailer never double-counts value a
+    coalition partner delivered."""
+    from datetime import datetime, timezone, timedelta
+    from decimal import Decimal
+    from sqlalchemy import text
+    from app.services.flywheel import coalition
+    sm = _owner_sessionmaker()
+    created = {"partners": [], "campaign": None, "customer": None}
+    try:
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            campaign = int((await s.execute(text("SELECT id FROM flywheel_campaigns WHERE tenant_id=1 ORDER BY id LIMIT 1"))).scalar())
+            cust = int((await s.execute(text("SELECT id FROM flywheel_customers WHERE tenant_id=1 LIMIT 1"))).scalar())
+            created["campaign"], created["customer"] = campaign, cust
+            now = datetime.now(timezone.utc)
+            for name, days in (("IT Fuel", 5), ("IT Travel", 2), ("IT Dining", 1)):
+                p = await coalition.register_partner(s, tenant_id=1, partner_name=name, partner_type="other")
+                created["partners"].append(p["partner_id"])
+                await coalition.record_activity(s, tenant_id=1, customer_id=cust,
+                                                partner_id=p["partner_id"], activity_type="earn",
+                                                value_aed=Decimal("20"), occurred_at=now - timedelta(days=days))
+            await s.commit()
+
+        for model in ("linear", "time_decay", "position"):
+            async with sm() as s:
+                await _set_tenant(s, 1)
+                attr = await coalition.attribute(s, tenant_id=1, campaign_id=campaign, customer_id=cust,
+                                                 incremental_margin_aed=Decimal("300"), model=model, persist=False)
+            assert abs(attr["weight_sum"] - 1.0) < 1e-4, f"{model}: weights sum to {attr['weight_sum']}, not 1"
+            # And the attributed margins sum to the whole, to the fils.
+            total = sum(Decimal(a["attributed_margin_aed"]) for a in attr["attribution"])
+            assert total == Decimal("300.00"), f"{model}: margins sum to {total}, not 300.00"
+    finally:
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            if created["campaign"] and created["customer"]:
+                await s.execute(text("DELETE FROM flywheel_coalition_activity WHERE tenant_id=1 AND customer_id=:c"), {"c": created["customer"]})
+            for pid in created["partners"]:
+                await s.execute(text("DELETE FROM flywheel_coalition_partners WHERE tenant_id=1 AND id=:p"), {"p": pid})
+            await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_outcome_pricing_gate_stays_closed_without_evidence():
+    """The gate that protects the whole product's trust: an outcome-pricing plan
+    cannot bill until enough significant holdout readouts exist, and compute_charge
+    refuses. gate_met is computed, never hand-set."""
+    from decimal import Decimal
+    from sqlalchemy import text
+    from app.services.flywheel import outcome_pricing
+    sm = _owner_sessionmaker()
+    plan_id = None
+    try:
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            plan = await outcome_pricing.propose_plan(s, tenant_id=1, plan_name="IT-Perf",
+                                                      margin_share_pct=Decimal("0.15"),
+                                                      gate_readouts_required=999)  # unreachable bar
+            plan_id = plan["plan_id"]
+            await s.commit()
+
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            gate = await outcome_pricing.evaluate_gate(s, tenant_id=1, plan_id=plan_id)
+            await s.commit()
+        assert gate["gate_met"] is False, "an unreachable bar must never be met"
+
+        async with sm() as s:
+            await _set_tenant(s, 1)
+            campaign = int((await s.execute(text("SELECT id FROM flywheel_campaigns WHERE tenant_id=1 ORDER BY id LIMIT 1"))).scalar())
+            charge = await outcome_pricing.compute_charge(s, tenant_id=1, plan_id=plan_id, campaign_id=campaign)
+        assert charge["chargeable"] is False
+        assert charge["charge_aed"] is None
+        assert "refusal" in charge
+    finally:
+        if plan_id:
+            async with sm() as s:
+                await _set_tenant(s, 1)
+                await s.execute(text("DELETE FROM flywheel_outcome_pricing WHERE tenant_id=1 AND id=:p"), {"p": plan_id})
+                await s.commit()
