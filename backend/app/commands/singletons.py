@@ -147,19 +147,67 @@ async def _main() -> int:
 
     rc = 0
     try:
-        # Wait until a signal asks us to stop, OR any loop dies (a crashed loop
-        # should take the container down so `restart: always` recreates it clean).
-        done, _pending = await asyncio.wait(
-            [asyncio.create_task(stop.wait())] + [t for _n, t in tasks],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        if not stop.is_set():
-            # A loop exited on its own — treat as failure so the orchestrator restarts.
-            for name, t in tasks:
-                if t.done() and not t.cancelled() and t.exception() is not None:
-                    logger.error(f"[singletons] exiting because loop '{name}' failed")
+        from app.services.data_generator import DemoScopeError
+
+        stop_task = asyncio.create_task(stop.wait())
+        live = {name: t for name, t in tasks}
+
+        # Supervise until a signal stops us or a loop genuinely CRASHES.
+        #
+        # The distinction that matters: a crash (DB gone, bug, unhandled error)
+        # is transient, so we exit non-zero and let `restart: always` recreate us
+        # clean. An ENVIRONMENT REFUSAL is not. DemoScopeError means the demo
+        # tenant owns no stores or items, so the generator is correctly refusing
+        # to invent synthetic sales with nothing safe to write to (the E0-8
+        # guard). On a production box that is PERMANENTLY true — production ships
+        # without demo data by design — so restarting can never help.
+        #
+        # An earlier version exited as soon as ANY loop finished, which meant one
+        # declining loop tore down the other five healthy ones and the container
+        # restart-looped forever. We now drop the decliner and keep supervising
+        # the rest.
+        while live and not stop.is_set():
+            done, _pending = await asyncio.wait(
+                [stop_task] + list(live.values()),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if stop.is_set():
+                break
+
+            crashed = False
+            for name, t in list(live.items()):
+                if not (t.done() and not t.cancelled()):
+                    continue
+                exc = t.exception()
+                del live[name]
+                if exc is None:
+                    logger.info(f"[singletons] loop '{name}' completed and exited.")
+                elif isinstance(exc, DemoScopeError):
+                    logger.warning(
+                        f"[singletons] loop '{name}' cannot run in this "
+                        f"environment and is disabled: {exc} "
+                        f"Other loops continue."
+                    )
+                else:
+                    logger.error(f"[singletons] exiting because loop '{name}' failed: {exc!r}")
                     rc = 1
-                    break
+                    crashed = True
+            if crashed:
+                break
+
+        # Every loop declined or finished, and nothing crashed. PARK rather than
+        # exit: `restart: always` would otherwise recreate the container in a
+        # quiet but endless loop. Staying up idle is the honest state — there is
+        # nothing to supervise here, and a later data import plus a restart will
+        # bring the loops back.
+        if rc == 0 and not live and not stop.is_set():
+            logger.warning(
+                "[singletons] no loop can run in this environment "
+                "(production ships without demo data). Idling — "
+                "restart this container after importing data to re-evaluate."
+            )
+            await stop.wait()
+
     finally:
         stop.set()
         for _name, t in tasks:

@@ -410,6 +410,12 @@ services:
     container_name: app_frontend_prod
     restart: always
     environment:
+      # Next standalone binds to process.env.HOSTNAME, and Docker sets
+      # HOSTNAME to the container hostname — so the server listened on
+      # 172.x.x.x:3000 only, and NO loopback probe could reach it. The
+      # healthcheck failed forever even though the app served fine
+      # through nginx. 0.0.0.0 is what you want in a container anyway.
+      HOSTNAME: "0.0.0.0"
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Set NEXT_PUBLIC_API_URL to the public https origin the browser will call (e.g. https://app.example.com) — it is baked into the frontend at build time}
       NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
@@ -438,6 +444,17 @@ services:
   # ===========================================================================
   # Nginx Reverse Proxy (Production)
   # ===========================================================================
+  # OPERATIONAL NOTE: nginx resolves the `backend`/`frontend` upstream names
+  # ONCE at startup (plain `upstream` blocks have no re-resolution in OSS
+  # nginx). Recreating either container gives it a NEW container IP, and
+  # nginx keeps proxying to the dead one — every request 502s until nginx
+  # is restarted. Observed live during this deploy.
+  #   After redeploying backend or frontend, ALWAYS:
+  #     docker compose -f docker-compose.production.yml restart nginx
+  # The proper fix is a `resolver 127.0.0.11 valid=10s;` plus a variable in
+  # proxy_pass so names re-resolve per request — deliberately NOT done here,
+  # because a variable in proxy_pass changes URI-rewriting semantics and
+  # needs routing tests this deploy did not have time to run.
   nginx:
     image: nginx:alpine
     container_name: app_nginx_prod
