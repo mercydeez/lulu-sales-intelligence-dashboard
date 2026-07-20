@@ -146,6 +146,24 @@ async def _main() -> int:
         logger.info("[singletons] flywheel_readouts NOT started "
                     "(FLYWHEEL_READOUT_SCHEDULER_ENABLED=false)")
 
+    # HORIZON 2: the durable job worker. Processes flywheel_jobs (scoring,
+    # measurement, shadow passes) with a lease + checkpoint so a mid-run crash is
+    # resumed rather than lost. Runs here as a single instance for the same reason
+    # as the readout scheduler — but note it is safe to run in every API worker
+    # too, because claims use FOR UPDATE SKIP LOCKED. The reaper inside the loop
+    # reclaims jobs stranded by a dead worker, which is the whole point of the
+    # tier: a redeploy mid-scoring costs one batch, not the run.
+    if settings.flywheel_job_worker_enabled:
+        from app.services.database import async_session
+        from app.services.flywheel.jobs import worker_loop as flywheel_job_worker
+        import socket
+        worker_id = f"singletons-{socket.gethostname()}"
+        _track("flywheel_jobs",
+               flywheel_job_worker(async_session, worker_id=worker_id))
+    else:
+        logger.info("[singletons] flywheel_jobs worker NOT started "
+                    "(FLYWHEEL_JOB_WORKER_ENABLED=false)")
+
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

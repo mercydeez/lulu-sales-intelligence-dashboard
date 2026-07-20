@@ -339,3 +339,61 @@ Probabilistic matching to join POS transactions to loyalty identities — the st
 | **H4 — Expand** | Coalition attribution surface | Ramadan/seasonality modelling, perishables & shelf-life constraints in the allocator, outcome-based pricing revisit |
 
 Six new tabs, seven deep engineering items. Horizon 2 deliberately ships no new surface — that is the horizon where the system earns the right to be trusted, and it is entirely invisible to the user by design.
+
+---
+
+# Addendum B — Horizon 2 delivered (21 July 2026)
+
+Horizon 2 ("make it operable") shipped. No new user-facing surface, by design —
+this is the horizon where the system earns the right to be trusted, and it is
+almost entirely invisible to the end user. Migration **078**; next free is 079.
+
+**RLS mandatory, escape hatch deleted (ruling #2).** `USE_RLS_ROLE` is now
+required in production unconditionally; `ALLOW_INSECURE_NO_RLS` is retired and
+setting it in production is a hard startup error rather than a bypass. Proved at
+the database, as the non-owner `app_rw` role: with tenant GUC=1, a read sees only
+tenant 1, and a cross-tenant INSERT is rejected by the policy's WITH CHECK. That
+is Gate 2(b).
+
+**Durable job tier (A.3.4).** A Postgres-backed queue (`flywheel_jobs`) claimed
+with `FOR UPDATE SKIP LOCKED`, with a **lease** (a dead worker's job is reclaimed
+by the reaper) and a **checkpoint** (a resumed job continues from the last
+completed batch). Proved end to end: a scoring job killed mid-run was reaped,
+resumed, and scored every customer **exactly once** — 300/300, no loss, no
+repeat. That is Gate 2(a). Exactly-once *delivery* is handled by a consumer-side
+idempotency ledger (`flywheel_delivery_receipts`); a redelivered event is a
+no-op. The worker runs single-instance in the singletons container.
+
+**Model registry bound to its data (A.3.5).** Every model version now carries a
+`data_snapshot_hash` — a fingerprint of its exact training rows — plus lifecycle
+status and rollback lineage. Promotion **refuses** a version with no snapshot,
+because a model whose training data cannot be identified cannot be judged against
+a holdout; that guardrail is what makes ruling #1's promotion criterion
+enforceable. Rollback restores a known-good prior version in one call and records
+the reversal.
+
+**End-to-end tracing (A.3.6).** A `trace_id` spans a decision's whole life —
+decision, activation, outbox event, redemption days later — so "why did this
+customer get this offer, and what became of it" is one lookup. Surfaced at
+`GET /flywheel/decisions/{id}/trace`. This is also the PDPL right-to-explanation
+for an automated decision, and the timeline is labelled as such.
+
+**Live-Postgres integration suite.** Ten tests that run against the real database
+(`RUN_DB_TESTS=1`), most as the `app_rw` role — the test shape that would have
+caught the first-live-call failures this project keeps learning about. They cover
+RLS isolation, crash/reap/resume, idempotent enqueue, exactly-once delivery,
+registry binding + promotion guard, and decision tracing.
+
+**Verification.** 290 unit tests pass across every touched suite; the full suite
+shows **66 failures with these changes versus 67 at the Horizon-1 baseline**, and
+the delta is a test that now passes — zero regressions introduced (the remainder
+are pre-existing environment artifacts). `tsc --noEmit` exits 0. All new
+endpoints verified 200 live; the job worker verified processing a queued job to
+completion in the running singletons container.
+
+**Gate 2: PASSED.** Kill the worker mid-run → the campaign's work completes,
+exactly once. Cross-tenant queries fail at the database, not the application.
+
+Horizon 3 (Track A retention + Track B trade promotion) remains blocked on the
+three open questions in §7: pricing, whether real customer data is reachable, and
+scope confirmation.

@@ -291,6 +291,11 @@ class Settings(BaseSettings):
     #: anything faster is churn for its own sake.
     flywheel_readout_interval_seconds: int = 3600
 
+    # HORIZON 2: the durable job worker (flywheel_jobs). Processes scoring,
+    # measurement and shadow passes with a lease + checkpoint so a mid-run crash
+    # resumes rather than restarts. Single-instance in the singletons container.
+    flywheel_job_worker_enabled: bool = True
+
     # Platform Console: optional comma-separated email allowlist AND-gated with
     # users.is_platform_developer (services/platform_access.py). Empty = the DB
     # flag alone decides (dev convenience); set it in production so a tampered
@@ -346,7 +351,14 @@ class Settings(BaseSettings):
     # Infra / least-privilege DB roles
     worker_database_url: Optional[str] = None       # diagnostics worker (worker_role)
     redis_self_hosted: bool = False                 # True => prod Redis MUST carry a password
-    allow_insecure_no_rls: bool = False             # dangerous override: prod without the RLS role
+    # RETIRED (ruling #2, 20 Jul 2026): this was the "run production without the
+    # RLS role" escape hatch. It has been REMOVED from the production code path —
+    # a single missing `WHERE tenant_id` with the hatch open is a cross-tenant
+    # breach, and the owner ruled that risk unacceptable. The field survives only
+    # so an existing deployment that still sets ALLOW_INSECURE_NO_RLS=true fails
+    # LOUDLY at startup (see validate_security) rather than silently continuing
+    # to believe it has an escape hatch that no longer exists.
+    allow_insecure_no_rls: bool = False
 
     # --- E0-2 uptime monitoring + alerting (Krishna) -----------------------
     # Generic webhook alerting — provider-agnostic on purpose. Route the webhook to
@@ -645,11 +657,26 @@ class Settings(BaseSettings):
                 "run the dedicated seed job instead."
             )
 
-        # --- RLS role required in production (tenant isolation) ---
-        if is_prod and not self.use_rls_role and not self.allow_insecure_no_rls:
+        # --- RLS role MANDATORY in production (tenant isolation) — ruling #2 ---
+        # There is no longer an escape hatch. Postgres-enforced isolation is the
+        # only acceptable posture in production because it is the only one that
+        # survives a single forgotten `WHERE tenant_id` in application code.
+        if is_prod and not self.use_rls_role:
             raise RuntimeError(
                 "CRITICAL: USE_RLS_ROLE must be true in production for Postgres-enforced "
-                "tenant isolation. Set ALLOW_INSECURE_NO_RLS=true only if you fully accept the risk."
+                "tenant isolation. The ALLOW_INSECURE_NO_RLS override has been REMOVED "
+                "(ruling #2, 20 Jul 2026) — app-layer scoping alone is not an accepted "
+                "production posture."
+            )
+
+        # An operator who still sets the retired override needs to know it does
+        # nothing now, rather than believe their isolation posture is what it was.
+        if is_prod and self.allow_insecure_no_rls:
+            raise RuntimeError(
+                "CRITICAL: ALLOW_INSECURE_NO_RLS is set but has been RETIRED (ruling #2). "
+                "It no longer disables RLS enforcement. Remove it from your environment "
+                "and set USE_RLS_ROLE=true — production always runs with Postgres-enforced "
+                "tenant isolation now."
             )
 
         # --- Self-hosted Redis must require a password ---

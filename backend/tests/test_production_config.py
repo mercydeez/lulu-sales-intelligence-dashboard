@@ -95,9 +95,17 @@ class TestProdFailsClosed:
         with pytest.raises(RuntimeError, match="USE_RLS_ROLE"):
             _prod(use_rls_role=False).validate_security()
 
-    def test_rls_off_allowed_with_dangerous_override(self):
-        # The escape hatch exists but must be explicit.
-        assert _prod(use_rls_role=False, allow_insecure_no_rls=True).validate_security() == []
+    def test_insecure_override_is_retired_and_no_longer_bypasses_rls(self):
+        # Ruling #2 (20 Jul 2026): the escape hatch was DELETED. The override no
+        # longer bypasses anything — with the RLS role OFF, production is rejected
+        # regardless of the old flag (the flag used to make this pass).
+        with pytest.raises(RuntimeError, match="USE_RLS_ROLE|REMOVED"):
+            _prod(use_rls_role=False, allow_insecure_no_rls=True).validate_security()
+        # And even WITH the RLS role on, leaving the retired flag set is itself a
+        # hard error, so a stale env var cannot linger and mislead an operator
+        # into thinking they still have a bypass.
+        with pytest.raises(RuntimeError, match="RETIRED"):
+            _prod(use_rls_role=True, allow_insecure_no_rls=True).validate_security()
 
     def test_self_hosted_redis_without_password_rejected(self):
         with pytest.raises(RuntimeError, match="Redis"):

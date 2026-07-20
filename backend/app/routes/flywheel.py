@@ -28,8 +28,8 @@ from app.services.flywheel import (
     allocator, approvals, budget as budget_service, campaign_state,
     campaigns as campaign_service, churn as churn_service, contact_governance,
     decisioning, erasure, features as feature_service, guardrails, inventory_atp,
-    liability, measurement, optimizer, outbox, procurement, readout, seeder,
-    sequential, shadow, tax, uplift as uplift_service,
+    jobs, liability, measurement, optimizer, outbox, procurement, readout,
+    registry, seeder, sequential, shadow, tax, trace, uplift as uplift_service,
 )
 from app.services.flywheel.budget import BudgetError, InsufficientBudget
 from app.services.flywheel.campaign_state import TransitionError
@@ -1394,3 +1394,90 @@ async def shadow_score(
     """
     return await shadow.score_pass(
         db, tenant_id=_tenant(user), campaign_id=campaign_id, limit=limit)
+
+
+# ===========================================================================
+# HORIZON 2 — operability: durable jobs, model registry, tracing.
+# ===========================================================================
+
+class EnqueueJobIn(BaseModel):
+    kind: str = Field(..., pattern="^(score_audience|measure_all|shadow_score)$")
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/jobs", summary="Enqueue a durable background job")
+async def enqueue_job(
+    body: EnqueueJobIn,
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Dispatch long-running work to the durable queue.
+
+    The job survives a worker crash: it is claimed under a lease and checkpoints
+    its progress, so a redeploy mid-run resumes from the last completed batch
+    rather than restarting. Idempotent per (tenant, kind) per calendar day, so a
+    double-submit watches the same job instead of creating a second.
+    """
+    tenant_id = _tenant(user)
+    # A per-day idempotency key: the same logical job (today's scoring) enqueued
+    # twice returns the first. trace_id ties any decisions this job produces back
+    # to the dispatch, so the whole chain is one lookup.
+    day = date.today().isoformat()
+    trace_id = trace.ensure_trace_id()
+    job_id = await jobs.enqueue(
+        db, tenant_id=tenant_id, kind=body.kind, payload=body.payload,
+        idempotency_key=f"{body.kind}:{tenant_id}:{day}", trace_id=trace_id)
+    return {"job_id": job_id, "kind": body.kind, "trace_id": trace_id,
+            "note": ("Watch GET /jobs/{job_id}. Idempotent for today — the same "
+                     "kind submitted again returns this same job.")}
+
+
+@router.get("/jobs", summary="Job queue health")
+async def job_queue_stats(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    stats = await jobs.queue_stats(db, tenant_id=_tenant(user))
+    stats["note"] = ("dead_letter counts jobs that exhausted their retries. They "
+                     "are retained, not deleted, so they can be inspected and "
+                     "requeued rather than silently lost.")
+    return stats
+
+
+@router.get("/jobs/{job_id}", summary="Inspect one job")
+async def job_detail(
+    job_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    job = await jobs.get_job(db, tenant_id=_tenant(user), job_id=job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    return job
+
+
+@router.get("/models/registry", summary="Model registry with data-snapshot lineage")
+async def model_registry(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await registry.list_versions(db, tenant_id=_tenant(user))
+
+
+@router.get("/decisions/{decision_id}/trace", summary="Full lifecycle trace of a decision")
+async def decision_trace_timeline(
+    decision_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The whole life of a decision, in one place.
+
+    A PDPL obligation as much as an operational one: a data subject may demand an
+    explanation of an automated decision, and this is that explanation — inputs,
+    the action chosen, and everything that happened to it afterwards.
+    """
+    result = await trace.decision_timeline(
+        db, tenant_id=_tenant(user), decision_id=decision_id)
+    if not result:
+        raise HTTPException(404, "Decision not found")
+    return result

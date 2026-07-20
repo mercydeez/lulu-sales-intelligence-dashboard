@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.flywheel import (
     budget as budget_service, churn as churn_service, contact_governance,
     features as feature_service, inventory_atp, liability, optimizer, outbox,
-    tax, uplift as uplift_service,
+    tax, trace, uplift as uplift_service,
 )
 from app.services.flywheel.campaign_state import LIVE_STATES
 from app.services.flywheel.types import (
@@ -295,13 +295,13 @@ async def evaluate(
                     procurement_cost_aed, stockout_risk_penalty_aed, eiv_aed,
                     reason_codes, rejected_actions, inventory_snapshot, budget_snapshot,
                     churn_model_version_id, policy_version, request_id,
-                    tax_rate_pct, net_price_aed, margin_net_pct)
+                    tax_rate_pct, net_price_aed, margin_net_pct, trace_id)
                 VALUES (:t, :c, :cust, :store, :item, :cat, :action, :churn, :uplift,
                         :redeem, :price, :cost, :discount, :retained, :margin,
                         :disc_cost, :comms, :fulfil, :procure, :stockout, :eiv,
                         CAST(:reasons AS JSONB), CAST(:rejected AS JSONB),
                         CAST(:inv AS JSONB), CAST(:bud AS JSONB), :model, :policy, :rid,
-                        :tax_rate, :net_price, :margin_net)
+                        :tax_rate, :net_price, :margin_net, :trace)
                 RETURNING id"""),
         {"t": tenant_id, "c": int(camp_id), "cust": customer_id, "store": store_id,
          "item": row["item_id"], "cat": row["category"], "action": row["action_type"],
@@ -321,7 +321,11 @@ async def evaluate(
          # decision must stay explainable after the VAT rate changes.
          "tax_rate": tax_rule.rate_pct,
          "net_price": winner.net_price_aed,
-         "margin_net": winner.margin_net_pct},
+         "margin_net": winner.margin_net_pct,
+         # The trace spans this decision's whole life; mint one if the request
+         # did not already carry one, so even a decision made by a background job
+         # is traceable end to end.
+         "trace": trace.ensure_trace_id(request_id)},
     )).fetchone()
     decision_id = int(decision[0])
 
@@ -442,19 +446,25 @@ async def redeem(
         }
 
     # --- 2. lock and validate the offer -------------------------------------
+    # The originating decision's trace_id is pulled forward so the redemption —
+    # which happens on a different request, possibly days later — joins back to
+    # the decision that created the offer. That is what makes the decision
+    # timeline (trace.decision_timeline) show the full life, not just the birth.
     offer = (await db.execute(
-        text("""SELECT id, campaign_id, customer_id, store_id, item_id, discount_pct,
-                       status, expires_at, reserved_aed, action_type
-                  FROM flywheel_offers
-                 WHERE tenant_id = :t AND offer_code = :code
-                 FOR UPDATE"""),
+        text("""SELECT o.id, o.campaign_id, o.customer_id, o.store_id, o.item_id,
+                       o.discount_pct, o.status, o.expires_at, o.reserved_aed,
+                       o.action_type, d.trace_id
+                  FROM flywheel_offers o
+                  LEFT JOIN flywheel_decisions d ON d.id = o.decision_id
+                 WHERE o.tenant_id = :t AND o.offer_code = :code
+                 FOR UPDATE OF o"""),
         {"t": tenant_id, "code": offer_code},
     )).fetchone()
     if not offer:
         raise ValueError(f"Offer {offer_code} not found")
 
     (offer_id, campaign_id, customer_id, offer_store, item_id, discount_pct,
-     status, expires_at, reserved_aed, action_type) = offer
+     status, expires_at, reserved_aed, action_type, decision_trace_id) = offer
 
     if status != "issued":
         raise ValueError(f"Offer {offer_code} is already '{status}' and cannot be redeemed")
@@ -613,16 +623,18 @@ async def redeem(
                        (tenant_id, offer_id, campaign_id, customer_id, store_id, item_id,
                         units, gross_value_aed, discount_aed, net_value_aed, margin_aed,
                         idempotency_key, request_id,
-                        tax_rate_pct, tax_amount_aed, net_of_tax_aed)
+                        tax_rate_pct, tax_amount_aed, net_of_tax_aed, trace_id)
                     VALUES (:t, :o, :c, :cust, :s, :i, :u, :gross, :disc, :net, :margin,
-                            :key, :rid, :tax_rate, :tax_amt, :net_of_tax)
+                            :key, :rid, :tax_rate, :tax_amt, :net_of_tax, :trace)
                     RETURNING id"""),
             {"t": tenant_id, "o": offer_id, "c": campaign_id, "cust": customer_id,
              "s": target_store, "i": item_id, "u": units, "gross": gross,
              "disc": discount, "net": net, "margin": margin,
              "key": idempotency_key, "rid": request_id,
              "tax_rate": tax_rule.rate_pct, "tax_amt": tax_amount,
-             "net_of_tax": net_of_tax},
+             "net_of_tax": net_of_tax,
+             # Inherit the decision's trace so the redemption joins its origin.
+             "trace": decision_trace_id or trace.ensure_trace_id(request_id)},
         )).fetchone()
     except IntegrityError:
         # Another request with the same key won the race between our check at

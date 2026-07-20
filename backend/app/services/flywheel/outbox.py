@@ -55,13 +55,19 @@ async def emit(
     payload) so the relay can filter by scope without parsing JSON, and so a
     subscriber can never receive an event for a store they cannot access.
     """
+    # Carry the active trace onto the event so the async tail of a decision (the
+    # relayed event) joins back to its origin in the decision timeline. Imported
+    # locally to avoid a module-load cycle (trace has no outbox dependency).
+    from app.services.flywheel import trace
     row = (await db.execute(
         text("""INSERT INTO flywheel_outbox
-                   (tenant_id, channel, event_type, payload, store_id, campaign_id)
-                VALUES (:t, :ch, :et, CAST(:p AS JSONB), :s, :c)
+                   (tenant_id, channel, event_type, payload, store_id, campaign_id,
+                    trace_id)
+                VALUES (:t, :ch, :et, CAST(:p AS JSONB), :s, :c, :trace)
                 RETURNING id"""),
         {"t": tenant_id, "ch": channel, "et": event_type,
-         "p": json.dumps(payload, default=str), "s": store_id, "c": campaign_id},
+         "p": json.dumps(payload, default=str), "s": store_id, "c": campaign_id,
+         "trace": trace.current_trace_id()},
     )).fetchone()
     return int(row[0])
 
