@@ -95,6 +95,7 @@ export const navItems: NavItem[] = [
 // Role Experience Engine (Wave 1): the server nav manifest names icons as
 // strings — resolve them here. Unknown icon names degrade to LayoutDashboard.
 export const NAV_ICONS: Record<string, ReactNode> = {
+  Repeat: <Repeat className="w-5 h-5" />,
   Sunrise: <Sunrise className="w-5 h-5" />,
   Scale: <Scale className="w-5 h-5" />,
   ClipboardCheck: <ClipboardCheck className="w-5 h-5" />,

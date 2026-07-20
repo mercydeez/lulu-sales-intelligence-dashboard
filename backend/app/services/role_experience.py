@@ -128,6 +128,7 @@ _CONFIGS: Dict[Optional[str], Dict] = {
             {"key": "health", "tKey": "nav.businessHealth", "label": "Business Health", "href": "/value", "icon": "TrendingUp"},
             {"key": "decisions", "tKey": "nav.decisions", "label": "Decisions", "href": "/decisions", "icon": "Scale"},
             {"key": "growth", "tKey": "nav.growth", "label": "Growth", "href": "/analytics", "icon": "BarChart3"},
+            {"key": "flywheel", "tKey": "nav.flywheel", "label": "Flywheel", "href": "/flywheel", "icon": "Repeat"},
             {"key": "sage", "tKey": "nav.sageCopilot", "label": "Sage Copilot", "href": "/copilot", "icon": "Lightbulb"},
         ],
         "quick_actions": [

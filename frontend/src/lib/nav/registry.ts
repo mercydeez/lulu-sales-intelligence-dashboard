@@ -45,7 +45,12 @@ export const ROUTE_MAP: Record<string, RoutePlacement> = {
   '/inventory':      { domain: 'operations', order: 1 },
   '/procurement':    { domain: 'operations', order: 2 },
   '/promotions':     { domain: 'operations', order: 3 },
-  '/employees':      { domain: 'operations', order: 4 },
+  // Flywheel — retention decisioning. Operations, beside promotions: it is
+  // the retention counterpart to the promotion catalogue, and an operator
+  // reasoning about one is usually reasoning about the other.
+  '/flywheel':       { domain: 'operations', order: 4 },
+  '/retention':      { domain: 'operations', order: 5 },
+  '/employees':      { domain: 'operations', order: 6 },
   // Intelligence
   '/analytics':      { domain: 'intelligence', order: 1 },
   '/forecast-lab':   { domain: 'intelligence', order: 2 },
