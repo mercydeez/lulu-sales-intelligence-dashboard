@@ -444,17 +444,10 @@ services:
   # ===========================================================================
   # Nginx Reverse Proxy (Production)
   # ===========================================================================
-  # OPERATIONAL NOTE: nginx resolves the `backend`/`frontend` upstream names
-  # ONCE at startup (plain `upstream` blocks have no re-resolution in OSS
-  # nginx). Recreating either container gives it a NEW container IP, and
-  # nginx keeps proxying to the dead one — every request 502s until nginx
-  # is restarted. Observed live during this deploy.
-  #   After redeploying backend or frontend, ALWAYS:
-  #     docker compose -f docker-compose.production.yml restart nginx
-  # The proper fix is a `resolver 127.0.0.11 valid=10s;` plus a variable in
-  # proxy_pass so names re-resolve per request — deliberately NOT done here,
-  # because a variable in proxy_pass changes URI-rewriting semantics and
-  # needs routing tests this deploy did not have time to run.
+  # nginx re-resolves its upstreams every 10s via Docker's embedded DNS
+  # (see the resolver block in nginx/nginx.conf), so recreating backend or
+  # frontend self-heals — no nginx restart required. Proven by
+  # scripts/test-nginx-reresolve.sh.
   nginx:
     image: nginx:alpine
     container_name: app_nginx_prod
