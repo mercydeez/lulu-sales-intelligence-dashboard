@@ -50,6 +50,32 @@ jobs:
           bash -n scripts/validate-production-compose.sh
           bash -n scripts/deploy-compose.sh
           bash -n scripts/smoke-deploy.sh
+          bash -n scripts/test-nginx-routing.sh
+          bash -n scripts/test-nginx-reresolve.sh
+
+      - name: nginx must re-resolve its upstreams (no stale-IP regression)
+        # The cheapest gate for the most expensive failure. Plain `upstream`
+        # blocks cache the upstream IP for the process lifetime, so recreating
+        # backend/frontend 502s EVERY request until nginx is restarted — a total
+        # outage on every redeploy that looks healthy from the outside.
+        # This runs with no secrets and no running stack, so it catches a revert
+        # on any push rather than at deploy time.
+        run: |
+          set -e
+          conf=nginx/nginx.conf
+          if grep -qE 'proxy_pass +http://(backend|frontend);' "$conf"; then
+            echo "FAIL: literal proxy_pass found — upstream IPs would be cached forever."
+            echo "      Use: set \$backend_upstream http://backend:8000; proxy_pass \$backend_upstream\$request_uri;"
+            grep -nE 'proxy_pass +http://(backend|frontend);' "$conf"; exit 1
+          fi
+          grep -q 'resolver  *127.0.0.11' "$conf" || {
+            echo "FAIL: no Docker-DNS resolver in $conf — names will never re-resolve."; exit 1; }
+          # A variable proxy_pass does NOT append the request URI: omitting
+          # $request_uri silently truncates every route to its location prefix.
+          if grep -E 'proxy_pass +\$[a-z_]+_upstream;' "$conf"; then
+            echo "FAIL: variable proxy_pass without \$request_uri — paths and query strings would be dropped."; exit 1
+          fi
+          echo "OK: upstreams re-resolve and forward the full request URI."
 
       - name: Validate production compose (no demo/seed artifacts; E0-2 wired)
         run: bash scripts/validate-production-compose.sh
@@ -103,6 +129,58 @@ jobs:
           fi
           bash scripts/smoke-deploy.sh
 
+      - name: nginx routing contract (staging)
+        # Asserts every location block still reaches the right upstream and that
+        # paths and query strings survive the proxy. Pure HTTP, so it runs fine
+        # from the runner against the deployed URL.
+        env:
+          BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          # Optional. Without credentials the query-fidelity assertions SKIP —
+          # they need auth to be meaningful, because unauthenticated every probe
+          # returns 401 and proves nothing.
+          ROUTING_TEST_EMAIL: ${{ secrets.STAGING_SMOKE_EMAIL }}
+          ROUTING_TEST_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}
+        run: bash scripts/test-nginx-routing.sh "$BASE_URL"
+
+      - name: nginx upstream re-resolution (staging)
+        # Recreates the backend and asserts traffic recovers WITHOUT restarting
+        # nginx — the stale-IP outage.
+        #
+        # This one needs docker-compose control of the deploy host, so it can
+        # only run over SSH. In webhook mode the runner has no such access and
+        # the step SKIPS LOUDLY rather than pretending to pass: the static guard
+        # in validate-deploy-config already blocks the config regression on every
+        # push, so this is the runtime confirmation, not the only line of defence.
+        env:
+          DEPLOY_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          DEPLOY_APP_DIR: ${{ secrets.STAGING_APP_DIR }}
+          BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOY_SSH_HOST:-}" ] || [ -z "${DEPLOY_SSH_KEY:-}" ]; then
+            echo "SKIPPED: no SSH host configured (webhook-mode deploy)."
+            echo "  The re-resolution test drives docker compose on the host, which"
+            echo "  a webhook deploy does not expose. Run it on the host manually:"
+            echo "    scripts/test-nginx-reresolve.sh"
+            exit 0
+          fi
+          install -m 600 /dev/stdin /tmp/deploy_key <<< "$DEPLOY_SSH_KEY"
+          ssh -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key \
+              "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
+              "cd '${DEPLOY_APP_DIR}' && bash scripts/test-nginx-reresolve.sh '' '' '${BASE_URL}'"
+          rc=$?
+          rm -f /tmp/deploy_key
+          # exit 2 is the script's INCONCLUSIVE state (the container kept its IP,
+          # so nginx was never asked to re-resolve). Surface it as a warning
+          # rather than a false green OR a spurious failure.
+          if [ $rc -eq 2 ]; then
+            echo "::warning::re-resolution test was INCONCLUSIVE — upstream IP did not change."
+            exit 0
+          fi
+          exit $rc
+
   # ---------------------------------------------------------------------------
   # Production: push tag vX.Y.Z, or manual dispatch -> production.
   # Deploys the EXACT tag/ref. Rollback = re-run with a previous tag.
@@ -139,3 +217,55 @@ jobs:
             echo "ERROR: PRODUCTION_BASE_URL secret is not set — cannot smoke-test the deploy"; exit 1
           fi
           bash scripts/smoke-deploy.sh
+
+      - name: nginx routing contract (production)
+        # Asserts every location block still reaches the right upstream and that
+        # paths and query strings survive the proxy. Pure HTTP, so it runs fine
+        # from the runner against the deployed URL.
+        env:
+          BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+          # Optional. Without credentials the query-fidelity assertions SKIP —
+          # they need auth to be meaningful, because unauthenticated every probe
+          # returns 401 and proves nothing.
+          ROUTING_TEST_EMAIL: ${{ secrets.PRODUCTION_SMOKE_EMAIL }}
+          ROUTING_TEST_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_PASSWORD }}
+        run: bash scripts/test-nginx-routing.sh "$BASE_URL"
+
+      - name: nginx upstream re-resolution (production)
+        # Recreates the backend and asserts traffic recovers WITHOUT restarting
+        # nginx — the stale-IP outage.
+        #
+        # This one needs docker-compose control of the deploy host, so it can
+        # only run over SSH. In webhook mode the runner has no such access and
+        # the step SKIPS LOUDLY rather than pretending to pass: the static guard
+        # in validate-deploy-config already blocks the config regression on every
+        # push, so this is the runtime confirmation, not the only line of defence.
+        env:
+          DEPLOY_SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          DEPLOY_APP_DIR: ${{ secrets.PRODUCTION_APP_DIR }}
+          BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOY_SSH_HOST:-}" ] || [ -z "${DEPLOY_SSH_KEY:-}" ]; then
+            echo "SKIPPED: no SSH host configured (webhook-mode deploy)."
+            echo "  The re-resolution test drives docker compose on the host, which"
+            echo "  a webhook deploy does not expose. Run it on the host manually:"
+            echo "    scripts/test-nginx-reresolve.sh"
+            exit 0
+          fi
+          install -m 600 /dev/stdin /tmp/deploy_key <<< "$DEPLOY_SSH_KEY"
+          ssh -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key \
+              "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
+              "cd '${DEPLOY_APP_DIR}' && bash scripts/test-nginx-reresolve.sh '' '' '${BASE_URL}'"
+          rc=$?
+          rm -f /tmp/deploy_key
+          # exit 2 is the script's INCONCLUSIVE state (the container kept its IP,
+          # so nginx was never asked to re-resolve). Surface it as a warning
+          # rather than a false green OR a spurious failure.
+          if [ $rc -eq 2 ]; then
+            echo "::warning::re-resolution test was INCONCLUSIVE — upstream IP did not change."
+            exit 0
+          fi
+          exit $rc
