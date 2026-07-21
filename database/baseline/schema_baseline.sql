@@ -329,6 +329,54 @@ BEGIN
     RETURN v_made;
 END $$;
 
+CREATE FUNCTION public.flywheel_forbid_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'DELETE'
+       AND coalesce(current_setting('flywheel.allow_purge', true), 'off') = 'on' THEN
+        -- Deliberate erasure / offboarding. Permitted.
+        RETURN OLD;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION
+            'flywheel: % is append-only — DELETE is not permitted. Evidence is '
+            'not deleted casually. For lawful erasure or tenant offboarding, set '
+            'flywheel.allow_purge to ''on'' for the transaction (see '
+            'services/flywheel/erasure.py).', TG_TABLE_NAME
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+
+    RAISE EXCEPTION
+        'flywheel: % is append-only — UPDATE is not permitted. A measurement you '
+        'can rewrite after seeing it is not evidence.', TG_TABLE_NAME
+        USING ERRCODE = 'restrict_violation';
+END;
+$$;
+
+CREATE FUNCTION public.flywheel_settlement_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF OLD.status IN ('issued', 'paid') THEN
+        -- Permit ONLY a status move to 'disputed' or 'paid', and the amount must
+        -- not change. Everything else on an issued settlement is frozen.
+        IF NEW.amount_due_aed <> OLD.amount_due_aed
+           OR NEW.incremental_margin_aed <> OLD.incremental_margin_aed
+           OR NEW.period_start <> OLD.period_start
+           OR NEW.period_end <> OLD.period_end THEN
+            RAISE EXCEPTION
+                'flywheel: settlement % is issued — its amount and period are '
+                'frozen. Dispute it (status -> disputed) or pay it, but do not '
+                'rewrite what the supplier was charged.', OLD.id
+                USING ERRCODE = 'restrict_violation';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
 CREATE FUNCTION public.get_user_accessible_stores(p_user_id integer) RETURNS TABLE(store_id integer)
     LANGUAGE plpgsql
     AS $$
@@ -820,6 +868,66 @@ CREATE SEQUENCE public.bespoke_requests_id_seq
 
 ALTER SEQUENCE public.bespoke_requests_id_seq OWNED BY public.bespoke_requests.id;
 
+CREATE TABLE public.campaign_allocations (
+    id integer NOT NULL,
+    tenant_id integer DEFAULT 1 NOT NULL,
+    campaign_id integer NOT NULL,
+    store_id integer NOT NULL,
+    item_id integer NOT NULL,
+    allocated_units integer NOT NULL,
+    consumed_units integer DEFAULT 0 NOT NULL,
+    released_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT campaign_allocations_allocated_units_check CHECK ((allocated_units >= 0)),
+    CONSTRAINT ck_alloc_consumed CHECK (((consumed_units >= 0) AND (consumed_units <= allocated_units)))
+);
+
+CREATE SEQUENCE public.campaign_allocations_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.campaign_allocations_id_seq OWNED BY public.campaign_allocations.id;
+
+CREATE TABLE public.campaign_offers (
+    id integer NOT NULL,
+    tenant_id integer DEFAULT 1 NOT NULL,
+    campaign_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    store_id integer NOT NULL,
+    cohort character varying(10) NOT NULL,
+    churn_score numeric(4,3) NOT NULL,
+    response_prob numeric(4,3) DEFAULT 0 NOT NULL,
+    action character varying(30) DEFAULT 'NO_ACTION'::character varying NOT NULL,
+    item_id integer,
+    discount_pct numeric(5,2) DEFAULT 0 NOT NULL,
+    unit_price_aed numeric(12,2),
+    unit_cost_aed numeric(12,4),
+    expected_value_aed numeric(12,2) DEFAULT 0 NOT NULL,
+    reason_codes jsonb DEFAULT '[]'::jsonb NOT NULL,
+    status character varying(20) DEFAULT 'planned'::character varying NOT NULL,
+    issued_at timestamp with time zone,
+    expires_at timestamp with time zone,
+    redeemed_at timestamp with time zone,
+    redemption_key character varying(80),
+    redemption_amount_aed numeric(12,2),
+    CONSTRAINT campaign_offers_cohort_check CHECK (((cohort)::text = ANY ((ARRAY['treatment'::character varying, 'control'::character varying])::text[]))),
+    CONSTRAINT campaign_offers_status_check CHECK (((status)::text = ANY ((ARRAY['planned'::character varying, 'issued'::character varying, 'redeemed'::character varying, 'expired'::character varying, 'suppressed'::character varying])::text[])))
+);
+
+CREATE SEQUENCE public.campaign_offers_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.campaign_offers_id_seq OWNED BY public.campaign_offers.id;
+
 CREATE TABLE public.company_targets (
     id bigint NOT NULL,
     tenant_id integer DEFAULT 1 NOT NULL,
@@ -886,6 +994,54 @@ CREATE SEQUENCE public.crm_opportunities_id_seq
     CACHE 1;
 
 ALTER SEQUENCE public.crm_opportunities_id_seq OWNED BY public.crm_opportunities.id;
+
+CREATE TABLE public.customer_purchases (
+    id bigint NOT NULL,
+    tenant_id integer DEFAULT 1 NOT NULL,
+    customer_id integer NOT NULL,
+    store_id integer NOT NULL,
+    item_id integer NOT NULL,
+    purchase_date date NOT NULL,
+    qty numeric(10,3) DEFAULT 1 NOT NULL,
+    amount_aed numeric(12,2) NOT NULL,
+    was_promo boolean DEFAULT false NOT NULL,
+    is_return boolean DEFAULT false NOT NULL,
+    is_synthetic boolean DEFAULT true NOT NULL
+);
+
+CREATE SEQUENCE public.customer_purchases_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.customer_purchases_id_seq OWNED BY public.customer_purchases.id;
+
+CREATE TABLE public.customers (
+    id integer NOT NULL,
+    tenant_id integer DEFAULT 1 NOT NULL,
+    customer_ref character varying(40) NOT NULL,
+    home_store_id integer NOT NULL,
+    archetype character varying(30) NOT NULL,
+    consent_marketing boolean DEFAULT true NOT NULL,
+    contact_cap_month integer DEFAULT 4 NOT NULL,
+    contacts_this_month integer DEFAULT 0 NOT NULL,
+    is_synthetic boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE public.customers IS 'Synthetic loyalty layer for the retention module. customer_ref is opaque (never PII); archetype is a behavioural label used for honest demo data, NEVER a decision feature on protected attributes.';
+
+CREATE SEQUENCE public.customers_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.customers_id_seq OWNED BY public.customers.id;
 
 CREATE TABLE public.data_requests (
     id integer NOT NULL,
@@ -1326,6 +1482,1589 @@ CREATE SEQUENCE public.findings_id_seq
     CACHE 1;
 
 ALTER SEQUENCE public.findings_id_seq OWNED BY public.findings.id;
+
+CREATE TABLE public.flywheel_allocation_lines (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    run_id bigint NOT NULL,
+    customer_id integer NOT NULL,
+    action_type character varying(30) NOT NULL,
+    item_id integer,
+    store_id integer,
+    discount_pct numeric(5,2) DEFAULT 0 NOT NULL,
+    units integer DEFAULT 1 NOT NULL,
+    eiv_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    cost_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    eiv_density numeric(12,4),
+    selected boolean DEFAULT false NOT NULL,
+    reason_code character varying(40),
+    displaced_by_line bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_allocation_lines_units_check CHECK ((units >= 0))
+);
+
+ALTER TABLE ONLY public.flywheel_allocation_lines FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_allocation_lines_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_allocation_lines_id_seq OWNED BY public.flywheel_allocation_lines.id;
+
+CREATE TABLE public.flywheel_allocation_runs (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    mode character varying(20) NOT NULL,
+    is_shadow boolean DEFAULT true NOT NULL,
+    budget_limit_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    candidates_considered integer DEFAULT 0 NOT NULL,
+    customers_considered integer DEFAULT 0 NOT NULL,
+    actions_selected integer DEFAULT 0 NOT NULL,
+    total_eiv_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    total_cost_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    binding_constraint character varying(30),
+    eiv_delta_vs_greedy_aed numeric(16,2),
+    input_digest character varying(64),
+    solver character varying(30) DEFAULT 'density_greedy'::character varying NOT NULL,
+    runtime_ms integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_allocation_runs_binding_constraint_check CHECK (((binding_constraint)::text = ANY ((ARRAY['budget'::character varying, 'stock'::character varying, 'contact_cap'::character varying, 'none'::character varying])::text[]))),
+    CONSTRAINT flywheel_allocation_runs_mode_check CHECK (((mode)::text = ANY ((ARRAY['greedy'::character varying, 'portfolio'::character varying])::text[]))),
+    CONSTRAINT flywheel_allocation_runs_solver_check CHECK (((solver)::text = ANY ((ARRAY['density_greedy'::character varying, 'lp_relaxation'::character varying, 'min_cost_flow'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_allocation_runs FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_allocation_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_allocation_runs_id_seq OWNED BY public.flywheel_allocation_runs.id;
+
+CREATE TABLE public.flywheel_approval_policies (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    name character varying(120) NOT NULL,
+    applies_to character varying(30) DEFAULT 'campaign'::character varying NOT NULL,
+    min_discount_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    min_procurement_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    min_store_count integer DEFAULT 0 NOT NULL,
+    required_role character varying(40) NOT NULL,
+    required_permission character varying(60),
+    step_order integer DEFAULT 1 NOT NULL,
+    step_label character varying(60) NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_approval_policies_applies_to_check CHECK (((applies_to)::text = ANY ((ARRAY['campaign'::character varying, 'requisition'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_approval_policies FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_approval_policies_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_approval_policies_id_seq OWNED BY public.flywheel_approval_policies.id;
+
+CREATE TABLE public.flywheel_approval_requests (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer,
+    requisition_id integer,
+    request_type character varying(30) NOT NULL,
+    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    discount_exposure_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    procurement_exposure_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    expected_roi numeric(10,4),
+    summary jsonb DEFAULT '{}'::jsonb NOT NULL,
+    requested_by integer,
+    expires_at timestamp with time zone,
+    resolved_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_approval_one_subject CHECK (((((campaign_id IS NOT NULL))::integer + ((requisition_id IS NOT NULL))::integer) = 1)),
+    CONSTRAINT flywheel_approval_requests_request_type_check CHECK (((request_type)::text = ANY ((ARRAY['campaign_launch'::character varying, 'procurement_requisition'::character varying, 'budget_increase'::character varying, 'policy_exception'::character varying])::text[]))),
+    CONSTRAINT flywheel_approval_requests_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying, 'changes_requested'::character varying, 'cancelled'::character varying, 'expired'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_approval_requests FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_approval_requests_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_approval_requests_id_seq OWNED BY public.flywheel_approval_requests.id;
+
+CREATE TABLE public.flywheel_approval_steps (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    request_id integer NOT NULL,
+    policy_id integer,
+    step_order integer NOT NULL,
+    step_label character varying(60) NOT NULL,
+    required_role character varying(40) NOT NULL,
+    required_permission character varying(60),
+    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    decided_by integer,
+    decided_at timestamp with time zone,
+    comment text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_approval_steps_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying, 'changes_requested'::character varying, 'skipped'::character varying])::text[]))),
+    CONSTRAINT flywheel_step_decided_has_actor CHECK ((((status)::text = ANY ((ARRAY['pending'::character varying, 'skipped'::character varying])::text[])) OR ((decided_by IS NOT NULL) AND (decided_at IS NOT NULL))))
+);
+
+ALTER TABLE ONLY public.flywheel_approval_steps FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_approval_steps_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_approval_steps_id_seq OWNED BY public.flywheel_approval_steps.id;
+
+CREATE TABLE public.flywheel_budget_ledger (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    budget_id integer NOT NULL,
+    campaign_id integer,
+    entry_type character varying(20) NOT NULL,
+    amount_aed numeric(16,2) NOT NULL,
+    currency character varying(8) DEFAULT 'AED'::character varying NOT NULL,
+    source_type character varying(40) NOT NULL,
+    source_id character varying(64),
+    balance_before numeric(16,2) NOT NULL,
+    balance_after numeric(16,2) NOT NULL,
+    actor_user_id integer,
+    request_id character varying(64),
+    idempotency_key character varying(120),
+    reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_budget_ledger_amount_aed_check CHECK ((amount_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_budget_ledger_entry_type_check CHECK (((entry_type)::text = ANY ((ARRAY['ALLOCATED'::character varying, 'RESERVED'::character varying, 'COMMITTED'::character varying, 'SPENT'::character varying, 'RELEASED'::character varying, 'CLAWED_BACK'::character varying, 'BREAKAGE'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_budget_ledger FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_budget_ledger_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_budget_ledger_id_seq OWNED BY public.flywheel_budget_ledger.id;
+
+CREATE TABLE public.flywheel_budgets (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    budget_type character varying(25) NOT NULL,
+    period_start date NOT NULL,
+    period_end date NOT NULL,
+    currency character varying(8) DEFAULT 'AED'::character varying NOT NULL,
+    allocated_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    reserved_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    committed_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    spent_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    released_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    clawed_back_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    breakage_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT flywheel_budget_period_ordered CHECK ((period_end > period_start)),
+    CONSTRAINT flywheel_budget_within_allocation CHECK (((reserved_aed + spent_aed) <= allocated_aed)),
+    CONSTRAINT flywheel_budgets_allocated_aed_check CHECK ((allocated_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_budgets_breakage_aed_check CHECK ((breakage_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_budgets_budget_type_check CHECK (((budget_type)::text = ANY ((ARRAY['DISCOUNT'::character varying, 'MARKETING_MEDIA'::character varying, 'LOYALTY_REWARD'::character varying, 'PROCUREMENT'::character varying, 'LOGISTICS'::character varying, 'CONTINGENCY'::character varying])::text[]))),
+    CONSTRAINT flywheel_budgets_clawed_back_aed_check CHECK ((clawed_back_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_budgets_committed_aed_check CHECK ((committed_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_budgets_released_aed_check CHECK ((released_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_budgets_reserved_aed_check CHECK ((reserved_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_budgets_spent_aed_check CHECK ((spent_aed >= (0)::numeric))
+);
+
+ALTER TABLE ONLY public.flywheel_budgets FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_budgets_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_budgets_id_seq OWNED BY public.flywheel_budgets.id;
+
+CREATE TABLE public.flywheel_campaign_audience (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    assignment character varying(10) NOT NULL,
+    assignment_hash bigint NOT NULL,
+    churn_probability numeric(6,5),
+    eligibility_note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_campaign_audience_assignment_check CHECK (((assignment)::text = ANY ((ARRAY['treatment'::character varying, 'control'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_campaign_audience FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_campaign_audience_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_campaign_audience_id_seq OWNED BY public.flywheel_campaign_audience.id;
+
+CREATE TABLE public.flywheel_campaign_outcomes (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    measured_at timestamp with time zone DEFAULT now() NOT NULL,
+    treatment_size integer DEFAULT 0 NOT NULL,
+    control_size integer DEFAULT 0 NOT NULL,
+    treatment_retained integer DEFAULT 0 NOT NULL,
+    control_retained integer DEFAULT 0 NOT NULL,
+    treatment_retention_rate numeric(6,5) DEFAULT 0 NOT NULL,
+    control_retention_rate numeric(6,5) DEFAULT 0 NOT NULL,
+    incremental_retention numeric(7,5) DEFAULT 0 NOT NULL,
+    incremental_revenue_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    incremental_margin_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    discount_spend_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    procurement_cost_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    cost_per_retained_aed numeric(14,2),
+    campaign_roi numeric(10,4),
+    uplift_by_segment jsonb DEFAULT '{}'::jsonb NOT NULL,
+    budget_variance_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    stockout_rate numeric(6,5) DEFAULT 0 NOT NULL,
+    notes text,
+    breakage_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    breakage_rate numeric(6,5) DEFAULT 0 NOT NULL,
+    clawed_back_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    returned_units integer DEFAULT 0 NOT NULL
+);
+
+ALTER TABLE ONLY public.flywheel_campaign_outcomes FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_campaign_outcomes_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_campaign_outcomes_id_seq OWNED BY public.flywheel_campaign_outcomes.id;
+
+CREATE TABLE public.flywheel_campaign_transitions (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    from_status character varying(30),
+    to_status character varying(30) NOT NULL,
+    actor_user_id integer,
+    actor_kind character varying(20) DEFAULT 'user'::character varying NOT NULL,
+    reason text,
+    request_id character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_campaign_transitions_actor_kind_check CHECK (((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'system'::character varying, 'guardrail'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_campaign_transitions FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_campaign_transitions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_campaign_transitions_id_seq OWNED BY public.flywheel_campaign_transitions.id;
+
+CREATE TABLE public.flywheel_campaigns (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    name character varying(200) NOT NULL,
+    objective character varying(40) NOT NULL,
+    status character varying(30) DEFAULT 'DRAFT'::character varying NOT NULL,
+    starts_on date NOT NULL,
+    ends_on date NOT NULL,
+    channel character varying(20) DEFAULT 'email'::character varying NOT NULL,
+    max_discount_pct numeric(5,2) DEFAULT 20 NOT NULL,
+    min_margin_pct numeric(5,2) DEFAULT 10 NOT NULL,
+    discount_budget_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    procurement_budget_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    safety_stock_pct numeric(5,2) DEFAULT 10 NOT NULL,
+    control_group_pct numeric(5,2) DEFAULT 20 NOT NULL,
+    contact_cap_per_week integer DEFAULT 2 NOT NULL,
+    audience_spec jsonb DEFAULT '{}'::jsonb NOT NULL,
+    policy_version character varying(20) DEFAULT 'v1'::character varying NOT NULL,
+    pause_reason text,
+    paused_at timestamp with time zone,
+    created_by integer,
+    activated_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    priority integer DEFAULT 100 NOT NULL,
+    is_exclusive boolean DEFAULT false NOT NULL,
+    CONSTRAINT flywheel_campaign_active_has_timestamp CHECK ((((status)::text <> ALL ((ARRAY['ACTIVE'::character varying, 'COMPLETED'::character varying, 'MEASURED'::character varying])::text[])) OR (activated_at IS NOT NULL))),
+    CONSTRAINT flywheel_campaign_dates_ordered CHECK ((ends_on >= starts_on)),
+    CONSTRAINT flywheel_campaign_paused_has_reason CHECK ((((status)::text <> 'PAUSED'::text) OR (pause_reason IS NOT NULL))),
+    CONSTRAINT flywheel_campaigns_channel_check CHECK (((channel)::text = ANY ((ARRAY['email'::character varying, 'sms'::character varying, 'push'::character varying, 'in_store'::character varying, 'app'::character varying])::text[]))),
+    CONSTRAINT flywheel_campaigns_contact_cap_per_week_check CHECK ((contact_cap_per_week >= 0)),
+    CONSTRAINT flywheel_campaigns_control_group_pct_check CHECK (((control_group_pct >= (0)::numeric) AND (control_group_pct <= (50)::numeric))),
+    CONSTRAINT flywheel_campaigns_discount_budget_aed_check CHECK ((discount_budget_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_campaigns_max_discount_pct_check CHECK (((max_discount_pct >= (0)::numeric) AND (max_discount_pct <= (90)::numeric))),
+    CONSTRAINT flywheel_campaigns_min_margin_pct_check CHECK (((min_margin_pct >= (0)::numeric) AND (min_margin_pct <= (100)::numeric))),
+    CONSTRAINT flywheel_campaigns_objective_check CHECK (((objective)::text = ANY ((ARRAY['retain_at_risk'::character varying, 'reactivate_lapsed'::character varying, 'grow_basket'::character varying, 'protect_margin'::character varying])::text[]))),
+    CONSTRAINT flywheel_campaigns_procurement_budget_aed_check CHECK ((procurement_budget_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_campaigns_safety_stock_pct_check CHECK (((safety_stock_pct >= (0)::numeric) AND (safety_stock_pct <= (100)::numeric))),
+    CONSTRAINT flywheel_campaigns_status_check CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'AUDIENCE_READY'::character varying, 'SIMULATED'::character varying, 'PENDING_INVENTORY_REVIEW'::character varying, 'PENDING_PROCUREMENT_REVIEW'::character varying, 'PENDING_FINANCE_APPROVAL'::character varying, 'PENDING_MARKETING_APPROVAL'::character varying, 'APPROVED'::character varying, 'SCHEDULED'::character varying, 'ACTIVE'::character varying, 'PAUSED'::character varying, 'COMPLETED'::character varying, 'CANCELLED'::character varying, 'MEASURED'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_campaigns FORCE ROW LEVEL SECURITY;
+
+COMMENT ON COLUMN public.flywheel_campaigns.priority IS 'Lower wins. Ties break on higher EIV, then lower campaign id, so the resolution is total and reproducible rather than dependent on row order.';
+
+CREATE SEQUENCE public.flywheel_campaigns_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_campaigns_id_seq OWNED BY public.flywheel_campaigns.id;
+
+CREATE TABLE public.flywheel_cannibalization (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    category character varying(80) NOT NULL,
+    promoted_item_id integer,
+    method character varying(20) DEFAULT 'did'::character varying NOT NULL,
+    window_start date NOT NULL,
+    window_end date NOT NULL,
+    promoted_lift_units integer DEFAULT 0 NOT NULL,
+    category_net_lift_units integer DEFAULT 0 NOT NULL,
+    cannibalized_units integer DEFAULT 0 NOT NULL,
+    cannibalization_rate numeric(6,4),
+    net_incremental_margin_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    is_reliable boolean DEFAULT false NOT NULL,
+    note text,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_cannibalization_method_check CHECK (((method)::text = ANY ((ARRAY['did'::character varying, 'naive'::character varying, 'bayesian'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_cannibalization FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_cannibalization_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_cannibalization_id_seq OWNED BY public.flywheel_cannibalization.id;
+
+CREATE TABLE public.flywheel_churn_predictions (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    model_version_id integer NOT NULL,
+    as_of_date date NOT NULL,
+    churn_probability numeric(6,5) NOT NULL,
+    risk_band character varying(10) NOT NULL,
+    reason_codes jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_churn_predictions_churn_probability_check CHECK (((churn_probability >= (0)::numeric) AND (churn_probability <= (1)::numeric))),
+    CONSTRAINT flywheel_churn_predictions_risk_band_check CHECK (((risk_band)::text = ANY ((ARRAY['low'::character varying, 'medium'::character varying, 'high'::character varying, 'critical'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_churn_predictions FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_churn_predictions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_churn_predictions_id_seq OWNED BY public.flywheel_churn_predictions.id;
+
+CREATE TABLE public.flywheel_coalition_activity (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    partner_id bigint NOT NULL,
+    activity_type character varying(20) NOT NULL,
+    points integer DEFAULT 0 NOT NULL,
+    value_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_coalition_activity_activity_type_check CHECK (((activity_type)::text = ANY ((ARRAY['earn'::character varying, 'redeem'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_coalition_activity FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_coalition_activity_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_coalition_activity_id_seq OWNED BY public.flywheel_coalition_activity.id;
+
+CREATE TABLE public.flywheel_coalition_attribution (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    partner_id bigint NOT NULL,
+    attribution_weight numeric(6,5) DEFAULT 0 NOT NULL,
+    attributed_margin_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    model character varying(30) DEFAULT 'linear'::character varying NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_coalition_attribution_attribution_weight_check CHECK (((attribution_weight >= (0)::numeric) AND (attribution_weight <= (1)::numeric))),
+    CONSTRAINT flywheel_coalition_attribution_model_check CHECK (((model)::text = ANY ((ARRAY['linear'::character varying, 'time_decay'::character varying, 'position'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_coalition_attribution FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_coalition_attribution_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_coalition_attribution_id_seq OWNED BY public.flywheel_coalition_attribution.id;
+
+CREATE TABLE public.flywheel_coalition_partners (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    partner_name character varying(120) NOT NULL,
+    partner_type character varying(30) NOT NULL,
+    external_ref character varying(80),
+    status character varying(20) DEFAULT 'active'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_coalition_partners_partner_type_check CHECK (((partner_type)::text = ANY ((ARRAY['grocery'::character varying, 'fuel'::character varying, 'hospitality'::character varying, 'travel'::character varying, 'retail'::character varying, 'dining'::character varying, 'other'::character varying])::text[]))),
+    CONSTRAINT flywheel_coalition_partners_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'inactive'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_coalition_partners FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_coalition_partners_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_coalition_partners_id_seq OWNED BY public.flywheel_coalition_partners.id;
+
+CREATE TABLE public.flywheel_contact_log (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    campaign_id integer,
+    channel character varying(20) NOT NULL,
+    contacted_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.flywheel_contact_log FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_contact_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_contact_log_id_seq OWNED BY public.flywheel_contact_log.id;
+
+CREATE TABLE public.flywheel_contact_policy (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    channel character varying(20),
+    max_contacts_per_week integer DEFAULT 3 NOT NULL,
+    max_contacts_per_day integer DEFAULT 1 NOT NULL,
+    cooldown_days_after_ignores integer DEFAULT 14 NOT NULL,
+    ignores_before_cooldown integer DEFAULT 3 NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_contact_policy_max_contacts_per_day_check CHECK ((max_contacts_per_day >= 0)),
+    CONSTRAINT flywheel_contact_policy_max_contacts_per_week_check CHECK ((max_contacts_per_week >= 0))
+);
+
+ALTER TABLE ONLY public.flywheel_contact_policy FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_contact_policy_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_contact_policy_id_seq OWNED BY public.flywheel_contact_policy.id;
+
+CREATE TABLE public.flywheel_customer_consents (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    channel character varying(20) NOT NULL,
+    granted boolean DEFAULT true NOT NULL,
+    max_contacts_per_week integer DEFAULT 3 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_customer_consents_channel_check CHECK (((channel)::text = ANY ((ARRAY['email'::character varying, 'sms'::character varying, 'push'::character varying, 'in_store'::character varying, 'app'::character varying])::text[]))),
+    CONSTRAINT flywheel_customer_consents_max_contacts_per_week_check CHECK ((max_contacts_per_week >= 0))
+);
+
+ALTER TABLE ONLY public.flywheel_customer_consents FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_customer_consents_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_customer_consents_id_seq OWNED BY public.flywheel_customer_consents.id;
+
+CREATE TABLE public.flywheel_customer_events (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    event_type character varying(30) NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    store_id integer,
+    item_id integer,
+    category character varying(50),
+    quantity_units integer DEFAULT 0 NOT NULL,
+    value_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    margin_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_customer_events_event_type_check CHECK (((event_type)::text = ANY ((ARRAY['purchase'::character varying, 'return'::character varying, 'visit'::character varying, 'offer_seen'::character varying, 'offer_redeemed'::character varying, 'offer_ignored'::character varying, 'complaint'::character varying, 'support_contact'::character varying])::text[]))),
+    CONSTRAINT flywheel_customer_events_value_aed_check CHECK ((value_aed >= (0)::numeric))
+);
+
+ALTER TABLE ONLY public.flywheel_customer_events FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_customer_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_customer_events_id_seq OWNED BY public.flywheel_customer_events.id;
+
+CREATE TABLE public.flywheel_customers (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    external_ref character varying(64) NOT NULL,
+    display_name character varying(120) NOT NULL,
+    home_store_id integer NOT NULL,
+    archetype character varying(40) NOT NULL,
+    enrolled_on date NOT NULL,
+    loyalty_tier character varying(20) DEFAULT 'standard'::character varying NOT NULL,
+    status character varying(20) DEFAULT 'active'::character varying NOT NULL,
+    is_synthetic boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_customers_loyalty_tier_check CHECK (((loyalty_tier)::text = ANY ((ARRAY['standard'::character varying, 'silver'::character varying, 'gold'::character varying, 'platinum'::character varying])::text[]))),
+    CONSTRAINT flywheel_customers_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'dormant'::character varying, 'churned'::character varying, 'opted_out'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_customers FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.flywheel_customers IS 'Synthetic customer identity layer for Flywheel retention. Fixed-seed generated; never contains real personal data and never stores sensitive attributes.';
+
+CREATE SEQUENCE public.flywheel_customers_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_customers_id_seq OWNED BY public.flywheel_customers.id;
+
+CREATE TABLE public.flywheel_decisions (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer,
+    customer_id integer NOT NULL,
+    store_id integer,
+    item_id integer,
+    category character varying(50),
+    action_type character varying(30) NOT NULL,
+    churn_probability numeric(6,5) DEFAULT 0 NOT NULL,
+    uplift numeric(7,5) DEFAULT 0 NOT NULL,
+    redemption_probability numeric(6,5) DEFAULT 0 NOT NULL,
+    unit_price_aed numeric(12,4) DEFAULT 0 NOT NULL,
+    unit_cost_aed numeric(12,4) DEFAULT 0 NOT NULL,
+    discount_pct numeric(5,2) DEFAULT 0 NOT NULL,
+    expected_retained_value_aed numeric(14,4) DEFAULT 0 NOT NULL,
+    expected_margin_aed numeric(14,4) DEFAULT 0 NOT NULL,
+    expected_discount_cost_aed numeric(14,4) DEFAULT 0 NOT NULL,
+    comms_cost_aed numeric(14,4) DEFAULT 0 NOT NULL,
+    fulfilment_cost_aed numeric(14,4) DEFAULT 0 NOT NULL,
+    procurement_cost_aed numeric(14,4) DEFAULT 0 NOT NULL,
+    stockout_risk_penalty_aed numeric(14,4) DEFAULT 0 NOT NULL,
+    eiv_aed numeric(14,4) DEFAULT 0 NOT NULL,
+    reason_codes jsonb DEFAULT '[]'::jsonb NOT NULL,
+    rejected_actions jsonb DEFAULT '[]'::jsonb NOT NULL,
+    inventory_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    budget_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    churn_model_version_id integer,
+    uplift_model_version_id integer,
+    policy_version character varying(20) DEFAULT 'v1'::character varying NOT NULL,
+    request_id character varying(64),
+    decided_at timestamp with time zone DEFAULT now() NOT NULL,
+    tax_rate_pct numeric(6,3) DEFAULT 0 NOT NULL,
+    net_price_aed numeric(12,4) DEFAULT 0 NOT NULL,
+    margin_net_pct numeric(7,3),
+    trace_id character varying(48),
+    CONSTRAINT flywheel_decisions_action_type_check CHECK (((action_type)::text = ANY ((ARRAY['NO_ACTION'::character varying, 'REMINDER'::character varying, 'LOYALTY_POINTS'::character varying, 'FREE_DELIVERY'::character varying, 'PERCENT_DISCOUNT'::character varying, 'FIXED_DISCOUNT'::character varying, 'PRODUCT_BUNDLE'::character varying, 'SUBSTITUTE_PRODUCT'::character varying, 'ALTERNATIVE_STORE'::character varying, 'HUMAN_REVIEW'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_decisions FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.flywheel_decisions IS 'Next-best-action ledger. Stores every optimizer input AND the rejected alternatives with reason codes, so any decision is reproducible and explainable.';
+
+CREATE SEQUENCE public.flywheel_decisions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_decisions_id_seq OWNED BY public.flywheel_decisions.id;
+
+CREATE TABLE public.flywheel_delivery_receipts (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    consumer character varying(60) NOT NULL,
+    event_key character varying(160) NOT NULL,
+    outcome character varying(20) DEFAULT 'processed'::character varying NOT NULL,
+    detail text,
+    processed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_delivery_receipts_outcome_check CHECK (((outcome)::text = ANY ((ARRAY['processed'::character varying, 'skipped'::character varying, 'failed'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_delivery_receipts FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_delivery_receipts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_delivery_receipts_id_seq OWNED BY public.flywheel_delivery_receipts.id;
+
+CREATE TABLE public.flywheel_feature_snapshots (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    as_of_date date NOT NULL,
+    recency_days integer NOT NULL,
+    frequency_90d integer NOT NULL,
+    monetary_90d_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    avg_basket_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    spend_drift_ratio numeric(8,4) DEFAULT 1 NOT NULL,
+    interpurchase_gap_days numeric(8,2) DEFAULT 0 NOT NULL,
+    gap_volatility numeric(8,4) DEFAULT 0 NOT NULL,
+    category_diversity integer DEFAULT 0 NOT NULL,
+    return_ratio numeric(6,4) DEFAULT 0 NOT NULL,
+    promo_response_rate numeric(6,4) DEFAULT 0 NOT NULL,
+    tenure_days integer DEFAULT 0 NOT NULL,
+    events_90d integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.flywheel_feature_snapshots FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_feature_snapshots_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_feature_snapshots_id_seq OWNED BY public.flywheel_feature_snapshots.id;
+
+CREATE TABLE public.flywheel_holdout_balance (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    checked_on date DEFAULT CURRENT_DATE NOT NULL,
+    covariate character varying(60) NOT NULL,
+    treatment_mean double precision NOT NULL,
+    control_mean double precision NOT NULL,
+    pooled_sd double precision NOT NULL,
+    smd double precision NOT NULL,
+    threshold double precision DEFAULT 0.10 NOT NULL,
+    is_balanced boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.flywheel_holdout_balance FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_holdout_balance_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_holdout_balance_id_seq OWNED BY public.flywheel_holdout_balance.id;
+
+CREATE TABLE public.flywheel_identity_links (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    pos_key character varying(120) NOT NULL,
+    customer_id integer,
+    confidence numeric(4,3) DEFAULT 0 NOT NULL,
+    method character varying(20) NOT NULL,
+    status character varying(20) DEFAULT 'linked'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_identity_links_method_check CHECK (((method)::text = ANY ((ARRAY['deterministic'::character varying, 'probabilistic'::character varying, 'ambiguous'::character varying, 'unlinked'::character varying])::text[]))),
+    CONSTRAINT flywheel_identity_links_status_check CHECK (((status)::text = ANY ((ARRAY['linked'::character varying, 'ambiguous'::character varying, 'unlinked'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_identity_links FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_identity_links_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_identity_links_id_seq OWNED BY public.flywheel_identity_links.id;
+
+CREATE TABLE public.flywheel_inventory_allocations (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    store_id integer NOT NULL,
+    item_id integer NOT NULL,
+    allocated_units integer NOT NULL,
+    consumed_units integer DEFAULT 0 NOT NULL,
+    status character varying(20) DEFAULT 'soft'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    released_at timestamp with time zone,
+    CONSTRAINT flywheel_allocation_not_overconsumed CHECK ((consumed_units <= allocated_units)),
+    CONSTRAINT flywheel_inventory_allocations_allocated_units_check CHECK ((allocated_units >= 0)),
+    CONSTRAINT flywheel_inventory_allocations_consumed_units_check CHECK ((consumed_units >= 0)),
+    CONSTRAINT flywheel_inventory_allocations_status_check CHECK (((status)::text = ANY ((ARRAY['soft'::character varying, 'hard'::character varying, 'released'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_inventory_allocations FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_inventory_allocations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_inventory_allocations_id_seq OWNED BY public.flywheel_inventory_allocations.id;
+
+CREATE TABLE public.flywheel_jobs (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    kind character varying(40) NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    idempotency_key character varying(160),
+    status character varying(20) DEFAULT 'queued'::character varying NOT NULL,
+    claimed_by character varying(80),
+    claimed_at timestamp with time zone,
+    lease_expires_at timestamp with time zone,
+    checkpoint jsonb DEFAULT '{}'::jsonb NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    max_attempts integer DEFAULT 5 NOT NULL,
+    run_after timestamp with time zone DEFAULT now() NOT NULL,
+    last_error text,
+    result jsonb,
+    trace_id character varying(48),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    CONSTRAINT flywheel_jobs_kind_check CHECK (((kind)::text = ANY ((ARRAY['score_audience'::character varying, 'measure_campaign'::character varying, 'measure_all'::character varying, 'issue_offers'::character varying, 'shadow_score'::character varying, 'refresh_readouts'::character varying, 'train_model'::character varying])::text[]))),
+    CONSTRAINT flywheel_jobs_status_check CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'dead'::character varying, 'cancelled'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_jobs FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_jobs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_jobs_id_seq OWNED BY public.flywheel_jobs.id;
+
+CREATE TABLE public.flywheel_model_versions (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    model_kind character varying(30) NOT NULL,
+    algorithm character varying(60) NOT NULL,
+    version_label character varying(40) NOT NULL,
+    random_seed integer DEFAULT 42 NOT NULL,
+    feature_window_days integer NOT NULL,
+    outcome_window_days integer NOT NULL,
+    feature_list jsonb DEFAULT '[]'::jsonb NOT NULL,
+    metrics jsonb DEFAULT '{}'::jsonb NOT NULL,
+    artifact_path text,
+    trained_at timestamp with time zone,
+    is_active boolean DEFAULT false NOT NULL,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    data_snapshot_hash character varying(64),
+    data_snapshot_rows integer,
+    data_snapshot_from date,
+    data_snapshot_to date,
+    lifecycle_status character varying(20) DEFAULT 'shadow'::character varying,
+    superseded_by integer,
+    rolled_back_to integer,
+    promoted_at timestamp with time zone,
+    promoted_by integer,
+    promotion_note text,
+    CONSTRAINT flywheel_model_trained_has_timestamp CHECK ((((algorithm)::text = 'rule_based'::text) OR (trained_at IS NOT NULL))),
+    CONSTRAINT flywheel_model_versions_lifecycle_status_check CHECK (((lifecycle_status)::text = ANY ((ARRAY['shadow'::character varying, 'candidate'::character varying, 'promoted'::character varying, 'retired'::character varying, 'rolled_back'::character varying])::text[]))),
+    CONSTRAINT flywheel_model_versions_model_kind_check CHECK (((model_kind)::text = ANY ((ARRAY['churn'::character varying, 'uplift'::character varying, 'sequence'::character varying, 'tabular_dl'::character varying, 'ensemble'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_model_versions FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_model_versions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_model_versions_id_seq OWNED BY public.flywheel_model_versions.id;
+
+CREATE TABLE public.flywheel_offer_response_predictions (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    model_version_id integer NOT NULL,
+    action_type character varying(30) NOT NULL,
+    as_of_date date NOT NULL,
+    treated_response numeric(6,5) NOT NULL,
+    control_response numeric(6,5) NOT NULL,
+    uplift numeric(7,5) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_offer_response_predictions_control_response_check CHECK (((control_response >= (0)::numeric) AND (control_response <= (1)::numeric))),
+    CONSTRAINT flywheel_offer_response_predictions_treated_response_check CHECK (((treated_response >= (0)::numeric) AND (treated_response <= (1)::numeric)))
+);
+
+ALTER TABLE ONLY public.flywheel_offer_response_predictions FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_offer_response_predictions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_offer_response_predictions_id_seq OWNED BY public.flywheel_offer_response_predictions.id;
+
+CREATE TABLE public.flywheel_offer_suppressions (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    suppressed_campaign_id integer NOT NULL,
+    winning_campaign_id integer,
+    reason_code character varying(40) NOT NULL,
+    detail text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.flywheel_offer_suppressions FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_offer_suppressions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_offer_suppressions_id_seq OWNED BY public.flywheel_offer_suppressions.id;
+
+CREATE TABLE public.flywheel_offers (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    decision_id bigint,
+    offer_code character varying(40) NOT NULL,
+    action_type character varying(30) NOT NULL,
+    store_id integer,
+    item_id integer,
+    discount_pct numeric(5,2) DEFAULT 0 NOT NULL,
+    reserved_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    status character varying(20) DEFAULT 'issued'::character varying NOT NULL,
+    issued_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    redeemed_at timestamp with time zone,
+    liability_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    liability_released boolean DEFAULT false NOT NULL,
+    breakage_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT flywheel_offer_breakage_requires_release CHECK (((breakage_aed = (0)::numeric) OR (liability_released = true))),
+    CONSTRAINT flywheel_offer_redeemed_has_timestamp CHECK ((((status)::text <> 'redeemed'::text) OR (redeemed_at IS NOT NULL))),
+    CONSTRAINT flywheel_offers_status_check CHECK (((status)::text = ANY ((ARRAY['issued'::character varying, 'redeemed'::character varying, 'expired'::character varying, 'cancelled'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_offers FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_offers_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_offers_id_seq OWNED BY public.flywheel_offers.id;
+
+CREATE TABLE public.flywheel_outbox (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    channel character varying(60) NOT NULL,
+    event_type character varying(60) NOT NULL,
+    payload jsonb NOT NULL,
+    store_id integer,
+    campaign_id integer,
+    published boolean DEFAULT false NOT NULL,
+    published_at timestamp with time zone,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    trace_id character varying(48),
+    CONSTRAINT flywheel_outbox_published_has_timestamp CHECK (((published = false) OR (published_at IS NOT NULL)))
+);
+
+ALTER TABLE ONLY public.flywheel_outbox FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_outbox_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_outbox_id_seq OWNED BY public.flywheel_outbox.id;
+
+CREATE TABLE public.flywheel_outcome_pricing (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    plan_name character varying(80) NOT NULL,
+    margin_share_pct numeric(5,4) NOT NULL,
+    gate_readouts_required integer DEFAULT 2 NOT NULL,
+    gate_met boolean DEFAULT false NOT NULL,
+    gate_evidence jsonb DEFAULT '{}'::jsonb NOT NULL,
+    status character varying(20) DEFAULT 'proposed'::character varying NOT NULL,
+    activated_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_outcome_pricing_gate_readouts_required_check CHECK ((gate_readouts_required >= 1)),
+    CONSTRAINT flywheel_outcome_pricing_margin_share_pct_check CHECK (((margin_share_pct > (0)::numeric) AND (margin_share_pct <= 0.5))),
+    CONSTRAINT flywheel_outcome_pricing_status_check CHECK (((status)::text = ANY ((ARRAY['proposed'::character varying, 'active'::character varying, 'inactive'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_outcome_pricing FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_outcome_pricing_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_outcome_pricing_id_seq OWNED BY public.flywheel_outcome_pricing.id;
+
+CREATE TABLE public.flywheel_pos_staging (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    external_txn_id character varying(120) NOT NULL,
+    loyalty_ref character varying(120),
+    card_hash character varying(120),
+    store_id integer,
+    item_id integer,
+    units integer DEFAULT 1 NOT NULL,
+    amount_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    resolved boolean DEFAULT false NOT NULL,
+    matched_customer_id integer,
+    match_confidence numeric(4,3),
+    match_method character varying(20),
+    ingested_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_pos_staging_match_method_check CHECK (((match_method)::text = ANY ((ARRAY['deterministic'::character varying, 'probabilistic'::character varying, 'unlinked'::character varying, NULL::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_pos_staging FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_pos_staging_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_pos_staging_id_seq OWNED BY public.flywheel_pos_staging.id;
+
+CREATE TABLE public.flywheel_preregistrations (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    primary_metric character varying(60) DEFAULT 'incremental_retention'::character varying NOT NULL,
+    window_days integer NOT NULL,
+    stopping_rule character varying(30) DEFAULT 'anytime'::character varying NOT NULL,
+    alpha double precision DEFAULT 0.05 NOT NULL,
+    min_detectable_effect double precision DEFAULT 0.02 NOT NULL,
+    planned_treatment_n integer DEFAULT 0 NOT NULL,
+    planned_control_n integer DEFAULT 0 NOT NULL,
+    control_pct numeric(5,2) DEFAULT 10.00 NOT NULL,
+    registered_by integer,
+    registered_at timestamp with time zone DEFAULT now() NOT NULL,
+    notes text,
+    CONSTRAINT flywheel_preregistrations_alpha_check CHECK (((alpha > (0)::double precision) AND (alpha < (0.5)::double precision))),
+    CONSTRAINT flywheel_preregistrations_control_pct_check CHECK (((control_pct >= (0)::numeric) AND (control_pct <= (50)::numeric))),
+    CONSTRAINT flywheel_preregistrations_min_detectable_effect_check CHECK ((min_detectable_effect >= (0)::double precision)),
+    CONSTRAINT flywheel_preregistrations_planned_control_n_check CHECK ((planned_control_n >= 0)),
+    CONSTRAINT flywheel_preregistrations_planned_treatment_n_check CHECK ((planned_treatment_n >= 0)),
+    CONSTRAINT flywheel_preregistrations_primary_metric_check CHECK (((primary_metric)::text = ANY ((ARRAY['incremental_retention'::character varying, 'incremental_margin_aed'::character varying, 'incremental_margin_per_aed'::character varying])::text[]))),
+    CONSTRAINT flywheel_preregistrations_stopping_rule_check CHECK (((stopping_rule)::text = ANY ((ARRAY['anytime'::character varying, 'fixed_horizon'::character varying])::text[]))),
+    CONSTRAINT flywheel_preregistrations_window_days_check CHECK (((window_days >= 1) AND (window_days <= 365)))
+);
+
+ALTER TABLE ONLY public.flywheel_preregistrations FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_preregistrations_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_preregistrations_id_seq OWNED BY public.flywheel_preregistrations.id;
+
+CREATE TABLE public.flywheel_procurement_requisitions (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    store_id integer NOT NULL,
+    item_id integer NOT NULL,
+    supplier_id integer,
+    shortage_units integer NOT NULL,
+    order_units integer NOT NULL,
+    unit_cost_aed numeric(12,4) DEFAULT 0 NOT NULL,
+    total_cost_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    lead_time_days integer DEFAULT 0 NOT NULL,
+    required_by date NOT NULL,
+    expected_arrival date,
+    status character varying(25) DEFAULT 'draft'::character varying NOT NULL,
+    justification jsonb DEFAULT '{}'::jsonb NOT NULL,
+    purchase_order_id integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_procurement_requisitions_order_units_check CHECK ((order_units > 0)),
+    CONSTRAINT flywheel_procurement_requisitions_shortage_units_check CHECK ((shortage_units > 0)),
+    CONSTRAINT flywheel_procurement_requisitions_status_check CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'pending_approval'::character varying, 'approved'::character varying, 'rejected'::character varying, 'converted_to_po'::character varying, 'cancelled'::character varying])::text[]))),
+    CONSTRAINT flywheel_req_converted_has_po CHECK ((((status)::text <> 'converted_to_po'::text) OR (purchase_order_id IS NOT NULL)))
+);
+
+ALTER TABLE ONLY public.flywheel_procurement_requisitions FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_procurement_requisitions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_procurement_requisitions_id_seq OWNED BY public.flywheel_procurement_requisitions.id;
+
+CREATE TABLE public.flywheel_profiling_objections (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    basis character varying(40) DEFAULT 'pdpl_art_automated_processing'::character varying NOT NULL,
+    status character varying(20) DEFAULT 'active'::character varying NOT NULL,
+    note text,
+    objected_at timestamp with time zone DEFAULT now() NOT NULL,
+    withdrawn_at timestamp with time zone,
+    CONSTRAINT flywheel_profiling_objections_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'withdrawn'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_profiling_objections FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_profiling_objections_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_profiling_objections_id_seq OWNED BY public.flywheel_profiling_objections.id;
+
+CREATE TABLE public.flywheel_promotion_criteria (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    model_label character varying(60) NOT NULL,
+    min_readouts_required integer DEFAULT 2 NOT NULL,
+    min_ci_lower double precision DEFAULT 0.0 NOT NULL,
+    max_disagreement_rate double precision DEFAULT 0.35 NOT NULL,
+    readouts_passed integer DEFAULT 0 NOT NULL,
+    current_disagreement_rate double precision,
+    eligible_for_promotion boolean DEFAULT false NOT NULL,
+    blocked_reason text,
+    status character varying(20) DEFAULT 'shadow'::character varying NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_promotion_criteria_min_readouts_required_check CHECK ((min_readouts_required >= 1)),
+    CONSTRAINT flywheel_promotion_criteria_status_check CHECK (((status)::text = ANY ((ARRAY['shadow'::character varying, 'candidate'::character varying, 'promoted'::character varying, 'retired'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_promotion_criteria FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_promotion_criteria_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_promotion_criteria_id_seq OWNED BY public.flywheel_promotion_criteria.id;
+
+CREATE TABLE public.flywheel_purchase_attributions (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    event_id bigint NOT NULL,
+    sale_source character varying(20) NOT NULL,
+    sale_id bigint NOT NULL,
+    attributed_units integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_purchase_attributions_attributed_units_check CHECK ((attributed_units > 0)),
+    CONSTRAINT flywheel_purchase_attributions_sale_source_check CHECK (((sale_source)::text = ANY ((ARRAY['historical'::character varying, 'stream'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_purchase_attributions FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_purchase_attributions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_purchase_attributions_id_seq OWNED BY public.flywheel_purchase_attributions.id;
+
+CREATE TABLE public.flywheel_readouts (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    preregistration_id integer,
+    window_start date NOT NULL,
+    window_end date NOT NULL,
+    treatment_n integer NOT NULL,
+    control_n integer NOT NULL,
+    treatment_converted integer NOT NULL,
+    control_converted integer NOT NULL,
+    treatment_rate double precision NOT NULL,
+    control_rate double precision NOT NULL,
+    incremental_retention double precision NOT NULL,
+    ci_lower double precision,
+    ci_upper double precision,
+    ci_method character varying(40) DEFAULT 'eb_confseq'::character varying NOT NULL,
+    alpha double precision DEFAULT 0.05 NOT NULL,
+    log_e_value double precision,
+    is_significant boolean DEFAULT false NOT NULL,
+    meets_mde boolean DEFAULT false NOT NULL,
+    incremental_revenue_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    incremental_margin_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    discount_spend_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    procurement_cost_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    total_cost_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    margin_per_aed_spent numeric(12,4),
+    campaign_roi numeric(12,4),
+    validity_warnings jsonb DEFAULT '[]'::jsonb NOT NULL,
+    uplift_by_segment jsonb DEFAULT '{}'::jsonb NOT NULL,
+    is_synthetic boolean DEFAULT true NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    computed_by character varying(30) DEFAULT 'scheduler'::character varying NOT NULL,
+    CONSTRAINT ck_flywheel_readout_window CHECK ((window_end > window_start)),
+    CONSTRAINT flywheel_readouts_ci_method_check CHECK (((ci_method)::text = ANY ((ARRAY['eb_confseq'::character varying, 'none'::character varying])::text[]))),
+    CONSTRAINT flywheel_readouts_computed_by_check CHECK (((computed_by)::text = ANY ((ARRAY['scheduler'::character varying, 'manual'::character varying, 'api'::character varying])::text[]))),
+    CONSTRAINT flywheel_readouts_control_converted_check CHECK ((control_converted >= 0)),
+    CONSTRAINT flywheel_readouts_control_n_check CHECK ((control_n >= 0)),
+    CONSTRAINT flywheel_readouts_treatment_converted_check CHECK ((treatment_converted >= 0)),
+    CONSTRAINT flywheel_readouts_treatment_n_check CHECK ((treatment_n >= 0))
+);
+
+ALTER TABLE ONLY public.flywheel_readouts FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_readouts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_readouts_id_seq OWNED BY public.flywheel_readouts.id;
+
+CREATE TABLE public.flywheel_redemptions (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    offer_id bigint NOT NULL,
+    campaign_id integer NOT NULL,
+    customer_id integer NOT NULL,
+    store_id integer NOT NULL,
+    item_id integer,
+    units integer NOT NULL,
+    gross_value_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    discount_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    net_value_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    margin_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    idempotency_key character varying(120) NOT NULL,
+    request_id character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    tax_rate_pct numeric(6,3) DEFAULT 0 NOT NULL,
+    tax_amount_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    net_of_tax_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    trace_id character varying(48),
+    CONSTRAINT flywheel_redemptions_units_check CHECK ((units > 0))
+);
+
+ALTER TABLE ONLY public.flywheel_redemptions FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_redemptions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_redemptions_id_seq OWNED BY public.flywheel_redemptions.id;
+
+CREATE TABLE public.flywheel_returns (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    redemption_id bigint NOT NULL,
+    campaign_id integer,
+    customer_id integer,
+    units_returned integer NOT NULL,
+    refund_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    discount_clawed_back_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    margin_clawed_back_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    restocked boolean DEFAULT true NOT NULL,
+    reason text,
+    idempotency_key character varying(120) NOT NULL,
+    request_id character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_returns_units_returned_check CHECK ((units_returned > 0))
+);
+
+ALTER TABLE ONLY public.flywheel_returns FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_returns_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_returns_id_seq OWNED BY public.flywheel_returns.id;
+
+CREATE TABLE public.flywheel_seasonality_calendar (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    name character varying(60) NOT NULL,
+    kind character varying(30) DEFAULT 'religious'::character varying NOT NULL,
+    starts_on date NOT NULL,
+    ends_on date NOT NULL,
+    demand_multiplier numeric(5,3) DEFAULT 1.000 NOT NULL,
+    category character varying(80),
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_season_window CHECK ((ends_on >= starts_on)),
+    CONSTRAINT flywheel_seasonality_calendar_demand_multiplier_check CHECK (((demand_multiplier > (0)::numeric) AND (demand_multiplier <= (5)::numeric))),
+    CONSTRAINT flywheel_seasonality_calendar_kind_check CHECK (((kind)::text = ANY ((ARRAY['religious'::character varying, 'national'::character varying, 'commercial'::character varying, 'seasonal'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_seasonality_calendar FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_seasonality_calendar_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_seasonality_calendar_id_seq OWNED BY public.flywheel_seasonality_calendar.id;
+
+CREATE TABLE public.flywheel_settlements (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    funding_id bigint NOT NULL,
+    period_start date NOT NULL,
+    period_end date NOT NULL,
+    incremental_units integer DEFAULT 0 NOT NULL,
+    incremental_margin_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    amount_due_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    status character varying(20) DEFAULT 'draft'::character varying NOT NULL,
+    dispute_reason text,
+    evidence jsonb DEFAULT '{}'::jsonb NOT NULL,
+    issued_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_settlement_period CHECK ((period_end > period_start)),
+    CONSTRAINT flywheel_settlements_amount_due_aed_check CHECK ((amount_due_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_settlements_status_check CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'issued'::character varying, 'paid'::character varying, 'disputed'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_settlements FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_settlements_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_settlements_id_seq OWNED BY public.flywheel_settlements.id;
+
+CREATE TABLE public.flywheel_shadow_decisions (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer,
+    customer_id integer NOT NULL,
+    decision_id integer,
+    model_version_id integer,
+    model_label character varying(60) NOT NULL,
+    rule_action character varying(30) NOT NULL,
+    rule_discount_pct numeric(5,2) DEFAULT 0 NOT NULL,
+    rule_eiv_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    rule_churn_probability double precision,
+    shadow_action character varying(30) NOT NULL,
+    shadow_discount_pct numeric(5,2) DEFAULT 0 NOT NULL,
+    shadow_eiv_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    shadow_churn_probability double precision,
+    agreed boolean DEFAULT true NOT NULL,
+    disagreement_kind character varying(30),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_shadow_decisions_disagreement_kind_check CHECK (((disagreement_kind)::text = ANY ((ARRAY['action'::character varying, 'magnitude'::character varying, 'both'::character varying, NULL::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_shadow_decisions FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_shadow_decisions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_shadow_decisions_id_seq OWNED BY public.flywheel_shadow_decisions.id;
+
+CREATE TABLE public.flywheel_shelf_life (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    store_id integer NOT NULL,
+    item_id integer NOT NULL,
+    batch_ref character varying(80) NOT NULL,
+    units integer DEFAULT 0 NOT NULL,
+    received_on date NOT NULL,
+    expires_on date NOT NULL,
+    unit_cost_aed numeric(12,4) DEFAULT 0 NOT NULL,
+    status character varying(20) DEFAULT 'active'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_shelf_life_window CHECK ((expires_on >= received_on)),
+    CONSTRAINT flywheel_shelf_life_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'sold'::character varying, 'written_off'::character varying, 'marked_down'::character varying])::text[]))),
+    CONSTRAINT flywheel_shelf_life_units_check CHECK ((units >= 0))
+);
+
+ALTER TABLE ONLY public.flywheel_shelf_life FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_shelf_life_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_shelf_life_id_seq OWNED BY public.flywheel_shelf_life.id;
+
+CREATE TABLE public.flywheel_substitution (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    from_item_id integer NOT NULL,
+    to_item_id integer NOT NULL,
+    substitution_units integer DEFAULT 0 NOT NULL,
+    substitution_rate numeric(6,4),
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_flywheel_substitution_distinct CHECK ((from_item_id <> to_item_id))
+);
+
+ALTER TABLE ONLY public.flywheel_substitution FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_substitution_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_substitution_id_seq OWNED BY public.flywheel_substitution.id;
+
+CREATE TABLE public.flywheel_supplier_funding (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    supplier_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    funding_type character varying(20) NOT NULL,
+    currency character varying(3) DEFAULT 'AED'::character varying NOT NULL,
+    status character varying(20) DEFAULT 'proposed'::character varying NOT NULL,
+    committed_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    spent_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    settled_aed numeric(16,2) DEFAULT 0 NOT NULL,
+    rebate_per_unit_aed numeric(12,4) DEFAULT 0 NOT NULL,
+    agreement_ref character varying(80),
+    starts_on date,
+    ends_on date,
+    created_by integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_supplier_funding_settle CHECK ((settled_aed <= spent_aed)),
+    CONSTRAINT ck_supplier_funding_spend CHECK ((spent_aed <= committed_aed)),
+    CONSTRAINT flywheel_supplier_funding_committed_aed_check CHECK ((committed_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_supplier_funding_funding_type_check CHECK (((funding_type)::text = ANY ((ARRAY['co_op'::character varying, 'scan_down'::character varying, 'fixed_fee'::character varying])::text[]))),
+    CONSTRAINT flywheel_supplier_funding_settled_aed_check CHECK ((settled_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_supplier_funding_spent_aed_check CHECK ((spent_aed >= (0)::numeric)),
+    CONSTRAINT flywheel_supplier_funding_status_check CHECK (((status)::text = ANY ((ARRAY['proposed'::character varying, 'committed'::character varying, 'active'::character varying, 'settled'::character varying, 'disputed'::character varying, 'cancelled'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.flywheel_supplier_funding FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_supplier_funding_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_supplier_funding_id_seq OWNED BY public.flywheel_supplier_funding.id;
+
+CREATE TABLE public.flywheel_supplier_funding_skus (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    funding_id bigint NOT NULL,
+    item_id integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.flywheel_supplier_funding_skus FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_supplier_funding_skus_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_supplier_funding_skus_id_seq OWNED BY public.flywheel_supplier_funding_skus.id;
+
+CREATE TABLE public.flywheel_tax_rules (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    name character varying(80) NOT NULL,
+    rate_pct numeric(6,3) NOT NULL,
+    prices_include_tax boolean DEFAULT true NOT NULL,
+    category character varying(50),
+    valid_from date DEFAULT CURRENT_DATE NOT NULL,
+    valid_until date,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_tax_range_ordered CHECK (((valid_until IS NULL) OR (valid_until > valid_from))),
+    CONSTRAINT flywheel_tax_rules_rate_pct_check CHECK (((rate_pct >= (0)::numeric) AND (rate_pct < (100)::numeric)))
+);
+
+ALTER TABLE ONLY public.flywheel_tax_rules FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.flywheel_tax_rules IS 'Configurable tax rules. Margin floors are evaluated NET of tax — a floor checked on a tax-inclusive amount silently overstates margin by the rate.';
+
+CREATE SEQUENCE public.flywheel_tax_rules_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_tax_rules_id_seq OWNED BY public.flywheel_tax_rules.id;
+
+CREATE TABLE public.flywheel_transfer_recommendations (
+    id integer NOT NULL,
+    tenant_id integer NOT NULL,
+    campaign_id integer NOT NULL,
+    from_store_id integer NOT NULL,
+    to_store_id integer NOT NULL,
+    item_id integer NOT NULL,
+    units integer NOT NULL,
+    source_surplus_units integer DEFAULT 0 NOT NULL,
+    status character varying(20) DEFAULT 'recommended'::character varying NOT NULL,
+    stock_transfer_id integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT flywheel_transfer_distinct_stores CHECK ((from_store_id <> to_store_id)),
+    CONSTRAINT flywheel_transfer_recommendations_status_check CHECK (((status)::text = ANY ((ARRAY['recommended'::character varying, 'accepted'::character varying, 'rejected'::character varying, 'executed'::character varying])::text[]))),
+    CONSTRAINT flywheel_transfer_recommendations_units_check CHECK ((units > 0))
+);
+
+ALTER TABLE ONLY public.flywheel_transfer_recommendations FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.flywheel_transfer_recommendations_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.flywheel_transfer_recommendations_id_seq OWNED BY public.flywheel_transfer_recommendations.id;
 
 CREATE TABLE public.goods_receipt_lines (
     id integer NOT NULL,
@@ -2532,6 +4271,98 @@ CREATE SEQUENCE public.report_history_id_seq
 
 ALTER SEQUENCE public.report_history_id_seq OWNED BY public.report_history.id;
 
+CREATE TABLE public.retention_budget_ledger (
+    id bigint NOT NULL,
+    tenant_id integer DEFAULT 1 NOT NULL,
+    campaign_id integer NOT NULL,
+    entry_type character varying(20) NOT NULL,
+    amount_aed numeric(14,2) NOT NULL,
+    balance_before_aed numeric(14,2) NOT NULL,
+    balance_after_aed numeric(14,2) NOT NULL,
+    currency character varying(8) DEFAULT 'AED'::character varying NOT NULL,
+    source_type character varying(30) NOT NULL,
+    source_id integer,
+    idempotency_key character varying(80),
+    actor_user_id integer,
+    reason text,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT retention_budget_ledger_entry_type_check CHECK (((entry_type)::text = ANY ((ARRAY['reserve'::character varying, 'release'::character varying, 'spend'::character varying])::text[])))
+);
+
+CREATE SEQUENCE public.retention_budget_ledger_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.retention_budget_ledger_id_seq OWNED BY public.retention_budget_ledger.id;
+
+CREATE TABLE public.retention_campaigns (
+    id integer NOT NULL,
+    tenant_id integer DEFAULT 1 NOT NULL,
+    name character varying(200) NOT NULL,
+    objective character varying(40) DEFAULT 'churn_retention'::character varying NOT NULL,
+    status character varying(30) DEFAULT 'draft'::character varying NOT NULL,
+    paused_reason text,
+    store_id integer NOT NULL,
+    item_id integer NOT NULL,
+    starts_on date NOT NULL,
+    ends_on date NOT NULL,
+    max_discount_pct numeric(5,2) DEFAULT 15 NOT NULL,
+    min_margin_pct numeric(5,2) DEFAULT 10 NOT NULL,
+    discount_budget_aed numeric(14,2) NOT NULL,
+    budget_reserved_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    budget_spent_aed numeric(14,2) DEFAULT 0 NOT NULL,
+    control_pct numeric(5,2) DEFAULT 10 NOT NULL,
+    churn_threshold numeric(4,3) DEFAULT 0.5 NOT NULL,
+    safety_stock_units integer DEFAULT 20 NOT NULL,
+    contact_cap_month integer DEFAULT 4 NOT NULL,
+    simulation jsonb,
+    model_version character varying(40),
+    policy_version character varying(40) DEFAULT 'policy_v1'::character varying NOT NULL,
+    requisition_po_id integer,
+    created_by integer,
+    approved_by integer,
+    approved_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_retention_budget_nonneg CHECK (((discount_budget_aed >= (0)::numeric) AND (budget_reserved_aed >= (0)::numeric) AND (budget_spent_aed >= (0)::numeric))),
+    CONSTRAINT ck_retention_dates CHECK ((ends_on >= starts_on)),
+    CONSTRAINT ck_retention_spend_within_budget CHECK ((budget_spent_aed <= discount_budget_aed))
+);
+
+CREATE SEQUENCE public.retention_campaigns_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.retention_campaigns_id_seq OWNED BY public.retention_campaigns.id;
+
+CREATE TABLE public.retention_events (
+    id bigint NOT NULL,
+    tenant_id integer DEFAULT 1 NOT NULL,
+    event_type character varying(50) NOT NULL,
+    entity_type character varying(30) NOT NULL,
+    entity_id integer,
+    actor_user_id integer,
+    summary text NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE SEQUENCE public.retention_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.retention_events_id_seq OWNED BY public.retention_events.id;
+
 CREATE VIEW public.role_performance_view AS
  SELECT e.role,
     count(DISTINCT e.id) AS employee_count,
@@ -3633,11 +5464,19 @@ ALTER TABLE ONLY public.basket_associations ALTER COLUMN id SET DEFAULT nextval(
 
 ALTER TABLE ONLY public.bespoke_requests ALTER COLUMN id SET DEFAULT nextval('public.bespoke_requests_id_seq'::regclass);
 
+ALTER TABLE ONLY public.campaign_allocations ALTER COLUMN id SET DEFAULT nextval('public.campaign_allocations_id_seq'::regclass);
+
+ALTER TABLE ONLY public.campaign_offers ALTER COLUMN id SET DEFAULT nextval('public.campaign_offers_id_seq'::regclass);
+
 ALTER TABLE ONLY public.company_targets ALTER COLUMN id SET DEFAULT nextval('public.company_targets_id_seq'::regclass);
 
 ALTER TABLE ONLY public.competitor_prices ALTER COLUMN id SET DEFAULT nextval('public.competitor_prices_id_seq'::regclass);
 
 ALTER TABLE ONLY public.crm_opportunities ALTER COLUMN id SET DEFAULT nextval('public.crm_opportunities_id_seq'::regclass);
+
+ALTER TABLE ONLY public.customer_purchases ALTER COLUMN id SET DEFAULT nextval('public.customer_purchases_id_seq'::regclass);
+
+ALTER TABLE ONLY public.customers ALTER COLUMN id SET DEFAULT nextval('public.customers_id_seq'::regclass);
 
 ALTER TABLE ONLY public.data_requests ALTER COLUMN id SET DEFAULT nextval('public.data_requests_id_seq'::regclass);
 
@@ -3662,6 +5501,110 @@ ALTER TABLE ONLY public.employees ALTER COLUMN id SET DEFAULT nextval('public.em
 ALTER TABLE ONLY public.external_identities ALTER COLUMN id SET DEFAULT nextval('public.external_identities_id_seq'::regclass);
 
 ALTER TABLE ONLY public.findings ALTER COLUMN id SET DEFAULT nextval('public.findings_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_allocation_lines ALTER COLUMN id SET DEFAULT nextval('public.flywheel_allocation_lines_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_allocation_runs ALTER COLUMN id SET DEFAULT nextval('public.flywheel_allocation_runs_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_approval_policies ALTER COLUMN id SET DEFAULT nextval('public.flywheel_approval_policies_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_approval_requests ALTER COLUMN id SET DEFAULT nextval('public.flywheel_approval_requests_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_approval_steps ALTER COLUMN id SET DEFAULT nextval('public.flywheel_approval_steps_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_budget_ledger ALTER COLUMN id SET DEFAULT nextval('public.flywheel_budget_ledger_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_budgets ALTER COLUMN id SET DEFAULT nextval('public.flywheel_budgets_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_campaign_audience ALTER COLUMN id SET DEFAULT nextval('public.flywheel_campaign_audience_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_campaign_outcomes ALTER COLUMN id SET DEFAULT nextval('public.flywheel_campaign_outcomes_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_campaign_transitions ALTER COLUMN id SET DEFAULT nextval('public.flywheel_campaign_transitions_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_campaigns ALTER COLUMN id SET DEFAULT nextval('public.flywheel_campaigns_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_cannibalization ALTER COLUMN id SET DEFAULT nextval('public.flywheel_cannibalization_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_churn_predictions ALTER COLUMN id SET DEFAULT nextval('public.flywheel_churn_predictions_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_coalition_activity ALTER COLUMN id SET DEFAULT nextval('public.flywheel_coalition_activity_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_coalition_attribution ALTER COLUMN id SET DEFAULT nextval('public.flywheel_coalition_attribution_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_coalition_partners ALTER COLUMN id SET DEFAULT nextval('public.flywheel_coalition_partners_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_contact_log ALTER COLUMN id SET DEFAULT nextval('public.flywheel_contact_log_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_contact_policy ALTER COLUMN id SET DEFAULT nextval('public.flywheel_contact_policy_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_customer_consents ALTER COLUMN id SET DEFAULT nextval('public.flywheel_customer_consents_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_customer_events ALTER COLUMN id SET DEFAULT nextval('public.flywheel_customer_events_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_customers ALTER COLUMN id SET DEFAULT nextval('public.flywheel_customers_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_decisions ALTER COLUMN id SET DEFAULT nextval('public.flywheel_decisions_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_delivery_receipts ALTER COLUMN id SET DEFAULT nextval('public.flywheel_delivery_receipts_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_feature_snapshots ALTER COLUMN id SET DEFAULT nextval('public.flywheel_feature_snapshots_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_holdout_balance ALTER COLUMN id SET DEFAULT nextval('public.flywheel_holdout_balance_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_identity_links ALTER COLUMN id SET DEFAULT nextval('public.flywheel_identity_links_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_inventory_allocations ALTER COLUMN id SET DEFAULT nextval('public.flywheel_inventory_allocations_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_jobs ALTER COLUMN id SET DEFAULT nextval('public.flywheel_jobs_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_model_versions ALTER COLUMN id SET DEFAULT nextval('public.flywheel_model_versions_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_offer_response_predictions ALTER COLUMN id SET DEFAULT nextval('public.flywheel_offer_response_predictions_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_offer_suppressions ALTER COLUMN id SET DEFAULT nextval('public.flywheel_offer_suppressions_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_offers ALTER COLUMN id SET DEFAULT nextval('public.flywheel_offers_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_outbox ALTER COLUMN id SET DEFAULT nextval('public.flywheel_outbox_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_outcome_pricing ALTER COLUMN id SET DEFAULT nextval('public.flywheel_outcome_pricing_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_pos_staging ALTER COLUMN id SET DEFAULT nextval('public.flywheel_pos_staging_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_preregistrations ALTER COLUMN id SET DEFAULT nextval('public.flywheel_preregistrations_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_procurement_requisitions ALTER COLUMN id SET DEFAULT nextval('public.flywheel_procurement_requisitions_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_profiling_objections ALTER COLUMN id SET DEFAULT nextval('public.flywheel_profiling_objections_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_promotion_criteria ALTER COLUMN id SET DEFAULT nextval('public.flywheel_promotion_criteria_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_purchase_attributions ALTER COLUMN id SET DEFAULT nextval('public.flywheel_purchase_attributions_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_readouts ALTER COLUMN id SET DEFAULT nextval('public.flywheel_readouts_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_redemptions ALTER COLUMN id SET DEFAULT nextval('public.flywheel_redemptions_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_returns ALTER COLUMN id SET DEFAULT nextval('public.flywheel_returns_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_seasonality_calendar ALTER COLUMN id SET DEFAULT nextval('public.flywheel_seasonality_calendar_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_settlements ALTER COLUMN id SET DEFAULT nextval('public.flywheel_settlements_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_shadow_decisions ALTER COLUMN id SET DEFAULT nextval('public.flywheel_shadow_decisions_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_shelf_life ALTER COLUMN id SET DEFAULT nextval('public.flywheel_shelf_life_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_substitution ALTER COLUMN id SET DEFAULT nextval('public.flywheel_substitution_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_supplier_funding ALTER COLUMN id SET DEFAULT nextval('public.flywheel_supplier_funding_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_supplier_funding_skus ALTER COLUMN id SET DEFAULT nextval('public.flywheel_supplier_funding_skus_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_tax_rules ALTER COLUMN id SET DEFAULT nextval('public.flywheel_tax_rules_id_seq'::regclass);
+
+ALTER TABLE ONLY public.flywheel_transfer_recommendations ALTER COLUMN id SET DEFAULT nextval('public.flywheel_transfer_recommendations_id_seq'::regclass);
 
 ALTER TABLE ONLY public.goods_receipt_lines ALTER COLUMN id SET DEFAULT nextval('public.goods_receipt_lines_id_seq'::regclass);
 
@@ -3722,6 +5665,12 @@ ALTER TABLE ONLY public.purchase_orders ALTER COLUMN id SET DEFAULT nextval('pub
 ALTER TABLE ONLY public.regions ALTER COLUMN id SET DEFAULT nextval('public.regions_id_seq'::regclass);
 
 ALTER TABLE ONLY public.report_history ALTER COLUMN id SET DEFAULT nextval('public.report_history_id_seq'::regclass);
+
+ALTER TABLE ONLY public.retention_budget_ledger ALTER COLUMN id SET DEFAULT nextval('public.retention_budget_ledger_id_seq'::regclass);
+
+ALTER TABLE ONLY public.retention_campaigns ALTER COLUMN id SET DEFAULT nextval('public.retention_campaigns_id_seq'::regclass);
+
+ALTER TABLE ONLY public.retention_events ALTER COLUMN id SET DEFAULT nextval('public.retention_events_id_seq'::regclass);
 
 ALTER TABLE ONLY public.sales_historical ALTER COLUMN id SET DEFAULT nextval('public.sales_historical_id_seq'::regclass);
 
@@ -3822,6 +5771,12 @@ ALTER TABLE ONLY public.basket_associations
 ALTER TABLE ONLY public.bespoke_requests
     ADD CONSTRAINT bespoke_requests_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.campaign_allocations
+    ADD CONSTRAINT campaign_allocations_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.campaign_offers
+    ADD CONSTRAINT campaign_offers_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.company_targets
     ADD CONSTRAINT company_targets_pkey PRIMARY KEY (id);
 
@@ -3830,6 +5785,12 @@ ALTER TABLE ONLY public.competitor_prices
 
 ALTER TABLE ONLY public.crm_opportunities
     ADD CONSTRAINT crm_opportunities_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.customer_purchases
+    ADD CONSTRAINT customer_purchases_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.customers
+    ADD CONSTRAINT customers_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.data_requests
     ADD CONSTRAINT data_requests_pkey PRIMARY KEY (id);
@@ -3884,6 +5845,162 @@ ALTER TABLE ONLY public.findings
 
 ALTER TABLE ONLY public.findings
     ADD CONSTRAINT findings_tenant_id_dedupe_key_key UNIQUE (tenant_id, dedupe_key);
+
+ALTER TABLE ONLY public.flywheel_allocation_lines
+    ADD CONSTRAINT flywheel_allocation_lines_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_allocation_runs
+    ADD CONSTRAINT flywheel_allocation_runs_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_approval_policies
+    ADD CONSTRAINT flywheel_approval_policies_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_approval_requests
+    ADD CONSTRAINT flywheel_approval_requests_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_approval_steps
+    ADD CONSTRAINT flywheel_approval_steps_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_budget_ledger
+    ADD CONSTRAINT flywheel_budget_ledger_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_budgets
+    ADD CONSTRAINT flywheel_budgets_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_campaign_audience
+    ADD CONSTRAINT flywheel_campaign_audience_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_campaign_outcomes
+    ADD CONSTRAINT flywheel_campaign_outcomes_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_campaign_transitions
+    ADD CONSTRAINT flywheel_campaign_transitions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_campaigns
+    ADD CONSTRAINT flywheel_campaigns_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_cannibalization
+    ADD CONSTRAINT flywheel_cannibalization_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_churn_predictions
+    ADD CONSTRAINT flywheel_churn_predictions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_coalition_activity
+    ADD CONSTRAINT flywheel_coalition_activity_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_coalition_attribution
+    ADD CONSTRAINT flywheel_coalition_attribution_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_coalition_partners
+    ADD CONSTRAINT flywheel_coalition_partners_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_contact_log
+    ADD CONSTRAINT flywheel_contact_log_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_contact_policy
+    ADD CONSTRAINT flywheel_contact_policy_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_customer_consents
+    ADD CONSTRAINT flywheel_customer_consents_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_customer_events
+    ADD CONSTRAINT flywheel_customer_events_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_customers
+    ADD CONSTRAINT flywheel_customers_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_decisions
+    ADD CONSTRAINT flywheel_decisions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_delivery_receipts
+    ADD CONSTRAINT flywheel_delivery_receipts_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_feature_snapshots
+    ADD CONSTRAINT flywheel_feature_snapshots_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_holdout_balance
+    ADD CONSTRAINT flywheel_holdout_balance_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_identity_links
+    ADD CONSTRAINT flywheel_identity_links_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_inventory_allocations
+    ADD CONSTRAINT flywheel_inventory_allocations_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_jobs
+    ADD CONSTRAINT flywheel_jobs_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_model_versions
+    ADD CONSTRAINT flywheel_model_versions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_offer_response_predictions
+    ADD CONSTRAINT flywheel_offer_response_predictions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_offer_suppressions
+    ADD CONSTRAINT flywheel_offer_suppressions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_offers
+    ADD CONSTRAINT flywheel_offers_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_outbox
+    ADD CONSTRAINT flywheel_outbox_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_outcome_pricing
+    ADD CONSTRAINT flywheel_outcome_pricing_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_pos_staging
+    ADD CONSTRAINT flywheel_pos_staging_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_preregistrations
+    ADD CONSTRAINT flywheel_preregistrations_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_procurement_requisitions
+    ADD CONSTRAINT flywheel_procurement_requisitions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_profiling_objections
+    ADD CONSTRAINT flywheel_profiling_objections_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_promotion_criteria
+    ADD CONSTRAINT flywheel_promotion_criteria_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_purchase_attributions
+    ADD CONSTRAINT flywheel_purchase_attributions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_readouts
+    ADD CONSTRAINT flywheel_readouts_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_redemptions
+    ADD CONSTRAINT flywheel_redemptions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_returns
+    ADD CONSTRAINT flywheel_returns_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_seasonality_calendar
+    ADD CONSTRAINT flywheel_seasonality_calendar_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_settlements
+    ADD CONSTRAINT flywheel_settlements_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_shadow_decisions
+    ADD CONSTRAINT flywheel_shadow_decisions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_shelf_life
+    ADD CONSTRAINT flywheel_shelf_life_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_substitution
+    ADD CONSTRAINT flywheel_substitution_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_supplier_funding
+    ADD CONSTRAINT flywheel_supplier_funding_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_supplier_funding_skus
+    ADD CONSTRAINT flywheel_supplier_funding_skus_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_tax_rules
+    ADD CONSTRAINT flywheel_tax_rules_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.flywheel_transfer_recommendations
+    ADD CONSTRAINT flywheel_transfer_recommendations_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.goods_receipt_lines
     ADD CONSTRAINT goods_receipt_lines_pkey PRIMARY KEY (id);
@@ -4007,6 +6124,15 @@ ALTER TABLE ONLY public.regions
 
 ALTER TABLE ONLY public.report_history
     ADD CONSTRAINT report_history_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.retention_budget_ledger
+    ADD CONSTRAINT retention_budget_ledger_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.retention_campaigns
+    ADD CONSTRAINT retention_campaigns_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.retention_events
+    ADD CONSTRAINT retention_events_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.sales_historical
     ADD CONSTRAINT sales_historical_pkey PRIMARY KEY (id);
@@ -4158,17 +6284,119 @@ ALTER TABLE ONLY public.inventory
 ALTER TABLE ONLY public.inventory_batches
     ADD CONSTRAINT unique_store_item_batch UNIQUE (store_id, item_id, batch_number);
 
+ALTER TABLE ONLY public.campaign_allocations
+    ADD CONSTRAINT uq_alloc UNIQUE (campaign_id, store_id, item_id);
+
+ALTER TABLE ONLY public.flywheel_coalition_attribution
+    ADD CONSTRAINT uq_coalition_attribution UNIQUE (tenant_id, campaign_id, customer_id, partner_id);
+
+ALTER TABLE ONLY public.flywheel_coalition_partners
+    ADD CONSTRAINT uq_coalition_partner UNIQUE (tenant_id, partner_name);
+
+ALTER TABLE ONLY public.customers
+    ADD CONSTRAINT uq_customers_ref UNIQUE (tenant_id, customer_ref);
+
 ALTER TABLE ONLY public.external_identities
     ADD CONSTRAINT uq_external_identities_provider_email UNIQUE (provider_id, email);
 
 ALTER TABLE ONLY public.external_identities
     ADD CONSTRAINT uq_external_identities_provider_subject UNIQUE (provider_id, subject);
 
+ALTER TABLE ONLY public.flywheel_inventory_allocations
+    ADD CONSTRAINT uq_flywheel_allocation UNIQUE (campaign_id, store_id, item_id);
+
+ALTER TABLE ONLY public.flywheel_campaign_audience
+    ADD CONSTRAINT uq_flywheel_audience UNIQUE (campaign_id, customer_id);
+
+ALTER TABLE ONLY public.flywheel_holdout_balance
+    ADD CONSTRAINT uq_flywheel_balance UNIQUE (tenant_id, campaign_id, checked_on, covariate);
+
+ALTER TABLE ONLY public.flywheel_budgets
+    ADD CONSTRAINT uq_flywheel_budget UNIQUE (tenant_id, budget_type, period_start);
+
+ALTER TABLE ONLY public.flywheel_cannibalization
+    ADD CONSTRAINT uq_flywheel_cannibalization UNIQUE (tenant_id, campaign_id, promoted_item_id, window_end);
+
+ALTER TABLE ONLY public.flywheel_churn_predictions
+    ADD CONSTRAINT uq_flywheel_churn_pred UNIQUE (tenant_id, customer_id, as_of_date, model_version_id);
+
+ALTER TABLE ONLY public.flywheel_customer_consents
+    ADD CONSTRAINT uq_flywheel_consent UNIQUE (tenant_id, customer_id, channel);
+
+ALTER TABLE ONLY public.flywheel_contact_policy
+    ADD CONSTRAINT uq_flywheel_contact_policy UNIQUE (tenant_id, channel);
+
+ALTER TABLE ONLY public.flywheel_customers
+    ADD CONSTRAINT uq_flywheel_customer_ref UNIQUE (tenant_id, external_ref);
+
+ALTER TABLE ONLY public.flywheel_feature_snapshots
+    ADD CONSTRAINT uq_flywheel_features UNIQUE (tenant_id, customer_id, as_of_date);
+
+ALTER TABLE ONLY public.flywheel_supplier_funding_skus
+    ADD CONSTRAINT uq_flywheel_funding_sku UNIQUE (funding_id, item_id);
+
+ALTER TABLE ONLY public.flywheel_identity_links
+    ADD CONSTRAINT uq_flywheel_identity_key UNIQUE (tenant_id, pos_key);
+
+ALTER TABLE ONLY public.flywheel_model_versions
+    ADD CONSTRAINT uq_flywheel_model_version UNIQUE (tenant_id, model_kind, version_label);
+
+ALTER TABLE ONLY public.flywheel_profiling_objections
+    ADD CONSTRAINT uq_flywheel_objection UNIQUE (tenant_id, customer_id);
+
+ALTER TABLE ONLY public.flywheel_offers
+    ADD CONSTRAINT uq_flywheel_offer_code UNIQUE (tenant_id, offer_code);
+
+ALTER TABLE ONLY public.flywheel_campaign_outcomes
+    ADD CONSTRAINT uq_flywheel_outcome UNIQUE (campaign_id, measured_at);
+
+ALTER TABLE ONLY public.flywheel_pos_staging
+    ADD CONSTRAINT uq_flywheel_pos_txn UNIQUE (tenant_id, external_txn_id);
+
+ALTER TABLE ONLY public.flywheel_preregistrations
+    ADD CONSTRAINT uq_flywheel_prereg_campaign UNIQUE (tenant_id, campaign_id);
+
+ALTER TABLE ONLY public.flywheel_promotion_criteria
+    ADD CONSTRAINT uq_flywheel_promotion UNIQUE (tenant_id, model_label);
+
+ALTER TABLE ONLY public.flywheel_readouts
+    ADD CONSTRAINT uq_flywheel_readout_window UNIQUE (tenant_id, campaign_id, window_end);
+
+ALTER TABLE ONLY public.flywheel_delivery_receipts
+    ADD CONSTRAINT uq_flywheel_receipt UNIQUE (tenant_id, consumer, event_key);
+
+ALTER TABLE ONLY public.flywheel_redemptions
+    ADD CONSTRAINT uq_flywheel_redemption_idem UNIQUE (tenant_id, idempotency_key);
+
+ALTER TABLE ONLY public.flywheel_returns
+    ADD CONSTRAINT uq_flywheel_return_idem UNIQUE (tenant_id, idempotency_key);
+
+ALTER TABLE ONLY public.flywheel_settlements
+    ADD CONSTRAINT uq_flywheel_settlement UNIQUE (tenant_id, funding_id, period_start, period_end);
+
+ALTER TABLE ONLY public.flywheel_shadow_decisions
+    ADD CONSTRAINT uq_flywheel_shadow UNIQUE (tenant_id, customer_id, campaign_id, model_label);
+
+ALTER TABLE ONLY public.flywheel_substitution
+    ADD CONSTRAINT uq_flywheel_substitution UNIQUE (tenant_id, campaign_id, from_item_id, to_item_id);
+
+ALTER TABLE ONLY public.flywheel_offer_response_predictions
+    ADD CONSTRAINT uq_flywheel_uplift_pred UNIQUE (tenant_id, customer_id, action_type, as_of_date, model_version_id);
+
 ALTER TABLE ONLY public.ingest_ledger
     ADD CONSTRAINT uq_ingest_chunk UNIQUE (tenant_id, source_name, chunk_sha256);
 
 ALTER TABLE ONLY public.supplier_invoices
     ADD CONSTRAINT uq_invoice_number UNIQUE (tenant_id, invoice_number);
+
+ALTER TABLE ONLY public.campaign_offers
+    ADD CONSTRAINT uq_offer_campaign_customer UNIQUE (campaign_id, customer_id);
+
+ALTER TABLE ONLY public.campaign_offers
+    ADD CONSTRAINT uq_offer_redemption_key UNIQUE (tenant_id, redemption_key);
+
+ALTER TABLE ONLY public.flywheel_outcome_pricing
+    ADD CONSTRAINT uq_outcome_pricing UNIQUE (tenant_id, plan_name);
 
 ALTER TABLE ONLY public.purchase_orders
     ADD CONSTRAINT uq_po_number UNIQUE (tenant_id, po_number);
@@ -4190,6 +6418,9 @@ ALTER TABLE ONLY public.scim_group_role_mappings
 
 ALTER TABLE ONLY public.scim_groups
     ADD CONSTRAINT uq_scim_groups_tenant_name UNIQUE (tenant_id, display_name);
+
+ALTER TABLE ONLY public.flywheel_shelf_life
+    ADD CONSTRAINT uq_shelf_life_batch UNIQUE (tenant_id, store_id, item_id, batch_ref);
 
 ALTER TABLE ONLY public.tenant_sso_providers
     ADD CONSTRAINT uq_tenant_sso_providers_tenant_name UNIQUE (tenant_id, name);
@@ -4273,9 +6504,19 @@ CREATE INDEX idx_batches_expiry ON public.inventory_batches USING btree (expiry_
 
 CREATE INDEX idx_batches_store_item ON public.inventory_batches USING btree (store_id, item_id);
 
+CREATE INDEX idx_campaign_allocations_tenant ON public.campaign_allocations USING btree (tenant_id);
+
+CREATE INDEX idx_campaign_offers_campaign ON public.campaign_offers USING btree (campaign_id);
+
+CREATE INDEX idx_campaign_offers_customer ON public.campaign_offers USING btree (tenant_id, customer_id);
+
 CREATE INDEX idx_competitor_prices_date ON public.competitor_prices USING btree (observed_date DESC);
 
 CREATE INDEX idx_competitor_prices_item ON public.competitor_prices USING btree (item_id);
+
+CREATE INDEX idx_customer_purchases_scan ON public.customer_purchases USING btree (tenant_id, customer_id, purchase_date DESC);
+
+CREATE INDEX idx_customers_tenant ON public.customers USING btree (tenant_id);
 
 CREATE INDEX idx_data_sources_tenant ON public.data_sources USING btree (tenant_id);
 
@@ -4338,6 +6579,62 @@ CREATE INDEX idx_findings_measure ON public.findings USING btree (tenant_id, mea
 CREATE INDEX idx_findings_tenant_detected ON public.findings USING btree (tenant_id, detected_at DESC);
 
 CREATE INDEX idx_findings_tenant_status ON public.findings USING btree (tenant_id, status, severity);
+
+CREATE INDEX idx_flywheel_alloc_lines_customer ON public.flywheel_allocation_lines USING btree (tenant_id, customer_id);
+
+CREATE INDEX idx_flywheel_alloc_lines_run ON public.flywheel_allocation_lines USING btree (tenant_id, run_id, selected);
+
+CREATE INDEX idx_flywheel_alloc_runs_campaign ON public.flywheel_allocation_runs USING btree (tenant_id, campaign_id, created_at DESC);
+
+CREATE INDEX idx_flywheel_balance_campaign ON public.flywheel_holdout_balance USING btree (tenant_id, campaign_id, checked_on DESC);
+
+CREATE INDEX idx_flywheel_cannibalization_campaign ON public.flywheel_cannibalization USING btree (tenant_id, campaign_id, window_end DESC);
+
+CREATE INDEX idx_flywheel_coalition_activity_customer ON public.flywheel_coalition_activity USING btree (tenant_id, customer_id, occurred_at DESC);
+
+CREATE INDEX idx_flywheel_coalition_attr_campaign ON public.flywheel_coalition_attribution USING btree (tenant_id, campaign_id, partner_id);
+
+CREATE INDEX idx_flywheel_decisions_trace ON public.flywheel_decisions USING btree (tenant_id, trace_id) WHERE (trace_id IS NOT NULL);
+
+CREATE INDEX idx_flywheel_funding_campaign ON public.flywheel_supplier_funding USING btree (tenant_id, campaign_id);
+
+CREATE INDEX idx_flywheel_funding_skus_item ON public.flywheel_supplier_funding_skus USING btree (tenant_id, item_id);
+
+CREATE INDEX idx_flywheel_funding_supplier ON public.flywheel_supplier_funding USING btree (tenant_id, supplier_id, status);
+
+CREATE INDEX idx_flywheel_identity_customer ON public.flywheel_identity_links USING btree (tenant_id, customer_id);
+
+CREATE INDEX idx_flywheel_jobs_ready ON public.flywheel_jobs USING btree (run_after, id) WHERE ((status)::text = ANY ((ARRAY['queued'::character varying, 'failed'::character varying])::text[]));
+
+CREATE INDEX idx_flywheel_jobs_running_lease ON public.flywheel_jobs USING btree (lease_expires_at) WHERE ((status)::text = 'running'::text);
+
+CREATE INDEX idx_flywheel_model_versions_lifecycle ON public.flywheel_model_versions USING btree (tenant_id, lifecycle_status);
+
+CREATE INDEX idx_flywheel_model_versions_snapshot ON public.flywheel_model_versions USING btree (tenant_id, data_snapshot_hash);
+
+CREATE INDEX idx_flywheel_objections_active ON public.flywheel_profiling_objections USING btree (tenant_id, customer_id) WHERE ((status)::text = 'active'::text);
+
+CREATE INDEX idx_flywheel_pos_unresolved ON public.flywheel_pos_staging USING btree (tenant_id) WHERE (resolved = false);
+
+CREATE INDEX idx_flywheel_prereg_campaign ON public.flywheel_preregistrations USING btree (tenant_id, campaign_id);
+
+CREATE INDEX idx_flywheel_readouts_campaign ON public.flywheel_readouts USING btree (tenant_id, campaign_id, window_end DESC);
+
+CREATE INDEX idx_flywheel_readouts_computed ON public.flywheel_readouts USING btree (tenant_id, computed_at DESC);
+
+CREATE INDEX idx_flywheel_receipts_consumer ON public.flywheel_delivery_receipts USING btree (tenant_id, consumer, processed_at DESC);
+
+CREATE INDEX idx_flywheel_season_window ON public.flywheel_seasonality_calendar USING btree (tenant_id, starts_on, ends_on);
+
+CREATE INDEX idx_flywheel_settlements_funding ON public.flywheel_settlements USING btree (tenant_id, funding_id, period_end DESC);
+
+CREATE INDEX idx_flywheel_shadow_campaign ON public.flywheel_shadow_decisions USING btree (tenant_id, campaign_id, agreed);
+
+CREATE INDEX idx_flywheel_shadow_model ON public.flywheel_shadow_decisions USING btree (tenant_id, model_label, created_at DESC);
+
+CREATE INDEX idx_flywheel_shelf_life_expiry ON public.flywheel_shelf_life USING btree (tenant_id, expires_on) WHERE ((status)::text = 'active'::text);
+
+CREATE INDEX idx_flywheel_substitution_campaign ON public.flywheel_substitution USING btree (tenant_id, campaign_id);
 
 CREATE INDEX idx_goods_receipts_po ON public.goods_receipts USING btree (po_id);
 
@@ -4410,6 +6707,12 @@ CREATE INDEX idx_report_history_date ON public.report_history USING btree (creat
 CREATE INDEX idx_report_history_scheduled ON public.report_history USING btree (scheduled_report_id);
 
 CREATE INDEX idx_report_history_status ON public.report_history USING btree (status);
+
+CREATE INDEX idx_retention_campaigns_tenant ON public.retention_campaigns USING btree (tenant_id);
+
+CREATE INDEX idx_retention_events_scan ON public.retention_events USING btree (tenant_id, created_at DESC);
+
+CREATE INDEX idx_retention_ledger_campaign ON public.retention_budget_ledger USING btree (tenant_id, campaign_id, created_at DESC);
 
 CREATE INDEX idx_rollup_daily_tenant_day ON public.sales_rollup_daily USING btree (tenant_id, day);
 
@@ -4529,6 +6832,80 @@ CREATE INDEX ix_einvoice_submissions_chain ON public.einvoice_submissions USING 
 
 CREATE INDEX ix_einvoice_submissions_invoice ON public.einvoice_submissions USING btree (invoice_id);
 
+CREATE INDEX ix_flywheel_alloc_lookup ON public.flywheel_inventory_allocations USING btree (tenant_id, store_id, item_id, status);
+
+CREATE INDEX ix_flywheel_approval_requests ON public.flywheel_approval_requests USING btree (tenant_id, status, created_at DESC);
+
+CREATE INDEX ix_flywheel_attr_event ON public.flywheel_purchase_attributions USING btree (event_id);
+
+CREATE INDEX ix_flywheel_attr_sale ON public.flywheel_purchase_attributions USING btree (tenant_id, sale_source, sale_id);
+
+CREATE INDEX ix_flywheel_audience_campaign ON public.flywheel_campaign_audience USING btree (tenant_id, campaign_id, assignment);
+
+CREATE INDEX ix_flywheel_budgets_tenant ON public.flywheel_budgets USING btree (tenant_id, budget_type);
+
+CREATE INDEX ix_flywheel_campaigns_tenant ON public.flywheel_campaigns USING btree (tenant_id, status);
+
+CREATE INDEX ix_flywheel_churn_lookup ON public.flywheel_churn_predictions USING btree (tenant_id, as_of_date, churn_probability DESC);
+
+CREATE INDEX ix_flywheel_consents_customer ON public.flywheel_customer_consents USING btree (customer_id);
+
+CREATE INDEX ix_flywheel_contact_global ON public.flywheel_contact_log USING btree (tenant_id, customer_id, channel, contacted_at DESC);
+
+CREATE INDEX ix_flywheel_contact_window ON public.flywheel_contact_log USING btree (tenant_id, customer_id, contacted_at DESC);
+
+CREATE INDEX ix_flywheel_customers_status ON public.flywheel_customers USING btree (tenant_id, status);
+
+CREATE INDEX ix_flywheel_customers_store ON public.flywheel_customers USING btree (home_store_id);
+
+CREATE INDEX ix_flywheel_customers_tenant ON public.flywheel_customers USING btree (tenant_id);
+
+CREATE INDEX ix_flywheel_decisions_campaign ON public.flywheel_decisions USING btree (tenant_id, campaign_id, decided_at DESC);
+
+CREATE INDEX ix_flywheel_decisions_customer ON public.flywheel_decisions USING btree (tenant_id, customer_id, decided_at DESC);
+
+CREATE INDEX ix_flywheel_events_seq ON public.flywheel_customer_events USING btree (tenant_id, customer_id, occurred_at);
+
+CREATE INDEX ix_flywheel_events_type ON public.flywheel_customer_events USING btree (tenant_id, event_type, occurred_at);
+
+CREATE INDEX ix_flywheel_features_asof ON public.flywheel_feature_snapshots USING btree (tenant_id, as_of_date);
+
+CREATE INDEX ix_flywheel_ledger_budget ON public.flywheel_budget_ledger USING btree (tenant_id, budget_id, created_at DESC);
+
+CREATE INDEX ix_flywheel_ledger_campaign ON public.flywheel_budget_ledger USING btree (tenant_id, campaign_id, entry_type);
+
+CREATE INDEX ix_flywheel_models_active ON public.flywheel_model_versions USING btree (tenant_id, model_kind, is_active);
+
+CREATE INDEX ix_flywheel_offers_campaign ON public.flywheel_offers USING btree (tenant_id, campaign_id, status);
+
+CREATE INDEX ix_flywheel_offers_customer ON public.flywheel_offers USING btree (tenant_id, customer_id, status);
+
+CREATE INDEX ix_flywheel_outbox_pending ON public.flywheel_outbox USING btree (published, id) WHERE (published = false);
+
+CREATE INDEX ix_flywheel_outcomes_campaign ON public.flywheel_campaign_outcomes USING btree (tenant_id, campaign_id);
+
+CREATE INDEX ix_flywheel_policies_tenant ON public.flywheel_approval_policies USING btree (tenant_id, applies_to, is_active);
+
+CREATE INDEX ix_flywheel_redemptions_campaign ON public.flywheel_redemptions USING btree (tenant_id, campaign_id, created_at DESC);
+
+CREATE INDEX ix_flywheel_requisitions_campaign ON public.flywheel_procurement_requisitions USING btree (tenant_id, campaign_id, status);
+
+CREATE INDEX ix_flywheel_returns_campaign ON public.flywheel_returns USING btree (tenant_id, campaign_id, created_at DESC);
+
+CREATE INDEX ix_flywheel_steps_request ON public.flywheel_approval_steps USING btree (request_id, step_order);
+
+CREATE INDEX ix_flywheel_suppressions_campaign ON public.flywheel_offer_suppressions USING btree (tenant_id, suppressed_campaign_id);
+
+CREATE INDEX ix_flywheel_suppressions_customer ON public.flywheel_offer_suppressions USING btree (tenant_id, customer_id, created_at DESC);
+
+CREATE INDEX ix_flywheel_tax_lookup ON public.flywheel_tax_rules USING btree (tenant_id, is_active, category);
+
+CREATE INDEX ix_flywheel_transfers_campaign ON public.flywheel_transfer_recommendations USING btree (tenant_id, campaign_id, status);
+
+CREATE INDEX ix_flywheel_transitions_campaign ON public.flywheel_campaign_transitions USING btree (campaign_id, created_at);
+
+CREATE INDEX ix_flywheel_uplift_lookup ON public.flywheel_offer_response_predictions USING btree (tenant_id, as_of_date, uplift DESC);
+
 CREATE INDEX ix_import_jobs_tenant ON public.import_jobs USING btree (tenant_id, created_at DESC);
 
 CREATE INDEX ix_import_row_undo_job ON public.import_row_undo USING btree (import_job_id, id DESC);
@@ -4623,6 +7000,12 @@ CREATE INDEX sales_stream_raw_new_default_timestamp_idx ON public.sales_stream_r
 
 CREATE UNIQUE INDEX uq_data_sources_one_active_per_tenant ON public.data_sources USING btree (tenant_id) WHERE is_active;
 
+CREATE UNIQUE INDEX uq_flywheel_jobs_live_key ON public.flywheel_jobs USING btree (tenant_id, idempotency_key) WHERE ((idempotency_key IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'failed'::character varying])::text[])));
+
+CREATE UNIQUE INDEX uq_flywheel_ledger_idem ON public.flywheel_budget_ledger USING btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
+
+CREATE UNIQUE INDEX uq_flywheel_season ON public.flywheel_seasonality_calendar USING btree (tenant_id, name, COALESCE(category, ''::character varying));
+
 CREATE UNIQUE INDEX uq_scim_external_users_tenant_extid ON public.scim_external_users USING btree (tenant_id, external_id) WHERE (external_id IS NOT NULL);
 
 CREATE UNIQUE INDEX ux_subscriptions_tenant ON public.subscriptions USING btree (tenant_id);
@@ -4686,6 +7069,12 @@ ALTER INDEX public.idx_sales_stream_raw_tenant ATTACH PARTITION public.sales_str
 ALTER INDEX public.idx_sales_stream_synthetic ATTACH PARTITION public.sales_stream_raw_new_default_tenant_id_timestamp_idx;
 
 ALTER INDEX public.idx_sales_stream_timestamp ATTACH PARTITION public.sales_stream_raw_new_default_timestamp_idx;
+
+CREATE TRIGGER trg_flywheel_prereg_immutable BEFORE DELETE OR UPDATE ON public.flywheel_preregistrations FOR EACH ROW EXECUTE FUNCTION public.flywheel_forbid_mutation();
+
+CREATE TRIGGER trg_flywheel_readouts_immutable BEFORE DELETE OR UPDATE ON public.flywheel_readouts FOR EACH ROW EXECUTE FUNCTION public.flywheel_forbid_mutation();
+
+CREATE TRIGGER trg_flywheel_settlement_immutable BEFORE UPDATE ON public.flywheel_settlements FOR EACH ROW EXECUTE FUNCTION public.flywheel_settlement_immutable();
 
 CREATE TRIGGER trg_item_costs_sync_current AFTER INSERT OR DELETE OR UPDATE ON public.item_costs FOR EACH ROW EXECUTE FUNCTION public.item_costs_sync_current();
 
@@ -4765,6 +7154,33 @@ ALTER TABLE ONLY public.basket_associations
 ALTER TABLE ONLY public.bespoke_requests
     ADD CONSTRAINT bespoke_requests_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE SET NULL;
 
+ALTER TABLE ONLY public.campaign_allocations
+    ADD CONSTRAINT campaign_allocations_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.retention_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.campaign_allocations
+    ADD CONSTRAINT campaign_allocations_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);
+
+ALTER TABLE ONLY public.campaign_allocations
+    ADD CONSTRAINT campaign_allocations_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id);
+
+ALTER TABLE ONLY public.campaign_allocations
+    ADD CONSTRAINT campaign_allocations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.campaign_offers
+    ADD CONSTRAINT campaign_offers_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.retention_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.campaign_offers
+    ADD CONSTRAINT campaign_offers_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.campaign_offers
+    ADD CONSTRAINT campaign_offers_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);
+
+ALTER TABLE ONLY public.campaign_offers
+    ADD CONSTRAINT campaign_offers_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id);
+
+ALTER TABLE ONLY public.campaign_offers
+    ADD CONSTRAINT campaign_offers_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.competitor_prices
     ADD CONSTRAINT competitor_prices_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);
 
@@ -4773,6 +7189,24 @@ ALTER TABLE ONLY public.competitor_prices
 
 ALTER TABLE ONLY public.competitor_prices
     ADD CONSTRAINT competitor_prices_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id);
+
+ALTER TABLE ONLY public.customer_purchases
+    ADD CONSTRAINT customer_purchases_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.customer_purchases
+    ADD CONSTRAINT customer_purchases_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);
+
+ALTER TABLE ONLY public.customer_purchases
+    ADD CONSTRAINT customer_purchases_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id);
+
+ALTER TABLE ONLY public.customer_purchases
+    ADD CONSTRAINT customer_purchases_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.customers
+    ADD CONSTRAINT customers_home_store_id_fkey FOREIGN KEY (home_store_id) REFERENCES public.stores(id);
+
+ALTER TABLE ONLY public.customers
+    ADD CONSTRAINT customers_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.data_requests
     ADD CONSTRAINT data_requests_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.users(id);
@@ -4833,6 +7267,471 @@ ALTER TABLE ONLY public.external_identities
 
 ALTER TABLE ONLY public.external_identities
     ADD CONSTRAINT external_identities_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_allocation_lines
+    ADD CONSTRAINT flywheel_allocation_lines_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_allocation_lines
+    ADD CONSTRAINT flywheel_allocation_lines_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_allocation_lines
+    ADD CONSTRAINT flywheel_allocation_lines_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.flywheel_allocation_runs(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_allocation_lines
+    ADD CONSTRAINT flywheel_allocation_lines_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_allocation_lines
+    ADD CONSTRAINT flywheel_allocation_lines_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_allocation_runs
+    ADD CONSTRAINT flywheel_allocation_runs_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_allocation_runs
+    ADD CONSTRAINT flywheel_allocation_runs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_approval_policies
+    ADD CONSTRAINT flywheel_approval_policies_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_approval_requests
+    ADD CONSTRAINT flywheel_approval_requests_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_approval_requests
+    ADD CONSTRAINT flywheel_approval_requests_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_approval_requests
+    ADD CONSTRAINT flywheel_approval_requests_requisition_id_fkey FOREIGN KEY (requisition_id) REFERENCES public.flywheel_procurement_requisitions(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_approval_requests
+    ADD CONSTRAINT flywheel_approval_requests_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_approval_steps
+    ADD CONSTRAINT flywheel_approval_steps_decided_by_fkey FOREIGN KEY (decided_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_approval_steps
+    ADD CONSTRAINT flywheel_approval_steps_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.flywheel_approval_policies(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_approval_steps
+    ADD CONSTRAINT flywheel_approval_steps_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.flywheel_approval_requests(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_approval_steps
+    ADD CONSTRAINT flywheel_approval_steps_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_budget_ledger
+    ADD CONSTRAINT flywheel_budget_ledger_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_budget_ledger
+    ADD CONSTRAINT flywheel_budget_ledger_budget_id_fkey FOREIGN KEY (budget_id) REFERENCES public.flywheel_budgets(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_budget_ledger
+    ADD CONSTRAINT flywheel_budget_ledger_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_budget_ledger
+    ADD CONSTRAINT flywheel_budget_ledger_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_budgets
+    ADD CONSTRAINT flywheel_budgets_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_campaign_audience
+    ADD CONSTRAINT flywheel_campaign_audience_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_campaign_audience
+    ADD CONSTRAINT flywheel_campaign_audience_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_campaign_audience
+    ADD CONSTRAINT flywheel_campaign_audience_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_campaign_outcomes
+    ADD CONSTRAINT flywheel_campaign_outcomes_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_campaign_outcomes
+    ADD CONSTRAINT flywheel_campaign_outcomes_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_campaign_transitions
+    ADD CONSTRAINT flywheel_campaign_transitions_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_campaign_transitions
+    ADD CONSTRAINT flywheel_campaign_transitions_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_campaign_transitions
+    ADD CONSTRAINT flywheel_campaign_transitions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_campaigns
+    ADD CONSTRAINT flywheel_campaigns_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_campaigns
+    ADD CONSTRAINT flywheel_campaigns_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_cannibalization
+    ADD CONSTRAINT flywheel_cannibalization_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_cannibalization
+    ADD CONSTRAINT flywheel_cannibalization_promoted_item_id_fkey FOREIGN KEY (promoted_item_id) REFERENCES public.items(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_cannibalization
+    ADD CONSTRAINT flywheel_cannibalization_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_churn_predictions
+    ADD CONSTRAINT flywheel_churn_predictions_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_churn_predictions
+    ADD CONSTRAINT flywheel_churn_predictions_model_version_id_fkey FOREIGN KEY (model_version_id) REFERENCES public.flywheel_model_versions(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.flywheel_churn_predictions
+    ADD CONSTRAINT flywheel_churn_predictions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_coalition_activity
+    ADD CONSTRAINT flywheel_coalition_activity_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_coalition_activity
+    ADD CONSTRAINT flywheel_coalition_activity_partner_id_fkey FOREIGN KEY (partner_id) REFERENCES public.flywheel_coalition_partners(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_coalition_activity
+    ADD CONSTRAINT flywheel_coalition_activity_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_coalition_attribution
+    ADD CONSTRAINT flywheel_coalition_attribution_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_coalition_attribution
+    ADD CONSTRAINT flywheel_coalition_attribution_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_coalition_attribution
+    ADD CONSTRAINT flywheel_coalition_attribution_partner_id_fkey FOREIGN KEY (partner_id) REFERENCES public.flywheel_coalition_partners(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_coalition_attribution
+    ADD CONSTRAINT flywheel_coalition_attribution_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_coalition_partners
+    ADD CONSTRAINT flywheel_coalition_partners_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_contact_log
+    ADD CONSTRAINT flywheel_contact_log_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_contact_log
+    ADD CONSTRAINT flywheel_contact_log_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_contact_log
+    ADD CONSTRAINT flywheel_contact_log_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_contact_policy
+    ADD CONSTRAINT flywheel_contact_policy_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_customer_consents
+    ADD CONSTRAINT flywheel_customer_consents_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_customer_consents
+    ADD CONSTRAINT flywheel_customer_consents_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_customer_events
+    ADD CONSTRAINT flywheel_customer_events_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_customer_events
+    ADD CONSTRAINT flywheel_customer_events_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_customer_events
+    ADD CONSTRAINT flywheel_customer_events_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_customer_events
+    ADD CONSTRAINT flywheel_customer_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_customers
+    ADD CONSTRAINT flywheel_customers_home_store_id_fkey FOREIGN KEY (home_store_id) REFERENCES public.stores(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.flywheel_customers
+    ADD CONSTRAINT flywheel_customers_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_decisions
+    ADD CONSTRAINT flywheel_decisions_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_decisions
+    ADD CONSTRAINT flywheel_decisions_churn_model_version_id_fkey FOREIGN KEY (churn_model_version_id) REFERENCES public.flywheel_model_versions(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_decisions
+    ADD CONSTRAINT flywheel_decisions_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_decisions
+    ADD CONSTRAINT flywheel_decisions_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_decisions
+    ADD CONSTRAINT flywheel_decisions_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_decisions
+    ADD CONSTRAINT flywheel_decisions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_decisions
+    ADD CONSTRAINT flywheel_decisions_uplift_model_version_id_fkey FOREIGN KEY (uplift_model_version_id) REFERENCES public.flywheel_model_versions(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_delivery_receipts
+    ADD CONSTRAINT flywheel_delivery_receipts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_feature_snapshots
+    ADD CONSTRAINT flywheel_feature_snapshots_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_feature_snapshots
+    ADD CONSTRAINT flywheel_feature_snapshots_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_holdout_balance
+    ADD CONSTRAINT flywheel_holdout_balance_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_holdout_balance
+    ADD CONSTRAINT flywheel_holdout_balance_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_identity_links
+    ADD CONSTRAINT flywheel_identity_links_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_identity_links
+    ADD CONSTRAINT flywheel_identity_links_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_inventory_allocations
+    ADD CONSTRAINT flywheel_inventory_allocations_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_inventory_allocations
+    ADD CONSTRAINT flywheel_inventory_allocations_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_inventory_allocations
+    ADD CONSTRAINT flywheel_inventory_allocations_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_inventory_allocations
+    ADD CONSTRAINT flywheel_inventory_allocations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_jobs
+    ADD CONSTRAINT flywheel_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_model_versions
+    ADD CONSTRAINT flywheel_model_versions_promoted_by_fkey FOREIGN KEY (promoted_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_model_versions
+    ADD CONSTRAINT flywheel_model_versions_rolled_back_to_fkey FOREIGN KEY (rolled_back_to) REFERENCES public.flywheel_model_versions(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_model_versions
+    ADD CONSTRAINT flywheel_model_versions_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES public.flywheel_model_versions(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_model_versions
+    ADD CONSTRAINT flywheel_model_versions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_offer_response_predictions
+    ADD CONSTRAINT flywheel_offer_response_predictions_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_offer_response_predictions
+    ADD CONSTRAINT flywheel_offer_response_predictions_model_version_id_fkey FOREIGN KEY (model_version_id) REFERENCES public.flywheel_model_versions(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.flywheel_offer_response_predictions
+    ADD CONSTRAINT flywheel_offer_response_predictions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_offer_suppressions
+    ADD CONSTRAINT flywheel_offer_suppressions_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_offer_suppressions
+    ADD CONSTRAINT flywheel_offer_suppressions_suppressed_campaign_id_fkey FOREIGN KEY (suppressed_campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_offer_suppressions
+    ADD CONSTRAINT flywheel_offer_suppressions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_offer_suppressions
+    ADD CONSTRAINT flywheel_offer_suppressions_winning_campaign_id_fkey FOREIGN KEY (winning_campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_offers
+    ADD CONSTRAINT flywheel_offers_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_offers
+    ADD CONSTRAINT flywheel_offers_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_offers
+    ADD CONSTRAINT flywheel_offers_decision_id_fkey FOREIGN KEY (decision_id) REFERENCES public.flywheel_decisions(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_offers
+    ADD CONSTRAINT flywheel_offers_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_offers
+    ADD CONSTRAINT flywheel_offers_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_offers
+    ADD CONSTRAINT flywheel_offers_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_outbox
+    ADD CONSTRAINT flywheel_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_outcome_pricing
+    ADD CONSTRAINT flywheel_outcome_pricing_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_pos_staging
+    ADD CONSTRAINT flywheel_pos_staging_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_pos_staging
+    ADD CONSTRAINT flywheel_pos_staging_matched_customer_id_fkey FOREIGN KEY (matched_customer_id) REFERENCES public.flywheel_customers(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_pos_staging
+    ADD CONSTRAINT flywheel_pos_staging_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_pos_staging
+    ADD CONSTRAINT flywheel_pos_staging_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_preregistrations
+    ADD CONSTRAINT flywheel_preregistrations_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_preregistrations
+    ADD CONSTRAINT flywheel_preregistrations_registered_by_fkey FOREIGN KEY (registered_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_preregistrations
+    ADD CONSTRAINT flywheel_preregistrations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_procurement_requisitions
+    ADD CONSTRAINT flywheel_procurement_requisitions_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_procurement_requisitions
+    ADD CONSTRAINT flywheel_procurement_requisitions_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_procurement_requisitions
+    ADD CONSTRAINT flywheel_procurement_requisitions_purchase_order_id_fkey FOREIGN KEY (purchase_order_id) REFERENCES public.purchase_orders(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_procurement_requisitions
+    ADD CONSTRAINT flywheel_procurement_requisitions_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_procurement_requisitions
+    ADD CONSTRAINT flywheel_procurement_requisitions_supplier_id_fkey FOREIGN KEY (supplier_id) REFERENCES public.suppliers(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_procurement_requisitions
+    ADD CONSTRAINT flywheel_procurement_requisitions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_profiling_objections
+    ADD CONSTRAINT flywheel_profiling_objections_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_profiling_objections
+    ADD CONSTRAINT flywheel_profiling_objections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_promotion_criteria
+    ADD CONSTRAINT flywheel_promotion_criteria_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_purchase_attributions
+    ADD CONSTRAINT flywheel_purchase_attributions_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.flywheel_customer_events(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_purchase_attributions
+    ADD CONSTRAINT flywheel_purchase_attributions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_readouts
+    ADD CONSTRAINT flywheel_readouts_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_readouts
+    ADD CONSTRAINT flywheel_readouts_preregistration_id_fkey FOREIGN KEY (preregistration_id) REFERENCES public.flywheel_preregistrations(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_readouts
+    ADD CONSTRAINT flywheel_readouts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_redemptions
+    ADD CONSTRAINT flywheel_redemptions_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_redemptions
+    ADD CONSTRAINT flywheel_redemptions_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_redemptions
+    ADD CONSTRAINT flywheel_redemptions_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_redemptions
+    ADD CONSTRAINT flywheel_redemptions_offer_id_fkey FOREIGN KEY (offer_id) REFERENCES public.flywheel_offers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_redemptions
+    ADD CONSTRAINT flywheel_redemptions_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.flywheel_redemptions
+    ADD CONSTRAINT flywheel_redemptions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_returns
+    ADD CONSTRAINT flywheel_returns_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_returns
+    ADD CONSTRAINT flywheel_returns_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_returns
+    ADD CONSTRAINT flywheel_returns_redemption_id_fkey FOREIGN KEY (redemption_id) REFERENCES public.flywheel_redemptions(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_returns
+    ADD CONSTRAINT flywheel_returns_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_seasonality_calendar
+    ADD CONSTRAINT flywheel_seasonality_calendar_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_settlements
+    ADD CONSTRAINT flywheel_settlements_funding_id_fkey FOREIGN KEY (funding_id) REFERENCES public.flywheel_supplier_funding(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_settlements
+    ADD CONSTRAINT flywheel_settlements_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_shadow_decisions
+    ADD CONSTRAINT flywheel_shadow_decisions_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_shadow_decisions
+    ADD CONSTRAINT flywheel_shadow_decisions_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_shadow_decisions
+    ADD CONSTRAINT flywheel_shadow_decisions_decision_id_fkey FOREIGN KEY (decision_id) REFERENCES public.flywheel_decisions(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_shadow_decisions
+    ADD CONSTRAINT flywheel_shadow_decisions_model_version_id_fkey FOREIGN KEY (model_version_id) REFERENCES public.flywheel_model_versions(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_shadow_decisions
+    ADD CONSTRAINT flywheel_shadow_decisions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_shelf_life
+    ADD CONSTRAINT flywheel_shelf_life_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_shelf_life
+    ADD CONSTRAINT flywheel_shelf_life_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_shelf_life
+    ADD CONSTRAINT flywheel_shelf_life_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_substitution
+    ADD CONSTRAINT flywheel_substitution_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_substitution
+    ADD CONSTRAINT flywheel_substitution_from_item_id_fkey FOREIGN KEY (from_item_id) REFERENCES public.items(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_substitution
+    ADD CONSTRAINT flywheel_substitution_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_substitution
+    ADD CONSTRAINT flywheel_substitution_to_item_id_fkey FOREIGN KEY (to_item_id) REFERENCES public.items(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_supplier_funding
+    ADD CONSTRAINT flywheel_supplier_funding_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_supplier_funding
+    ADD CONSTRAINT flywheel_supplier_funding_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_supplier_funding_skus
+    ADD CONSTRAINT flywheel_supplier_funding_skus_funding_id_fkey FOREIGN KEY (funding_id) REFERENCES public.flywheel_supplier_funding(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_supplier_funding_skus
+    ADD CONSTRAINT flywheel_supplier_funding_skus_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_supplier_funding_skus
+    ADD CONSTRAINT flywheel_supplier_funding_skus_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_supplier_funding
+    ADD CONSTRAINT flywheel_supplier_funding_supplier_id_fkey FOREIGN KEY (supplier_id) REFERENCES public.suppliers(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.flywheel_supplier_funding
+    ADD CONSTRAINT flywheel_supplier_funding_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_tax_rules
+    ADD CONSTRAINT flywheel_tax_rules_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_transfer_recommendations
+    ADD CONSTRAINT flywheel_transfer_recommendations_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.flywheel_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_transfer_recommendations
+    ADD CONSTRAINT flywheel_transfer_recommendations_from_store_id_fkey FOREIGN KEY (from_store_id) REFERENCES public.stores(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_transfer_recommendations
+    ADD CONSTRAINT flywheel_transfer_recommendations_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_transfer_recommendations
+    ADD CONSTRAINT flywheel_transfer_recommendations_stock_transfer_id_fkey FOREIGN KEY (stock_transfer_id) REFERENCES public.stock_transfers(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.flywheel_transfer_recommendations
+    ADD CONSTRAINT flywheel_transfer_recommendations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.flywheel_transfer_recommendations
+    ADD CONSTRAINT flywheel_transfer_recommendations_to_store_id_fkey FOREIGN KEY (to_store_id) REFERENCES public.stores(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.goods_receipt_lines
     ADD CONSTRAINT goods_receipt_lines_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE CASCADE;
@@ -5010,6 +7909,39 @@ ALTER TABLE ONLY public.report_history
 
 ALTER TABLE ONLY public.report_history
     ADD CONSTRAINT report_history_scheduled_report_id_fkey FOREIGN KEY (scheduled_report_id) REFERENCES public.scheduled_reports(id);
+
+ALTER TABLE ONLY public.retention_budget_ledger
+    ADD CONSTRAINT retention_budget_ledger_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.retention_budget_ledger
+    ADD CONSTRAINT retention_budget_ledger_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.retention_campaigns(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.retention_budget_ledger
+    ADD CONSTRAINT retention_budget_ledger_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.retention_campaigns
+    ADD CONSTRAINT retention_campaigns_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.retention_campaigns
+    ADD CONSTRAINT retention_campaigns_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.retention_campaigns
+    ADD CONSTRAINT retention_campaigns_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id);
+
+ALTER TABLE ONLY public.retention_campaigns
+    ADD CONSTRAINT retention_campaigns_requisition_po_id_fkey FOREIGN KEY (requisition_po_id) REFERENCES public.purchase_orders(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.retention_campaigns
+    ADD CONSTRAINT retention_campaigns_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id);
+
+ALTER TABLE ONLY public.retention_campaigns
+    ADD CONSTRAINT retention_campaigns_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.retention_events
+    ADD CONSTRAINT retention_events_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.retention_events
+    ADD CONSTRAINT retention_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.sales_historical
     ADD CONSTRAINT sales_historical_import_job_fk FOREIGN KEY (import_job_id) REFERENCES public.import_jobs(id) ON DELETE SET NULL;
@@ -5222,9 +8154,17 @@ ALTER TABLE public.action_drafts ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.approval_rules ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.campaign_allocations ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.campaign_offers ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.company_targets ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.crm_opportunities ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.customer_purchases ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.data_requests ENABLE ROW LEVEL SECURITY;
 
@@ -5237,6 +8177,110 @@ ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.einvoice_submissions ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.findings ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_allocation_lines ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_allocation_runs ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_approval_policies ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_approval_requests ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_approval_steps ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_budget_ledger ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_budgets ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_campaign_audience ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_campaign_outcomes ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_campaign_transitions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_campaigns ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_cannibalization ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_churn_predictions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_coalition_activity ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_coalition_attribution ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_coalition_partners ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_contact_log ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_contact_policy ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_customer_consents ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_customer_events ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_customers ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_decisions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_delivery_receipts ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_feature_snapshots ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_holdout_balance ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_identity_links ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_inventory_allocations ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_jobs ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_model_versions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_offer_response_predictions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_offer_suppressions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_offers ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_outbox ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_outcome_pricing ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_pos_staging ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_preregistrations ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_procurement_requisitions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_profiling_objections ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_promotion_criteria ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_purchase_attributions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_readouts ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_redemptions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_returns ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_seasonality_calendar ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_settlements ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_shadow_decisions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_shelf_life ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_substitution ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_supplier_funding ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_supplier_funding_skus ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_tax_rules ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.flywheel_transfer_recommendations ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.goods_receipt_lines ENABLE ROW LEVEL SECURITY;
 
@@ -5284,6 +8328,12 @@ ALTER TABLE public.purchase_order_lines ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.purchase_orders ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.retention_budget_ledger ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.retention_campaigns ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.retention_events ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.sales_historical ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.sales_stream_raw ENABLE ROW LEVEL SECURITY;
@@ -5308,9 +8358,17 @@ CREATE POLICY tenant_isolation ON public.action_drafts USING ((tenant_id = publi
 
 CREATE POLICY tenant_isolation ON public.approval_rules USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
+CREATE POLICY tenant_isolation ON public.campaign_allocations USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.campaign_offers USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
 CREATE POLICY tenant_isolation ON public.company_targets USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.crm_opportunities USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.customer_purchases USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.customers USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.data_requests USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
@@ -5323,6 +8381,110 @@ CREATE POLICY tenant_isolation ON public.documents USING ((tenant_id = public.cu
 CREATE POLICY tenant_isolation ON public.einvoice_submissions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.findings USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_allocation_lines USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_allocation_runs USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_approval_policies USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_approval_requests USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_approval_steps USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_budget_ledger USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_budgets USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_campaign_audience USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_campaign_outcomes USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_campaign_transitions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_campaigns USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_cannibalization USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_churn_predictions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_coalition_activity USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_coalition_attribution USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_coalition_partners USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_contact_log USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_contact_policy USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_customer_consents USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_customer_events USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_customers USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_decisions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_delivery_receipts USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_feature_snapshots USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_holdout_balance USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_identity_links USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_inventory_allocations USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_jobs USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_model_versions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_offer_response_predictions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_offer_suppressions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_offers USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_outbox USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_outcome_pricing USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_pos_staging USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_preregistrations USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_procurement_requisitions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_profiling_objections USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_promotion_criteria USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_purchase_attributions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_readouts USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_redemptions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_returns USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_seasonality_calendar USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_settlements USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_shadow_decisions USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_shelf_life USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_substitution USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_supplier_funding USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_supplier_funding_skus USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_tax_rules USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.flywheel_transfer_recommendations USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.goods_receipt_lines USING ((EXISTS ( SELECT 1
    FROM public.goods_receipts r
@@ -5379,6 +8541,12 @@ CREATE POLICY tenant_isolation ON public.purchase_order_lines USING ((EXISTS ( S
   WHERE ((po.id = purchase_order_lines.po_id) AND (po.tenant_id = public.current_tenant_id())))));
 
 CREATE POLICY tenant_isolation ON public.purchase_orders USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.retention_budget_ledger USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.retention_campaigns USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.retention_events USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.sales_historical USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
