@@ -30,7 +30,8 @@ from app.services.flywheel import (
     coalition, contact_governance, data_trust, decisioning, erasure,
     features as feature_service,
     guardrails, identity, inventory_atp, jobs, liability, measurement, metering,
-    objections, optimizer, outbox, outcome_pricing, procurement, readout, registry,
+    objections, optimizer, outbox, outcome_pricing, pos_intake, procurement,
+    readout, registry,
     seasonality, seeder, sequential, shadow, shelf_life, tax, trade, trace,
     uplift as uplift_service,
 )
@@ -1682,6 +1683,52 @@ async def withdraw_profiling_objection(
     db: AsyncSession = Depends(get_db),
 ):
     return await objections.withdraw_objection(db, tenant_id=_tenant(user), customer_id=customer_id)
+
+
+class PosRow(BaseModel):
+    """One POS transaction as the source system exports it.
+
+    Deliberately permissive at the type level — validation lives in
+    pos_intake.validate_row so a bad row is REPORTED with a reason and a row
+    index, not swallowed by a 422 that names a pydantic path and tells the
+    retailer's engineer nothing about which of 5,000 rows to fix.
+    """
+    external_txn_id: Optional[str] = None
+    occurred_at: Optional[str] = None
+    loyalty_ref: Optional[str] = None
+    card_hash: Optional[str] = None
+    store_id: Optional[int] = None
+    item_id: Optional[int] = None
+    units: Optional[int] = 1
+    amount_aed: Optional[float] = 0
+
+
+class PosIntakeRequest(BaseModel):
+    rows: List[PosRow] = Field(..., min_length=1)
+
+
+@router.post("/pos/intake", summary="Ingest a batch of POS transactions (validated)")
+async def pos_intake_batch(
+    body: PosIntakeRequest,
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    """The front door for a real retailer's transaction feed.
+
+    Validates every row and stages the good ones. Bad rows are refused
+    INDIVIDUALLY with a reason and a row index — a first export always has some,
+    and failing the whole file teaches the integrator nothing while accepting it
+    silently poisons every number downstream.
+    """
+    try:
+        result = await pos_intake.intake_batch(
+            db, tenant_id=_tenant(user),
+            rows=[r.model_dump() for r in body.rows],
+            accessible_store_ids=get_accessible_store_ids(user) or None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    await db.commit()
+    return result
 
 
 @router.get("/identity/stats", summary="POS→loyalty identity resolution stats")
