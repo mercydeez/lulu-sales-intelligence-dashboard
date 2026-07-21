@@ -30,7 +30,7 @@ import {
   Badge, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton,
   Table, TableBody, TableHead, TableRow, Td, Th,
 } from '@/components/ui';
-import { Reveal, Stagger, StaggerItem, SyntheticBadge } from '@/components/flywheel/motion';
+import { Reveal, SyntheticBadge } from '@/components/flywheel/motion';
 import {
   aed, fetchCampaigns, fetchCampaignReadout, fetchIncrementality,
   fetchReadoutHistory, pct, READOUT_TONE, recomputeReadout,
@@ -251,8 +251,8 @@ export default function IncrementalityPage() {
           <EmptyState title="No campaigns" description="Create a campaign to measure it." />
         </Card>
       ) : (
-        <Stagger>
-          <StaggerItem>
+        <div className="space-y-4">
+          <Reveal>
             <Card padding="lg" className="mb-4">
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
@@ -339,11 +339,11 @@ export default function IncrementalityPage() {
                 />
               )}
             </Card>
-          </StaggerItem>
+          </Reveal>
 
           {/* ── EVIDENCE OVER TIME ─────────────────────────────────────── */}
           {series.length > 1 ? (
-            <StaggerItem>
+            <Reveal>
               <Card padding="lg">
                 <div className="mb-3">
                   <h3 className="font-medium">How the evidence accumulated</h3>
@@ -385,9 +385,9 @@ export default function IncrementalityPage() {
                   </Table>
                 </div>
               </Card>
-            </StaggerItem>
+            </Reveal>
           ) : null}
-        </Stagger>
+        </div>
       )}
 
       <div className="mt-6 flex items-start gap-2 text-xs text-[var(--muted)] max-w-3xl">

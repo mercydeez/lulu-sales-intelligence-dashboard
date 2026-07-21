@@ -76,6 +76,13 @@ export function StaggerItem({ children, className }: { children: ReactNode; clas
   return <motion.div className={className} variants={itemVariants}>{children}</motion.div>;
 }
 
+// IMPORTANT: only put items in <Stagger> that exist at initial mount. A
+// StaggerItem is variant-controlled by its parent, which orchestrates ONCE via
+// whileInView and never re-propagates to children added later. A card rendered
+// on user interaction (a drill-down, a panel that appears when its data loads)
+// must therefore use <Reveal> instead — Reveal is a standalone motion element
+// with no parent variant context, so it animates itself in whenever it mounts.
+
 /**
  * THE SIGNATURE ELEMENT — the Flywheel loop.
  *

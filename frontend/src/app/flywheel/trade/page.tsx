@@ -26,7 +26,7 @@ import {
   Badge, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton,
   Table, TableBody, TableHead, TableRow, Td, Th,
 } from '@/components/ui';
-import { Reveal, Stagger, StaggerItem, SyntheticBadge } from '@/components/flywheel/motion';
+import { Reveal, SyntheticBadge } from '@/components/flywheel/motion';
 import {
   aed, fetchSupplierDashboard, fetchTradeOverview, FUNDING_TONE,
 } from '@/lib/flywheel';
@@ -132,20 +132,21 @@ export default function TradePromotionPage() {
       </Reveal>
 
       {suppliers.length > 0 ? (
-        <Stagger>
-          <StaggerItem>
-            <div className="flex flex-wrap gap-2 mb-4">
-              <span className="text-sm text-[var(--muted)] self-center mr-2">Supplier view:</span>
-              {suppliers.map(([id, name]) => (
-                <Button key={id} size="sm"
-                  variant={selectedSupplier === id ? 'primary' : 'ghost'}
-                  onClick={() => setSelectedSupplier(id)}>{name}</Button>
-              ))}
-            </div>
-          </StaggerItem>
+        <>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <span className="text-sm text-[var(--muted)] self-center mr-2">Supplier view:</span>
+            {suppliers.map(([id, name]) => (
+              <Button key={id} size="sm"
+                variant={selectedSupplier === id ? 'primary' : 'ghost'}
+                onClick={() => setSelectedSupplier(id)}>{name}</Button>
+            ))}
+          </div>
 
+          {/* Reveal (not StaggerItem): this card is rendered on click, after the
+              page's Stagger has already orchestrated, so it must self-animate.
+              Keyed by supplier so it re-reveals each time the selection changes. */}
           {dashboard ? (
-            <StaggerItem>
+            <Reveal key={selectedSupplier ?? 'none'}>
               <Card padding="lg">
                 <div className="flex items-start justify-between gap-4 mb-4">
                   <div>
@@ -198,9 +199,9 @@ export default function TradePromotionPage() {
                   <span>{dashboard.confidentiality_note}</span>
                 </div>
               </Card>
-            </StaggerItem>
+            </Reveal>
           ) : null}
-        </Stagger>
+        </>
       ) : null}
     </div>
   );

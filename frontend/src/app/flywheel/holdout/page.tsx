@@ -28,7 +28,7 @@ import {
   Badge, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton,
   Table, TableBody, TableHead, TableRow, Td, Th,
 } from '@/components/ui';
-import { Reveal, Stagger, StaggerItem, SyntheticBadge } from '@/components/flywheel/motion';
+import { Reveal, SyntheticBadge } from '@/components/flywheel/motion';
 import { fetchCampaignHoldout, fetchHoldoutOverview, pct } from '@/lib/flywheel';
 import type { CampaignHoldout, HoldoutOverview } from '@/types/flywheel';
 
@@ -155,8 +155,8 @@ export default function HoldoutPage() {
         </Card>
       </Reveal>
 
-      <Stagger>
-        <StaggerItem>
+      <div className="space-y-4">
+        <Reveal>
           <Card padding="lg" className="mb-4">
             <h3 className="font-medium mb-3">Holdout across campaigns</h3>
             {campaigns.length === 0 ? (
@@ -197,11 +197,11 @@ export default function HoldoutPage() {
             )}
             <p className="text-xs text-[var(--muted)] mt-3">{overview?.note}</p>
           </Card>
-        </StaggerItem>
+        </Reveal>
 
         {/* ── BALANCE ────────────────────────────────────────────────────── */}
         {detail ? (
-          <StaggerItem>
+          <Reveal>
             <Card padding="lg">
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
@@ -281,9 +281,9 @@ export default function HoldoutPage() {
                 {detail.assignment_method}
               </div>
             </Card>
-          </StaggerItem>
+          </Reveal>
         ) : null}
-      </Stagger>
+      </div>
     </div>
   );
 }
