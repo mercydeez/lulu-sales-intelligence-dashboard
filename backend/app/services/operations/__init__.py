@@ -25,6 +25,7 @@ from app.services.operations.policy import (
     can_approve,
     get_policy,
 )
+from app.services.operations.runner import recommend_for_finding
 
 __all__ = [
     "ActionType",
@@ -39,4 +40,5 @@ __all__ = [
     "MalformedPolicyError",
     "can_approve",
     "get_policy",
+    "recommend_for_finding",
 ]
