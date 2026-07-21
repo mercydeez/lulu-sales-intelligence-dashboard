@@ -41,6 +41,7 @@ export const en: Dict = {
   'nav.analytics': 'Analytics',
   'nav.value': 'Value',
   'nav.insights': 'Insights',
+  'nav.operationsCopilot': 'Operations Copilot',
   'nav.actionDrafts': 'Action Drafts',
   'nav.flywheel': 'Flywheel',
   // Flywheel horizon surfaces (H1: incrementality/holdout/governance/shadow;
@@ -103,6 +104,7 @@ export const ar: Dict = {
   'nav.analytics': 'التحليلات',
   'nav.value': 'القيمة',
   'nav.insights': 'الرؤى',
+  'nav.operationsCopilot': 'مساعد العمليات',
   'nav.actionDrafts': 'مسودات الإجراءات',
   'nav.flywheel': 'Flywheel',
   // Flywheel horizon surfaces

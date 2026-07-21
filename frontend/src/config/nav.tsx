@@ -76,6 +76,7 @@ export const navItems: NavItem[] = [
   { label: 'Value', tKey: 'nav.value', href: '/value', icon: <TrendingUp className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Analytics', tKey: 'nav.analytics', href: '/analytics', icon: <BarChart3 className="w-5 h-5" /> },
   { label: 'Insights', tKey: 'nav.insights', href: '/insights', icon: <Lightbulb className="w-5 h-5" /> },
+  { label: 'Operations Copilot', tKey: 'nav.operationsCopilot', href: '/operations', icon: <ClipboardCheck className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Sage Copilot', tKey: 'nav.sageCopilot', href: '/copilot', icon: <Lightbulb className="w-5 h-5" />, roles: ['super_admin'] },
   { label: 'Action Drafts', tKey: 'nav.actionDrafts', href: '/action-drafts', icon: <Wand2 className="w-5 h-5" />, permission: 'can_manage_inventory' },
   { label: 'Flywheel', tKey: 'nav.flywheel', href: '/flywheel', icon: <Repeat className="w-5 h-5" />, permission: 'can_manage_promotions' },
