@@ -108,6 +108,27 @@ export interface ShortageResolution {
   atp?: AtpSnapshot;
 }
 
+/** Is the input data fit to decide on? Returned by the data-trust gate, which
+ *  simulate() and activate() also enforce server-side. */
+export type DataTrustStatus = 'READY' | 'READY_WITH_WARNINGS' | 'NOT_READY';
+
+export interface DataTrustFinding {
+  code: string;
+  severity: 'block' | 'warn';
+  detail: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface DataTrustReport {
+  status: DataTrustStatus;
+  campaign_id: number | null;
+  findings: DataTrustFinding[];
+  blockers: string[];
+  warnings: string[];
+  scope: { stores_evaluated: number; items_evaluated: number };
+  thresholds: Record<string, number>;
+}
+
 /** Distribution-based view of the simulation: a lognormal response multiplier
  *  sampled many times, rather than the fixed 0.6x/1.0x/1.4x scenario band.
  *  Optional because a campaign simulated before this shipped has no block. */
@@ -132,6 +153,9 @@ export interface SimulationResult {
   action_mix: Record<string, number>;
   scenarios: { pessimistic: Scenario; expected: Scenario; optimistic: Scenario };
   uncertainty?: SimulationUncertainty;
+  /** How far the numbers above can be trusted. Optional: campaigns simulated
+   *  before the gate shipped carry no report. */
+  data_trust?: DataTrustReport;
   discount_budget_declared_aed: string;
   budget_sufficient: boolean;
   inventory: { skus_evaluated: number; shortages: Shortage[]; resolutions: ShortageResolution[] };

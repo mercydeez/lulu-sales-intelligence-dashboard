@@ -459,7 +459,11 @@ async def build_audience(
             accessible_store_ids=get_accessible_store_ids(user) or None)
     except DataNotReady as exc:
         # 422: the request is well-formed, the DATA is not fit to decide on.
-        raise HTTPException(422, {"message": str(exc), "data_trust": exc.report})
+        # A STRING, not a dict: the app-wide error handler assigns exc.detail
+        # straight to the envelope's "message" field, so a dict here produces a
+        # malformed message. The structured report stays available on the
+        # dedicated GET .../data-trust endpoint, which the UI already holds.
+        raise HTTPException(422, str(exc))
     except TransitionError as exc:
         raise HTTPException(409, str(exc))
     except ValueError as exc:
@@ -546,7 +550,7 @@ async def activate_campaign(
         return await campaign_service.activate(
             db, tenant_id=_tenant(user), campaign_id=campaign_id, user=user)
     except DataNotReady as exc:
-        raise HTTPException(422, {"message": str(exc), "data_trust": exc.report})
+        raise HTTPException(422, str(exc))
     except InsufficientBudget as exc:
         raise HTTPException(409, str(exc))
     except (TransitionError, BudgetError) as exc:

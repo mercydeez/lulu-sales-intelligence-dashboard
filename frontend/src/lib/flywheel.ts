@@ -12,6 +12,7 @@
 import { apiRequest, clearApiCache } from './apiClient';
 import type {
   ApprovalRequestDetail, ApprovalRequestSummary, AtpSnapshot, AudienceResult,
+  DataTrustReport,
   BudgetOverview, CampaignDetail, CampaignSummary, CustomerDetail, DecisionTrace,
   EvaluateResult, FlywheelCustomer, FlywheelHealth, LiveMetrics, MeasurementResult,
   ModelVersion, RedeemResult, Requisition, SimulationResult,
@@ -101,6 +102,12 @@ export const buildAudience = (id: number, body: { min_churn_probability?: number
 export const simulateCampaign = (id: number, sample_size = 400) =>
   apiRequest<SimulationResult>(`/api/flywheel/campaigns/${id}/simulate`,
     { method: 'POST', params: { sample_size } });
+
+/** The data-trust verdict for a campaign. Read-only, and the same gate the
+ *  server enforces on simulate/activate — so the studio can show WHY something
+ *  will be refused before the operator spends effort hitting the refusal. */
+export const fetchCampaignDataTrust = (id: number) =>
+  apiRequest<DataTrustReport>(`/api/flywheel/campaigns/${id}/data-trust`);
 
 export const submitCampaign = (id: number) =>
   apiRequest<{ request_id: number; step_count: number; campaign_status: string; simulation: SimulationResult }>(

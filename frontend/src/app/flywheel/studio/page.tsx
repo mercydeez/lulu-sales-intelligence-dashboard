@@ -27,10 +27,11 @@ import {
 import { Badge, Button, Card, Input, PageHeader, Select } from '@/components/ui';
 import { EASE, Reveal, SyntheticBadge } from '@/components/flywheel/motion';
 import {
-  LADDER_LABELS, aed, buildAudience, createCampaign, simulateCampaign,
-  submitCampaign,
+  LADDER_LABELS, aed, buildAudience, createCampaign, fetchCampaignDataTrust,
+  simulateCampaign, submitCampaign,
 } from '@/lib/flywheel';
-import type { AudienceResult, SimulationResult } from '@/types/flywheel';
+import { DataTrustPanel } from '@/components/flywheel/DataTrustPanel';
+import type { AudienceResult, DataTrustReport, SimulationResult } from '@/types/flywheel';
 
 const STEPS = [
   { key: 'objective', label: 'Objective', icon: Target },
@@ -73,6 +74,9 @@ export default function CampaignStudio() {
   const [audience, setAudience] = useState<AudienceResult | null>(null);
   const [simulation, setSimulation] = useState<SimulationResult | null>(null);
   const [approval, setApproval] = useState<{ request_id: number; step_count: number } | null>(null);
+  const [trust, setTrust] = useState<DataTrustReport | null>(null);
+  const [trustLoading, setTrustLoading] = useState(false);
+  const [trustUnavailable, setTrustUnavailable] = useState<string | null>(null);
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -114,11 +118,45 @@ export default function CampaignStudio() {
     setStep(2);
   });
 
+  // The verdict is fetched when the operator ARRIVES at the simulation step, not
+  // when they press the button. The server refuses to simulate on NOT_READY, and
+  // discovering that only after pressing turns spent effort into a dead end; this
+  // way the reasons are on screen while there is still something to do about them.
+  //
+  // A failure here never blocks the wizard — an unreachable checker is not
+  // evidence that the data is bad, and the server enforces the gate regardless.
+  const loadTrust = useCallback(async (id: number) => {
+    setTrustLoading(true); setTrustUnavailable(null);
+    try {
+      setTrust(await fetchCampaignDataTrust(id));
+    } catch (e) {
+      setTrust(null);
+      setTrustUnavailable(e instanceof Error ? e.message : 'check failed');
+    } finally {
+      setTrustLoading(false);
+    }
+  }, []);
+
+  const goToSimulation = () => guard(async () => {
+    if (!campaignId) throw new Error('Create the campaign first');
+    setStep(4);
+    await loadTrust(campaignId);
+  });
+
   const runSimulation = () => guard(async () => {
     if (!campaignId) throw new Error('Create the campaign first');
-    const result = await simulateCampaign(campaignId, 400);
-    setSimulation(result);
-    setStep(4);
+    try {
+      const result = await simulateCampaign(campaignId, 400);
+      setSimulation(result);
+      // The response carries its own verdict; prefer it over the pre-flight copy.
+      if (result.data_trust) setTrust(result.data_trust);
+      setStep(4);
+    } catch (e) {
+      // A refusal is the gate doing its job. Re-read the report so the panel
+      // shows WHICH inputs are at fault rather than just the refusal text.
+      await loadTrust(campaignId);
+      throw e;
+    }
   });
 
   const runSubmit = () => guard(async () => {
@@ -420,8 +458,18 @@ export default function CampaignStudio() {
           {step === 4 && (
             <Card padding="lg">
               <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Financial simulation</h2>
+
+              {/* Readiness first: it decides whether the button below will work
+                  at all, so it belongs above the button, not beside the results. */}
+              <DataTrustPanel
+                report={trust}
+                loading={trustLoading}
+                unavailable={trustUnavailable}
+                className="mt-3"
+              />
+
               {!simulation ? (
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
                   Run the real optimizer over a sample of the audience to see what this campaign
                   would actually do. Nothing is committed.
                 </p>
@@ -689,8 +737,14 @@ export default function CampaignStudio() {
                 Build audience
               </Button>
             )}
-            {(step === 2 || step === 3) && (
+            {step === 2 && (
               <Button variant="primary" onClick={() => setStep((s) => s + 1)} disabled={busy}>
+                Continue <ArrowRight className="w-4 h-4 ml-1.5" />
+              </Button>
+            )}
+            {/* Entering the simulation step pre-flights the data-trust check. */}
+            {step === 3 && (
+              <Button variant="primary" onClick={goToSimulation} disabled={busy}>
                 Continue <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
             )}
@@ -700,7 +754,17 @@ export default function CampaignStudio() {
                   Continue to approval <ArrowRight className="w-4 h-4 ml-1.5" />
                 </Button>
               ) : (
-                <Button variant="primary" onClick={runSimulation} disabled={busy}>
+                // Disabled on NOT_READY rather than letting the click fail: the
+                // panel above already names every blocker, so the refusal is
+                // explained before it happens instead of after.
+                <Button
+                  variant="primary"
+                  onClick={runSimulation}
+                  disabled={busy || trust?.status === 'NOT_READY'}
+                  title={trust?.status === 'NOT_READY'
+                    ? 'Resolve the data readiness blockers above first'
+                    : undefined}
+                >
                   {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <TrendingUp className="w-4 h-4 mr-1.5" />}
                   Run simulation
                 </Button>
