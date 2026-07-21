@@ -67,6 +67,12 @@ def _d(x) -> Decimal:
     return Decimal(str(x))
 
 
+def _seed_for(campaign_id, label) -> int:
+    """Stable Monte Carlo seed so a persisted decision reproduces exactly."""
+    import hashlib
+    return int(hashlib.sha256(f"{campaign_id}:{label}".encode()).hexdigest()[:8], 16)
+
+
 def _q(x: Decimal) -> Decimal:
     return x.quantize(CENT, ROUND_HALF_UP)
 
@@ -531,9 +537,19 @@ def build_scenario_pack(ctx: Dict, depths: Tuple[int, ...] = (0, 5, 10, 15)) -> 
     # the rest are discount depths.
     labelled: List[Tuple[str, int]] = [("reminder", 0)] + [(f"{d}pct", d) for d in depths if d > 0]
 
+    # Quantile base demand (board pack p.7). Falls back to the symmetric band
+    # when a caller supplies no demand distribution.
+    bq = ctx.get("baseline_quantiles") or {}
+    base_p10 = bq.get("p10", int(baseline * (1 - _DEMAND_BAND)))
+    base_p50 = bq.get("p50", baseline)
+    base_p90 = bq.get("p90", int(baseline * (1 + _DEMAND_BAND)))
+
     for label, depth in labelled:
         lift_frac = _REMINDER_LIFT if label == "reminder" else price_response(depth)
-        d_low, d_exp, d_high = demand_range(baseline, lift_frac)
+        # Campaign demand band = base-demand quantiles carrying the promoted lift.
+        d_low = int(round(base_p10 * (1 + lift_frac * (1 - _DEMAND_BAND))))
+        d_exp = int(round(base_p50 * (1 + lift_frac)))
+        d_high = int(round(base_p90 * (1 + lift_frac * (1 + _DEMAND_BAND))))
         promoted_lift = d_exp - baseline
         cat = category_effects(promoted_lift)
 
@@ -566,10 +582,27 @@ def build_scenario_pack(ctx: Dict, depths: Tuple[int, ...] = (0, 5, 10, 15)) -> 
                     policy_ok, policy_reason = False, "below_min_margin_floor"
         fin = finance_outcomes(d_low, d_exp, d_high, baseline, price, cost, disc,
                                contacted, committed_cash, expiry_loss, campaign_weeks)
+        # Monte Carlo: propagate demand/response/returns/expiry uncertainty into
+        # a profit distribution with tail loss (board pack p.9/p.10). Seeded from
+        # (campaign, depth) so a board decision reproduces exactly.
+        from app.services.scenario_math import monte_carlo, cash_at_risk
+        mc = monte_carlo(
+            base_p10=base_p10, base_p50=base_p50, base_p90=base_p90,
+            lift_fraction=lift_frac, contacted=contacted,
+            response_prob=max(0.01, ctx["audience"]["avg_promo_rate"] or 0.2),
+            price=price, cost=cost, discount_pct=disc,
+            supply_units=ctx["atp"] + ctx["incoming"],
+            units_expiring=ctx["units_expiring_before_end"],
+            fixed_cost=_d(fin["media_cost_aed"]) + _COMM_COST * contacted,
+            seed=_seed_for(ctx["campaign_id"], label))
+        car = cash_at_risk(mc, committed_cash)
+
         # Customer-harm penalty: deep discounts on discount-conditioned audiences.
         harm = _d(fin["discount_liability_aed"]) * Decimal("0.05") if depth >= 15 else Decimal("0")
-        rav = risk_adjusted_value(_d(fin["net_profit_expected_aed"]),
-                                  _d(fin["worst_credible_loss_aed"]),
+        # Downside now comes from the Monte Carlo tail (CVaR@5%) rather than a
+        # single deterministic low case — a more honest worst credible loss.
+        rav = risk_adjusted_value(_d(mc["profit_mean_aed"]),
+                                  _d(mc["cvar_5pct_aed"]),
                                   committed_cash, expiry_loss, harm)
 
         conflicts = detect_conflicts(
@@ -593,6 +626,7 @@ def build_scenario_pack(ctx: Dict, depths: Tuple[int, ...] = (0, 5, 10, 15)) -> 
             "conflicts": conflicts, "expected_redemptions": expected_redemptions,
             "response_prob": resp, "confidence": "low",
             "policy_ok": policy_ok, "policy_reason": policy_reason,
+            "monte_carlo": mc, "cash_at_risk": car,
         })
 
     rec = recommend(scenarios, readiness["status"], has_irreversible)
@@ -608,7 +642,9 @@ def build_scenario_pack(ctx: Dict, depths: Tuple[int, ...] = (0, 5, 10, 15)) -> 
         "data_readiness": readiness,
         "baseline_no_campaign": {"units_over_horizon": baseline,
                                  "daily_avg": ctx["baseline_daily_avg"],
-                                 "source": ctx["baseline_source"]},
+                                 "source": ctx["baseline_source"],
+                                 "p10": base_p10, "p50": base_p50, "p90": base_p90,
+                                 "quantiles": bq or None},
         "audience": ctx["audience"],
         "operations": ctx["operations"],
         "scenarios": scenarios,
@@ -646,18 +682,23 @@ async def gather_context(db: AsyncSession, tenant_id: int, campaign: Dict) -> Di
     price = _d(item["unit_price_aed"])
     cost = _d(item["unit_cost_aed"]) if item["unit_cost_aed"] is not None else None
 
-    # Per-SKU baseline: trailing 84-day mean daily units at this store/item.
-    base = (await db.execute(text("""
-        SELECT COALESCE(SUM(sales), 0) AS units,
-               COUNT(DISTINCT date) AS days,
-               MAX(date) AS last_date
+    # Per-SKU baseline: the trailing-84-day DAILY DEMAND SERIES, kept as a
+    # distribution (board pack p.7) rather than collapsed to a single mean.
+    series_rows = (await db.execute(text("""
+        SELECT date AS d, SUM(sales) AS units
         FROM sales_fact_view
         WHERE tenant_id = :t AND store_id = :s AND item_id = :i
           AND date >= CURRENT_DATE - 84
-    """), {"t": tenant_id, "s": store_id, "i": item_id})).mappings().fetchone()
-    daily_avg = (float(base["units"]) / base["days"]) if base["days"] else 0.0
-    baseline_units = int(round(daily_avg * horizon_days))
-    sales_age = (date.today() - base["last_date"]).days if base["last_date"] else None
+        GROUP BY date ORDER BY date
+    """), {"t": tenant_id, "s": store_id, "i": item_id})).mappings().fetchall()
+    daily_series = [float(r["units"] or 0) for r in series_rows]
+    last_date = series_rows[-1]["d"] if series_rows else None
+    sales_age = (date.today() - last_date).days if last_date else None
+
+    from app.services.scenario_math import base_demand_quantiles
+    bq = base_demand_quantiles(daily_series, horizon_days)
+    baseline_units = bq["p50"]
+    daily_avg = bq["daily_p50"]
 
     inv = (await db.execute(text("""
         SELECT COALESCE(current_stock, 0) AS on_hand,
@@ -759,7 +800,9 @@ async def gather_context(db: AsyncSession, tenant_id: int, campaign: Dict) -> Di
         "price": price, "unit_cost": cost,
         "item_name": item["name"], "category": item["category"],
         "baseline_units": baseline_units, "baseline_daily_avg": round(daily_avg, 2),
-        "baseline_source": "trailing_84d_store_sku_mean",
+        "baseline_source": "trailing_84d_empirical_quantile",
+        "baseline_quantiles": bq,
+        "daily_series_len": len(daily_series),
         "sales_age_days": sales_age,
         "on_hand": int(inv["on_hand"]), "atp": atp, "incoming": incoming,
         "units_expiring_before_end": units_expiring,

@@ -1,5 +1,70 @@
 # AI Commercial Orchestration — Phase 0 + Phase 1
 
+> **Board pack v3 alignment.** This implements the phased delivery on p.14 of
+> `retail_iq_board_algorithm_decision_pack_v3.pdf`. Phase 0 (gate: *transaction
+> safety*) and Phase 1 (gate: *scenario maths*) are **closed with evidence**
+> below. Phases 2–5 (causal uplift, CP-SAT procurement, sequential live control,
+> adaptive bandits) remain deliberately gated — the pack is explicit that
+> "algorithm names are recommendations to benchmark, not claims that they are
+> already implemented" (p.13) and that deep learning/bandits are Phase-5
+> candidates, not starting points (p.14).
+
+## Gate status
+
+| Phase | Gate | Status |
+|---|---|---|
+| 0 VERIFY | transaction safety | ✅ **closed** — 4 live-Postgres concurrency invariants pass |
+| 1 SIMULATE | scenario maths | ✅ **closed** — quantile base demand + Monte Carlo + CVaR |
+| 2 LEARN CAUSE | causal evidence | ⛔ not started (needs treatment/control history) |
+| 3 OPTIMIZE | feasible + affordable | ⛔ not started (CP-SAT procurement) |
+| 4 CONTROL | live safety | ⛔ not started (SPRT/CUSUM) |
+| 5 ADAPT | stable feedback | ⛔ not started (bandits, registry) |
+
+### Phase 0 gate evidence — `tests/test_retention_concurrency.py` (4 passed, live PG)
+
+Real concurrent transactions, each actor on its own `AsyncSession`:
+
+1. **No negative stock** — 10 concurrent redemptions vs 4 units → exactly 4 succeed, stock lands on 0.
+2. **No overspend** — 10 concurrent redemptions vs a budget fitting 3 → exactly 3 succeed, spend = 6.00, campaign auto-pauses.
+3. **Idempotency under race** — the same key fired 8× concurrently → 1 redemption, 1 unit, 2.00 spent.
+4. **Ledger invariant** — `SUM(retention_budget_ledger spend) == campaign.budget_spent_aed` (no drift).
+
+The module builds its **own** engine because `conftest.py` pins `DATABASE_URL` to a
+throwaway `testdb`; it skips cleanly when no live Postgres is reachable, so
+database-free CI stays green. Engines are created per-test (pytest-asyncio uses a
+fresh event loop per test and asyncpg connections cannot cross loops).
+
+### Phase 1 gate evidence — `scenario_math.py` + `tests/test_scenario_math.py` (16 passed)
+
+Replaced the fixed ±40% band with honest uncertainty (board pack p.7/p.9/p.10):
+
+- **Quantile base demand** — empirical P10/P50/P90 of the SKU-store daily demand
+  series, with horizon spread scaled by √n (day-to-day noise partially cancels;
+  linear scaling would wildly overstate downside). Live sample: P10 277 / P50 300
+  / P90 339 from 75 observations.
+- **Intermittent-demand guard** (Croston territory, p.7) — a series with ≥35%
+  zero-demand periods is flagged `intermittent_low_confidence` rather than being
+  forced into a smooth model; the UI surfaces the warning.
+- **Monte Carlo** (2000 trials, triangular demand draw) propagating base-demand,
+  response, returns and expiry uncertainty into a profit distribution →
+  P10/P50/P90, mean, stockout probability, expected leftover and expiry loss.
+- **CVaR@5%** — mean of the worst 5% of outcomes, plus `cash_at_risk` including
+  committed cash (p.9: "PROFIT ≠ CASH SAFETY").
+- **Determinism** — the RNG is seeded from (campaign, offer depth), so a persisted
+  board decision reproduces exactly from stored inputs.
+
+The risk-adjusted value now uses the Monte Carlo mean and CVaR tail rather than a
+single deterministic low case. Live effect: the reminder scenario correctly
+reports a **33.7% loss probability** with negative CVaR — a downside the previous
+point-estimate engine could not express.
+
+**Why empirical quantiles, not LightGBM-quantile:** the board pack asks for
+quantile forecasting but also insists later algorithms are enabled only when the
+data and controls to trust them exist. `base_demand_quantiles()` is the seam a
+`LGBMRegressor(objective='quantile')` drops into unchanged, once it demonstrably
+beats this baseline on Retail IQ data.
+
+
 Extends the retention module into a campaign **decision control tower**: before
 launch, a reviewer sees normal demand, low/expected/high outcomes across offer
 depths, category effects, inventory & shelf-life risk, *proposed* procurement

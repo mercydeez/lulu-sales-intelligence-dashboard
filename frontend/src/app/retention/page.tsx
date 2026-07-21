@@ -72,6 +72,12 @@ interface ScenarioRow {
     discount_liability_aed: string; weekly_discount_cash_aed: string };
   risk_adjusted: { risk_adjusted_value_aed: string; downside_penalty_aed: string;
     cash_strain_penalty_aed: string };
+  monte_carlo?: { trials: number; profit_p10_aed: string; profit_p50_aed: string;
+    profit_p90_aed: string; profit_mean_aed: string; cvar_5pct_aed: string;
+    loss_probability: number; stockout_probability: number;
+    units_sold_p10: number; units_sold_p50: number; units_sold_p90: number;
+    expected_leftover_units: number; expected_expiry_loss_aed: string };
+  cash_at_risk?: { cash_at_risk_aed: string; committed_cash_aed: string };
   procurement_options: { option: string; units: number; cost_aed: string;
     in_time?: boolean; requires_approval?: boolean; note?: string }[];
   conflicts: Conflict[];
@@ -79,7 +85,10 @@ interface ScenarioRow {
 interface ScenarioPack {
   objective: string;
   data_readiness: { status: string; blockers: string[]; warnings: string[] };
-  baseline_no_campaign: { units_over_horizon: number; daily_avg: number; source: string };
+  baseline_no_campaign: { units_over_horizon: number; daily_avg: number; source: string;
+    p10?: number; p50?: number; p90?: number;
+    quantiles?: { observations: number; zero_share: number; intermittent: boolean;
+      status: string; method: string } | null };
   audience: { audience_size: number; treatment: number; control: number;
     avg_churn: number; consent_share: number };
   scenarios: ScenarioRow[];
@@ -481,9 +490,18 @@ export default function RetentionPage() {
                           <div>
                             <h3 className="text-base font-semibold text-ink">Commercial decision pack</h3>
                             <p className="text-xs text-ink-muted mt-0.5">
-                              Objective: {pack.objective} · baseline {pack.baseline_no_campaign.units_over_horizon} units
-                              (no campaign) · data {pack.data_readiness.status} · confidence {pack.confidence}
+                              Objective: {pack.objective} · no-campaign baseline{' '}
+                              {pack.baseline_no_campaign.p10 != null
+                                ? `P10 ${pack.baseline_no_campaign.p10} / P50 ${pack.baseline_no_campaign.p50} / P90 ${pack.baseline_no_campaign.p90}`
+                                : `${pack.baseline_no_campaign.units_over_horizon}`} units
+                              · data {pack.data_readiness.status} · confidence {pack.confidence}
                             </p>
+                            {pack.baseline_no_campaign.quantiles?.intermittent && (
+                              <p className="text-xs text-amber-700 mt-1">
+                                Intermittent demand ({(pack.baseline_no_campaign.quantiles.zero_share * 100).toFixed(0)}% zero-demand days) —
+                                quantile bands are low-confidence for this SKU.
+                              </p>
+                            )}
                           </div>
                           <div className="text-right">
                             <Badge variant={DECISION_TONE[pack.recommendation.decision] ?? 'neutral'}>
@@ -520,8 +538,9 @@ export default function RetentionPage() {
                             <TableHead>
                               <TableRow>
                                 <Th>Offer</Th><Th>Demand L/E/H</Th><Th>Net category</Th>
-                                <Th>Stock risk</Th><Th>Profit L/E/H (AED)</Th>
-                                <Th>Worst loss</Th><Th>Risk-adj value</Th><Th>Policy</Th>
+                                <Th>Stock risk</Th><Th>Profit P10/P50/P90 (AED)</Th>
+                                <Th>CVaR 5%</Th><Th>Loss prob.</Th>
+                                <Th>Risk-adj value</Th><Th>Policy</Th>
                               </TableRow>
                             </TableHead>
                             <TableBody>
@@ -539,14 +558,21 @@ export default function RetentionPage() {
                                         cann −{s.category.cannibalized_units} · halo +{s.category.halo_units} · fwd −{s.category.forward_bought_units}
                                       </span>
                                     </Td>
-                                    <Td>{s.inventory.stockout_risk_high_case
-                                      ? <Badge size="sm" variant="danger">stockout</Badge>
+                                    <Td>{s.monte_carlo && s.monte_carlo.stockout_probability > 0
+                                      ? <Badge size="sm" variant="danger">stockout {(s.monte_carlo.stockout_probability * 100).toFixed(0)}%</Badge>
                                       : s.inventory.expected_expiry_units > 0
                                         ? <Badge size="sm" variant="amber">expiry {s.inventory.expected_expiry_units}</Badge>
                                         : <span className="text-ink-muted text-xs">ok</span>}
                                     </Td>
-                                    <Td>{s.finance.net_profit_low_aed}/{s.finance.net_profit_expected_aed}/{s.finance.net_profit_high_aed}</Td>
-                                    <Td>{s.finance.worst_credible_loss_aed}</Td>
+                                    <Td>{s.monte_carlo
+                                      ? `${s.monte_carlo.profit_p10_aed}/${s.monte_carlo.profit_p50_aed}/${s.monte_carlo.profit_p90_aed}`
+                                      : `${s.finance.net_profit_low_aed}/${s.finance.net_profit_expected_aed}/${s.finance.net_profit_high_aed}`}</Td>
+                                    <Td>{s.monte_carlo?.cvar_5pct_aed ?? s.finance.worst_credible_loss_aed}</Td>
+                                    <Td>{s.monte_carlo
+                                      ? <Badge size="sm" variant={s.monte_carlo.loss_probability > 0.2 ? 'danger' : s.monte_carlo.loss_probability > 0.05 ? 'amber' : 'success'}>
+                                          {(s.monte_carlo.loss_probability * 100).toFixed(1)}%
+                                        </Badge>
+                                      : '—'}</Td>
                                     <Td className="font-medium">{s.risk_adjusted.risk_adjusted_value_aed}</Td>
                                     <Td>{s.policy_ok
                                       ? <span className="text-emerald-600 text-xs">ok</span>
