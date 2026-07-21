@@ -624,10 +624,18 @@ async def stream_operations(
     request: Request,
     current_user: dict = Depends(get_current_user_from_ticket)
 ):
-    """SSE endpoint for the Operations Copilot queue. Tenant-filtered.
+    """SSE endpoint for the Operations Copilot queue. Tenant-filtered, and gated to
+    operators to match the rest of /api/operations (an analyst who cannot see the
+    REST surface must not receive its live feed either).
 
     Returns events: `connected`, then `operations` for each run/proposal change.
     """
+    role = current_user.get("role")
+    perms = current_user.get("permissions", {}) or {}
+    if role not in ("super_admin", "admin", "regional_manager", "store_manager") \
+            and not perms.get("can_manage_inventory"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Operator role required")
     return EventSourceResponse(operations_event_generator(request, current_user))
 
 

@@ -140,11 +140,18 @@ async def approve_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_i
     if not prop:
         raise NotFound()
 
-    # Idempotent replay: same key already recorded on this proposal.
-    if prop.get("idempotency_key") == idempotency_key and prop["status"] in (
-            "approved", "executing", "executed"):
-        return {"proposal_id": proposal_id, "status": prop["status"],
+    # Already executed -> idempotent return.
+    if prop["status"] == "executed" and prop.get("executed_ref"):
+        return {"proposal_id": proposal_id, "run_id": prop["run_id"], "status": "executed",
                 "executed_ref": prop.get("executed_ref"), "idempotent": True}
+
+    # Approved-but-not-executed (a prior execution crashed, or a replay of the same
+    # key): DRIVE EXECUTION rather than returning a stuck 'approved'. This is the
+    # retry path — an approved action is never silently dropped.
+    if prop["status"] in ("approved", "execution_failed") and \
+            prop.get("idempotency_key") == idempotency_key:
+        return await execute_proposal(db, user=user, proposal_id=proposal_id,
+                                      request_id=request_id)
 
     if prop["status"] != "awaiting_approval":
         raise Conflict(f"proposal is {prop['status']}, not awaiting approval")
@@ -152,8 +159,11 @@ async def approve_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_i
     policy = await get_policy(db, tenant_id)
 
     if prop.get("expires_at") and is_expired_row(prop["expires_at"]):
-        await _cas_update(db, proposal_id, tenant_id, expected_version,
-                          {"status": "expired", "version": expected_version + 1})
+        result = await _cas_update(db, proposal_id, tenant_id, expected_version,
+                                   {"status": "expired", "version": expected_version + 1})
+        if result.rowcount == 0:                 # stale version — nothing changed
+            await db.rollback()
+            raise Conflict()
         await _event(db, tenant_id, prop["run_id"], proposal_id, "proposal.expired",
                      user.get("email") or "system", user.get("id"), {}, request_id)
         await db.commit()
@@ -173,11 +183,16 @@ async def approve_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_i
         await db.commit()
         raise Forbidden(why)
 
-    # OCC approve.
-    result = await _cas_update(db, proposal_id, tenant_id, expected_version, {
-        "status": "approved", "approved_by": user.get("email"),
-        "approved_at": datetime.now(timezone.utc), "idempotency_key": idempotency_key,
-        "version": expected_version + 1})
+    # OCC approve. A cross-proposal idempotency-key collision (tenant-wide unique
+    # index) surfaces as a clean 409, never a 500.
+    try:
+        result = await _cas_update(db, proposal_id, tenant_id, expected_version, {
+            "status": "approved", "approved_by": user.get("email"),
+            "approved_at": datetime.now(timezone.utc), "idempotency_key": idempotency_key,
+            "version": expected_version + 1})
+    except IntegrityError:
+        await db.rollback()
+        raise Conflict("idempotency key already used on another proposal")
     if result.rowcount == 0:
         await db.rollback()
         raise Conflict()
@@ -186,8 +201,8 @@ async def approve_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_i
                  {"role": user.get("role")}, request_id)
     await db.commit()
 
-    # Invocation B: revalidate + execute. A failure here leaves the approval
-    # standing (status='approved') so it can be retried; it is not lost.
+    # Invocation B: revalidate + execute. A failure here marks the proposal
+    # 'execution_failed' (durable, retryable) so the approved action is not lost.
     return await execute_proposal(db, user=user, proposal_id=proposal_id,
                                   request_id=request_id)
 
@@ -200,7 +215,8 @@ async def reject_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_id
     if not prop:
         raise NotFound()
     if prop.get("idempotency_key") == idempotency_key and prop["status"] == "rejected":
-        return {"proposal_id": proposal_id, "status": "rejected", "idempotent": True}
+        return {"proposal_id": proposal_id, "run_id": prop["run_id"],
+                "status": "rejected", "idempotent": True}
     if prop["status"] != "awaiting_approval":
         raise Conflict(f"proposal is {prop['status']}, not awaiting approval")
 
@@ -212,10 +228,14 @@ async def reject_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_id
     if not allowed:
         raise Forbidden(why)
 
-    result = await _cas_update(db, proposal_id, tenant_id, expected_version, {
-        "status": "rejected", "rejection_reason": reason,
-        "approved_by": user.get("email"), "idempotency_key": idempotency_key,
-        "version": expected_version + 1})
+    try:
+        result = await _cas_update(db, proposal_id, tenant_id, expected_version, {
+            "status": "rejected", "rejection_reason": reason,
+            "approved_by": user.get("email"), "idempotency_key": idempotency_key,
+            "version": expected_version + 1})
+    except IntegrityError:
+        await db.rollback()
+        raise Conflict("idempotency key already used on another proposal")
     if result.rowcount == 0:
         await db.rollback()
         raise Conflict()
@@ -224,7 +244,7 @@ async def reject_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_id
                  user.get("email") or "system", user.get("id"), {"reason": reason},
                  request_id)
     await db.commit()
-    return {"proposal_id": proposal_id, "status": "rejected"}
+    return {"proposal_id": proposal_id, "run_id": prop["run_id"], "status": "rejected"}
 
 
 async def cancel_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_id: int,
@@ -235,7 +255,8 @@ async def cancel_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_id
     if not prop:
         raise NotFound()
     if prop["status"] in ("cancelled",):
-        return {"proposal_id": proposal_id, "status": "cancelled", "idempotent": True}
+        return {"proposal_id": proposal_id, "run_id": prop["run_id"],
+                "status": "cancelled", "idempotent": True}
     if prop["status"] not in ("awaiting_approval", "approved"):
         raise Conflict(f"cannot cancel a proposal that is {prop['status']}")
 
@@ -248,7 +269,7 @@ async def cancel_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_id
     await _event(db, tenant_id, prop["run_id"], proposal_id, "proposal.cancelled",
                  user.get("email") or "system", user.get("id"), {}, request_id)
     await db.commit()
-    return {"proposal_id": proposal_id, "status": "cancelled"}
+    return {"proposal_id": proposal_id, "run_id": prop["run_id"], "status": "cancelled"}
 
 
 # ---------------------------------------------------------------------------
@@ -272,8 +293,11 @@ async def execute_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_i
         raise NotFound()
 
     if prop["status"] == "executed" and prop.get("executed_ref"):
-        return {"proposal_id": proposal_id, "status": "executed",
+        return {"proposal_id": proposal_id, "run_id": prop["run_id"], "status": "executed",
                 "executed_ref": prop["executed_ref"], "idempotent": True}
+    # Only an approved (or previously-failed) proposal is executable — this status
+    # gate is the guard that stops an un-approved proposal ever being executed,
+    # even though this function is not itself route-mounted.
     if prop["status"] not in ("approved", "execution_failed"):
         raise Conflict(f"proposal is {prop['status']}, not approved for execution")
 
@@ -291,28 +315,43 @@ async def execute_proposal(db: AsyncSession, *, user: Dict[str, Any], proposal_i
                      user.get("email") or "system", user.get("id"),
                      {"detail": detail}, request_id)
         await db.commit()
-        return {"proposal_id": proposal_id, "status": "superseded",
-                "revalidation": detail}
+        return {"proposal_id": proposal_id, "run_id": prop["run_id"],
+                "status": "superseded", "revalidation": detail}
 
     # --- EXECUTE (draft-only) ----------------------------------------------
-    draft_id = await _create_internal_draft(db, tenant_id, prop, user)
-    executed_ref = f"action_draft:{draft_id}"
-
-    result = await _cas_update(db, proposal_id, tenant_id, version, {
-        "status": "executed", "executed_ref": executed_ref,
-        "executed_at": datetime.now(timezone.utc), "version": version + 1})
-    if result.rowcount == 0:
+    # On any failure the proposal is marked 'execution_failed' (durable + retryable
+    # via a replayed approve) rather than left stuck 'approved' with no draft.
+    try:
+        draft_id = await _create_internal_draft(db, tenant_id, prop, user)
+        executed_ref = f"action_draft:{draft_id}"
+        result = await _cas_update(db, proposal_id, tenant_id, version, {
+            "status": "executed", "executed_ref": executed_ref,
+            "executed_at": datetime.now(timezone.utc), "version": version + 1})
+        if result.rowcount == 0:
+            await db.rollback()
+            raise Conflict()
+        # Schedule measurement by handing the finding to the existing worker loop.
+        await _schedule_measurement(db, tenant_id, prop, user)
+        await _finalise_run_status(db, tenant_id, prop["run_id"], "measuring")
+        await _event(db, tenant_id, prop["run_id"], proposal_id, "action.executed",
+                     user.get("email") or "system", user.get("id"),
+                     {"executed_ref": executed_ref, "draft_only": True}, request_id)
+        await db.commit()
+    except Conflict:
+        raise
+    except Exception as exc:
+        logger.exception("operations execution failed for proposal %s", proposal_id)
         await db.rollback()
-        raise Conflict()
-
-    # Schedule measurement by handing the finding to the existing worker loop.
-    await _schedule_measurement(db, tenant_id, prop, user)
-    await _finalise_run_status(db, tenant_id, prop["run_id"], "measuring")
-    await _event(db, tenant_id, prop["run_id"], proposal_id, "action.executed",
-                 user.get("email") or "system", user.get("id"),
-                 {"executed_ref": executed_ref, "draft_only": True}, request_id)
-    await db.commit()
-    return {"proposal_id": proposal_id, "status": "executed",
+        # Durable, retryable marker — the approved action is not silently dropped.
+        await _cas_update(db, proposal_id, tenant_id, version, {
+            "status": "execution_failed", "version": version + 1})
+        await _event(db, tenant_id, prop["run_id"], proposal_id, "execution.failed",
+                     user.get("email") or "system", user.get("id"),
+                     {"error": str(exc)[:300]}, request_id)
+        await db.commit()
+        raise ApprovalError("execution failed — the approval stands and can be retried",
+                            code=500)
+    return {"proposal_id": proposal_id, "run_id": prop["run_id"], "status": "executed",
             "executed_ref": executed_ref, "draft_only": True}
 
 
