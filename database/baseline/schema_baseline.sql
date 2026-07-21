@@ -3898,6 +3898,103 @@ CREATE SEQUENCE public.online_prices_id_seq
 
 ALTER SEQUENCE public.online_prices_id_seq OWNED BY public.online_prices.id;
 
+CREATE TABLE public.operations_events (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    run_id bigint NOT NULL,
+    proposal_id bigint,
+    event_type text NOT NULL,
+    actor text,
+    actor_user_id integer,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    request_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.operations_events FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.operations_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.operations_events_id_seq OWNED BY public.operations_events.id;
+
+CREATE TABLE public.operations_proposals (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    run_id bigint NOT NULL,
+    finding_id bigint,
+    action_type text NOT NULL,
+    status text DEFAULT 'awaiting_approval'::text NOT NULL,
+    title text NOT NULL,
+    recommendation jsonb DEFAULT '{}'::jsonb NOT NULL,
+    calculated_parameters jsonb DEFAULT '{}'::jsonb NOT NULL,
+    target_store_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
+    target_item_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
+    risk_level text DEFAULT 'medium'::text NOT NULL,
+    required_approval_role text NOT NULL,
+    expires_at timestamp with time zone,
+    version integer DEFAULT 1 NOT NULL,
+    idempotency_key text,
+    approved_by text,
+    approved_at timestamp with time zone,
+    rejection_reason text,
+    assigned_to text,
+    due_at timestamp with time zone,
+    executed_ref text,
+    executed_at timestamp with time zone,
+    payload_version text DEFAULT 'v1'::text NOT NULL,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT operations_proposals_action_type_check CHECK ((action_type = ANY (ARRAY['replenishment_draft'::text, 'stock_transfer_draft'::text, 'investigation_task'::text]))),
+    CONSTRAINT operations_proposals_risk_level_check CHECK ((risk_level = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text]))),
+    CONSTRAINT operations_proposals_status_check CHECK ((status = ANY (ARRAY['awaiting_approval'::text, 'approved'::text, 'rejected'::text, 'executing'::text, 'executed'::text, 'execution_failed'::text, 'expired'::text, 'cancelled'::text, 'superseded'::text])))
+);
+
+ALTER TABLE ONLY public.operations_proposals FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.operations_proposals_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.operations_proposals_id_seq OWNED BY public.operations_proposals.id;
+
+CREATE TABLE public.operations_runs (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    finding_id bigint,
+    status text DEFAULT 'analyzing'::text NOT NULL,
+    phase text,
+    state jsonb DEFAULT '{}'::jsonb NOT NULL,
+    refusal_reason text,
+    error text,
+    payload_version text DEFAULT 'v1'::text NOT NULL,
+    graph_version text DEFAULT 'ops-v1'::text NOT NULL,
+    prompt_version text DEFAULT 'ops-recommend-v1'::text NOT NULL,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT operations_runs_status_check CHECK ((status = ANY (ARRAY['analyzing'::text, 'awaiting_approval'::text, 'executing'::text, 'measuring'::text, 'completed'::text, 'refused'::text, 'escalated'::text, 'rejected'::text, 'cancelled'::text, 'failed'::text])))
+);
+
+ALTER TABLE ONLY public.operations_runs FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.operations_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.operations_runs_id_seq OWNED BY public.operations_runs.id;
+
 CREATE TABLE public.outcome_pricing_plans (
     tenant_id integer NOT NULL,
     base_fee_aed numeric(12,2) DEFAULT 0 NOT NULL,
@@ -5010,6 +5107,27 @@ CREATE TABLE public.tenant_billing_profile (
     CONSTRAINT tenant_billing_profile_store_count_check CHECK (((store_count IS NULL) OR (store_count >= 0)))
 );
 
+CREATE TABLE public.tenant_operations_policies (
+    id bigint NOT NULL,
+    tenant_id integer NOT NULL,
+    policy jsonb DEFAULT '{}'::jsonb NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    updated_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.tenant_operations_policies FORCE ROW LEVEL SECURITY;
+
+CREATE SEQUENCE public.tenant_operations_policies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.tenant_operations_policies_id_seq OWNED BY public.tenant_operations_policies.id;
+
 CREATE TABLE public.tenant_provisioning (
     id integer NOT NULL,
     tenant_id integer NOT NULL,
@@ -5636,6 +5754,12 @@ ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('publi
 
 ALTER TABLE ONLY public.online_prices ALTER COLUMN id SET DEFAULT nextval('public.online_prices_id_seq'::regclass);
 
+ALTER TABLE ONLY public.operations_events ALTER COLUMN id SET DEFAULT nextval('public.operations_events_id_seq'::regclass);
+
+ALTER TABLE ONLY public.operations_proposals ALTER COLUMN id SET DEFAULT nextval('public.operations_proposals_id_seq'::regclass);
+
+ALTER TABLE ONLY public.operations_runs ALTER COLUMN id SET DEFAULT nextval('public.operations_runs_id_seq'::regclass);
+
 ALTER TABLE ONLY public.password_reset_tokens ALTER COLUMN id SET DEFAULT nextval('public.password_reset_tokens_id_seq'::regclass);
 
 ALTER TABLE ONLY public.payment_intents ALTER COLUMN id SET DEFAULT nextval('public.payment_intents_id_seq'::regclass);
@@ -5707,6 +5831,8 @@ ALTER TABLE ONLY public.suppliers ALTER COLUMN id SET DEFAULT nextval('public.su
 ALTER TABLE ONLY public.tenant_admin_notes ALTER COLUMN id SET DEFAULT nextval('public.tenant_admin_notes_id_seq'::regclass);
 
 ALTER TABLE ONLY public.tenant_api_keys ALTER COLUMN id SET DEFAULT nextval('public.tenant_api_keys_id_seq'::regclass);
+
+ALTER TABLE ONLY public.tenant_operations_policies ALTER COLUMN id SET DEFAULT nextval('public.tenant_operations_policies_id_seq'::regclass);
 
 ALTER TABLE ONLY public.tenant_provisioning ALTER COLUMN id SET DEFAULT nextval('public.tenant_provisioning_id_seq'::regclass);
 
@@ -6059,6 +6185,15 @@ ALTER TABLE ONLY public.notifications
 ALTER TABLE ONLY public.online_prices
     ADD CONSTRAINT online_prices_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.operations_events
+    ADD CONSTRAINT operations_events_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.operations_proposals
+    ADD CONSTRAINT operations_proposals_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.operations_runs
+    ADD CONSTRAINT operations_runs_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.outcome_pricing_plans
     ADD CONSTRAINT outcome_pricing_plans_pkey PRIMARY KEY (tenant_id);
 
@@ -6238,6 +6373,12 @@ ALTER TABLE ONLY public.tenant_api_keys
 
 ALTER TABLE ONLY public.tenant_billing_profile
     ADD CONSTRAINT tenant_billing_profile_pkey PRIMARY KEY (tenant_id);
+
+ALTER TABLE ONLY public.tenant_operations_policies
+    ADD CONSTRAINT tenant_operations_policies_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.tenant_operations_policies
+    ADD CONSTRAINT tenant_operations_policies_tenant_id_key UNIQUE (tenant_id);
 
 ALTER TABLE ONLY public.tenant_provisioning
     ADD CONSTRAINT tenant_provisioning_pkey PRIMARY KEY (id);
@@ -6924,6 +7065,20 @@ CREATE INDEX ix_notifications_tenant_user_time ON public.notifications USING btr
 
 CREATE INDEX ix_notifications_unread ON public.notifications USING btree (tenant_id, created_at DESC) WHERE (read_at IS NULL);
 
+CREATE INDEX ix_operations_events_run ON public.operations_events USING btree (run_id, created_at);
+
+CREATE INDEX ix_operations_events_tenant_type ON public.operations_events USING btree (tenant_id, event_type, created_at DESC);
+
+CREATE INDEX ix_operations_proposals_finding ON public.operations_proposals USING btree (tenant_id, finding_id);
+
+CREATE INDEX ix_operations_proposals_run ON public.operations_proposals USING btree (run_id);
+
+CREATE INDEX ix_operations_proposals_tenant_status ON public.operations_proposals USING btree (tenant_id, status, created_at DESC);
+
+CREATE INDEX ix_operations_runs_finding ON public.operations_runs USING btree (tenant_id, finding_id);
+
+CREATE INDEX ix_operations_runs_tenant_status ON public.operations_runs USING btree (tenant_id, status, created_at DESC);
+
 CREATE INDEX ix_payment_intents_external ON public.payment_intents USING btree (provider, external_ref);
 
 CREATE INDEX ix_payment_intents_tenant ON public.payment_intents USING btree (tenant_id, status);
@@ -7006,6 +7161,10 @@ CREATE UNIQUE INDEX uq_flywheel_ledger_idem ON public.flywheel_budget_ledger USI
 
 CREATE UNIQUE INDEX uq_flywheel_season ON public.flywheel_seasonality_calendar USING btree (tenant_id, name, COALESCE(category, ''::character varying));
 
+CREATE UNIQUE INDEX uq_operations_proposals_idem ON public.operations_proposals USING btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
+
+CREATE UNIQUE INDEX uq_operations_runs_live_finding ON public.operations_runs USING btree (tenant_id, finding_id) WHERE (status = ANY (ARRAY['analyzing'::text, 'awaiting_approval'::text, 'executing'::text, 'measuring'::text]));
+
 CREATE UNIQUE INDEX uq_scim_external_users_tenant_extid ON public.scim_external_users USING btree (tenant_id, external_id) WHERE (external_id IS NOT NULL);
 
 CREATE UNIQUE INDEX ux_subscriptions_tenant ON public.subscriptions USING btree (tenant_id);
@@ -7083,6 +7242,12 @@ CREATE TRIGGER trg_sales_stream_raw_confine_synthetic BEFORE INSERT OR UPDATE ON
 CREATE TRIGGER update_emp_performance_updated_at BEFORE UPDATE ON public.employee_performance FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 CREATE TRIGGER update_employees_updated_at BEFORE UPDATE ON public.employees FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_operations_proposals_updated_at BEFORE UPDATE ON public.operations_proposals FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_operations_runs_updated_at BEFORE UPDATE ON public.operations_runs FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_tenant_operations_policies_updated_at BEFORE UPDATE ON public.tenant_operations_policies FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 CREATE TRIGGER update_user_permissions_updated_at BEFORE UPDATE ON public.user_permissions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
@@ -7820,6 +7985,30 @@ ALTER TABLE ONLY public.notifications
 ALTER TABLE ONLY public.notifications
     ADD CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.operations_events
+    ADD CONSTRAINT operations_events_proposal_id_fkey FOREIGN KEY (proposal_id) REFERENCES public.operations_proposals(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.operations_events
+    ADD CONSTRAINT operations_events_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.operations_runs(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.operations_events
+    ADD CONSTRAINT operations_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.operations_proposals
+    ADD CONSTRAINT operations_proposals_finding_id_fkey FOREIGN KEY (finding_id) REFERENCES public.findings(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.operations_proposals
+    ADD CONSTRAINT operations_proposals_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.operations_runs(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.operations_proposals
+    ADD CONSTRAINT operations_proposals_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.operations_runs
+    ADD CONSTRAINT operations_runs_finding_id_fkey FOREIGN KEY (finding_id) REFERENCES public.findings(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.operations_runs
+    ADD CONSTRAINT operations_runs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.outcome_pricing_plans
     ADD CONSTRAINT outcome_pricing_plans_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -8072,6 +8261,9 @@ ALTER TABLE ONLY public.tenant_api_keys
 ALTER TABLE ONLY public.tenant_billing_profile
     ADD CONSTRAINT tenant_billing_profile_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.tenant_operations_policies
+    ADD CONSTRAINT tenant_operations_policies_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.tenant_provisioning
     ADD CONSTRAINT tenant_provisioning_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -8306,6 +8498,12 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.online_prices ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.operations_events ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.operations_proposals ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.operations_runs ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.outcome_pricing_plans ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.payment_intents ENABLE ROW LEVEL SECURITY;
@@ -8514,6 +8712,12 @@ CREATE POLICY tenant_isolation ON public.notifications USING ((tenant_id = publi
 
 CREATE POLICY tenant_isolation ON public.online_prices USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
+CREATE POLICY tenant_isolation ON public.operations_events USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.operations_proposals USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+CREATE POLICY tenant_isolation ON public.operations_runs USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
 CREATE POLICY tenant_isolation ON public.outcome_pricing_plans USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.payment_intents USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
@@ -8570,6 +8774,8 @@ CREATE POLICY tenant_isolation ON public.tenant_api_keys USING ((tenant_id = pub
 
 CREATE POLICY tenant_isolation ON public.tenant_billing_profile USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
+CREATE POLICY tenant_isolation ON public.tenant_operations_policies USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
 CREATE POLICY tenant_isolation ON public.tenant_webhooks USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.transaction_lines USING ((EXISTS ( SELECT 1
@@ -8587,6 +8793,8 @@ CREATE POLICY tenant_isolation ON public.users USING ((tenant_id = public.curren
 CREATE POLICY tenant_isolation ON public.value_realizations USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
 
 CREATE POLICY tenant_isolation ON public.webhook_deliveries USING ((tenant_id = public.current_tenant_id())) WITH CHECK ((tenant_id = public.current_tenant_id()));
+
+ALTER TABLE public.tenant_operations_policies ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.tenant_webhooks ENABLE ROW LEVEL SECURITY;
 
