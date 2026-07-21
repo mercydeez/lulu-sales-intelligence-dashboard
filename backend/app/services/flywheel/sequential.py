@@ -413,12 +413,12 @@ def summarise_balance(checks: Sequence[BalanceCheck]) -> Dict[str, Any]:
     if not imbalanced:
         return {
             "status": "balanced", "checked": len(checks), "imbalanced": [],
-            "note": f"All {len(checks)} covariates within |SMD| <= "
+            "note": f"All {len(checks)} covariates within an SMD of "
                     f"{SMD_IMBALANCE_THRESHOLD}. The arms are comparable.",
         }
     return {
         "status": "imbalanced", "checked": len(checks), "imbalanced": imbalanced,
-        "note": f"{len(imbalanced)} of {len(checks)} covariates exceed |SMD| > "
+        "note": f"{len(imbalanced)} of {len(checks)} covariates have an SMD above "
                 f"{SMD_IMBALANCE_THRESHOLD}: {', '.join(imbalanced)}. Treatment "
                 f"and control are NOT comparable on these, so the incremental "
                 f"figures may reflect the difference between the groups rather "
