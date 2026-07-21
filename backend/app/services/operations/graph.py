@@ -153,10 +153,15 @@ async def gather_and_recommend_node(state: OpsState) -> OpsState:
     snapshots: List[Dict[str, Any]] = []
     item_id = finding_item_id(finding)
     if item_id is not None:
-        scope = accessible_store_ids(user)          # [] => super_admin, tenant-wide
+        role = str(user.get("role") or "").lower()
+        scope = accessible_store_ids(user)
+        # Only a super_admin with NO explicit store list reads tenant-wide (None).
+        # For everyone else the (possibly empty) list is passed through verbatim —
+        # an empty scope returns NO snapshots, never the whole tenant's inventory.
+        store_filter = None if (role == "super_admin" and not scope) else scope
         snapshots = await get_inventory_state(
             state["_db"], tenant_id=state["tenant_id"], item_id=item_id,
-            store_ids=scope or None)
+            store_ids=store_filter)
     state["snapshots"] = snapshots
     _event(state, "evidence.gathered", inventory_rows=len(snapshots),
            item_id=item_id)
@@ -255,9 +260,16 @@ def _get_providers():
 
 
 def _calculated_numbers(rec: OperationsRecommendation) -> List[float]:
+    """Deterministic calculator OUTPUTS the narrative may legitimately cite —
+    quantities, cover, target levels. Store/item IDS are excluded: an identifier
+    is not a measured value, and letting one ground prose would let an LLM's
+    "saves 105 AED" pass whenever 105 happened to be a target store id."""
     nums: List[float] = []
     for action in rec.proposed_actions:
-        for v in action.calculated_parameters.values():
+        for key, v in action.calculated_parameters.items():
+            if key.endswith("_id") or key.endswith("_ids") or "store_id" in key \
+                    or "item_id" in key:
+                continue
             if isinstance(v, (int, float)) and not isinstance(v, bool):
                 nums.append(float(v))
     return nums

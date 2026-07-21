@@ -61,6 +61,7 @@ from app.routes import findings as findings_routes
 from app.routes import search as search_routes
 from app.routes import copilot as copilot_routes
 from app.routes import flywheel as flywheel_routes
+from app.routes import operations as operations_routes
 
 
 # A router, its mount prefix, and its OpenAPI tags.
@@ -123,6 +124,8 @@ ROUTERS: List[RouterSpec] = [
     (findings_routes.router, "/api/findings", ["Diagnostics"]),
     (search_routes.router, "/api/search", ["Search"]),
     (copilot_routes.router, "/api/ai/copilot", ["Sage Copilot"]),
+    # Operations Copilot — finding -> evidence -> human-approved draft -> measure.
+    (operations_routes.router, "/api/operations", ["Operations Copilot"]),
     # Flywheel — the single closed-loop retention decisioning module (churn ->
     # uplift -> EIV -> stock/budget/approval -> execution -> measured lift).
     # The separate /api/retention module was merged into this one; its scenario

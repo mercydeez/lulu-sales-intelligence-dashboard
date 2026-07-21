@@ -13,6 +13,7 @@ CHANNEL_PREDICTIONS = "predictions:update"
 CHANNEL_ALERTS_STREAM = "alerts:stream"
 CHANNEL_INVENTORY_STREAM = "inventory:stream"
 CHANNEL_SECURITY_STREAM = "security:stream"
+CHANNEL_OPERATIONS_STREAM = "operations:stream"
 
 
 async def init_redis():
@@ -93,6 +94,17 @@ async def publish_security_event(event_data: dict):
     if redis_client:
         await redis_client.publish(
             CHANNEL_SECURITY_STREAM,
+            json.dumps(event_data, default=str)
+        )
+
+
+async def publish_operations_event(event_data: dict):
+    """Publish an Operations Copilot status change (run/proposal transition) for
+    the live queue. Fire-and-forget: the durable record is in Postgres, so a
+    missed publish only delays a UI refresh, never loses an audit event."""
+    if redis_client:
+        await redis_client.publish(
+            CHANNEL_OPERATIONS_STREAM,
             json.dumps(event_data, default=str)
         )
 

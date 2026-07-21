@@ -15,7 +15,7 @@ import random
 
 from app.config import logger
 from app.services.database import get_db
-from app.services.redis_client import get_redis, CHANNEL_SALES_STREAM, CHANNEL_ALERTS_STREAM, CHANNEL_INVENTORY_STREAM, CHANNEL_SECURITY_STREAM, publish_alert, publish_inventory_update
+from app.services.redis_client import get_redis, CHANNEL_SALES_STREAM, CHANNEL_ALERTS_STREAM, CHANNEL_INVENTORY_STREAM, CHANNEL_SECURITY_STREAM, CHANNEL_OPERATIONS_STREAM, publish_alert, publish_inventory_update
 from app.models.sales import Sale, Store, Item
 from app.auth_deps import get_current_user, get_current_user_optional, get_current_user_from_ticket, can_access_store, get_accessible_store_ids
 
@@ -587,6 +587,48 @@ async def stream_security(
         from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Admin role required")
     return EventSourceResponse(security_event_generator(request, current_user))
+
+
+async def operations_event_generator(request: Request, current_user: dict):
+    """Stream Operations Copilot status changes for the viewer's tenant only. Each
+    run/proposal transition is published to operations:stream with its tenant_id;
+    we forward only matching events so one tenant never sees another's queue."""
+    redis = await get_redis()
+    pubsub = redis.pubsub()
+    await pubsub.subscribe(CHANNEL_OPERATIONS_STREAM)
+    viewer_tenant = current_user.get("tenant_id") or 1
+
+    yield {"event": "connected", "data": json.dumps({"message": "Connected to operations stream"})}
+
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message and message['type'] == 'message':
+                data = message['data']
+                try:
+                    evt = json.loads(data)
+                    if int(evt.get("tenant_id", 1)) == int(viewer_tenant):
+                        yield {"event": "operations", "data": data}
+                except Exception as e:
+                    logger.warning(f"Error filtering operations event: {e}")
+            await asyncio.sleep(0.1)
+    finally:
+        await pubsub.unsubscribe(CHANNEL_OPERATIONS_STREAM)
+        await pubsub.close()
+
+
+@router.get("/operations")
+async def stream_operations(
+    request: Request,
+    current_user: dict = Depends(get_current_user_from_ticket)
+):
+    """SSE endpoint for the Operations Copilot queue. Tenant-filtered.
+
+    Returns events: `connected`, then `operations` for each run/proposal change.
+    """
+    return EventSourceResponse(operations_event_generator(request, current_user))
 
 
 @router.get("/inventory")

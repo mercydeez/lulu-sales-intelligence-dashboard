@@ -65,12 +65,17 @@ async def get_inventory_state(db: AsyncSession, *, tenant_id: int, item_id: int,
     """Current inventory posture for an item across stores, from the same
     `metric_inventory_state` view the worker uses (single source of truth).
 
-    `store_ids` is the caller's accessible-store scope. An empty/None list means
-    "no store filter" — used ONLY for super_admin, whose scope is the tenant.
+    SCOPE SEMANTICS ARE STRICT so an empty scope can never leak the whole tenant:
+      * store_ids=None   -> NO store filter (tenant-wide). Pass this ONLY for a
+                            super_admin, whose scope IS the tenant.
+      * store_ids=[...]  -> only those stores.
+      * store_ids=[]     -> NOTHING (`= ANY('{}')` matches no row). An empty
+                            accessible-store list is "no stores", not "all stores".
+    The caller (never this function) decides whether a role earns the None path.
     """
     params: Dict[str, Any] = {"t": tenant_id, "item": item_id}
     predicate = ""
-    if store_ids:
+    if store_ids is not None:
         predicate = " AND store_id = ANY(:stores)"
         params["stores"] = list(store_ids)
     rows = (await db.execute(

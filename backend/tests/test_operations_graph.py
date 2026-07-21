@@ -32,7 +32,8 @@ class _MappingResult:
 
 class FakeDB:
     """Returns a finding for the findings query and snapshots for the inventory
-    query, keyed on which table the SQL mentions."""
+    query. Honours the store_ids predicate the way the real query does: None =>
+    all snapshots (tenant-wide), a list => only those stores, [] => nothing."""
 
     def __init__(self, finding=None, snapshots=None):
         self._finding = finding
@@ -43,7 +44,12 @@ class FakeDB:
         if "from findings" in sql:
             return _MappingResult([self._finding] if self._finding else [])
         if "metric_inventory_state" in sql:
-            return _MappingResult(self._snapshots)
+            stores = (params or {}).get("stores")
+            if stores is None:
+                return _MappingResult(self._snapshots)          # tenant-wide
+            allowed = set(stores)
+            return _MappingResult([s for s in self._snapshots
+                                   if s["store_id"] in allowed])
         return _MappingResult([])
 
 
@@ -116,6 +122,40 @@ class TestOrchestration:
         assert "finding.loaded" in types
         assert "finding.fresh" in types
         assert "evidence.gathered" in types
+
+
+@pytest.mark.asyncio
+class TestScopeIsolation:
+    """The store-scope read leak the Phase-2 review found must stay closed."""
+
+    async def test_non_admin_with_empty_scope_reads_no_inventory(self):
+        # A store at 7 is out of stock, but this user has an EMPTY store list.
+        db = FakeDB(stockout_finding(), [snapshot(store_id=7)])
+        state = await run(db, role="store_manager", stores=())
+        # No in-scope inventory => refusal, and NO out-of-scope store leaks in.
+        assert state["status"] in ("refused", "escalated")
+        gathered = next(e for e in state["events"] if e["event_type"] == "evidence.gathered")
+        assert gathered["payload"]["inventory_rows"] == 0
+
+    async def test_non_admin_only_sees_its_own_stores(self):
+        snaps = [snapshot(store_id=7), snapshot(store_id=9, stock=500, velocity=2)]
+        # user can see store 7 only; the surplus donor at 9 must NOT be pulled.
+        state = await run(FakeDB(stockout_finding(), snaps),
+                          role="regional_manager", stores=(7,))
+        gathered = next(e for e in state["events"] if e["event_type"] == "evidence.gathered")
+        assert gathered["payload"]["inventory_rows"] == 1
+        # With no visible donor, this can only be a replenishment (not a transfer
+        # citing store 9 the user cannot see).
+        if state["status"] == "awaiting_approval":
+            assert state["recommendation"]["proposed_actions"][0]["action_type"] \
+                == "replenishment_draft"
+
+    async def test_super_admin_empty_scope_reads_tenant_wide(self):
+        snaps = [snapshot(store_id=7), snapshot(store_id=9, stock=500, velocity=2)]
+        state = await run(FakeDB(stockout_finding(), snaps),
+                          role="super_admin", stores=())
+        gathered = next(e for e in state["events"] if e["event_type"] == "evidence.gathered")
+        assert gathered["payload"]["inventory_rows"] == 2
 
 
 @pytest.mark.asyncio

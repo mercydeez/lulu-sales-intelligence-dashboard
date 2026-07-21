@@ -16,6 +16,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.operations.contracts import GRAPH_VERSION, PROMPT_VERSION
@@ -49,6 +50,8 @@ async def recommend_for_finding(db: AsyncSession, *, user: Dict[str, Any],
     dict: {run_id, status, recommendation, existing}. tenant/user come from the
     server-verified auth context only — never a request body."""
     tenant_id = int(user.get("tenant_id") or 0)
+    if tenant_id <= 0:
+        raise ValueError("authenticated user has no tenant — cannot run the copilot")
     created_by = user.get("email") or "system"
 
     existing = await _existing_live_run(db, tenant_id, finding_id)
@@ -59,7 +62,13 @@ async def recommend_for_finding(db: AsyncSession, *, user: Dict[str, Any],
     try:
         policy = await get_policy(db, tenant_id)
     except MalformedPolicyError as exc:
-        run_id = await _create_run(db, tenant_id, finding_id, created_by)
+        try:
+            run_id = await _create_run(db, tenant_id, finding_id, created_by)
+        except IntegrityError:
+            # A concurrent request won the live-run race (partial unique index).
+            await db.rollback()
+            existing = await _existing_live_run(db, tenant_id, finding_id)
+            return {"run_id": existing, "status": "existing", "existing": True}
         await _finalise_run(db, run_id, tenant_id, status="escalated", phase="policy",
                             refusal_reason=str(exc), error=None)
         await _write_event(db, tenant_id, run_id, None, "policy.invalid",
@@ -68,7 +77,13 @@ async def recommend_for_finding(db: AsyncSession, *, user: Dict[str, Any],
         return {"run_id": run_id, "status": "escalated", "existing": False,
                 "refusal_reason": str(exc)}
 
-    run_id = await _create_run(db, tenant_id, finding_id, created_by)
+    try:
+        run_id = await _create_run(db, tenant_id, finding_id, created_by)
+    except IntegrityError:
+        # Lost the live-run race to a concurrent request — return the winner.
+        await db.rollback()
+        existing = await _existing_live_run(db, tenant_id, finding_id)
+        return {"run_id": existing, "status": "existing", "existing": True}
     await _write_event(db, tenant_id, run_id, None, "run.created", created_by,
                        {"finding_id": finding_id, "graph_version": GRAPH_VERSION,
                         "prompt_version": PROMPT_VERSION})
