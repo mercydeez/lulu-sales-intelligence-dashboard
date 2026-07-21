@@ -78,11 +78,25 @@ risk-adjusted recommendation, and a plain-language view per department.
 
 ## Phase 0 — verification & repair (done, evidence below)
 
-Verified on the **live database** (`sales_db`), not asserted:
+Verified on the running dev database (`sales_db`), not asserted:
+
+> **Correction — the original "clean database" claim was wrong.** These checks
+> ran against an ALREADY-SEEDED dev volume, not a fresh one. Migration 074 as
+> first written **could not apply to a clean database at all**: the tenant-1
+> customer seed indexed `array_agg(id) FROM stores WHERE tenant_id = 1`, but on a
+> fresh deploy the migrate job runs *before* the app seeder, so that array is
+> NULL, `home_store_id` comes out NULL, and the NOT NULL violation aborted the
+> whole migration run — blocking 075/076 too. The same file already applied the
+> right `WHERE EXISTS (...)` guard to its tenant-2 block; it simply was not
+> applied to tenant-1 (or to the purchase-history insert). Fixed by Krishna in
+> `2b00d35`, verified there on a genuinely clean deploy (76 migrations, exit 0).
+> The dev stack hid this because it reuses a seeded volume and skips the migrate
+> job — exactly the blind spot that made "verified on a clean database"
+> unsupportable. Treat the table below as *seeded-environment* evidence only.
 
 | Check | Result |
 |---|---|
-| Migration `074` recorded in `schema_migrations` | ✅ present |
+| Migration `074` recorded in `schema_migrations` | ✅ present (seeded env; clean-DB path fixed in `2b00d35`) |
 | 7 retention tables exist | ✅ all present |
 | RLS `tenant_isolation` policy on each | ✅ all 7 |
 | Deterministic seed (tenant 1) | ✅ 115 customers, 1558 purchases, 10 archetypes, 15 no-consent lapsed |
