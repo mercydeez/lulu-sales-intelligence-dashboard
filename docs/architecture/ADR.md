@@ -170,3 +170,24 @@ matviews. Leave them empty until a real source fills them.
 **Naming.** Three existing tables sound related and are not: `inventory_transactions` (stock
 movements), `employee_transactions` (synthetic demo rows, tenant-unscoped), `basket_associations`
 (the *output* of market-basket analysis). Nothing backfills this grain from them.
+
+---
+
+## ADR-011 · Operations Copilot — one auditable state machine, DB as checkpoint, draft-only execution
+**Status:** Accepted (migration 081, services/operations/)
+
+**Context.** The diagnostics loop already detects problems (worker rules → `findings`) and can measure outcomes (the measure job → `metric_before/after`). What it lacked was the middle: turning a verified finding into an evidence-backed, human-approved, auditable action. The brief asked for a "Retail Operations Copilot" — explicitly NOT multi-agent theatre, and explicitly safe: no external order without human approval, every number deterministic, the LLM treated as untrusted.
+
+**Decision.**
+- **One LangGraph finite-state machine, run in two short invocations, with the database row as the checkpoint.** Invocation A (recommend) runs `load_finding → check_freshness → gather_and_recommend → narrate` and stops at an `awaiting_approval` proposal. Invocation B (approve→revalidate→execute) resumes from that row after a human decides. We did NOT adopt langgraph's own checkpointer: the pinned `langgraph 0.1.19` predates its Postgres saver, invocation A is loop-free, and "persist and stop, resume by run_id" is exactly what the approval flow needs anyway. Nothing is left waiting on an open request.
+- **The LLM writes prose, never numbers.** Evidence and every quantity come from pure deterministic functions (`calculations.py`, `tools_read.py`). The only model step, `narrate`, may replace the summary and hypotheses *only after* a mechanical grounding check (`ungrounded_numbers`) confirms it introduced no figure absent from the evidence. No provider, a timeout, bad JSON, or an ungrounded number all fall back to the deterministic recommendation — the copilot works with the LLM off.
+- **Four tables, not seven** (`operations_runs`, `operations_proposals`, `operations_events`, `tenant_operations_policies`). Approvals and executions are events on the append-only audit log plus columns on the proposal; measurement reuses the existing `findings` metric loop rather than forking a second definition of "did it improve".
+- **Draft-only execution.** A code-side connector registry (empty today) gates real execution; no tenant JSON flag can enable a connector that isn't implemented, so execution only ever writes an INTERNAL `action_drafts` row and schedules measurement by stamping the finding. Nothing is submitted to a supplier or warehouse.
+- **Safety is layered, not trusted to one control.** Approval authority is a tenant-configurable policy (`policy.can_approve`) checked at approval AND execution; scope comes only from the verified auth context; the audit log is append-only at the DB (UPDATE/DELETE revoked, and un-cascadable via NO-ACTION FKs); intra-module FKs are composite `(tenant_id, id)` so a row can't reference another tenant's; approvals use optimistic-concurrency version CAS; mutations are idempotency-keyed. FORCE RLS on every table.
+
+**Consequences.**
+- 👍 Every recommendation is traceable to evidence; every number is reproducible from inputs; the UI can show exactly how a quantity was reached.
+- 👍 The system degrades safely — no LLM, stale data, missing inventory, a lost permission, a concurrent approver, a duplicate request all resolve to a refusal, an escalation, or an idempotent no-op, never an invented action or a double-execution.
+- 👍 Reuses the existing worker measure loop, `action_drafts`, SSE/ticket auth, RLS role, and the local-first provider chain — small new surface.
+- 👎 "Execution" is a labelled internal draft, not a real purchase order or warehouse transfer. That is deliberate (no connector exists) but means the demo must be honest about it, and a pilot needs the integration work in `PILOT_INTEGRATION_CHECKLIST.md` before any action leaves the building.
+- 👎 Inventory evidence is stamped "now" because `metric_inventory_state` carries no observation timestamp, so the freshness gate protects the *finding*, not the seeded stock number. Documented; a real POS/inventory feed with timestamps closes it.
