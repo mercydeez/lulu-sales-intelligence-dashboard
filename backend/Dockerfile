@@ -23,8 +23,17 @@ COPY . .
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# Expose port
+# Expose port (documentation only; the runtime port comes from $PORT below)
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application.
+#
+# SHELL FORM, ON PURPOSE. Managed/free-tier hosts (Render, Railway, Fly, Cloud
+# Run) assign a port at boot and inject it as $PORT, then route only to that
+# port. The previous exec-form CMD hardcoded 8000, so the container listened
+# somewhere the platform never routed to and every request 502'd while the app
+# itself looked perfectly healthy in its own logs.
+#
+# Shell form is what expands $PORT. Defaults to 8000 so docker-compose, which
+# sets no PORT and maps 8000 explicitly, behaves exactly as before.
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
