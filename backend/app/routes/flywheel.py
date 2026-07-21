@@ -27,13 +27,15 @@ from app.services.database import get_db
 from app.services.flywheel import (
     allocator, approvals, budget as budget_service, campaign_state,
     campaigns as campaign_service, cannibalization, churn as churn_service,
-    coalition, contact_governance, decisioning, erasure, features as feature_service,
+    coalition, contact_governance, data_trust, decisioning, erasure,
+    features as feature_service,
     guardrails, identity, inventory_atp, jobs, liability, measurement, metering,
     objections, optimizer, outbox, outcome_pricing, procurement, readout, registry,
     seasonality, seeder, sequential, shadow, shelf_life, tax, trade, trace,
     uplift as uplift_service,
 )
 from app.services.flywheel.budget import BudgetError, InsufficientBudget
+from app.services.flywheel.data_trust import DataNotReady
 from app.services.flywheel.campaign_state import TransitionError
 from app.services.flywheel.types import BudgetType, CampaignStatus, money
 
@@ -455,6 +457,9 @@ async def build_audience(
             db, tenant_id=_tenant(user), campaign_id=campaign_id,
             min_churn_probability=body.min_churn_probability, max_size=body.max_size,
             accessible_store_ids=get_accessible_store_ids(user) or None)
+    except DataNotReady as exc:
+        # 422: the request is well-formed, the DATA is not fit to decide on.
+        raise HTTPException(422, {"message": str(exc), "data_trust": exc.report})
     except TransitionError as exc:
         raise HTTPException(409, str(exc))
     except ValueError as exc:
@@ -477,6 +482,28 @@ async def simulate_campaign(
         raise HTTPException(409, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+
+
+@router.get("/campaigns/{campaign_id}/data-trust",
+            summary="Is the input data fit to decide on? (READY / WARNINGS / NOT_READY)")
+async def campaign_data_trust(
+    campaign_id: int,
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Read-only. The same gate simulate() and activate() enforce, exposed so an
+    operator can see WHY a campaign will be refused before attempting it."""
+    return await data_trust.evaluate(
+        db, tenant_id=_tenant(user), campaign_id=campaign_id)
+
+
+@router.get("/data-trust", summary="Tenant-wide data readiness")
+async def tenant_data_trust(
+    user: dict = Depends(require_permission("can_manage_promotions")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Campaign-independent view — the onboarding check for a new data feed."""
+    return await data_trust.evaluate(db, tenant_id=_tenant(user), campaign_id=None)
 
 
 @router.post("/campaigns/{campaign_id}/submit", summary="Submit for approval")
@@ -518,6 +545,8 @@ async def activate_campaign(
     try:
         return await campaign_service.activate(
             db, tenant_id=_tenant(user), campaign_id=campaign_id, user=user)
+    except DataNotReady as exc:
+        raise HTTPException(422, {"message": str(exc), "data_trust": exc.report})
     except InsufficientBudget as exc:
         raise HTTPException(409, str(exc))
     except (TransitionError, BudgetError) as exc:

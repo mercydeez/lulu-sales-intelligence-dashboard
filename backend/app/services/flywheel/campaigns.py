@@ -25,8 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.flywheel import (
     approvals, budget as budget_service, campaign_state, churn as churn_service,
-    features as feature_service, inventory_atp, optimizer, outbox, procurement,
-    scenario_math, uplift as uplift_service,
+    data_trust, features as feature_service, inventory_atp, optimizer, outbox,
+    procurement, scenario_math, uplift as uplift_service,
 )
 from app.services.flywheel.types import (
     ZERO, ActionType, BudgetType, CampaignStatus, PolicyEnvelope, money, money4,
@@ -201,6 +201,14 @@ async def simulate(
 
     if not audience_total:
         raise ValueError("Build the audience before simulating")
+
+    # THE DATA TRUST GATE. Runs before the optimizer reads a single number, and
+    # refuses outright when the inputs are contradictory (negative stock, no
+    # prices, no baseline). A simulation is where a human forms their belief
+    # about a campaign, so letting one render off broken inputs is how a bad
+    # decision gets laundered into a confident one.
+    trust = await data_trust.assert_ready(
+        db, tenant_id=tenant_id, campaign_id=campaign_id, action="simulate")
 
     as_of = await feature_service.latest_snapshot_date(db, tenant_id) or date.today()
 
@@ -381,6 +389,8 @@ async def simulate(
         },
         # Distribution-based view of the same picture (see note above the call).
         "uncertainty": uncertainty,
+        # How far the numbers above can be trusted (§10 data-readiness gate).
+        "data_trust": trust,
         "discount_budget_declared_aed": str(money(declared_budget)),
         "budget_sufficient": money(declared_budget) >= money(expected_scenario["discount_spend_aed"]),
         "inventory": {
@@ -461,7 +471,15 @@ async def activate(
     REFUSES unless every approval step is approved. This is the gate that makes
     "a rejected approval cannot activate a campaign" true by construction rather
     than by convention.
+
+    ALSO refuses on NOT_READY input data. Approval can be hours or days old, and
+    the feed can rot in between: a campaign approved on Monday against a live
+    price list must not go live on Friday against a broken one. The gate is
+    re-run here rather than trusted from simulate time for exactly that reason.
     """
+    await data_trust.assert_ready(
+        db, tenant_id=tenant_id, campaign_id=campaign_id, action="activate")
+
     approval = (await db.execute(
         text("""SELECT status, discount_exposure_aed, summary
                   FROM flywheel_approval_requests
