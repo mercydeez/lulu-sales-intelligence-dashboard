@@ -99,8 +99,45 @@ class TestRefusalIsValid:
         assert not rec.is_actionable
         assert rec.refusal_reason
 
+    def test_refusal_and_actions_together_is_rejected(self):
+        """A refused run must never carry an approvable proposal — a consumer that
+        iterates proposed_actions must not build one from a refusal."""
+        with pytest.raises(ValidationError, match="refused"):
+            _recommendation(refusal_reason="stale evidence")   # _recommendation adds an action
+
     def test_unknown_expected_effect_is_the_default(self):
         assert _action().expected_effect == "unknown"
+
+
+class TestNarrativeBoundary:
+    """The LLM boundary type carries prose only — never evidence or numbers-as-fields."""
+
+    def test_narrative_has_no_evidence_or_confidence_fields(self):
+        from app.services.operations.contracts import NarrativeDraft
+        fields = set(NarrativeDraft.model_fields)
+        assert "evidence" not in fields
+        assert "confidence" not in fields
+        assert "severity" not in fields
+        assert "measurement_plan" not in fields
+
+    def test_smuggled_extra_fields_are_ignored(self):
+        from app.services.operations.contracts import NarrativeDraft
+        nd = NarrativeDraft.model_validate({
+            "title": "x", "confidence": 0.99, "evidence": [{"anything": 1}],
+            "measured_fact_statements": ["sales fell to 120"],
+        })
+        assert not hasattr(nd, "confidence") or "confidence" not in nd.model_dump()
+        assert "confidence" not in nd.model_dump()
+
+    def test_free_text_gathers_every_prose_field(self):
+        from app.services.operations.contracts import NarrativeDraft, NarrativeHypothesis
+        nd = NarrativeDraft(title="T", executive_summary="S",
+                            measured_fact_statements=["fact 120"],
+                            hypotheses=[NarrativeHypothesis(statement="H", check="C")],
+                            assumptions=["A"], risks=["R"])
+        text = nd.free_text()
+        for token in ("T", "S", "fact 120", "H", "C", "A", "R"):
+            assert token in text
 
 
 class TestActionAllowlist:
@@ -143,9 +180,12 @@ class TestUngroundedNumbers:
         found = ungrounded_numbers("This will save 4500 AED next month.", ev)
         assert "4500" in found
 
-    def test_years_and_small_ordinals_are_allowed(self):
+    def test_small_ordinals_are_allowed(self):
         ev = [_evidence()]
-        assert ungrounded_numbers("In 2026 the top 3 stores over 14 days.", ev) == []
+        # Years are no longer auto-allowed (that window was a smuggling hole);
+        # the caller passes the real year via extra_allowed.
+        assert ungrounded_numbers("In 2026 the top 3 stores over 14 days.", ev,
+                                  extra_allowed=[2026]) == []
 
     def test_thousands_separator_is_normalised(self):
         ev = [_evidence(current=12000.0, comparison=None)]
@@ -163,6 +203,44 @@ class TestUngroundedNumbers:
     def test_empty_narrative_is_safe(self):
         assert ungrounded_numbers("", [_evidence()]) == []
         assert ungrounded_numbers(None, [_evidence()]) == []
+
+    # --- the smuggling holes the review found ---------------------------------
+
+    def test_space_separated_thousands_cannot_hide_a_magnitude(self):
+        ev = [_evidence(current=120.0, comparison=200.0)]
+        found = ungrounded_numbers("This saves 25 000 AED next month.", ev)
+        assert found and "25 000" in found[0].replace(" ", " ")
+
+    def test_k_and_m_suffixes_are_caught(self):
+        ev = [_evidence(current=120.0, comparison=200.0)]
+        assert ungrounded_numbers("saves 12k AED", ev)
+        assert ungrounded_numbers("uplift of 3M dirhams", ev)
+
+    def test_currency_adjacent_small_number_is_a_claim_not_an_ordinal(self):
+        ev = [_evidence(current=120.0, comparison=200.0)]
+        assert ungrounded_numbers("save 25 AED per unit", ev)      # 25 ≤31 but $-adjacent
+        assert ungrounded_numbers("this order costs 1999 AED", ev)  # was in the year window
+
+    def test_percent_adjacent_number_must_be_grounded(self):
+        ev = [_evidence(current=120.0, comparison=200.0)]
+        assert ungrounded_numbers("reduce stockouts by 30%", ev)
+
+    def test_grounded_percent_passes(self):
+        # 40 is a real evidence-derived delta passed via extra_allowed
+        ev = [_evidence(current=120.0, comparison=200.0)]
+        assert ungrounded_numbers("sales fell 40%", ev, extra_allowed=[40]) == []
+
+    def test_neutral_units_keep_the_ordinal_allowance(self):
+        ev = [_evidence()]
+        assert ungrounded_numbers("the top 3 stores over 14 days", ev) == []
+
+    def test_no_year_allowlist_years_need_grounding(self):
+        """The 1900-2100 window is gone — a four-digit money figure can't hide as
+        a 'year'. Genuine years are passed via extra_allowed by the caller."""
+        ev = [_evidence(current=120.0, comparison=200.0)]
+        assert ungrounded_numbers("you will lose 2050 AED daily", ev)
+        assert ungrounded_numbers("in 2026 the trend continues", ev,
+                                  extra_allowed=[2026]) == []
 
 
 class TestEvidenceItem:

@@ -431,6 +431,20 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.operations_proposal_touch() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at := now();
+    -- Only advance when the caller did not already bump it (lets a compare-and-
+    -- swap `SET version = version + 1 WHERE version = :expected` stay exact).
+    IF NEW.version = OLD.version THEN
+        NEW.version := OLD.version + 1;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
 CREATE FUNCTION public.provision_tenant_schema(p_tenant_id integer) RETURNS text
     LANGUAGE plpgsql
     AS $$
@@ -3951,6 +3965,7 @@ CREATE TABLE public.operations_proposals (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT operations_proposals_action_type_check CHECK ((action_type = ANY (ARRAY['replenishment_draft'::text, 'stock_transfer_draft'::text, 'investigation_task'::text]))),
+    CONSTRAINT operations_proposals_required_approval_role_check CHECK ((required_approval_role = ANY (ARRAY['analyst'::text, 'store_manager'::text, 'regional_manager'::text, 'super_admin'::text]))),
     CONSTRAINT operations_proposals_risk_level_check CHECK ((risk_level = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text]))),
     CONSTRAINT operations_proposals_status_check CHECK ((status = ANY (ARRAY['awaiting_approval'::text, 'approved'::text, 'rejected'::text, 'executing'::text, 'executed'::text, 'execution_failed'::text, 'expired'::text, 'cancelled'::text, 'superseded'::text])))
 );
@@ -6536,6 +6551,12 @@ ALTER TABLE ONLY public.campaign_offers
 ALTER TABLE ONLY public.campaign_offers
     ADD CONSTRAINT uq_offer_redemption_key UNIQUE (tenant_id, redemption_key);
 
+ALTER TABLE ONLY public.operations_proposals
+    ADD CONSTRAINT uq_operations_proposals_tenant_id UNIQUE (tenant_id, id);
+
+ALTER TABLE ONLY public.operations_runs
+    ADD CONSTRAINT uq_operations_runs_tenant_id UNIQUE (tenant_id, id);
+
 ALTER TABLE ONLY public.flywheel_outcome_pricing
     ADD CONSTRAINT uq_outcome_pricing UNIQUE (tenant_id, plan_name);
 
@@ -7229,6 +7250,8 @@ ALTER INDEX public.idx_sales_stream_synthetic ATTACH PARTITION public.sales_stre
 
 ALTER INDEX public.idx_sales_stream_timestamp ATTACH PARTITION public.sales_stream_raw_new_default_timestamp_idx;
 
+CREATE TRIGGER touch_operations_proposals BEFORE UPDATE ON public.operations_proposals FOR EACH ROW EXECUTE FUNCTION public.operations_proposal_touch();
+
 CREATE TRIGGER trg_flywheel_prereg_immutable BEFORE DELETE OR UPDATE ON public.flywheel_preregistrations FOR EACH ROW EXECUTE FUNCTION public.flywheel_forbid_mutation();
 
 CREATE TRIGGER trg_flywheel_readouts_immutable BEFORE DELETE OR UPDATE ON public.flywheel_readouts FOR EACH ROW EXECUTE FUNCTION public.flywheel_forbid_mutation();
@@ -7242,8 +7265,6 @@ CREATE TRIGGER trg_sales_stream_raw_confine_synthetic BEFORE INSERT OR UPDATE ON
 CREATE TRIGGER update_emp_performance_updated_at BEFORE UPDATE ON public.employee_performance FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 CREATE TRIGGER update_employees_updated_at BEFORE UPDATE ON public.employees FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
-CREATE TRIGGER update_operations_proposals_updated_at BEFORE UPDATE ON public.operations_proposals FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 CREATE TRIGGER update_operations_runs_updated_at BEFORE UPDATE ON public.operations_runs FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
@@ -7432,6 +7453,15 @@ ALTER TABLE ONLY public.external_identities
 
 ALTER TABLE ONLY public.external_identities
     ADD CONSTRAINT external_identities_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.operations_events
+    ADD CONSTRAINT fk_operations_events_proposal FOREIGN KEY (tenant_id, proposal_id) REFERENCES public.operations_proposals(tenant_id, id);
+
+ALTER TABLE ONLY public.operations_events
+    ADD CONSTRAINT fk_operations_events_run FOREIGN KEY (tenant_id, run_id) REFERENCES public.operations_runs(tenant_id, id);
+
+ALTER TABLE ONLY public.operations_proposals
+    ADD CONSTRAINT fk_operations_proposals_run FOREIGN KEY (tenant_id, run_id) REFERENCES public.operations_runs(tenant_id, id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.flywheel_allocation_lines
     ADD CONSTRAINT flywheel_allocation_lines_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.flywheel_customers(id) ON DELETE CASCADE;
@@ -7986,25 +8016,16 @@ ALTER TABLE ONLY public.notifications
     ADD CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.operations_events
-    ADD CONSTRAINT operations_events_proposal_id_fkey FOREIGN KEY (proposal_id) REFERENCES public.operations_proposals(id) ON DELETE SET NULL;
-
-ALTER TABLE ONLY public.operations_events
-    ADD CONSTRAINT operations_events_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.operations_runs(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.operations_events
     ADD CONSTRAINT operations_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.operations_proposals
     ADD CONSTRAINT operations_proposals_finding_id_fkey FOREIGN KEY (finding_id) REFERENCES public.findings(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.operations_proposals
-    ADD CONSTRAINT operations_proposals_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.operations_runs(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.operations_proposals
     ADD CONSTRAINT operations_proposals_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.operations_runs
-    ADD CONSTRAINT operations_runs_finding_id_fkey FOREIGN KEY (finding_id) REFERENCES public.findings(id) ON DELETE CASCADE;
+    ADD CONSTRAINT operations_runs_finding_id_fkey FOREIGN KEY (finding_id) REFERENCES public.findings(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.operations_runs
     ADD CONSTRAINT operations_runs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;

@@ -11,20 +11,32 @@ Layout:
 """
 from app.services.operations.contracts import (
     ActionType,
+    NarrativeDraft,
     OperationsRecommendation,
     ProposalStatus,
     RiskLevel,
     RunStatus,
+    ungrounded_numbers,
 )
-from app.services.operations.policy import DEFAULT_POLICY, OperationsPolicy, get_policy
+from app.services.operations.policy import (
+    DEFAULT_POLICY,
+    MalformedPolicyError,
+    OperationsPolicy,
+    can_approve,
+    get_policy,
+)
 
 __all__ = [
     "ActionType",
+    "NarrativeDraft",
     "OperationsRecommendation",
     "ProposalStatus",
     "RiskLevel",
     "RunStatus",
+    "ungrounded_numbers",
     "OperationsPolicy",
     "DEFAULT_POLICY",
+    "MalformedPolicyError",
+    "can_approve",
     "get_policy",
 ]

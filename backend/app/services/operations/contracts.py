@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -153,7 +153,11 @@ class ProposedAction(BaseModel):
                                        max_length=500)
     risk_level: RiskLevel = RiskLevel.MEDIUM
     reversible: bool = True
-    required_approval_role: str = Field(..., min_length=1, max_length=40)
+    #: Constrained to real roles so a model cannot persist a bogus/lower role that
+    #: a downstream UI or filter might trust. The binding gate is still
+    #: policy.can_approve(), which recomputes this server-side at approval time.
+    required_approval_role: Literal[
+        "analyst", "store_manager", "regional_manager", "super_admin"] = "super_admin"
     prerequisites: List[str] = Field(default_factory=list)
     expires_at: Optional[datetime] = None
     #: Evidence this action rests on. Empty means the action cannot be approved.
@@ -178,7 +182,17 @@ class MeasurementPlan(BaseModel):
 
 
 class OperationsRecommendation(BaseModel):
-    """The full contract returned to the UI and persisted on the proposal."""
+    """The full contract returned to the UI and persisted on the proposal.
+
+    SERVER-ASSEMBLED, NEVER model-parsed. Do not `model_validate(llm_json)` into
+    this type: `evidence`, `confidence`, `severity`, `measurement_plan` and the
+    calculated parts of `proposed_actions` are produced by deterministic server
+    code. The only thing an LLM contributes is prose, and that arrives as a
+    separate `NarrativeDraft` (below) which carries no numbers-as-fields. The
+    graph builds an OperationsRecommendation by MERGING server evidence with a
+    validated NarrativeDraft — so an LLM cannot supply both a fabricated evidence
+    list and a confidence score that grounds its own invented figures.
+    """
 
     run_id: int
     finding_id: Optional[int] = None
@@ -235,6 +249,14 @@ class OperationsRecommendation(BaseModel):
                     f"action {action.action_type.value!r} has no evidence — "
                     "unsupported proposals must be refused, not approved"
                 )
+
+        # A refusal and a live proposal are mutually exclusive: a consumer that
+        # iterates proposed_actions must never build an approvable proposal from
+        # a run that refused. Don't rely on is_actionable being consulted.
+        if self.refusal_reason and self.proposed_actions:
+            raise ValueError(
+                "a refused recommendation must carry no proposed_actions"
+            )
         return self
 
     @property
@@ -242,12 +264,64 @@ class OperationsRecommendation(BaseModel):
         return bool(self.proposed_actions) and not self.refusal_reason
 
 
+class NarrativeHypothesis(BaseModel):
+    """An LLM-authored possible cause. Prose only — no evidence, no numbers."""
+
+    statement: str = Field(..., min_length=1, max_length=500)
+    check: Optional[str] = Field(None, max_length=500)
+
+
+class NarrativeDraft(BaseModel):
+    """The ONLY thing parsed from LLM output. Treat as untrusted input.
+
+    It carries prose and structure, deliberately NO evidence list, NO confidence,
+    NO severity, NO numeric fields — those are the server's job. The graph parses
+    model output into this, runs `ungrounded_numbers` over the free-text fields
+    against server-side evidence, and only then merges it into an
+    OperationsRecommendation. This is the boundary that keeps requirement #10
+    ("the LLM must never invent numbers") a structural property, not a hope.
+    """
+
+    model_config = {"extra": "ignore"}     # ignore any smuggled extra fields
+
+    title: str = Field(..., min_length=1, max_length=200)
+    executive_summary: str = Field(default="", max_length=2000)
+    #: Free-text statements that will be checked for ungrounded numbers and, if
+    #: clean, turned into MeasuredFacts by server code that attaches the evidence.
+    measured_fact_statements: List[str] = Field(default_factory=list)
+    hypotheses: List[NarrativeHypothesis] = Field(default_factory=list)
+    assumptions: List[str] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+
+    def free_text(self) -> str:
+        """Everything an ungrounded number could hide in, concatenated."""
+        parts = [self.title, self.executive_summary, *self.measured_fact_statements,
+                 *self.assumptions, *self.risks]
+        for h in self.hypotheses:
+            parts.append(h.statement)
+            if h.check:
+                parts.append(h.check)
+        return "\n".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # Grounding check — the mechanical defence against an invented number.
 # ---------------------------------------------------------------------------
 
-#: Matches integers, decimals and thousands-separated numbers in prose.
-_NUMBER_RE = re.compile(r"\d[\d,]*\.?\d*")
+#: A number token, optionally with a k/M/B/thousand multiplier suffix, and its
+#: trailing context (up to a short currency/percent word). We capture the suffix
+#: and the following unit so "25 000 AED", "12k AED" and "30%" are all caught.
+#: Thousands separators may be commas OR spaces (LLMs use both).
+_NUMBER_RE = re.compile(
+    r"(?P<num>\d[\d,]*(?:[  ]\d{3})*(?:\.\d+)?)\s*(?P<suffix>[kKmMbB]\b)?\s*(?P<unit>%|[A-Za-z$]{1,8})?"
+)
+
+#: A trailing token that turns even a small number into a financial/statistical
+#: CLAIM that must be grounded — "save 25 AED", "up 3%". Neutral units (units,
+#: days, stores, items) are NOT here: "top 3 stores", "over 14 days" stay noise.
+_CLAIM_UNIT_RE = re.compile(r"^(%|aed|usd|eur|gbp|sar|dirhams?|dollars?|pct|percent|\$)$", re.I)
+
+_SUFFIX_MULT = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}
 
 
 def _numeric_forms(value: float) -> set:
@@ -271,12 +345,19 @@ def ungrounded_numbers(narrative: str, evidence: List[EvidenceItem],
                        extra_allowed: Optional[List[float]] = None) -> List[str]:
     """Return the numbers in `narrative` that no evidence value supports.
 
-    Used to police LLM-written prose: the model may summarise the numbers it was
-    given, never mint new ones. A non-empty result means the narrative is
-    discarded in favour of the deterministic template (fail safe, not fail loud).
+    Polices LLM-written prose: the model may summarise the numbers it was given,
+    never mint new ones. A non-empty result means the narrative is discarded in
+    favour of the deterministic template (fail safe, not fail loud).
 
-    Years and small ordinals (0-31) are allowed through: they are calendar and
-    list noise, not financial claims.
+    Design after the Phase-1 review closed several smuggling holes:
+      * thousands separators (comma OR space) are normalised before comparison,
+        so "25 000 AED" is read as 25000, not "25" + "000";
+      * k/M/B suffixes are expanded, so "12k AED" is 12000;
+      * a number adjacent to a currency or percent word must be grounded even if
+        it is small — "save 25 AED", "up 30%" no longer hide in the ordinal band;
+      * only genuinely neutral small integers (0-31, e.g. "top 3 stores",
+        "over 14 days") pass without grounding. There is no year allowlist —
+        pass the current year via `extra_allowed` if a narrative needs it.
     """
     allowed: set = set()
     for item in evidence:
@@ -287,20 +368,37 @@ def ungrounded_numbers(narrative: str, evidence: List[EvidenceItem],
         allowed |= _numeric_forms(value)
 
     ungrounded: List[str] = []
-    for raw in _NUMBER_RE.findall(narrative or ""):
-        token = raw.rstrip(".")
+    for m in _NUMBER_RE.finditer(narrative or ""):
+        token = m.group("num").rstrip(".")
         if not token:
             continue
-        normalised = token.replace(",", "")
+        # Normalise comma AND space thousands groupings to a bare number.
+        normalised = re.sub(r"[,\s]", "", token)
         try:
-            as_float = float(normalised)
+            base = float(normalised)
         except ValueError:
             continue
-        if 0 <= as_float <= 31 and as_float == int(as_float):
-            continue                      # ordinals, day counts, small list indices
-        if 1900 <= as_float <= 2100 and as_float == int(as_float):
-            continue                      # years
-        if _numeric_forms(as_float) & allowed:
+        suffix = (m.group("suffix") or "").lower()
+        value = base * _SUFFIX_MULT.get(suffix, 1)
+        unit = m.group("unit") or ""
+        is_claim = bool(_CLAIM_UNIT_RE.match(unit))
+        display = token + (m.group("suffix") or "")
+
+        forms = _numeric_forms(value)
+        if suffix:
+            forms |= _numeric_forms(base)   # "12k" grounded by either 12000 or 12
+        if forms & allowed:
             continue
-        ungrounded.append(token)
+
+        # A number next to money/percent is a claim — grounded or it is reported,
+        # no ordinal escape hatch.
+        if is_claim:
+            ungrounded.append(display)
+            continue
+        if suffix:                          # a multiplier is never "noise"
+            ungrounded.append(display)
+            continue
+        if 0 <= value <= 31 and value == int(value):
+            continue                        # neutral small integers / list indices
+        ungrounded.append(display)
     return ungrounded
