@@ -78,7 +78,6 @@ export const navItems: NavItem[] = [
   { label: 'Insights', tKey: 'nav.insights', href: '/insights', icon: <Lightbulb className="w-5 h-5" /> },
   { label: 'Sage Copilot', tKey: 'nav.sageCopilot', href: '/copilot', icon: <Lightbulb className="w-5 h-5" />, roles: ['super_admin'] },
   { label: 'Action Drafts', tKey: 'nav.actionDrafts', href: '/action-drafts', icon: <Wand2 className="w-5 h-5" />, permission: 'can_manage_inventory' },
-  { label: 'Retention', tKey: 'nav.retention', href: '/retention', icon: <Users className="w-5 h-5" />, permission: 'can_manage_promotions' },
   { label: 'Flywheel', tKey: 'nav.flywheel', href: '/flywheel', icon: <Repeat className="w-5 h-5" />, permission: 'can_manage_promotions' },
   // HORIZON 1 — the surfaces that make the programme provable. Each one exposes a capability that already existed in the backend with no way to see it.
   { label: 'Incrementality', tKey: 'nav.incrementality', href: '/flywheel/incrementality', icon: <TrendingUp className="w-5 h-5" />, permission: 'can_manage_promotions' },

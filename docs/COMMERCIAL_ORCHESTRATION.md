@@ -1,220 +1,122 @@
-# AI Commercial Orchestration — Phase 0 + Phase 1
+# AI Commercial Orchestration — one module
 
-> **Board pack v3 alignment.** This implements the phased delivery on p.14 of
-> `retail_iq_board_algorithm_decision_pack_v3.pdf`. Phase 0 (gate: *transaction
-> safety*) and Phase 1 (gate: *scenario maths*) are **closed with evidence**
-> below. Phases 2–5 (causal uplift, CP-SAT procurement, sequential live control,
-> adaptive bandits) remain deliberately gated — the pack is explicit that
-> "algorithm names are recommendations to benchmark, not claims that they are
-> already implemented" (p.13) and that deep learning/bandits are Phase-5
-> candidates, not starting points (p.14).
+> **Merged.** There is now ONE closed-loop retention decisioning module:
+> **Flywheel** (`/api/flywheel`, `app/services/flywheel/`). The separate
+> `/api/retention` module was folded into it. This document records what moved,
+> what was retired, and why.
 
-## Gate status
+## Why they merged
 
-| Phase | Gate | Status |
+Two modules had been built independently against the same business domain
+(churn → uplift → offer → stock/budget/approval → execution → measured lift):
+
+| | Retention (retired) | Flywheel (kept) |
 |---|---|---|
-| 0 VERIFY | transaction safety | ✅ **closed** — 4 live-Postgres concurrency invariants pass |
-| 1 SIMULATE | scenario maths | ✅ **closed** — quantile base demand + Monte Carlo + CVaR |
-| 2 LEARN CAUSE | causal evidence | ⛔ not started (needs treatment/control history) |
-| 3 OPTIMIZE | feasible + affordable | ⛔ not started (CP-SAT procurement) |
-| 4 CONTROL | live safety | ⛔ not started (SPRT/CUSUM) |
-| 5 ADAPT | stable feedback | ⛔ not started (bandits, registry) |
+| Backend | ~1,500 lines, 3 modules | ~12,200 lines, 36 service modules |
+| Tables | 7 (`customers`, `retention_*`, `campaign_*`) | 52 (`flywheel_*`, self-contained) |
+| Routes | 18 | `/api/flywheel` (1,774-line router) |
+| Frontend | 1 page | 16 pages |
+| Tests | 41 | 295 |
 
-### Phase 0 gate evidence — `tests/test_retention_concurrency.py` (4 passed, live PG)
+They shared **no tables and no routes** — flywheel has its own
+`flywheel_customers` and never referenced retention's. So this was duplication of
+a domain, not a layered design. Flywheel is the more complete implementation
+(causal uplift, sequential/SPRT testing, shadow mode, cannibalization, coalition,
+seasonality, trade promotion, transactional outbox, decision trace, contact
+governance, identity/erasure, liability/tax) and it kept its 52 tables and 16
+surfaces. Retention was retired into it.
 
-Real concurrent transactions, each actor on its own `AsyncSession`:
+## What retention contributed (kept, not lost)
 
-1. **No negative stock** — 10 concurrent redemptions vs 4 units → exactly 4 succeed, stock lands on 0.
-2. **No overspend** — 10 concurrent redemptions vs a budget fitting 3 → exactly 3 succeed, spend = 6.00, campaign auto-pauses.
-3. **Idempotency under race** — the same key fired 8× concurrently → 1 redemption, 1 unit, 2.00 spent.
-4. **Ledger invariant** — `SUM(retention_budget_ledger spend) == campaign.budget_spent_aed` (no drift).
+Retention had exactly two things flywheel lacked. Both were ported.
 
-The module builds its **own** engine because `conftest.py` pins `DATABASE_URL` to a
-throwaway `testdb`; it skips cleanly when no live Postgres is reachable, so
-database-free CI stays green. Engines are created per-test (pytest-asyncio uses a
-fresh event loop per test and asyncpg connections cannot cross loops).
+### 1. Scenario mathematics → `services/flywheel/scenario_math.py`
 
-### Phase 1 gate evidence — `scenario_math.py` + `tests/test_scenario_math.py` (16 passed)
+Flywheel's `campaigns.simulate()` derived its three scenarios by multiplying
+redemption by fixed **0.6× / 1.0× / 1.4×** factors. That band is arbitrary: the
+same width whatever the audience size or model confidence, and structurally
+unable to express a probability of loss — the exact failure mode the board pack
+calls out (p.2 "show uncertainty rather than one sales promise"; p.9 "shows
+expected result and tail loss, not only average profit").
 
-Replaced the fixed ±40% band with honest uncertainty (board pack p.7/p.9/p.10):
+`simulate()` now also returns an `uncertainty` block from
+`monte_carlo_campaign()`, which samples a **lognormal response multiplier**
+(always positive, right-skewed like real redemption), applies it to the
+response-driven components while holding fixed costs fixed, and reports:
 
-- **Quantile base demand** — empirical P10/P50/P90 of the SKU-store daily demand
-  series, with horizon spread scaled by √n (day-to-day noise partially cancels;
-  linear scaling would wildly overstate downside). Live sample: P10 277 / P50 300
-  / P90 339 from 75 observations.
-- **Intermittent-demand guard** (Croston territory, p.7) — a series with ≥35%
-  zero-demand periods is flagged `intermittent_low_confidence` rather than being
-  forced into a smooth model; the UI surfaces the warning.
-- **Monte Carlo** (2000 trials, triangular demand draw) propagating base-demand,
-  response, returns and expiry uncertainty into a profit distribution →
-  P10/P50/P90, mean, stockout probability, expected leftover and expiry loss.
-- **CVaR@5%** — mean of the worst 5% of outcomes, plus `cash_at_risk` including
-  committed cash (p.9: "PROFIT ≠ CASH SAFETY").
-- **Determinism** — the RNG is seeded from (campaign, offer depth), so a persisted
-  board decision reproduces exactly from stored inputs.
+- `net_value_p10_aed` / `p50` / `p90` and the mean
+- `cvar_5pct_aed` — mean of the worst 5% of outcomes (tail loss, not a quantile)
+- `loss_probability` — which the fixed band could never produce
+- `expected_spend_aed`, `roi_mean`
 
-The risk-adjusted value now uses the Monte Carlo mean and CVaR tail rather than a
-single deterministic low case. Live effect: the reminder scenario correctly
-reports a **33.7% loss probability** with negative CVaR — a downside the previous
-point-estimate engine could not express.
+Seeded from `(tenant, campaign, "simulate")` so a persisted decision reproduces
+exactly. **Additive** — `scenarios.pessimistic/expected/optimistic` are unchanged,
+so all 16 existing flywheel pages keep working.
 
-**Why empirical quantiles, not LightGBM-quantile:** the board pack asks for
-quantile forecasting but also insists later algorithms are enabled only when the
-data and controls to trust them exist. `base_demand_quantiles()` is the seam a
-`LGBMRegressor(objective='quantile')` drops into unchanged, once it demonstrably
-beats this baseline on Retail IQ data.
+The module also carries the SKU-level demand tools (`base_demand_quantiles`,
+`empirical_quantiles`, `monte_carlo`, `cash_at_risk`), including the
+Croston-style **intermittent-demand guard**: a series with ≥35% zero-demand
+periods is flagged `intermittent_low_confidence` rather than smoothed. These are
+the documented seam for a LightGBM quantile model, per the board pack's
+instruction to benchmark before adopting.
 
+### 2. Transaction-safety gate → `tests/test_flywheel_concurrency.py`
 
-Extends the retention module into a campaign **decision control tower**: before
-launch, a reviewer sees normal demand, low/expected/high outcomes across offer
-depths, category effects, inventory & shelf-life risk, *proposed* procurement
-options (never an auto-created PO), finance cash/profit with visible downside, a
-risk-adjusted recommendation, and a plain-language view per department.
+`decisioning.redeem()` asserted in a *comment* that "FOR UPDATE here is what
+makes concurrent redemptions safe", but nothing in a 295-test suite ever ran two
+redemptions at once. Retention's Phase 0 gate was retargeted onto flywheel's
+redemption path. Each concurrent actor gets its own `AsyncSession`, so the row
+locks and the campaign cap are genuinely contended:
 
-> All customer data, histories and effects are **synthetic**. Price-response,
-> cannibalisation, halo and forward-buy are **transparent provisional
-> heuristics (confidence: low)** — honest placeholders until randomized history
-> trains them (Phase 4), never presented as measured causal effects.
+1. **No negative stock** — 10 concurrent redemptions vs 4 units → exactly 4 apply, stock lands on 0.
+2. **No cap breach** — 10 concurrent redemptions vs a cap fitting 3 → exactly 3 apply, spend 6.00. Guards the in-transaction hard cap that stops a campaign outspending its own ceiling.
+3. **Idempotency under race** — the same key fired 8× concurrently applies once; the rest replay the original.
+4. **Ledger reconciles** — `flywheel_budget_ledger` SPENT entries match the redemption rows (asserted non-vacuously; skips if no active DISCOUNT budget rather than fabricating one).
 
-## Phase 0 — verification & repair (done, evidence below)
+conftest pins `DATABASE_URL` to a throwaway `testdb`, so the module builds its
+own engine **per test** (pytest-asyncio uses a fresh event loop per test and
+asyncpg connections cannot cross loops). Skips cleanly with no database, so
+database-free CI stays green.
 
-Verified on the running dev database (`sales_db`), not asserted:
+## What was retired
 
-> **Correction — the original "clean database" claim was wrong.** These checks
-> ran against an ALREADY-SEEDED dev volume, not a fresh one. Migration 074 as
-> first written **could not apply to a clean database at all**: the tenant-1
-> customer seed indexed `array_agg(id) FROM stores WHERE tenant_id = 1`, but on a
-> fresh deploy the migrate job runs *before* the app seeder, so that array is
-> NULL, `home_store_id` comes out NULL, and the NOT NULL violation aborted the
-> whole migration run — blocking 075/076 too. The same file already applied the
-> right `WHERE EXISTS (...)` guard to its tenant-2 block; it simply was not
-> applied to tenant-1 (or to the purchase-history insert). Fixed by Krishna in
-> `2b00d35`, verified there on a genuinely clean deploy (76 migrations, exit 0).
-> The dev stack hid this because it reuses a seeded volume and skips the migrate
-> job — exactly the blind spot that made "verified on a clean database"
-> unsupportable. Treat the table below as *seeded-environment* evidence only.
+Deleted: `routes/retention.py`, `services/retention_service.py`,
+`services/campaign_scenario.py`, `frontend/src/app/retention/page.tsx`, and the
+four retention test modules. Removed from `routes/registry.py`,
+`config/nav.tsx`, `locales/nav.ts` (EN + AR) and `lib/nav/registry.ts`.
 
-| Check | Result |
-|---|---|
-| Migration `074` recorded in `schema_migrations` | ✅ present (seeded env; clean-DB path fixed in `2b00d35`) |
-| 7 retention tables exist | ✅ all present |
-| RLS `tenant_isolation` policy on each | ✅ all 7 |
-| Deterministic seed (tenant 1) | ✅ 115 customers, 1558 purchases, 10 archetypes, 15 no-consent lapsed |
-| Tenant-2 cohort (isolation demo) | ✅ 5 customers |
-| Retention unit tests, in-container (Linux, pinned deps) | ✅ 17/17 |
-| Live scenario run over real SQL | ✅ pack built, **0 side effects** (PO 3→3, budget spent 0) |
-| HTTP flow (login→create→audience→scenario) | ✅ 200s, pack + 9 dept views |
+**Migration 074 was deliberately NOT dropped.** Its 7 tables (`customers`,
+`customer_purchases`, `retention_campaigns`, `campaign_offers`,
+`campaign_allocations`, `retention_budget_ledger`, `retention_events`) still
+exist and still hold seeded rows. Dropping data is irreversible and belongs in
+its own deliberate migration, not in a refactor — and migrations are immutable
+history, so 074 itself must not be rewritten. The tables are now unreferenced by
+any code path. A follow-up `DROP TABLE` migration is the clean way to retire
+them once someone confirms nothing external reads them.
 
-**RLS note (not a defect):** the DB owner role `salesuser` bypasses RLS by
-design; RLS is FORCE-enforced only under the separate app role (migration 020).
-App-layer `tenant_id` scoping is the primary control and every query carries it.
+Retention's decision-pack extras that had **no flywheel equivalent and no
+consumer after the merge** — the nine department views, the conflict catalogue
+and the data-readiness gate — went with `campaign_scenario.py`. They were built
+against retention's schema and would have needed a full rewrite onto flywheel's
+52-table model to survive; re-adding them belongs with the board pack's
+governance phase, against flywheel's own approval and trace tables (which
+already cover much of the same ground via `flywheel_approval_*` and
+`services/flywheel/trace.py`).
 
-**Repair applied:** `simulate()` previously created a draft **purchase order**
-via `_draft_requisition()` — a real procurement side-effect during simulation,
-violating "no side effects" and "never auto-buy". Removed. Procurement is now
-**proposed** by `campaign_scenario.procurement_options` (compared, never
-committed); a real draft PO is created only at approval (Phase 2). The dead
-`_draft_requisition` was deleted; `retention_campaigns.requisition_po_id` is
-reserved for the Phase-2 link.
+## Verification (commands actually run)
 
-## Phase 1 — capability audit map
-
-| Capability | Status | Where |
-|---|---|---|
-| Normal-demand baseline | reuse + extend | `forecast_service.demand_baseline` (category) + trailing-84d per-SKU query |
-| Inventory ATP / safety stock | reuse | `inventory.available_stock`, `retention_service._atp` |
-| Shelf-life / expiry (FEFO) | reuse | `inventory_batches.expiry_date/quantity` |
-| Price/cost, margin | reuse | `items.unit_price_aed` / `unit_cost_aed`, `item_costs` |
-| Supplier terms (MOQ/lead/cost) | reuse | `product_suppliers` |
-| Overlapping-promotion detection | reuse | `promotions` + `promotion_items/stores` |
-| Churn score + audience | reuse | `retention_service.churn_score`, `build_audience` |
-| Response estimate | reuse | `retention_service.response_prob` |
-| Treatment/control split | reuse | `retention_service.assign_cohort` |
-| Budget position | reuse | `retention_campaigns` columns + `retention_budget_ledger` |
-| Audit trail | reuse | `retention_events` |
-| Scenario simulator (baseline, L/E/H, category effects, inventory risk, procurement options, finance, risk-adjusted recommendation, conflicts, department views) | **new (Phase 1)** | `campaign_scenario.py` |
-| Data-readiness gate | **new** | `campaign_scenario.data_readiness` |
-
-No new tables were added in Phase 1 — the pack persists into the existing
-`retention_campaigns.simulation` JSONB under `scenario_pack`.
-
-## Formulas (all money in Decimal)
-
-```
-campaign demand      = baseline_units + baseline_units × price_response(discount)
-demand L/E/H         = baseline + expected_lift × {1−band, 1, 1+band}   (band 0.40)
-net category units   = promoted_lift − cannibalized + halo − forward_bought
-                       (0.35 / 0.15 / 0.20 of promoted_lift; confidence low)
-ATP                  = available_stock − safety_stock − live soft allocations
-shortfall (high)     = max(0, demand_high − (ATP + incoming_supply))
-expected expiry loss = min(units_expiring_before_end, leftover) × cost × (1 − salvage 0.20)
-net profit(units)    = max(0, units − baseline) × (price×(1−d) − cost)
-                       − media − comm − expiry_loss
-worst credible loss  = profit(demand_low) − committed_procurement_cash
-risk-adjusted value  = expected_profit − 0.5×|worst_loss| − 0.10×proc_cash
-                       − expiry_loss − customer_harm         (penalties kept visible)
-```
-
-Margin floor: a discount depth selling below `min_margin_pct` (or with unknown
-cost) is `policy_ok=false` and excluded from the recommendation ranking.
-
-## Recommendation logic
-
-`NEEDS_MORE_DATA` if data NOT_READY → else rank policy-compliant scenarios by
-risk-adjusted value → `REJECT` if best ≤ 0 or a blocking conflict → prefer the
-**cheapest effective action** (a 0%-discount scenario within 5% of best RAV
-wins, so a discount is never wasted) → `PILOT` on warnings / low confidence /
-irreversible procurement → `APPROVE_WITH_CONDITIONS` if non-blocking conflicts →
-else `APPROVE`. High churn / big lift never wins on its own.
-
-## Conflict catalogue (Phase-1 computable subset)
-
-`C1` discount>budget (blocks) · `C3` MOQ over demand · `C6` supplier too late ·
-`C7` cannibalisation net-negative · `C9` forward-buy dip · `C10` overlapping
-promotion · `C13` shelf-life waste · `C26` low-confidence spend (blocks when
-NOT_READY) · `C28` severe low-case downside. Each carries evidence, impact,
-resolution, required approver, and a `blocks_campaign` flag.
-
-## API (added)
-
-`POST /api/retention/campaigns/{id}/scenario` — build + persist the decision
-pack (read + compute only; no money/stock/PO). The pack is also embedded in the
-`simulate` lifecycle step. Campaign create now accepts an `objective` (churn
-retention, lapsed reactivation, excess-stock clearance, near-expiry waste, …).
-
-## Frontend
-
-`/retention` gains: objective selector on the draft form, a **Run scenario
-analysis** action, a recommendation banner (decision + conditions + data
-readiness), a **scenario comparison** table (demand L/E/H, net category, stock
-risk, profit L/E/H, worst loss, risk-adjusted value, policy), a chosen-scenario
-**fulfilment options + conflicts** panel, and **department review** cards for all
-nine roles. RTL/keyboard/reduced-motion inherited from the shared UI kit.
-
-## Test evidence (commands actually run)
-
-- `pytest tests/test_campaign_scenario.py tests/test_retention.py` — **41 passed**
-  (host and in-container).
-- Live integration (container, real DB): audience 6/11, baseline 330, four
-  scenarios L/E/H, PILOT recommendation, **PO 3→3, budget 0** (no side effects).
-- HTTP smoke (demo super_admin login): create→audience→scenario all 200; pack
-  persisted under `simulation.scenario_pack`; decision reproducible from stored inputs.
-- Full existing suite: see the session report; the only failures are pre-existing
-  container **path/env artifacts** (`test_alembic_baseline`, two
-  `test_tenant_isolation` file-path checks, `test_default_rate_limits` env
-  override) that fail identically on unmodified code.
+- `pytest tests/ -k flywheel` in-container → **295 passed, 17 skipped, 0 failed**
+- `pytest tests/test_flywheel_scenario_math.py` → **21 passed** (16 ported + 5 new campaign-MC)
+- `pytest tests/test_flywheel_concurrency.py` → **4 passed** against live Postgres
+- `npx tsc --noEmit` → clean
+- Backend imports: 48 routers (retention router gone, flywheel present)
+- Migrations 075–080 applied to the dev database: 52 `flywheel_*` tables
 
 ## Known limitations
 
-- Heuristics are provisional (confidence low); no trained price/uplift/
-  cannibalisation models yet (Phase 4).
-- Per-SKU baseline is a trailing-84-day mean, not the full seasonal model
-  (that anchors the category baseline); good enough for Phase-1 ranges.
-- Operations capacity is a single rules-based flag.
-- One store + one SKU per campaign (multi-scope is Phase 4).
-
-## Deferred to Phase 2 (do NOT auto-start)
-
-Cross-functional approval matrix, budget reservation at approval, soft stock
-allocation, transfer/requisition **commitment**, staged/conditional PO creation
-from the chosen scenario's procurement option.
+- `response_cv` (0.35) is a fixed assumption, not fitted from redemption history.
+- The campaign Monte Carlo varies the response multiplier only; base-demand
+  uncertainty is modelled in `monte_carlo()` but flywheel's simulator aggregates
+  across many (store, SKU) pairs rather than a single SKU, so it is not yet wired
+  into `simulate()`.
+- The `uncertainty` block is not yet surfaced in the flywheel UI.

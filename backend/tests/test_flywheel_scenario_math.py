@@ -7,7 +7,7 @@ reproduce exactly from stored inputs).
 """
 from decimal import Decimal
 
-from app.services import scenario_math as sm
+from app.services.flywheel import scenario_math as sm
 
 
 # --- Empirical quantiles ----------------------------------------------------
@@ -130,6 +130,53 @@ def test_cash_at_risk_includes_committed_cash():
     assert Decimal(car["committed_cash_aed"]) == Decimal("5000.00")
     # Cash at risk is never positive-looking when cash is committed.
     assert Decimal(car["cash_at_risk_aed"]) <= Decimal("-5000.00")
+
+
+# --- Campaign-level Monte Carlo (replaces the fixed 0.6x/1.4x multipliers) ---
+
+_CAMP = dict(discount_cost=Decimal("400"), margin=Decimal("900"),
+             retained_value=Decimal("600"), fixed_cost=Decimal("120"),
+             trials=1500, seed=11)
+
+
+def test_campaign_mc_distribution_is_ordered_and_deterministic():
+    a = sm.monte_carlo_campaign(**_CAMP)
+    b = sm.monte_carlo_campaign(**_CAMP)
+    assert a == b, "same seed must reproduce the same simulation"
+    assert Decimal(a["net_value_p10_aed"]) < Decimal(a["net_value_p50_aed"]) \
+        < Decimal(a["net_value_p90_aed"])
+
+
+def test_campaign_mc_cvar_is_at_or_below_p10():
+    mc = sm.monte_carlo_campaign(**_CAMP)
+    assert Decimal(mc["cvar_5pct_aed"]) <= Decimal(mc["net_value_p10_aed"])
+
+
+def test_campaign_mc_reports_loss_probability_a_fixed_band_cannot():
+    """A thin-margin campaign must show a real chance of loss — the old
+    0.6x/1.4x band could only ever produce three point estimates."""
+    thin = sm.monte_carlo_campaign(
+        discount_cost=Decimal("900"), margin=Decimal("500"),
+        retained_value=Decimal("400"), fixed_cost=Decimal("120"),
+        trials=1500, seed=3)
+    assert 0.0 < thin["loss_probability"] <= 1.0
+
+
+def test_campaign_mc_wider_cv_widens_the_band():
+    tight = sm.monte_carlo_campaign(**{**_CAMP, "response_cv": 0.15})
+    loose = sm.monte_carlo_campaign(**{**_CAMP, "response_cv": 0.60})
+    tight_band = Decimal(tight["net_value_p90_aed"]) - Decimal(tight["net_value_p10_aed"])
+    loose_band = Decimal(loose["net_value_p90_aed"]) - Decimal(loose["net_value_p10_aed"])
+    assert loose_band > tight_band
+
+
+def test_campaign_mc_fixed_costs_do_not_scale_with_response():
+    """Fixed cost is fixed: doubling it must shift every outcome down by
+    exactly that amount, not by a scaled multiple."""
+    base = sm.monte_carlo_campaign(**_CAMP)
+    more = sm.monte_carlo_campaign(**{**_CAMP, "fixed_cost": Decimal("220")})
+    delta = Decimal(base["net_value_p50_aed"]) - Decimal(more["net_value_p50_aed"])
+    assert delta == Decimal("100.00")
 
 
 def test_cash_at_risk_with_no_commitment_tracks_tail_only():

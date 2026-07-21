@@ -29,6 +29,7 @@ boundaries; the simulation core works in float and quantises on the way out.
 from __future__ import annotations
 
 import hashlib
+import math
 import random
 import statistics
 from decimal import Decimal, ROUND_HALF_UP
@@ -47,6 +48,11 @@ def _q(x) -> Decimal:
 
 def _seed(*parts) -> int:
     return int(hashlib.sha256("|".join(str(p) for p in parts).encode()).hexdigest()[:8], 16)
+
+
+def seed_from(*parts) -> int:
+    """Stable RNG seed so a persisted simulation reproduces exactly."""
+    return _seed(*parts)
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +199,64 @@ def monte_carlo(*, base_p10: float, base_p50: float, base_p90: float,
         "expected_leftover_units": int(round(statistics.fmean(leftovers))),
         "expected_expiry_loss_aed": str(_q(statistics.fmean(expiry_losses))),
         "method": "monte_carlo_triangular_demand",
+    }
+
+
+def monte_carlo_campaign(*, discount_cost: Decimal, margin: Decimal,
+                         retained_value: Decimal, fixed_cost: Decimal,
+                         response_cv: float = 0.35, trials: int = DEFAULT_TRIALS,
+                         seed: int = 0) -> Dict:
+    """Campaign-level uncertainty for an already-projected financial picture.
+
+    Flywheel's simulator aggregates the optimizer's per-customer economics into
+    projected totals, then previously derived its three scenarios by multiplying
+    redemption by fixed 0.6x / 1.0x / 1.4x factors. Those multipliers are
+    arbitrary: they imply a symmetric, fixed-width band regardless of audience
+    size or model confidence, and they cannot express a probability of loss.
+
+    This samples a RESPONSE MULTIPLIER instead (lognormal about 1.0 with
+    coefficient of variation `response_cv`, so the multiplier is always positive
+    and right-skewed like real redemption), applies it to the response-driven
+    components, and leaves fixed costs fixed. That yields a genuine distribution:
+    P10/P50/P90 net value, mean, CVaR@5% tail loss and a loss probability.
+
+    Board pack p.2 ("show uncertainty rather than one sales promise") and p.9
+    ("shows expected result and tail loss, not only average profit").
+    """
+    rng = random.Random(seed)
+    disc, marg = float(discount_cost), float(margin)
+    ret_v, fixed = float(retained_value), float(fixed_cost)
+
+    # Lognormal parameters giving mean 1.0 and the requested CV.
+    sigma = (math.log(1.0 + response_cv ** 2)) ** 0.5
+    mu = -0.5 * sigma ** 2
+
+    nets: List[float] = []
+    spends: List[float] = []
+    for _ in range(max(1, trials)):
+        m = math.exp(rng.gauss(mu, sigma))
+        net = (ret_v * m) + (marg * m) - (disc * m) - fixed
+        nets.append(net)
+        spends.append(disc * m + fixed)
+
+    nets_sorted = sorted(nets)
+    q = empirical_quantiles(nets_sorted)
+    tail_n = max(1, int(len(nets_sorted) * 0.05))
+    cvar = sum(nets_sorted[:tail_n]) / tail_n
+    mean_net = statistics.fmean(nets)
+    mean_spend = statistics.fmean(spends)
+    return {
+        "trials": len(nets),
+        "net_value_p10_aed": str(_q(q["p10"])),
+        "net_value_p50_aed": str(_q(q["p50"])),
+        "net_value_p90_aed": str(_q(q["p90"])),
+        "net_value_mean_aed": str(_q(mean_net)),
+        "cvar_5pct_aed": str(_q(cvar)),
+        "loss_probability": round(sum(1 for x in nets if x < 0) / len(nets), 3),
+        "expected_spend_aed": str(_q(mean_spend)),
+        "roi_mean": str(_q(mean_net / mean_spend)) if mean_spend > 0 else "0.00",
+        "response_cv": response_cv,
+        "method": "monte_carlo_lognormal_response_multiplier",
     }
 
 

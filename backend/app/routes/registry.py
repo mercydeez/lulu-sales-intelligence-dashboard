@@ -60,7 +60,6 @@ from app.routes import experience as experience_routes
 from app.routes import findings as findings_routes
 from app.routes import search as search_routes
 from app.routes import copilot as copilot_routes
-from app.routes import retention as retention_routes
 from app.routes import flywheel as flywheel_routes
 
 
@@ -124,9 +123,9 @@ ROUTERS: List[RouterSpec] = [
     (findings_routes.router, "/api/findings", ["Diagnostics"]),
     (search_routes.router, "/api/search", ["Search"]),
     (copilot_routes.router, "/api/ai/copilot", ["Sage Copilot"]),
-    (retention_routes.router, "/api/retention", ["Retention Orchestration"]),
-    # Flywheel — closed-loop retention decisioning (churn -> uplift -> EIV ->
-    # stock/budget/approval -> execution -> measured lift). Distinct prefix from
-    # /api/retention above; the two modules do not share tables or routes.
+    # Flywheel — the single closed-loop retention decisioning module (churn ->
+    # uplift -> EIV -> stock/budget/approval -> execution -> measured lift).
+    # The separate /api/retention module was merged into this one; its scenario
+    # mathematics now live in services/flywheel/scenario_math.py.
     (flywheel_routes.router, "/api/flywheel", ["Flywheel"]),
 ]

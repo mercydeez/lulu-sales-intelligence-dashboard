@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.flywheel import (
     approvals, budget as budget_service, campaign_state, churn as churn_service,
     features as feature_service, inventory_atp, optimizer, outbox, procurement,
-    uplift as uplift_service,
+    scenario_math, uplift as uplift_service,
 )
 from app.services.flywheel.types import (
     ZERO, ActionType, BudgetType, CampaignStatus, PolicyEnvelope, money, money4,
@@ -339,6 +339,20 @@ async def simulate(
     expected_scenario = scenario(Decimal("1.0"))
     roi = Decimal(expected_scenario["roi"])
 
+    # --- uncertainty ------------------------------------------------------
+    # The three scenarios above vary redemption by FIXED 0.6x/1.0x/1.4x factors.
+    # That band is arbitrary — it is the same width whatever the audience size or
+    # model confidence, and it cannot express a probability of loss. The Monte
+    # Carlo below samples a lognormal response multiplier instead, giving a real
+    # distribution with a tail: P10/P50/P90 net value, CVaR@5% and P(loss).
+    # Seeded from the campaign id so a persisted decision reproduces exactly.
+    uncertainty = scenario_math.monte_carlo_campaign(
+        discount_cost=projected["discount_cost"],
+        margin=projected["margin"],
+        retained_value=projected["retained_value"],
+        fixed_cost=money(projected["comms"] + projected["fulfilment"]),
+        seed=scenario_math.seed_from(tenant_id, campaign_id, "simulate"))
+
     # Only a PLANNING-stage simulation advances the state machine. Simulating an
     # already-approved or live campaign is a read-only "what would this do now?"
     # and must not try to drag it backwards to SIMULATED — that transition is
@@ -365,6 +379,8 @@ async def simulate(
             "expected": expected_scenario,
             "optimistic": scenario(Decimal("1.4")),
         },
+        # Distribution-based view of the same picture (see note above the call).
+        "uncertainty": uncertainty,
         "discount_budget_declared_aed": str(money(declared_budget)),
         "budget_sufficient": money(declared_budget) >= money(expected_scenario["discount_spend_aed"]),
         "inventory": {
