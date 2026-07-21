@@ -219,31 +219,49 @@ async def main() -> None:
                   f"cat_net={res['category_net_lift_units']} cannibalized={res['cannibalized_units']} "
                   f"rate={res['cannibalization_rate']}")
 
-    # ---- 7. coalition -------------------------------------------------------
+    # ---- 7. coalition (VARIED engagement, so attribution does real work) ----
     async with async_session() as db:
         await scoped(db)
-        partner_ids = []
+        # Insertion order fixes partner_ids[0..3].
+        partner_ids = {}
         for name, ptype in [("ADNOC Rewards", "fuel"), ("Emirates Skywards", "travel"),
                             ("Address Hotels", "hospitality"), ("Carrefour SHARE", "grocery")]:
-            pid = int((await db.execute(text("""INSERT INTO flywheel_coalition_partners
+            partner_ids[name] = int((await db.execute(text("""INSERT INTO flywheel_coalition_partners
                 (tenant_id, partner_name, partner_type, external_ref, status)
                 VALUES (:t, :n, :ty, 'DEMOSCEN', 'active') RETURNING id"""),
                 {"t": TENANT, "n": name, "ty": ptype})).scalar())
-            partner_ids.append(pid)
+        adnoc, emirates, address, carrefour = (partner_ids["ADNOC Rewards"],
+            partner_ids["Emirates Skywards"], partner_ids["Address Hotels"],
+            partner_ids["Carrefour SHARE"])
+
+        # A popularity-weighted pool: fuel + grocery are the everyday partners a
+        # grocery shopper also uses; hospitality/travel are occasional. Each
+        # customer touches TWO DISTINCT partners at DIFFERENT recencies, so the
+        # time-decay model produces genuinely varied weights rather than a flat
+        # 50/50 — the attribution then differs per partner, as it would in life.
+        pool = [adnoc, carrefour, adnoc, carrefour, emirates, adnoc, carrefour, address]
+        n = len(pool)
         for idx, cust in enumerate(treatment[:60]):
-            for k in range(2):  # each customer touches 2 partners
+            p1 = pool[idx % n]
+            p2 = pool[(idx * 3 + 1) % n]
+            if p2 == p1:
+                p2 = pool[(idx * 3 + 2) % n]
+            # p1 is the older touch, p2 the more recent -> time-decay favours p2.
+            for pid, days_ago in ((p1, 3 + (idx % 25)), (p2, idx % 4)):
                 await db.execute(text("""INSERT INTO flywheel_coalition_activity
                     (tenant_id, customer_id, partner_id, activity_type, points, value_aed, occurred_at)
                     VALUES (:t, :c, :p, 'earn', 100, 30, :at)"""),
-                    {"t": TENANT, "c": cust, "p": partner_ids[(idx + k) % len(partner_ids)],
-                     "at": NOW - timedelta(days=(idx % 20))})
+                    {"t": TENANT, "c": cust, "p": pid, "at": NOW - timedelta(days=days_ago)})
         await db.commit()
-        for cust in treatment[:60]:
+        # Vary the per-customer incremental margin a little too (10–14 AED).
+        for idx, cust in enumerate(treatment[:60]):
             await coalition.attribute(db, tenant_id=TENANT, campaign_id=campaign, customer_id=cust,
-                                      incremental_margin_aed=Decimal("12.00"), model="time_decay", persist=True)
+                                      incremental_margin_aed=Decimal("10.00") + Decimal(idx % 5),
+                                      model="time_decay", persist=True)
         await db.commit()
         agg = await coalition.campaign_attribution(db, tenant_id=TENANT, campaign_id=campaign)
-        print(f"7. coalition: {len(agg['by_partner'])} partners attributed")
+        print(f"7. coalition: {len(agg['by_partner'])} partners, margins "
+              + ", ".join(f"{p['partner_name'].split()[0]}={p['attributed_margin_aed']}" for p in agg["by_partner"]))
 
     # ---- 8. trade (supplier scan-down funding + settlement) ----------------
     async with async_session() as db:
@@ -267,8 +285,27 @@ async def main() -> None:
                                          period_start=date.today() - timedelta(days=1),
                                          period_end=date.today() + timedelta(days=1))
         await db.commit()
-        print(f"8. trade: funding {f['funding_id']} committed 5000, settlement {s['settlement_id']} "
-              f"amount={s['amount_due_aed']}")
+
+        # A SECOND funding on the same campaign — a different supplier, a co-op
+        # cost-share still at 'proposed'. It gives the Trade tab a realistic mix
+        # (one active+settled, one proposed) and, because it is on the demo
+        # campaign, the cleanup owns it too (no orphan left behind).
+        supplier2 = (await db.execute(text("SELECT id FROM suppliers WHERE tenant_id = :t AND name = :n"),
+                                      {"t": TENANT, "n": "Emirates Fresh Supply Co"})).scalar()
+        if not supplier2:
+            supplier2 = int((await db.execute(text(
+                "INSERT INTO suppliers (tenant_id, name, status) VALUES (:t, 'Emirates Fresh Supply Co', 'active') RETURNING id"),
+                {"t": TENANT})).scalar())
+        await db.execute(text("""INSERT INTO product_suppliers (tenant_id, item_id, supplier_id, unit_cost, moq, lead_time_days)
+                                 VALUES (:t, :i, :s, 3.20, 10, 2) ON CONFLICT DO NOTHING"""),
+                         {"t": TENANT, "i": other_item, "s": supplier2})
+        await db.commit()
+        f2 = await trade.propose_funding(db, tenant_id=TENANT, supplier_id=supplier2, campaign_id=campaign,
+                                         funding_type="co_op", committed_aed=Decimal("3500"),
+                                         item_ids=[other_item], agreement_ref="DEMOSCEN-COOP")
+        await db.commit()
+        print(f"8. trade: scan-down funding {f['funding_id']} settled {s['amount_due_aed']}, "
+              f"co-op funding {f2['funding_id']} proposed")
 
     # ---- 9. shelf-life batches ---------------------------------------------
     async with async_session() as db:
