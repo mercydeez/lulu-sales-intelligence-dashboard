@@ -19,7 +19,7 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, Loader2, PackageSearch,
   Rocket, Sparkles, Target, TrendingUp, Users, Wallet,
@@ -192,13 +192,41 @@ export default function CampaignStudio() {
         </div>
       )}
 
-      <AnimatePresence mode="wait">
+      {/*
+        NO AnimatePresence, NO exit animation, NO opacity fade — deliberately.
+
+        This used to be <AnimatePresence mode="wait"> with an exit animation.
+        `mode="wait"` will not MOUNT the incoming child until the outgoing child's
+        exit animation reports completion, and framer-motion drives animations
+        with requestAnimationFrame. rAF is suspended whenever the document is
+        hidden — a background tab, an embedded webview, a headless/automation
+        context — so the exit never completed, the next panel never mounted, and
+        the wizard froze on whichever step it was on while `step` advanced
+        invisibly underneath it (the footer button, which sits outside this
+        wrapper, kept updating, which is what made it look so baffling).
+
+        Measured in an embedded preview: visibilityState 'hidden',
+        0 rAF frames in 500ms, and no step panel in the DOM at all.
+
+        Dropping `mode="wait"` alone is not enough: AnimatePresence would then
+        keep the OUTGOING panel mounted until its exit completed, stacking two
+        steps on top of each other in the same conditions. So the exit goes too,
+        and the changing `key` lets React swap panels synchronously.
+
+        The enter animation is TRANSFORM-ONLY on purpose. An opacity fade starting
+        at 0 has the same failure shape — with no rAF the panel mounts and stays
+        invisible, which is the "cards invisible (opacity 0)" bug this repo has
+        already fixed once. A transform that never animates leaves the content
+        12px off-target and perfectly readable.
+
+        motion.tsx states the rule this restores: motion is never load-bearing
+        for meaning.
+      */}
         <motion.div
           key={step}
-          initial={reduce ? false : { opacity: 0, x: 12 }}
-          animate={reduce ? {} : { opacity: 1, x: 0 }}
-          exit={reduce ? {} : { opacity: 0, x: -12 }}
-          transition={{ duration: 0.28, ease: EASE }}
+          initial={reduce ? false : { x: 12 }}
+          animate={{ x: 0 }}
+          transition={{ duration: reduce ? 0 : 0.28, ease: EASE }}
         >
           {/* ── 0. Objective ─────────────────────────────────────────── */}
           {step === 0 && (
@@ -636,7 +664,6 @@ export default function CampaignStudio() {
             </Card>
           )}
         </motion.div>
-      </AnimatePresence>
 
       {/* Navigation */}
       {step < 6 && (
