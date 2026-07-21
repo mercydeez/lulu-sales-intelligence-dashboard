@@ -438,6 +438,88 @@ export default function CampaignStudio() {
                     })}
                   </div>
 
+                  {simulation.uncertainty && (() => {
+                    const u = simulation.uncertainty!;
+                    const lossPct = u.loss_probability * 100;
+                    const lossTone = lossPct > 20
+                      ? 'text-rose-700 dark:text-rose-400'
+                      : lossPct > 5
+                        ? 'text-amber-700 dark:text-amber-400'
+                        : 'text-teal-700 dark:text-teal-300';
+                    const cvarNegative = Number(u.cvar_5pct_aed) < 0;
+                    return (
+                      <div className="mt-5 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            Uncertainty
+                          </h3>
+                          <p className="text-[11px] text-slate-400">
+                            {u.trials.toLocaleString()} simulations · response CV {u.response_cv}
+                          </p>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          The three cards above vary redemption by fixed 0.6×/1.0×/1.4× factors.
+                          These figures sample a lognormal response multiplier instead, so they
+                          carry a tail and a probability of loss.
+                        </p>
+
+                        {/* distribution */}
+                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                          {([
+                            ['P10 — downside', u.net_value_p10_aed],
+                            ['P50 — median', u.net_value_p50_aed],
+                            ['P90 — upside', u.net_value_p90_aed],
+                          ] as const).map(([label, value]) => (
+                            <div key={label}>
+                              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                                {label}
+                              </p>
+                              <p className="mt-1 font-mono text-lg text-slate-900 dark:text-slate-100">
+                                {aed(value)}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* tail + risk */}
+                        <dl className="mt-4 grid gap-3 border-t border-slate-200 pt-3 text-xs sm:grid-cols-4 dark:border-slate-700">
+                          <div>
+                            <dt className="text-slate-500">CVaR 5% (tail loss)</dt>
+                            <dd className={`mt-0.5 font-mono font-semibold ${
+                              cvarNegative ? 'text-rose-700 dark:text-rose-400'
+                                           : 'text-slate-700 dark:text-slate-300'}`}>
+                              {aed(u.cvar_5pct_aed)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Probability of loss</dt>
+                            <dd className={`mt-0.5 font-mono font-semibold ${lossTone}`}>
+                              {lossPct.toFixed(1)}%
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Mean net value</dt>
+                            <dd className="mt-0.5 font-mono text-slate-700 dark:text-slate-300">
+                              {aed(u.net_value_mean_aed)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Mean ROI</dt>
+                            <dd className="mt-0.5 font-mono font-semibold text-teal-700 dark:text-teal-300">
+                              {u.roi_mean}×
+                            </dd>
+                          </div>
+                        </dl>
+
+                        <p className="mt-3 text-[11px] text-slate-400">
+                          CVaR is the mean of the worst 5% of outcomes, not a percentile — it is
+                          what a bad run actually costs. Seeded from the campaign, so this
+                          simulation reproduces exactly.
+                        </p>
+                      </div>
+                    );
+                  })()}
+
                   {!simulation.budget_sufficient && (
                     <div role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                       <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />

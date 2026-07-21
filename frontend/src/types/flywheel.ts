@@ -108,12 +108,30 @@ export interface ShortageResolution {
   atp?: AtpSnapshot;
 }
 
+/** Distribution-based view of the simulation: a lognormal response multiplier
+ *  sampled many times, rather than the fixed 0.6x/1.0x/1.4x scenario band.
+ *  Optional because a campaign simulated before this shipped has no block. */
+export interface SimulationUncertainty {
+  trials: number;
+  net_value_p10_aed: string;
+  net_value_p50_aed: string;
+  net_value_p90_aed: string;
+  net_value_mean_aed: string;
+  cvar_5pct_aed: string;
+  loss_probability: number;
+  expected_spend_aed: string;
+  roi_mean: string;
+  response_cv: number;
+  method: string;
+}
+
 export interface SimulationResult {
   campaign_id: number;
   audience: { treatment_total: number; sampled: number; scale_factor: number; note: string };
   expected_redemptions: number;
   action_mix: Record<string, number>;
   scenarios: { pessimistic: Scenario; expected: Scenario; optimistic: Scenario };
+  uncertainty?: SimulationUncertainty;
   discount_budget_declared_aed: string;
   budget_sufficient: boolean;
   inventory: { skus_evaluated: number; shortages: Shortage[]; resolutions: ShortageResolution[] };
