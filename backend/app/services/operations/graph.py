@@ -47,6 +47,7 @@ from app.services.operations.tools_read import (
     finding_item_id,
     get_inventory_state,
     load_finding,
+    stale_stock_feeds,
 )
 
 logger = logging.getLogger(__name__)
@@ -165,6 +166,25 @@ async def gather_and_recommend_node(state: OpsState) -> OpsState:
     state["snapshots"] = snapshots
     _event(state, "evidence.gathered", inventory_rows=len(snapshots),
            item_id=item_id)
+
+    # Stock-feed freshness gate: check_freshness_node protected the FINDING; this
+    # protects the STOCK NUMBER we're about to size an order on. If a store's
+    # inventory feed has gone dark (store-wide + snapshot-aware, so a quiet SKU
+    # isn't mistaken for a dead feed), we've lost sight of on-hand stock —
+    # escalate for human re-verify rather than order against a number we can't
+    # stand behind. Non-inventory findings (no snapshots) skip this.
+    if snapshots:
+        stale = await stale_stock_feeds(
+            state["_db"], [s["store_id"] for s in snapshots],
+            max_age_hours=policy.max_evidence_age_hours)
+        if stale:
+            state["status"] = "escalated"
+            state["refusal_reason"] = (
+                f"the inventory feed for store(s) {sorted(stale)} has not updated "
+                "within the freshness window — a human should re-verify on-hand "
+                "stock before any replenishment or transfer")
+            _event(state, "stock.stale", stores=sorted(stale))
+            return state
 
     rec = build_recommendation(run_id=state["run_id"], tenant_id=state["tenant_id"],
                                finding=finding, snapshots=snapshots, policy=policy,

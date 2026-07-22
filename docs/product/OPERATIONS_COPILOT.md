@@ -154,9 +154,13 @@ This is a **demonstrable MVP on synthetic data**, not a production deployment.
   warehouse connector exists. A replenishment produces an internal draft with **no
   supplier selected**; a transfer produces an internal task. Nothing leaves the
   building. Wiring a real connector is scoped in `PILOT_INTEGRATION_CHECKLIST.md`.
-- **Inventory is seeded/derived, not POS-fed**, and carries no observation
-  timestamp — so the freshness gate protects the *finding*, not the stock number.
-  A real inventory feed with timestamps closes this.
+- **Inventory is seeded/derived, not POS-fed.** The stock number IS now
+  freshness-gated: the recommend graph checks each acted store's inventory feed
+  (store-wide and snapshot-aware, so a quiet SKU isn't mistaken for a dead feed)
+  and escalates for human re-verify if the feed has gone dark — it no longer
+  sizes an order on a stock number it can't stand behind. What's still missing is
+  a *live* feed to be fresh against; the demo's bulk-loaded snapshot is trusted by
+  design, so the gate only bites once a real, spread-timestamp feed exists.
 - **Returns have no reason codes** (returns are negative-unit sales), so an
   investigation into a return spike can reference the metric but not a cause.
 - **Measurement is the finding's own metric re-checked** by the existing worker

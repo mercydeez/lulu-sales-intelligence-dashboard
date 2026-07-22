@@ -92,6 +92,45 @@ async def get_inventory_state(db: AsyncSession, *, tenant_id: int, item_id: int,
     return [dict(r) for r in rows]
 
 
+def _feed_is_stale(age_hours: Optional[float], distinct_stamps: Optional[int],
+                   max_age_hours: float) -> bool:
+    """Has a store's inventory feed gone dark? PURE, so it's unit-testable.
+
+    Feed-death is a STORE-wide, snapshot-aware question, not a per-row one — the
+    same lesson flywheel.inventory_atp.inventory_freshness_ok already learned:
+      * no timestamp at all  -> not stale (no signal is not evidence of a problem)
+      * one distinct stamp    -> a bulk-loaded snapshot, nothing to be stale
+                                 against (a static demo seed must not self-disable)
+      * several distinct stamps -> a real feed; only then does the age gate apply.
+    A quiet SKU's old timestamp is stability, not staleness — that's why the age
+    is measured over the whole store, not the single row we're about to act on.
+    """
+    if age_hours is None or (distinct_stamps or 0) <= 1:
+        return False
+    return float(age_hours) > max_age_hours
+
+
+async def stale_stock_feeds(db: AsyncSession, store_ids: List[int], *,
+                            max_age_hours: float) -> List[int]:
+    """Which of these stores' inventory feeds have gone dark? Aggregates store-wide
+    so a quiet SKU doesn't read as stale; classification is the pure helper above.
+    The finding-freshness gate protects the FINDING — this protects the STOCK
+    NUMBER we're about to size an order on, using the tenant's freshness window."""
+    if not store_ids:
+        return []
+    rows = (await db.execute(
+        text("SELECT store_id, "
+             "EXTRACT(EPOCH FROM (now() - MAX(COALESCE("
+             "  updated_at, CAST(last_restock_date AS timestamptz))))) / 3600 AS age_hours, "
+             "COUNT(DISTINCT COALESCE("
+             "  updated_at, CAST(last_restock_date AS timestamptz))) AS distinct_stamps "
+             "FROM inventory WHERE store_id = ANY(:s) GROUP BY store_id"),
+        {"s": list(store_ids)},
+    )).mappings().all()
+    return [r["store_id"] for r in rows
+            if _feed_is_stale(r["age_hours"], r["distinct_stamps"], max_age_hours)]
+
+
 def _num(v, default=None):
     try:
         return float(v)

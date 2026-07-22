@@ -35,9 +35,13 @@ class FakeDB:
     query. Honours the store_ids predicate the way the real query does: None =>
     all snapshots (tenant-wide), a list => only those stores, [] => nothing."""
 
-    def __init__(self, finding=None, snapshots=None):
+    def __init__(self, finding=None, snapshots=None, feed_rows=None):
         self._finding = finding
         self._snapshots = snapshots or []
+        # Pre-aggregated {store_id, age_hours, distinct_stamps} rows for the
+        # stock-feed staleness query; None => the query returns nothing (a live,
+        # non-stale feed), which is what the existing tests assume.
+        self._feed_rows = feed_rows
 
     async def execute(self, stmt, params=None):
         sql = str(stmt).lower()
@@ -50,6 +54,12 @@ class FakeDB:
             allowed = set(stores)
             return _MappingResult([s for s in self._snapshots
                                    if s["store_id"] in allowed])
+        if "from inventory where store_id" in sql:
+            if not self._feed_rows:
+                return _MappingResult([])
+            allowed = set((params or {}).get("s") or [])
+            return _MappingResult([r for r in self._feed_rows
+                                   if r["store_id"] in allowed])
         return _MappingResult([])
 
 
@@ -110,6 +120,23 @@ class TestOrchestration:
         state = await run(FakeDB(stockout_finding(updated_at=old), [snapshot()]))
         assert state["status"] == "escalated"
         assert any(e["event_type"] == "finding.stale" for e in state["events"])
+
+    async def test_dead_stock_feed_escalates(self):
+        # A real feed (several distinct stamps) whose newest write is 800h old:
+        # we've lost sight of on-hand stock, so we must not size an order on it.
+        feed = [{"store_id": 7, "age_hours": 800.0, "distinct_stamps": 5}]
+        state = await run(FakeDB(stockout_finding(), [snapshot()], feed_rows=feed))
+        assert state["status"] == "escalated"
+        assert any(e["event_type"] == "stock.stale" for e in state["events"])
+        assert not state.get("recommendation")
+
+    async def test_bulk_loaded_snapshot_feed_is_not_stale(self):
+        # A single distinct stamp is a bulk-loaded snapshot (the demo seed), not a
+        # dead feed — old but trustworthy, so the copilot proceeds normally.
+        feed = [{"store_id": 7, "age_hours": 5000.0, "distinct_stamps": 1}]
+        state = await run(FakeDB(stockout_finding(), [snapshot()], feed_rows=feed))
+        assert state["status"] == "awaiting_approval"
+        assert not any(e["event_type"] == "stock.stale" for e in state["events"])
 
     async def test_inventory_finding_without_snapshot_refuses(self):
         state = await run(FakeDB(stockout_finding(), []))
