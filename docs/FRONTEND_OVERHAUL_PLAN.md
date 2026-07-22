@@ -5,9 +5,14 @@ guide to take the dashboard from "clean but basic" to an **Awwwards-level**, imm
 cohesive product — without breaking the working app underneath.
 
 **Approach (locked):** polish **in-place** on the existing custom UI library — **not** a shadcn/ui
-migration. Add motion with **framer-motion** (already installed). **No dark mode** (removed).
-Motion is "rich but tasteful." Brand hue = **teal**; **coral is reserved for attention/returns**
-signals only.
+migration. Add motion with **framer-motion** (already installed). Motion is "rich but tasteful."
+Brand hue = **teal**; **coral is reserved for attention/returns** signals only.
+
+> **Dark mode is BACK** (restored in `637d557` after the foundation removed it in `bfb22b1`). The
+> app toggles `html.dark` via `ThemeContext`, boot-applied pre-paint in `layout.tsx`, with token +
+> utility remaps in `globals.css`. **`dark:*` variants are live — do not delete them.** Any screen
+> you touch must read correctly in **both** light and dark. Older mentions of "no dark mode" below
+> are historical (they described the foundation commit) — ignore them.
 
 > Read this top-to-bottom once, then work one phase at a time. Each phase is independently
 > shippable (its own branch + PR). Don't start a phase before the previous one's "Definition of
