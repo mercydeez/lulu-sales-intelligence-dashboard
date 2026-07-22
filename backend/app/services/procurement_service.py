@@ -206,6 +206,22 @@ async def generate_draft_pos_from_reorder(
     """), {"t": tenant_id, "statuses": list(OPEN_STATUSES)})).fetchall()
     already_open = {r.item_id for r in open_item_rows}
 
+    # Preferred supplier per candidate item — ONE batched query instead of an N+1
+    # per-item lookup (up to 500 round-trips). DISTINCT ON keeps the exact same
+    # per-item tiebreak the row-at-a-time query used, so the chosen supplier is
+    # identical; the ORDER BY must lead with item_id for DISTINCT ON to be valid.
+    candidate_ids = [iid for iid, info in by_item.items()
+                     if info["qty"] > 0 and iid not in already_open]
+    supplier_by_item: Dict[int, object] = {}
+    if candidate_ids:
+        sup_rows = (await db.execute(text("""
+            SELECT DISTINCT ON (item_id) item_id, supplier_id, unit_cost, moq
+            FROM product_suppliers
+            WHERE tenant_id = :t AND item_id = ANY(:ids)
+            ORDER BY item_id, is_preferred DESC, unit_cost ASC
+        """), {"t": tenant_id, "ids": candidate_ids})).fetchall()
+        supplier_by_item = {r.item_id: r for r in sup_rows}
+
     # Map each item to its preferred supplier + cost/MOQ.
     grouped: Dict[int, List[Dict]] = {}
     skipped_no_supplier: List[Dict] = []
@@ -216,11 +232,7 @@ async def generate_draft_pos_from_reorder(
         if item_id in already_open:
             skipped_already_open.append(info)
             continue
-        sup = (await db.execute(text("""
-            SELECT supplier_id, unit_cost, moq FROM product_suppliers
-            WHERE tenant_id = :t AND item_id = :i
-            ORDER BY is_preferred DESC, unit_cost ASC LIMIT 1
-        """), {"t": tenant_id, "i": item_id})).fetchone()
+        sup = supplier_by_item.get(item_id)
         if not sup:
             skipped_no_supplier.append(info)
             continue

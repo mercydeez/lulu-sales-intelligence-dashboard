@@ -55,9 +55,11 @@ async def get_latest(
     items_result = await db.execute(select(Item))
     items = {i.id: i.name for i in items_result.scalars().all()}
     
-    # Get latest records
+    # Get latest records — tenant-scoped (defense in depth: correct even when RLS
+    # is off / for a full-access principal whose accessible-store scope is empty).
     allowed_stores = get_accessible_store_ids(current_user)
-    query = select(Sale)
+    tenant_id = current_user.get('tenant_id') or 1
+    query = select(Sale).where(Sale.tenant_id == tenant_id)
     if allowed_stores:
         query = query.where(Sale.store_id.in_(allowed_stores))
     query = query.order_by(Sale.created_at.desc()).limit(limit)

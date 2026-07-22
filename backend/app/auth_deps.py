@@ -301,6 +301,15 @@ async def get_current_user_from_ticket(
     if token_data.exp < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Stream ticket expired")
 
+    # Session revocation epoch: a password reset / admin revoke invalidates every
+    # token issued before the cutoff. The ticket path must honour it too, or a
+    # revoked session could still open live SSE feeds for the ticket's TTL.
+    if token_data.iat is not None:
+        from app.services.auth_service import tokens_revoked_before
+        cutoff = await tokens_revoked_before(token_data.user_id)
+        if cutoff is not None and token_data.iat < cutoff:
+            raise HTTPException(status_code=401, detail="Session has been revoked")
+
     user = await AuthService.get_user_by_id(token_data.user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
