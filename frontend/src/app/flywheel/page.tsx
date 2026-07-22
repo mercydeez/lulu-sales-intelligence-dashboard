@@ -118,7 +118,7 @@ export default function FlywheelCommandCentre() {
           <div className="flex flex-wrap items-center gap-2">
             <SyntheticBadge />
             <Link href="/flywheel/studio">
-              <Button variant="primary"><Plus className="w-4 h-4 mr-1.5" />New campaign</Button>
+              <Button variant="primary"><Plus className="w-4 h-4 me-1.5" />New campaign</Button>
             </Link>
           </div>
         }
@@ -139,9 +139,9 @@ export default function FlywheelCommandCentre() {
               action={
                 <Button variant="primary" onClick={runSetup} disabled={!!setupStep}>
                   {setupStep ? (
-                    <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />{setupStep}</>
+                    <><Loader2 className="w-4 h-4 me-1.5 animate-spin" />{setupStep}</>
                   ) : (
-                    <><Play className="w-4 h-4 mr-1.5" />Generate customers & score risk</>
+                    <><Play className="w-4 h-4 me-1.5" />Generate customers & score risk</>
                   )}
                 </Button>
               }
@@ -179,10 +179,10 @@ export default function FlywheelCommandCentre() {
             {/* THE SIGNATURE MOMENT */}
             <Reveal>
               <Card padding="lg" className="h-full">
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <h2 className="text-sm font-semibold text-ink">
                   The loop
                 </h2>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                <p className="mt-1 text-xs text-ink-muted">
                   {leadCampaign
                     ? <>“{leadCampaign.name}” is at the highlighted stage.</>
                     : 'Create a campaign to start the loop.'}
@@ -197,7 +197,7 @@ export default function FlywheelCommandCentre() {
               <Reveal delay={0.05}>
                 <Card padding="lg">
                   <div className="flex items-center justify-between gap-3 mb-4">
-                    <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    <h2 className="text-sm font-semibold text-ink">
                       Campaign pipeline
                     </h2>
                     <Link href="/flywheel/approvals"
@@ -219,32 +219,32 @@ export default function FlywheelCommandCentre() {
                         return (
                           <div key={column.label}>
                             <div className="mb-2 flex items-baseline justify-between">
-                              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
                                 {column.label}
                               </span>
-                              <span className="font-mono text-[11px] text-slate-400">{inColumn.length}</span>
+                              <span className="font-mono text-[11px] text-ink-muted">{inColumn.length}</span>
                             </div>
                             <div className="space-y-2">
                               {inColumn.length === 0 && (
-                                <div className="rounded-lg border border-dashed border-slate-200 p-3 text-center text-[11px] text-slate-400 dark:border-slate-700">
+                                <div className="rounded-lg border border-dashed border-line p-3 text-center text-[11px] text-ink-muted">
                                   none
                                 </div>
                               )}
                               {inColumn.map((campaign, i) => (
                                 <Reveal key={campaign.id} delay={ci * 0.04 + i * 0.03}>
                                   <Link href={`/flywheel/campaigns/${campaign.id}`} className="block group">
-                                    <div className="rounded-lg border border-slate-200 p-3 transition-transform
+                                    <div className="rounded-lg border border-line p-3 transition-transform
                                                     duration-200 group-hover:-translate-y-0.5 group-hover:border-teal-300
                                                     focus-within:ring-2 focus-within:ring-teal-500
-                                                    dark:border-slate-700 dark:group-hover:border-teal-600">
-                                      <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                                    dark:group-hover:border-teal-600">
+                                      <p className="truncate text-sm font-medium text-ink">
                                         {campaign.name}
                                       </p>
                                       <div className="mt-2 flex items-center justify-between gap-2">
                                         <Badge variant={STATUS_TONE[campaign.status] ?? 'neutral'}>
                                           {campaign.status.replace(/_/g, ' ').toLowerCase()}
                                         </Badge>
-                                        <span className="font-mono text-[11px] text-slate-400">
+                                        <span className="font-mono text-[11px] text-ink-muted">
                                           {campaign.treatment_size.toLocaleString()}
                                         </span>
                                       </div>
@@ -271,10 +271,10 @@ export default function FlywheelCommandCentre() {
                   <Link href="/flywheel/customers" className="group">
                     <Card padding="md" hover="lift" className="h-full">
                       <Users className="w-5 h-5 text-teal-700 dark:text-teal-300" />
-                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                      <p className="mt-2 text-sm font-medium text-ink">
                         Customers at risk
                       </p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      <p className="mt-1 text-xs text-ink-muted">
                         Churn scores with the drivers behind each one.
                       </p>
                     </Card>
@@ -282,10 +282,10 @@ export default function FlywheelCommandCentre() {
                   <Link href="/flywheel/budget" className="group">
                     <Card padding="md" hover="lift" className="h-full">
                       <span aria-hidden className="block text-teal-700 dark:text-teal-300 font-mono text-lg">AED</span>
-                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                      <p className="mt-2 text-sm font-medium text-ink">
                         Budget & exposure
                       </p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      <p className="mt-1 text-xs text-ink-muted">
                         Allocated, reserved, committed, spent — with the full ledger.
                       </p>
                     </Card>
@@ -293,10 +293,10 @@ export default function FlywheelCommandCentre() {
                   <Link href="/flywheel/models" className="group">
                     <Card padding="md" hover="lift" className="h-full">
                       <Sparkles className="w-5 h-5 text-teal-700 dark:text-teal-300" />
-                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                      <p className="mt-2 text-sm font-medium text-ink">
                         Models & honesty
                       </p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      <p className="mt-1 text-xs text-ink-muted">
                         Which model is live, its metrics, and what it cannot claim.
                       </p>
                     </Card>
@@ -308,7 +308,7 @@ export default function FlywheelCommandCentre() {
         </>
       )}
 
-      <p className="mt-8 text-xs text-slate-400 dark:text-slate-500 max-w-3xl">
+      <p className="mt-8 text-xs text-ink-muted max-w-3xl">
         Models propose; only deterministic, policy-checked services touch money or stock.
         All customers, treatment histories and campaign outcomes are synthetic —
         no production accuracy is claimed.
