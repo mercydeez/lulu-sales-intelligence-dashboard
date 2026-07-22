@@ -15,6 +15,8 @@ pytest.importorskip("langgraph", reason="langgraph not installed (USE_SAGE_V3 pa
 
 from app.services.sage3.graph.router import decide_route  # noqa: E402
 from app.services.sage3.graph.critic import evidence_rows  # noqa: E402
+from app.services.sage3.graph.arbiter import arbiter_node  # noqa: E402
+from app.services.sage3.graph.finaliser import finaliser_node  # noqa: E402
 from app.services.sage3.state import initial_state  # noqa: E402
 from app.services.sage3 import run_sage3, get_graph  # noqa: E402
 
@@ -49,6 +51,39 @@ def test_initial_state_empty_stores_means_all():
     st = initial_state(session_id="s", user_query="q", tenant_id=1,
                        role="super_admin", allowed_stores=None)
     assert st["allowed_stores"] == []  # [] => no store restriction (super_admin)
+
+
+# --- confidence honesty ------------------------------------------------------
+@pytest.mark.asyncio
+async def test_clarification_turn_carries_no_confidence():
+    """A clarifying question is not an answer, so it must not be badged with one.
+
+    Regression: the finaliser fell through to a 0.5 fallback for dialogue turns,
+    so asking the user "which store did you mean?" rendered a confidence badge —
+    which reads as the model doubting itself.
+    """
+    st = initial_state(session_id="s", user_query="sales", tenant_id=1,
+                       role="super_admin", allowed_stores=None)
+    st["needs_clarification"] = True
+    st["draft_answer"] = "Which store did you mean?"
+    out = await finaliser_node(st)
+    assert out["final_confidence"] is None
+
+
+@pytest.mark.asyncio
+async def test_single_validator_is_not_penalised_as_an_abstention():
+    """One voter that didn't run must not be scored 0.5 against the answer.
+
+    Regression: averaging a present 0.9 with an absent voter's 0.5 default gave
+    0.70 and could drop a corroborated answer below the pass line.
+    """
+    st = initial_state(session_id="s", user_query="q", tenant_id=1,
+                       role="super_admin", allowed_stores=None)
+    st["critic_verdict"] = {"confidence": 0.9, "verdict": "pass", "issues": []}
+    st["cross_check"] = {"supported": True}          # ran, but returned no score
+    out = await arbiter_node(st)
+    assert out["arbiter_verdict"]["confidence"] == 0.9
+    assert out["arbiter_verdict"]["verdict"] == "pass"
 
 
 # --- evidence grounding -----------------------------------------------------

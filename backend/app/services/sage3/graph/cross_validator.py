@@ -54,7 +54,14 @@ async def cross_validator_node(state: AgentState) -> AgentState:
         obj = await complete_json(providers, CROSS_SYSTEM,
                                   f"DRAFT:\n{state.get('draft_answer','')}\n\nEVIDENCE rows:\n{ev}")
         if obj and "supported" in obj:
-            obj.setdefault("confidence", 0.6 if obj.get("supported") else 0.3)
+            if "confidence" not in obj:
+                # The LLM said supported/not but gave no score. Fall back to the
+                # deterministic number-containment score rather than a flat 0.6 —
+                # a fully-corroborated answer scored 0.6 purely because the model
+                # omitted a field, which then dragged the arbiter below its 0.7
+                # pass line and made a correct answer look uncertain.
+                obj["confidence"] = (_heuristic_cross(state)["confidence"]
+                                     if obj.get("supported") else 0.3)
             obj.setdefault("unsupported", [])
             try:
                 obj["confidence"] = float(obj["confidence"])

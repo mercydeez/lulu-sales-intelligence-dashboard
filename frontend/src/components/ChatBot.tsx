@@ -154,12 +154,16 @@ const SUGGESTED_QUESTIONS = [
   'Where am I losing money to dead stock?',
 ];
 
+/** High/Medium/Low framing, matching the pill grammar the Decision Center and
+ *  AiAnswerBlock already use, so the two surfaces read identically. Returns null
+ *  when there is no answer to score (dialogue turns) — the badge is then omitted
+ *  rather than rendered as an empty dash. The raw score stays visible in the
+ *  agent trace under "Show reasoning". */
 function confidenceStyle(c?: number | null) {
-  if (c == null) return { label: '—', cls: 'bg-surface-3 text-ink-muted' };
-  const pct = `${Math.round(c * 100)}%`;
-  if (c >= 0.7) return { label: pct, cls: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' };
-  if (c >= 0.5) return { label: pct, cls: 'bg-amber-500/15 text-amber-400 border border-amber-500/30' };
-  return { label: pct, cls: 'bg-rose-500/15 text-rose-400 border border-rose-500/30' };
+  if (c == null) return null;
+  if (c >= 0.7) return { label: 'High confidence', cls: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' };
+  if (c >= 0.5) return { label: 'Medium confidence', cls: 'bg-amber-500/15 text-amber-400 border border-amber-500/30' };
+  return { label: 'Low confidence', cls: 'bg-rose-500/15 text-rose-400 border border-rose-500/30' };
 }
 
 // Confidence badge + collapsible agent trace + citations + readback confirm.
@@ -175,9 +179,11 @@ function MessageMeta({ meta, onConfirm }: { meta: ChatMeta; onConfirm: () => voi
     <div className="mt-2 space-y-1.5">
       {/* Badges row */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${conf.cls}`}>
-          <ShieldCheck className="w-3 h-3" /> Confidence {conf.label}
-        </span>
+        {conf && (
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${conf.cls}`}>
+            <ShieldCheck className="w-3 h-3" /> {conf.label}
+          </span>
+        )}
         {meta.grounded && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-violet-500/15 text-violet-300 border border-violet-500/30">
             <Database className="w-3 h-3" /> Grounded

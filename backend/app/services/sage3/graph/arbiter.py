@@ -15,17 +15,20 @@ from ..state import AgentState, add_trace
 async def arbiter_node(state: AgentState) -> AgentState:
     critic = state.get("critic_verdict") or {}
     cross = state.get("cross_check") or {}
-    c_conf = float(critic.get("confidence", 0.5))
-    x_conf = float(cross.get("confidence", 0.5))
+    # Only average the voters that actually ran. Defaulting a missing node to 0.5
+    # meant one absent voter halved a confident answer's score and pushed it under
+    # the 0.7 pass line — an abstention should not count as a vote of no confidence.
+    votes = [float(v["confidence"]) for v in (critic, cross) if "confidence" in v]
     supported = bool(cross.get("supported", True))
 
     if supported:
-        confidence = round((c_conf + x_conf) / 2, 2)
+        confidence = round(sum(votes) / len(votes), 2) if votes else 0.5
         verdict = "pass" if confidence >= 0.7 else "uncertain"
-        rationale = "critic and cross-validator agree"
+        rationale = ("critic and cross-validator agree" if len(votes) > 1
+                     else "single validator, no disagreement")
     else:
         # Disagreement → conservative: penalise and caveat.
-        confidence = round(min(c_conf, x_conf) * 0.8, 2)
+        confidence = round((min(votes) if votes else 0.5) * 0.8, 2)
         verdict = "retry" if confidence < 0.5 else "uncertain"
         rationale = "cross-validator found unsupported figures; took the cautious view"
 

@@ -10,6 +10,8 @@ flagged figures it couldn't verify, so the text itself never over-claims.
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from ..state import AgentState, add_trace
 
 _GROUNDED_CONF = 0.75
@@ -18,7 +20,16 @@ _CAVEAT = ("\n\n⚠️ _Some figures couldn't be fully verified against the retu
            "data — please double-check before acting on them._")
 
 
-def _resolve_confidence(state: AgentState) -> float:
+def _resolve_confidence(state: AgentState) -> Optional[float]:
+    """Confidence in the ANSWER, or None when this turn isn't an answer.
+
+    A clarifying question or a read-back is a dialogue turn: the validation stack
+    never ran, so there is no evidence to be confident about. Emitting a number
+    here (the old `_FALLBACK_CONF`) badged a question we asked the USER with a
+    made-up score, which reads as "the model is unsure of its own answer".
+    """
+    if state.get("needs_clarification") or state.get("needs_readback"):
+        return None
     arb = state.get("arbiter_verdict") or {}
     if "confidence" in arb:
         return float(arb["confidence"])
@@ -44,7 +55,8 @@ async def finaliser_node(state: AgentState) -> AgentState:
     tag = ("clarification" if state.get("needs_clarification")
            else "readback" if state.get("needs_readback")
            else "grounded" if state.get("grounded") else "rule-based")
-    add_trace(state, "finaliser",
-              f"final ready (confidence {state['final_confidence']:.2f}, {tag})",
-              confidence=state["final_confidence"])
+    conf = state["final_confidence"]
+    conf_txt = f"{conf:.2f}" if conf is not None else "n/a (dialogue turn)"
+    add_trace(state, "finaliser", f"final ready (confidence {conf_txt}, {tag})",
+              confidence=conf)
     return state
