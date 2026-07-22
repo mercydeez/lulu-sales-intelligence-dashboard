@@ -103,6 +103,9 @@ export default function InsightsPage() {
   // Findings resolved this session that still offer Undo (acknowledge reopens
   // them server-side). Auto-refresh pauses while an undo is on the table.
   const [justResolved, setJustResolved] = useState<Set<number>>(new Set());
+  // Deep-link target: a diagnostics notification links to /insights?finding=<id>,
+  // so a click from the bell lands on — and highlights — the exact finding.
+  const [focusId, setFocusId] = useState<number | null>(null);
   const { show } = useToast();
 
   const load = useCallback(async () => {
@@ -140,6 +143,26 @@ export default function InsightsPage() {
     const id = setInterval(load, 30000); // diagnostics refresh on the worker's cadence
     return () => clearInterval(id);
   }, [load, justResolved]);
+
+  // Read the ?finding=<id> deep-link once on mount. Uses window.location instead
+  // of useSearchParams so no Suspense boundary is required for this client page.
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get('finding');
+    const n = raw ? Number(raw) : NaN;
+    if (Number.isFinite(n)) setFocusId(n);
+  }, []);
+
+  // Once the target finding is on screen, scroll to it and highlight it briefly.
+  // Honours prefers-reduced-motion; no-ops gracefully if the current filter hides it.
+  useEffect(() => {
+    if (focusId == null || loading) return;
+    const el = document.getElementById(`finding-${focusId}`);
+    if (!el) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+    const t = setTimeout(() => setFocusId(null), 2600);
+    return () => clearTimeout(t);
+  }, [focusId, loading, findings]);
 
   const act = async (id: number, action: 'ack' | 'resolve' | 'accept') => {
     setBusyId(id);
@@ -257,6 +280,10 @@ export default function InsightsPage() {
             return (
               <motion.div
                 key={f.id}
+                id={`finding-${f.id}`}
+                className={`scroll-mt-24 rounded-2xl transition-shadow duration-500 ${
+                  focusId === f.id ? 'ring-2 ring-teal-500 ring-offset-2 ring-offset-canvas' : ''
+                }`}
                 layout
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}

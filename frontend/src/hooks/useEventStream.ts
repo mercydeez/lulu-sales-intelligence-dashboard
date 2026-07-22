@@ -174,16 +174,21 @@ export function useEventStream(
     const c = getConn(endpoint);
     c.refCount += 1;
 
-    // Register this subscriber's handlers and (re)attach if already live.
+    // Register a STABLE wrapper per event that dispatches to the LATEST handler
+    // via handlersRef (refreshed every render). Registering the concrete closure
+    // captured here would freeze consumers on their first-render state, since this
+    // effect only re-runs when `endpoint` changes — so a handler that closes over
+    // component state (active tab, filters, page) would forever see render-0 values.
     const mine: Array<[string, Handler]> = [];
-    for (const [eventName, handler] of Object.entries(handlersRef.current)) {
+    for (const eventName of Object.keys(handlersRef.current)) {
       let set = c.handlers.get(eventName);
       if (!set) {
         set = new Set();
         c.handlers.set(eventName, set);
       }
-      set.add(handler);
-      mine.push([eventName, handler]);
+      const wrapper: Handler = (payload) => handlersRef.current[eventName]?.(payload);
+      set.add(wrapper);
+      mine.push([eventName, wrapper]);
       attachEvent(c, eventName);
     }
 

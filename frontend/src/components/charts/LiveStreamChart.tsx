@@ -58,6 +58,9 @@ export default function LiveStreamChart() {
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [totalStreaming, setTotalStreaming] = useState(0);
+  // Real transaction count (all of today's streamed rows), NOT the capped chart
+  // buffer — the "Avg per Txn" denominator must be this, not data.length (≤50).
+  const [txnCount, setTxnCount] = useState(0);
   const [totalReturns, setTotalReturns] = useState(0);
   const [returnCount, setReturnCount] = useState(0);
   const [recentSales, setRecentSales] = useState<LiveSaleEvent[]>([]);
@@ -131,6 +134,7 @@ export default function LiveStreamChart() {
         const result = await response.json();
         setData(result.data || []);
         setTotalStreaming(result.total_streaming || 0);
+        setTxnCount(result.data?.length || 0);
 
         // Calculate sales by store and category from historical data
         const byStore: Record<string, number> = {};
@@ -171,8 +175,10 @@ export default function LiveStreamChart() {
       // Add to recent sales (keep last 10)
       setRecentSales(prev => [enrichedSale, ...prev.slice(0, 9)]);
 
-      // Update totals (returns reduce the total)
+      // Update totals (returns reduce the total). Both seed and increment are
+      // UNITS now (streaming-trend returns units), so they compose correctly.
       setTotalStreaming(prev => prev + saleData.sales);
+      setTxnCount(prev => prev + 1);
 
       // Track returns separately
       if (isReturn) {
@@ -329,7 +335,7 @@ export default function LiveStreamChart() {
             <div className={`text-2xl font-bold ${totalStreaming >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
               {formatNumber(totalStreaming)}
             </div>
-            <div className="text-xs text-ink-muted">Net Total</div>
+            <div className="text-xs text-ink-muted">Net Units</div>
           </div>
           {/* Returns Counter */}
           {returnCount > 0 && (
@@ -437,7 +443,7 @@ export default function LiveStreamChart() {
       <div className="grid grid-cols-4 gap-3 mt-4 pt-4 border-t border-line">
         <div className="bg-surface-2 rounded-lg p-3 text-center">
           <TrendingUp className="w-4 h-4 text-teal-600 mx-auto mb-1" />
-          <div className="text-lg font-bold text-ink">{data.length}</div>
+          <div className="text-lg font-bold text-ink">{txnCount}</div>
           <div className="text-xs text-ink-muted">Transactions</div>
         </div>
         <div className="bg-surface-2 rounded-lg p-3 text-center">
@@ -447,8 +453,8 @@ export default function LiveStreamChart() {
         </div>
         <div className="bg-surface-2 rounded-lg p-3 text-center">
           <ShoppingBag className="w-4 h-4 text-amber-600 mx-auto mb-1" />
-          <div className="text-lg font-bold text-ink">{data.length > 0 ? Math.round(totalStreaming / data.length) : 0}</div>
-          <div className="text-xs text-ink-muted">Avg per Txn</div>
+          <div className="text-lg font-bold text-ink">{txnCount > 0 ? Math.round(totalStreaming / txnCount) : 0}</div>
+          <div className="text-xs text-ink-muted">Avg units/Txn</div>
         </div>
         <div className={`rounded-lg p-3 text-center ${returnCount > 0 ? 'bg-rose-50 border border-rose-200' : 'bg-surface-2'}`}>
           <RefreshCw className={`w-4 h-4 mx-auto mb-1 ${returnCount > 0 ? 'text-rose-600' : 'text-ink-muted'}`} />
