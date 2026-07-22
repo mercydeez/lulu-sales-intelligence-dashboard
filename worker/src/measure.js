@@ -9,8 +9,8 @@
 // This reuses the rule outputs as the source of truth — no new metric math, so the
 // "after" number is always the rule's own metric, on the same footing as detection.
 import { listTenantIds, query } from "./db.js";
-import { runRulesForTenant } from "./rules.js";
-import { classifyOutcome, entityKey } from "./outcome.js";
+import { runRulesForTenantTracked } from "./rules.js";
+import { measureDecision, entityKey } from "./outcome.js";
 
 // Accepted findings still awaiting (or due for re-)measurement for one tenant.
 async function acceptedOpen(tenantId) {
@@ -50,7 +50,9 @@ export async function runMeasure() {
     const pending = await acceptedOpen(tenantId);
     if (pending.length === 0) continue;
     // Re-evaluate the rules once for the tenant; the current findings are the "after".
-    const current = await runRulesForTenant(tenantId);
+    // allClean=false means a rule threw — we must not read a missing entity as a
+    // recovery (that would falsely auto-resolve a still-active problem).
+    const { findings: current, allClean } = await runRulesForTenantTracked(tenantId);
     const firing = new Map();
     for (const f of current) firing.set(entityKey(f.rule, f.entity_type, f.entity_id), f);
 
@@ -63,7 +65,8 @@ export async function runMeasure() {
           : null;
       const now = firing.get(entityKey(f.rule, f.entity_type, f.entity_id));
       const after = now && now.metric_value != null ? Number(now.metric_value) : null;
-      const outcome = classifyOutcome(f.rule, before, after);
+      const outcome = measureDecision(f.rule, before, after, allClean);
+      if (outcome === "defer") continue;  // re-measure next (clean) cycle
       await recordOutcome(tenantId, f.id, outcome, before, after);
       measured += 1;
       if (outcome === "improved") resolved += 1;

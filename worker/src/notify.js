@@ -20,9 +20,12 @@ function shouldNotify(severity) {
 // failure must not break the scan loop.
 async function recordInApp(tenantId, finding) {
   try {
+    // Deep-link straight to the finding when we have its id (upsertFinding now
+    // returns it); the Insights page reads ?finding=<id> and highlights that row.
+    const link = finding.id != null ? `/insights?finding=${finding.id}` : "/insights";
     await query(
       `INSERT INTO notifications (tenant_id, user_id, type, title, body, severity, link, metadata)
-       VALUES ($1, NULL, 'finding', $2, $3, $4, '/insights', $5)`,
+       VALUES ($1, NULL, 'finding', $2, $3, $4, $6, $5)`,
       [
         tenantId,
         finding.title,
@@ -31,6 +34,7 @@ async function recordInApp(tenantId, finding) {
           : finding.detail,
         finding.severity,
         JSON.stringify({ finding_id: finding.id ?? null }),
+        link,
       ],
     );
   } catch (e) {

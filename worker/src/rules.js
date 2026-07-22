@@ -542,14 +542,24 @@ export const RULES = [
   zeroSalesSku,
 ];
 
-export async function runRulesForTenant(tenantId) {
+// Run every rule, tracking whether the whole set executed cleanly. `allClean`
+// is false if ANY rule threw — the measure loop needs this, because a rule that
+// failed emits no findings, and an entity missing from the results must not be
+// mistaken for "the problem cleared" (which would falsely auto-resolve it).
+export async function runRulesForTenantTracked(tenantId) {
   const findings = [];
+  let allClean = true;
   for (const rule of RULES) {
     try {
       findings.push(...(await rule(tenantId)));
     } catch (e) {
+      allClean = false;
       console.error(`[rules] ${rule.name} failed for tenant ${tenantId}:`, e.message);
     }
   }
-  return findings;
+  return { findings, allClean };
+}
+
+export async function runRulesForTenant(tenantId) {
+  return (await runRulesForTenantTracked(tenantId)).findings;
 }

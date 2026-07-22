@@ -42,3 +42,14 @@ export function classifyOutcome(rule, before, after) {
   const worse = HIGHER_IS_WORSE.has(rule) ? after > before : after < before;
   return worse ? "worsened" : "unchanged";
 }
+
+// Decide the measure action for ONE accepted finding this cycle. Same as
+// classifyOutcome, except it returns "defer" (do nothing, re-measure next cycle)
+// when the rule set did NOT all run cleanly AND the entity dropped out of the
+// current results. A missing entity after a rule error could be a transient DB
+// failure, not a genuine recovery — auto-resolving it would falsely mark a real,
+// still-active problem as fixed. Only auto-resolve on a fully clean cycle.
+export function measureDecision(rule, before, after, allClean) {
+  if ((after === null || after === undefined) && !allClean) return "defer";
+  return classifyOutcome(rule, before, after);
+}

@@ -80,13 +80,24 @@ async function bootstrap() {
   // before the first scan completes.
   heartbeat = startHeartbeat(connection, hbState);
 
-  // Run one scan immediately so the dashboard has findings on first boot.
-  try {
-    await runScanTracked();
-  } catch (e) {
-    console.error("[worker] initial scan failed:", e.message);
+  // Clear stale repeatable schedules before (re)adding. BullMQ derives a
+  // repeatable's key from its INTERVAL, so re-adding with a changed
+  // DIAGNOSTICS_INTERVAL_MS / MEASURE_INTERVAL_MS would leave the OLD schedule
+  // firing alongside the new one. Removing first guarantees exactly one of each.
+  for (const r of await queue.getRepeatableJobs()) {
+    await queue.removeRepeatableByKey(r.key);
   }
-  // Schedule the recurring scan (idempotent: same jobId replaces the schedule).
+
+  // Run one scan on boot — routed THROUGH the queue (not a direct call) so the
+  // single worker serialises it with any due repeat job (concurrency:1). A direct
+  // call runs OUTSIDE the queue and can overlap a scan the worker is already
+  // processing after a restart, doubling DB work and clobbering the heartbeat.
+  await queue.add(
+    "scan",
+    {},
+    { jobId: "boot-scan", removeOnComplete: true, removeOnFail: true }
+  );
+  // Schedule the recurring scan.
   await queue.add(
     "scan",
     {},

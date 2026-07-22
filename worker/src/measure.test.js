@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { classifyOutcome, entityKey } from "./outcome.js";
+import { classifyOutcome, entityKey, measureDecision } from "./outcome.js";
 
 test("rule no longer fires (after = null) → improved (auto-resolve)", () => {
   assert.equal(classifyOutcome("revenue_drop", -0.3, null), "improved");
@@ -80,6 +80,31 @@ test("E3-5 rules auto-resolve when they stop firing", () => {
   ]) {
     assert.equal(classifyOutcome(rule, 1, null), "improved", `${rule} should auto-resolve`);
   }
+});
+
+// --- measureDecision: never auto-resolve on a dirty cycle -------------------
+//
+// A rule that THROWS emits no findings, so its entities vanish from the results.
+// On a clean cycle that means "recovered → improved"; on a cycle where a rule
+// failed it may just be a transient error, and auto-resolving would falsely close
+// a real, still-active problem. measureDecision must DEFER those.
+
+test("measureDecision defers auto-resolve when a rule failed this cycle", () => {
+  // after=null (entity gone) + not all rules ran → defer, do NOT resolve.
+  assert.equal(measureDecision("revenue_drop", -0.3, null, false), "defer");
+  assert.equal(measureDecision("supplier_late", 3, undefined, false), "defer");
+});
+
+test("measureDecision auto-resolves a genuine recovery only on a clean cycle", () => {
+  assert.equal(measureDecision("revenue_drop", -0.3, null, true), "improved");
+  assert.equal(measureDecision("return_spike", 0.8, null, true), "improved");
+});
+
+test("measureDecision measures a still-firing finding regardless of clean flag", () => {
+  // Entity still present (after != null) → classify normally even on a dirty cycle.
+  assert.equal(measureDecision("revenue_drop", -0.2, -0.35, false), "worsened");
+  assert.equal(measureDecision("return_spike", 0.9, 0.5, false), "unchanged");
+  assert.equal(measureDecision("supplier_late", 3, 14, true), "worsened");
 });
 
 test("E3-5 entity keys are stable across weeks (the measure loop matches on them)", () => {
