@@ -207,7 +207,7 @@ export default function CampaignStudio() {
                       ? 'bg-teal-700 text-white'
                       : state === 'done'
                         ? 'bg-teal-50 text-teal-800 dark:bg-teal-500/10 dark:text-teal-300'
-                        : 'text-slate-400'
+                        : 'text-ink-muted'
                   }`}
                   aria-current={state === 'current' ? 'step' : undefined}
                 >
@@ -215,7 +215,7 @@ export default function CampaignStudio() {
                   <span className="whitespace-nowrap">{s.label}</span>
                 </div>
                 {i < STEPS.length - 1 && (
-                  <span aria-hidden className={`mx-1 h-px w-4 ${i < step ? 'bg-teal-400' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                  <span aria-hidden className={`mx-1 h-px w-4 ${i < step ? 'bg-teal-400' : 'bg-surface-3'}`} />
                 )}
               </li>
             );
@@ -269,18 +269,18 @@ export default function CampaignStudio() {
           {/* ── 0. Objective ─────────────────────────────────────────── */}
           {step === 0 && (
             <Card padding="lg">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">What is this campaign for?</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <h2 className="text-base font-semibold text-ink">What is this campaign for?</h2>
+              <p className="mt-1 text-sm text-ink-muted">
                 The objective shapes which customers are eligible and which actions the optimizer will consider.
               </p>
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <label className="block sm:col-span-2">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Campaign name</span>
+                  <span className="text-xs font-medium text-ink-soft">Campaign name</span>
                   <Input value={form.name} onChange={(e) => set('name', e.target.value)}
                          placeholder="Q3 win-back — Dubai declining shoppers" className="mt-1" />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Objective</span>
+                  <span className="text-xs font-medium text-ink-soft">Objective</span>
                   <Select value={form.objective} onChange={(e) => set('objective', e.target.value)} className="mt-1">
                     <option value="retain_at_risk">Retain at-risk customers</option>
                     <option value="reactivate_lapsed">Reactivate lapsed customers</option>
@@ -289,7 +289,7 @@ export default function CampaignStudio() {
                   </Select>
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Channel</span>
+                  <span className="text-xs font-medium text-ink-soft">Channel</span>
                   <Select value={form.channel} onChange={(e) => set('channel', e.target.value)} className="mt-1">
                     <option value="email">Email</option>
                     <option value="sms">SMS</option>
@@ -299,12 +299,12 @@ export default function CampaignStudio() {
                   </Select>
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Starts on</span>
+                  <span className="text-xs font-medium text-ink-soft">Starts on</span>
                   <Input type="date" value={form.starts_on}
                          onChange={(e) => set('starts_on', e.target.value)} className="mt-1" />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Ends on</span>
+                  <span className="text-xs font-medium text-ink-soft">Ends on</span>
                   <Input type="date" value={form.ends_on}
                          onChange={(e) => set('ends_on', e.target.value)} className="mt-1" />
                 </label>
@@ -315,36 +315,36 @@ export default function CampaignStudio() {
           {/* ── 1. Audience ──────────────────────────────────────────── */}
           {step === 1 && (
             <Card padding="lg">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Who should this reach?</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <h2 className="text-base font-semibold text-ink">Who should this reach?</h2>
+              <p className="mt-1 text-sm text-ink-muted">
                 Eligibility is churn risk plus consent plus store scope. A share is held back as a
                 control group so the campaign's true lift is measurable rather than assumed.
               </p>
               <div className="mt-5 grid gap-4 sm:grid-cols-3">
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <span className="text-xs font-medium text-ink-soft">
                     Minimum churn risk
                   </span>
                   <Input type="number" step="0.05" min="0" max="0.95"
                          value={form.min_churn_probability}
                          onChange={(e) => set('min_churn_probability', Number(e.target.value))}
                          className="mt-1" />
-                  <span className="mt-1 block text-[11px] text-slate-400">
+                  <span className="mt-1 block text-[11px] text-ink-muted">
                     Below this, an intervention rarely pays for itself.
                   </span>
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Maximum audience</span>
+                  <span className="text-xs font-medium text-ink-soft">Maximum audience</span>
                   <Input type="number" min="10" max="5000" value={form.max_size}
                          onChange={(e) => set('max_size', Number(e.target.value))} className="mt-1" />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <span className="text-xs font-medium text-ink-soft">
                     Control group %
                   </span>
                   <Input type="number" min="0" max="50" value={form.control_group_pct}
                          onChange={(e) => set('control_group_pct', Number(e.target.value))} className="mt-1" />
-                  <span className="mt-1 block text-[11px] text-slate-400">
+                  <span className="mt-1 block text-[11px] text-ink-muted">
                     Held back entirely — no offers, still measured.
                   </span>
                 </label>
@@ -352,26 +352,26 @@ export default function CampaignStudio() {
 
               {audience && (
                 <Reveal>
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3 rounded-lg bg-slate-50 p-4 dark:bg-slate-800/50">
+                  <div className="mt-5 grid gap-3 sm:grid-cols-3 rounded-lg bg-surface-2 p-4">
                     <div>
-                      <p className="font-mono text-2xl text-slate-900 dark:text-slate-100">
+                      <p className="font-mono text-2xl text-ink">
                         {audience.treatment.toLocaleString()}
                       </p>
-                      <p className="text-xs text-slate-500">will receive offers</p>
+                      <p className="text-xs text-ink-muted">will receive offers</p>
                     </div>
                     <div>
-                      <p className="font-mono text-2xl text-slate-900 dark:text-slate-100">
+                      <p className="font-mono text-2xl text-ink">
                         {audience.control.toLocaleString()}
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-ink-muted">
                         control ({audience.control_pct_actual}% actual)
                       </p>
                     </div>
                     <div>
-                      <p className="font-mono text-2xl text-slate-900 dark:text-slate-100">
+                      <p className="font-mono text-2xl text-ink">
                         {audience.total.toLocaleString()}
                       </p>
-                      <p className="text-xs text-slate-500">total eligible</p>
+                      <p className="text-xs text-ink-muted">total eligible</p>
                     </div>
                   </div>
                 </Reveal>
@@ -382,30 +382,30 @@ export default function CampaignStudio() {
           {/* ── 2. Offer policy ──────────────────────────────────────── */}
           {step === 2 && (
             <Card padding="lg">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Offer policy</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <h2 className="text-base font-semibold text-ink">Offer policy</h2>
+              <p className="mt-1 text-sm text-ink-muted">
                 Hard bounds the optimizer may never cross. It will choose the cheapest action that
                 still wins — a high churn score alone never buys a discount.
               </p>
               <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Max discount %</span>
+                  <span className="text-xs font-medium text-ink-soft">Max discount %</span>
                   <Input type="number" min="0" max="90" value={form.max_discount_pct}
                          onChange={(e) => set('max_discount_pct', Number(e.target.value))} className="mt-1" />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Min margin %</span>
+                  <span className="text-xs font-medium text-ink-soft">Min margin %</span>
                   <Input type="number" min="0" max="100" value={form.min_margin_pct}
                          onChange={(e) => set('min_margin_pct', Number(e.target.value))} className="mt-1" />
-                  <span className="mt-1 block text-[11px] text-slate-400">Floor after discount.</span>
+                  <span className="mt-1 block text-[11px] text-ink-muted">Floor after discount.</span>
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Discount budget (AED)</span>
+                  <span className="text-xs font-medium text-ink-soft">Discount budget (AED)</span>
                   <Input type="number" min="0" value={form.discount_budget_aed}
                          onChange={(e) => set('discount_budget_aed', Number(e.target.value))} className="mt-1" />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Contacts / week</span>
+                  <span className="text-xs font-medium text-ink-soft">Contacts / week</span>
                   <Input type="number" min="0" max="14" value={form.contact_cap_per_week}
                          onChange={(e) => set('contact_cap_per_week', Number(e.target.value))} className="mt-1" />
                 </label>
@@ -416,27 +416,27 @@ export default function CampaignStudio() {
           {/* ── 3. Inventory ─────────────────────────────────────────── */}
           {step === 3 && (
             <Card padding="lg">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Stock & fulfilment</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <h2 className="text-base font-semibold text-ink">Stock & fulfilment</h2>
+              <p className="mt-1 text-sm text-ink-muted">
                 Offers are gated on available-to-promise. When stock is short, Flywheel walks a fixed
                 ladder — cheapest resolution first — rather than silently overselling.
               </p>
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Safety stock %</span>
+                  <span className="text-xs font-medium text-ink-soft">Safety stock %</span>
                   <Input type="number" min="0" max="100" value={form.safety_stock_pct}
                          onChange={(e) => set('safety_stock_pct', Number(e.target.value))} className="mt-1" />
-                  <span className="mt-1 block text-[11px] text-slate-400">
+                  <span className="mt-1 block text-[11px] text-ink-muted">
                     Never lowers a store's existing reorder point — only raises the floor.
                   </span>
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <span className="text-xs font-medium text-ink-soft">
                     Procurement budget (AED)
                   </span>
                   <Input type="number" min="0" value={form.procurement_budget_aed}
                          onChange={(e) => set('procurement_budget_aed', Number(e.target.value))} className="mt-1" />
-                  <span className="mt-1 block text-[11px] text-slate-400">
+                  <span className="mt-1 block text-[11px] text-ink-muted">
                     0 disables buying stock to fund this campaign.
                   </span>
                 </label>
@@ -444,10 +444,10 @@ export default function CampaignStudio() {
               <ol className="mt-5 flex flex-wrap gap-2 text-[11px]">
                 {Object.entries(LADDER_LABELS).filter(([k]) => k !== 'none').map(([key, label], i) => (
                   <li key={key} className="flex items-center gap-2">
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    <span className="rounded-full bg-surface-2 px-2.5 py-1 text-ink-soft">
                       {i + 1}. {label}
                     </span>
-                    {i < 5 && <span aria-hidden className="text-slate-300">→</span>}
+                    {i < 5 && <span aria-hidden className="text-ink-muted">→</span>}
                   </li>
                 ))}
               </ol>
@@ -457,7 +457,7 @@ export default function CampaignStudio() {
           {/* ── 4. Simulation ────────────────────────────────────────── */}
           {step === 4 && (
             <Card padding="lg">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Financial simulation</h2>
+              <h2 className="text-base font-semibold text-ink">Financial simulation</h2>
 
               {/* Readiness first: it decides whether the button below will work
                   at all, so it belongs above the button, not beside the results. */}
@@ -469,13 +469,13 @@ export default function CampaignStudio() {
               />
 
               {!simulation ? (
-                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                <p className="mt-3 text-sm text-ink-muted">
                   Run the real optimizer over a sample of the audience to see what this campaign
                   would actually do. Nothing is committed.
                 </p>
               ) : (
                 <>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 text-sm text-ink-muted">
                     {simulation.audience.note}
                   </p>
 
@@ -487,25 +487,25 @@ export default function CampaignStudio() {
                         <div key={key}
                              className={`rounded-lg border p-4 ${isExpected
                                ? 'border-teal-300 bg-teal-50/50 dark:border-teal-600 dark:bg-teal-500/5'
-                               : 'border-slate-200 dark:border-slate-700'}`}>
-                          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                               : 'border-line'}`}>
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
                             {key}
                           </p>
-                          <p className="mt-2 font-mono text-xl text-slate-900 dark:text-slate-100">
+                          <p className="mt-2 font-mono text-xl text-ink">
                             {aed(s.net_value_aed)}
                           </p>
-                          <p className="text-xs text-slate-500">net value (AED)</p>
+                          <p className="text-xs text-ink-muted">net value (AED)</p>
                           <dl className="mt-3 space-y-1 text-[11px]">
                             <div className="flex justify-between">
-                              <dt className="text-slate-500">Discount spend</dt>
+                              <dt className="text-ink-muted">Discount spend</dt>
                               <dd className="font-mono text-amber-700 dark:text-amber-400">{aed(s.discount_spend_aed)}</dd>
                             </div>
                             <div className="flex justify-between">
-                              <dt className="text-slate-500">Incremental margin</dt>
-                              <dd className="font-mono text-slate-700 dark:text-slate-300">{aed(s.incremental_margin_aed)}</dd>
+                              <dt className="text-ink-muted">Incremental margin</dt>
+                              <dd className="font-mono text-ink-soft">{aed(s.incremental_margin_aed)}</dd>
                             </div>
                             <div className="flex justify-between">
-                              <dt className="text-slate-500">ROI</dt>
+                              <dt className="text-ink-muted">ROI</dt>
                               <dd className="font-mono font-semibold text-teal-700 dark:text-teal-300">{s.roi}×</dd>
                             </div>
                           </dl>
@@ -524,16 +524,16 @@ export default function CampaignStudio() {
                         : 'text-teal-700 dark:text-teal-300';
                     const cvarNegative = Number(u.cvar_5pct_aed) < 0;
                     return (
-                      <div className="mt-5 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+                      <div className="mt-5 rounded-lg border border-line p-4">
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          <h3 className="text-sm font-semibold text-ink">
                             Uncertainty
                           </h3>
-                          <p className="text-[11px] text-slate-400">
+                          <p className="text-[11px] text-ink-muted">
                             {u.trials.toLocaleString()} simulations · response CV {u.response_cv}
                           </p>
                         </div>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        <p className="mt-1 text-xs text-ink-muted">
                           The three cards above vary redemption by fixed 0.6×/1.0×/1.4× factors.
                           These figures sample a lognormal response multiplier instead, so they
                           carry a tail and a probability of loss.
@@ -547,10 +547,10 @@ export default function CampaignStudio() {
                             ['P90 — upside', u.net_value_p90_aed],
                           ] as const).map(([label, value]) => (
                             <div key={label}>
-                              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
                                 {label}
                               </p>
-                              <p className="mt-1 font-mono text-lg text-slate-900 dark:text-slate-100">
+                              <p className="mt-1 font-mono text-lg text-ink">
                                 {aed(value)}
                               </p>
                             </div>
@@ -558,36 +558,36 @@ export default function CampaignStudio() {
                         </div>
 
                         {/* tail + risk */}
-                        <dl className="mt-4 grid gap-3 border-t border-slate-200 pt-3 text-xs sm:grid-cols-4 dark:border-slate-700">
+                        <dl className="mt-4 grid gap-3 border-t border-line pt-3 text-xs sm:grid-cols-4">
                           <div>
-                            <dt className="text-slate-500">CVaR 5% (tail loss)</dt>
+                            <dt className="text-ink-muted">CVaR 5% (tail loss)</dt>
                             <dd className={`mt-0.5 font-mono font-semibold ${
                               cvarNegative ? 'text-rose-700 dark:text-rose-400'
-                                           : 'text-slate-700 dark:text-slate-300'}`}>
+                                           : 'text-ink-soft'}`}>
                               {aed(u.cvar_5pct_aed)}
                             </dd>
                           </div>
                           <div>
-                            <dt className="text-slate-500">Probability of loss</dt>
+                            <dt className="text-ink-muted">Probability of loss</dt>
                             <dd className={`mt-0.5 font-mono font-semibold ${lossTone}`}>
                               {lossPct.toFixed(1)}%
                             </dd>
                           </div>
                           <div>
-                            <dt className="text-slate-500">Mean net value</dt>
-                            <dd className="mt-0.5 font-mono text-slate-700 dark:text-slate-300">
+                            <dt className="text-ink-muted">Mean net value</dt>
+                            <dd className="mt-0.5 font-mono text-ink-soft">
                               {aed(u.net_value_mean_aed)}
                             </dd>
                           </div>
                           <div>
-                            <dt className="text-slate-500">Mean ROI</dt>
+                            <dt className="text-ink-muted">Mean ROI</dt>
                             <dd className="mt-0.5 font-mono font-semibold text-teal-700 dark:text-teal-300">
                               {u.roi_mean}×
                             </dd>
                           </div>
                         </dl>
 
-                        <p className="mt-3 text-[11px] text-slate-400">
+                        <p className="mt-3 text-[11px] text-ink-muted">
                           CVaR is the mean of the worst 5% of outcomes, not a percentile — it is
                           what a bad run actually costs. Seeded from the campaign, so this
                           simulation reproduces exactly.
@@ -608,7 +608,7 @@ export default function CampaignStudio() {
                   )}
 
                   <div className="mt-5">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
                       Action mix across the sample
                     </h3>
                     <div className="mt-2 flex flex-wrap gap-2">
@@ -622,22 +622,22 @@ export default function CampaignStudio() {
 
                   {shortages.length > 0 && (
                     <div className="mt-5">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
                         Stock shortages & how Flywheel would resolve them
                       </h3>
                       <ul className="mt-2 space-y-2">
                         {resolutions.map((r, i) => (
                           <li key={`${r.store_id}-${r.item_id}-${i}`}
-                              className="rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
+                              className="rounded-lg border border-line p-3 text-xs">
                             <div className="flex flex-wrap items-center gap-2">
                               <Badge variant={r.rung === 'e_procurement' ? 'amber' : 'teal'}>
                                 {LADDER_LABELS[r.rung] ?? r.rung}
                               </Badge>
-                              <span className="text-slate-500">
+                              <span className="text-ink-muted">
                                 store {r.store_id} · item {r.item_id}
                               </span>
                             </div>
-                            <p className="mt-1.5 text-slate-600 dark:text-slate-400">{r.detail}</p>
+                            <p className="mt-1.5 text-ink-soft">{r.detail}</p>
                             {r.procurement_rejected && (
                               <p className="mt-1 text-amber-700 dark:text-amber-400">
                                 Procurement refused: {r.procurement_rejected.detail}
@@ -656,28 +656,28 @@ export default function CampaignStudio() {
           {/* ── 5. Approval path ─────────────────────────────────────── */}
           {step === 5 && (
             <Card padding="lg">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Approval path</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <h2 className="text-base font-semibold text-ink">Approval path</h2>
+              <p className="mt-1 text-sm text-ink-muted">
                 The chain is sized from this campaign's actual exposure — bigger spend pulls in more
                 approvers. Steps at the same stage run in parallel.
               </p>
-              <div className="mt-5 rounded-lg bg-slate-50 p-4 dark:bg-slate-800/50">
+              <div className="mt-5 rounded-lg bg-surface-2 p-4">
                 <dl className="grid gap-3 sm:grid-cols-2 text-sm">
                   <div>
-                    <dt className="text-xs text-slate-500">Discount exposure</dt>
-                    <dd className="font-mono text-lg text-slate-900 dark:text-slate-100">
+                    <dt className="text-xs text-ink-muted">Discount exposure</dt>
+                    <dd className="font-mono text-lg text-ink">
                       {aed(expected?.discount_spend_aed)} AED
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-slate-500">Expected ROI</dt>
+                    <dt className="text-xs text-ink-muted">Expected ROI</dt>
                     <dd className="font-mono text-lg text-teal-700 dark:text-teal-300">
                       {expected?.roi ?? '—'}×
                     </dd>
                   </div>
                 </dl>
               </div>
-              <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-4 text-xs text-ink-muted">
                 Submitting re-runs the simulation first, so approvers always judge current numbers —
                 never a stale estimate from an earlier session.
               </p>
@@ -692,10 +692,10 @@ export default function CampaignStudio() {
                   <Check className="w-5 h-5 text-teal-700 dark:text-teal-300" />
                 </div>
                 <div>
-                  <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  <h2 className="text-base font-semibold text-ink">
                     Submitted for approval
                   </h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 text-sm text-ink-muted">
                     {approval.step_count} approval step(s) opened. The campaign cannot issue a single
                     offer, reserve a dirham, or touch stock until every step is approved.
                   </p>
@@ -703,7 +703,7 @@ export default function CampaignStudio() {
               </div>
               <div className="mt-5 flex flex-wrap gap-2">
                 <Button variant="primary" onClick={() => router.push('/flywheel/approvals')}>
-                  Open approval inbox <ArrowRight className="w-4 h-4 ml-1.5" />
+                  Open approval inbox <ArrowRight className="w-4 h-4 ms-1.5" />
                 </Button>
                 <Button variant="secondary" onClick={() => router.push(`/flywheel/campaigns/${campaignId}`)}>
                   View campaign
@@ -721,37 +721,37 @@ export default function CampaignStudio() {
             onClick={() => setStep((s) => Math.max(0, s - 1))}
             disabled={step === 0 || busy}
           >
-            <ArrowLeft className="w-4 h-4 mr-1.5" />Back
+            <ArrowLeft className="w-4 h-4 me-1.5" />Back
           </Button>
 
           <div className="flex items-center gap-2">
             {step === 0 && (
               <Button variant="primary" onClick={createDraft} disabled={busy || !canAdvance}>
-                {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
+                {busy ? <Loader2 className="w-4 h-4 me-1.5 animate-spin" /> : null}
                 Create draft
               </Button>
             )}
             {step === 1 && (
               <Button variant="primary" onClick={runAudience} disabled={busy}>
-                {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Users className="w-4 h-4 mr-1.5" />}
+                {busy ? <Loader2 className="w-4 h-4 me-1.5 animate-spin" /> : <Users className="w-4 h-4 me-1.5" />}
                 Build audience
               </Button>
             )}
             {step === 2 && (
               <Button variant="primary" onClick={() => setStep((s) => s + 1)} disabled={busy}>
-                Continue <ArrowRight className="w-4 h-4 ml-1.5" />
+                Continue <ArrowRight className="w-4 h-4 ms-1.5" />
               </Button>
             )}
             {/* Entering the simulation step pre-flights the data-trust check. */}
             {step === 3 && (
               <Button variant="primary" onClick={goToSimulation} disabled={busy}>
-                Continue <ArrowRight className="w-4 h-4 ml-1.5" />
+                Continue <ArrowRight className="w-4 h-4 ms-1.5" />
               </Button>
             )}
             {step === 4 && (
               simulation ? (
                 <Button variant="primary" onClick={() => setStep(5)}>
-                  Continue to approval <ArrowRight className="w-4 h-4 ml-1.5" />
+                  Continue to approval <ArrowRight className="w-4 h-4 ms-1.5" />
                 </Button>
               ) : (
                 // Disabled on NOT_READY rather than letting the click fail: the
@@ -765,14 +765,14 @@ export default function CampaignStudio() {
                     ? 'Resolve the data readiness blockers above first'
                     : undefined}
                 >
-                  {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <TrendingUp className="w-4 h-4 mr-1.5" />}
+                  {busy ? <Loader2 className="w-4 h-4 me-1.5 animate-spin" /> : <TrendingUp className="w-4 h-4 me-1.5" />}
                   Run simulation
                 </Button>
               )
             )}
             {step === 5 && (
               <Button variant="primary" onClick={runSubmit} disabled={busy}>
-                {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Rocket className="w-4 h-4 mr-1.5" />}
+                {busy ? <Loader2 className="w-4 h-4 me-1.5 animate-spin" /> : <Rocket className="w-4 h-4 me-1.5" />}
                 Submit for approval
               </Button>
             )}

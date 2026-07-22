@@ -55,18 +55,18 @@ function SmdBar({ smd, threshold }: { smd: number; threshold: number }) {
   const balanced = Math.abs(smd) <= threshold;
 
   return (
-    <div className="relative h-5 w-40 rounded bg-[var(--surface-2)] overflow-hidden">
+    <div className="relative h-5 w-40 rounded bg-surface-2 overflow-hidden">
       {/* acceptable band */}
       <div
-        className="absolute inset-y-0 bg-[var(--success-soft)] opacity-40"
+        className="absolute inset-y-0 bg-signal-up opacity-40"
         style={{
           left: `${centre - (threshold / RANGE) * 50}%`,
           width: `${(threshold / RANGE) * 100}%`,
         }}
       />
-      <div className="absolute inset-y-0 w-px bg-[var(--border-strong)]" style={{ left: '50%' }} />
+      <div className="absolute inset-y-0 w-px bg-ink-muted" style={{ left: '50%' }} />
       <div
-        className={`absolute inset-y-1 rounded ${balanced ? 'bg-[var(--success)]' : 'bg-[var(--danger)]'}`}
+        className={`absolute inset-y-1 rounded ${balanced ? 'bg-signal-up' : 'bg-rose-500'}`}
         style={{ left: `${left}%`, width: `${Math.max(1.5, width)}%` }}
       />
     </div>
@@ -140,10 +140,10 @@ export default function HoldoutPage() {
       <Reveal>
         <Card padding="lg" className="mb-6">
           <div className="flex items-start gap-3">
-            <Scale className="w-5 h-5 mt-0.5 text-[var(--accent)] shrink-0" />
+            <Scale className="w-5 h-5 mt-0.5 text-teal-700 shrink-0" />
             <div>
               <h3 className="font-medium mb-1">Why some customers get nothing</h3>
-              <p className="text-sm text-[var(--muted)] max-w-3xl">
+              <p className="text-sm text-ink-muted max-w-3xl">
                 A held-out group receives no offer so their behaviour shows what would have
                 happened anyway. Without it, &ldquo;4,000 contacted and 2,800 returned&rdquo; is
                 unfalsifiable — most of them may have returned regardless, and the discount
@@ -175,7 +175,7 @@ export default function HoldoutPage() {
                       <TableRow
                         key={c.campaign_id}
                         onClick={() => setSelected(c.campaign_id)}
-                        className={`cursor-pointer ${selected === c.campaign_id ? 'bg-[var(--surface-2)]' : ''}`}
+                        className={`cursor-pointer ${selected === c.campaign_id ? 'bg-surface-2' : ''}`}
                       >
                         <Td className="font-medium">{c.name}</Td>
                         <Td><Badge variant="neutral">{c.status}</Badge></Td>
@@ -195,7 +195,7 @@ export default function HoldoutPage() {
                 </Table>
               </div>
             )}
-            <p className="text-xs text-[var(--muted)] mt-3">{overview?.note}</p>
+            <p className="text-xs text-ink-muted mt-3">{overview?.note}</p>
           </Card>
         </Reveal>
 
@@ -206,7 +206,7 @@ export default function HoldoutPage() {
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
                   <h3 className="font-medium mb-1">Are the two groups comparable?</h3>
-                  <p className="text-sm text-[var(--muted)] max-w-2xl">
+                  <p className="text-sm text-ink-muted max-w-2xl">
                     Standardised mean difference on pre-treatment characteristics. If the
                     arms differ before the campaign started, any difference afterwards may
                     be the groups rather than the campaign.
@@ -216,9 +216,9 @@ export default function HoldoutPage() {
                   <Badge variant={summary.status === 'balanced' ? 'success'
                     : summary.status === 'imbalanced' ? 'danger' : 'neutral'}>
                     {summary.status === 'balanced' ? (
-                      <><CheckCircle2 className="w-3 h-3 mr-1 inline" />comparable</>
+                      <><CheckCircle2 className="w-3 h-3 me-1 inline" />comparable</>
                     ) : summary.status === 'imbalanced' ? (
-                      <><AlertTriangle className="w-3 h-3 mr-1 inline" />not comparable</>
+                      <><AlertTriangle className="w-3 h-3 me-1 inline" />not comparable</>
                     ) : 'unverified'}
                   </Badge>
                 ) : null}
@@ -226,11 +226,11 @@ export default function HoldoutPage() {
 
               <div className="flex gap-6 mb-5 text-sm">
                 <div>
-                  <span className="text-[var(--muted)]">Treatment </span>
+                  <span className="text-ink-muted">Treatment </span>
                   <span className="tabular-nums font-medium">{detail.arms.treatment}</span>
                 </div>
                 <div>
-                  <span className="text-[var(--muted)]">Control </span>
+                  <span className="text-ink-muted">Control </span>
                   <span className="tabular-nums font-medium">{detail.arms.control}</span>
                 </div>
               </div>
@@ -258,7 +258,7 @@ export default function HoldoutPage() {
                           <Td className="tabular-nums">{c.treatment_mean.toFixed(2)}</Td>
                           <Td className="tabular-nums">{c.control_mean.toFixed(2)}</Td>
                           <Td className="tabular-nums">
-                            <span className={c.is_balanced ? '' : 'text-[var(--danger)] font-medium'}>
+                            <span className={c.is_balanced ? '' : 'text-rose-600 font-medium'}>
                               {c.smd >= 0 ? '+' : ''}{c.smd.toFixed(3)}
                             </span>
                           </Td>
@@ -271,13 +271,13 @@ export default function HoldoutPage() {
               )}
 
               {summary && summary.status === 'imbalanced' ? (
-                <div className="mt-4 flex items-start gap-2 text-sm text-[var(--danger)]">
+                <div className="mt-4 flex items-start gap-2 text-sm text-rose-600">
                   <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                   <span>{summary.note}</span>
                 </div>
               ) : null}
 
-              <div className="mt-5 pt-4 border-t border-[var(--border)] text-xs text-[var(--muted)]">
+              <div className="mt-5 pt-4 border-t border-line text-xs text-ink-muted">
                 {detail.assignment_method}
               </div>
             </Card>

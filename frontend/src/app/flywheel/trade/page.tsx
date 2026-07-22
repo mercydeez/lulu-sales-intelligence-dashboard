@@ -113,10 +113,10 @@ export default function TradePromotionPage() {
                   {fundings.map((f) => (
                     <TableRow key={f.funding_id}
                       onClick={() => setSelectedSupplier(f.supplier_id)}
-                      className={`cursor-pointer ${selectedSupplier === f.supplier_id ? 'bg-[var(--surface-2)]' : ''}`}>
+                      className={`cursor-pointer ${selectedSupplier === f.supplier_id ? 'bg-surface-2' : ''}`}>
                       <Td className="font-medium">{f.supplier_name}</Td>
                       <Td>{f.campaign_name}</Td>
-                      <Td className="text-[var(--muted)]">{FUNDING_LABEL[f.funding_type] ?? f.funding_type}</Td>
+                      <Td className="text-ink-muted">{FUNDING_LABEL[f.funding_type] ?? f.funding_type}</Td>
                       <Td><Badge variant={FUNDING_TONE[f.status] ?? 'neutral'}>{f.status}</Badge></Td>
                       <Td className="tabular-nums">{aed(f.committed_aed)}</Td>
                       <Td className="tabular-nums">{aed(f.spent_aed)}</Td>
@@ -127,14 +127,14 @@ export default function TradePromotionPage() {
               </Table>
             </div>
           )}
-          <p className="text-xs text-[var(--muted)] mt-3">{overview?.note}</p>
+          <p className="text-xs text-ink-muted mt-3">{overview?.note}</p>
         </Card>
       </Reveal>
 
       {suppliers.length > 0 ? (
         <>
           <div className="flex flex-wrap gap-2 mb-4">
-            <span className="text-sm text-[var(--muted)] self-center mr-2">Supplier view:</span>
+            <span className="text-sm text-ink-muted self-center me-2">Supplier view:</span>
             {suppliers.map(([id, name]) => (
               <Button key={id} size="sm"
                 variant={selectedSupplier === id ? 'primary' : 'ghost'}
@@ -151,25 +151,25 @@ export default function TradePromotionPage() {
                 <div className="flex items-start justify-between gap-4 mb-4">
                   <div>
                     <h3 className="font-medium">What this supplier sees</h3>
-                    <p className="text-sm text-[var(--muted)]">
+                    <p className="text-sm text-ink-muted">
                       {dashboard.funded_sku_count} funded SKU(s). Committed{' '}
                       {aed(dashboard.totals.committed_aed)} AED · settled{' '}
                       {aed(dashboard.totals.settled_aed)} AED.
                     </p>
                   </div>
                   <Badge variant="teal">
-                    <ShieldCheck className="w-3 h-3 mr-1 inline" />scoped to their SKUs
+                    <ShieldCheck className="w-3 h-3 me-1 inline" />scoped to their SKUs
                   </Badge>
                 </div>
 
                 {dashboard.fundings.map((f) => (
-                  <div key={f.funding_id} className="rounded-lg border border-[var(--border)] p-4 mb-3">
+                  <div key={f.funding_id} className="rounded-lg border border-line p-4 mb-3">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium">{f.campaign_name}</span>
                       <Badge variant={FUNDING_TONE[f.status] ?? 'neutral'}>{f.status}</Badge>
                     </div>
                     {f.settlements.length === 0 ? (
-                      <p className="text-sm text-[var(--muted)]">No settlements issued yet.</p>
+                      <p className="text-sm text-ink-muted">No settlements issued yet.</p>
                     ) : (
                       <Table>
                         <TableHead>
@@ -194,7 +194,7 @@ export default function TradePromotionPage() {
                   </div>
                 ))}
 
-                <div className="mt-2 flex items-start gap-2 text-xs text-[var(--muted)]">
+                <div className="mt-2 flex items-start gap-2 text-xs text-ink-muted">
                   <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" />
                   <span>{dashboard.confidentiality_note}</span>
                 </div>

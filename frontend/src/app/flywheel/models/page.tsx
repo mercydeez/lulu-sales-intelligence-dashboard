@@ -90,30 +90,30 @@ export default function ModelsPage() {
           <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-300">
             What these numbers do and do not mean
           </h2>
-          <ul className="mt-3 space-y-2 text-xs text-slate-600 dark:text-slate-400">
+          <ul className="mt-3 space-y-2 text-xs text-ink-soft">
             <li>
-              <strong className="text-slate-800 dark:text-slate-200">The data is synthetic.</strong>{' '}
+              <strong className="text-ink">The data is synthetic.</strong>{' '}
               Customers, events and outcomes are generated with a fixed seed. Metrics describe
               performance on that synthetic holdout and say nothing about real-world accuracy.
             </li>
             <li>
-              <strong className="text-slate-800 dark:text-slate-200">Trees usually win on tabular data.</strong>{' '}
+              <strong className="text-ink">Trees usually win on tabular data.</strong>{' '}
               A calibrated gradient-boosted baseline is the reference model. Deep learning is applied
               where it genuinely earns its place — over the ordered event sequence, which a flattened
               snapshot discards — and is reported honestly even when it loses.
             </li>
             <li>
-              <strong className="text-slate-800 dark:text-slate-200">Calibration matters more than ranking here.</strong>{' '}
+              <strong className="text-ink">Calibration matters more than ranking here.</strong>{' '}
               The optimizer multiplies probability by customer value, so a model that ranks well but
               is overconfident will systematically overspend. That is why Brier score sits beside PR-AUC.
             </li>
             <li>
-              <strong className="text-slate-800 dark:text-slate-200">No sensitive attributes are used.</strong>{' '}
+              <strong className="text-ink">No sensitive attributes are used.</strong>{' '}
               Gender, ethnicity, religion and nationality are neither stored nor used as features or
               offer-decision inputs. Every feature is behavioural.
             </li>
             <li>
-              <strong className="text-slate-800 dark:text-slate-200">A model never moves money.</strong>{' '}
+              <strong className="text-ink">A model never moves money.</strong>{' '}
               Scores are proposals. Every action that touches budget or stock passes through a
               deterministic, policy-checked service with an audit trail.
             </li>
@@ -134,7 +134,7 @@ export default function ModelsPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      <h2 className="text-sm font-semibold text-ink">
                         {KIND_LABEL[model.kind] ?? model.kind}
                       </h2>
                       {model.is_active && <Badge variant="success">active</Badge>}
@@ -142,9 +142,9 @@ export default function ModelsPage() {
                         {model.algorithm.replace(/_/g, ' ')}
                       </Badge>
                     </div>
-                    <p className="mt-1 font-mono text-[11px] text-slate-500">{model.version}</p>
+                    <p className="mt-1 font-mono text-[11px] text-ink-muted">{model.version}</p>
                   </div>
-                  <div className="text-right text-[11px] text-slate-500">
+                  <div className="text-end text-[11px] text-ink-muted">
                     <p>seed {model.random_seed}</p>
                     <p>
                       features {model.feature_window_days}d → outcome {model.outcome_window_days}d
@@ -154,21 +154,21 @@ export default function ModelsPage() {
                 </div>
 
                 {model.notes && (
-                  <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">{model.notes}</p>
+                  <p className="mt-3 text-xs text-ink-soft">{model.notes}</p>
                 )}
 
                 {Object.keys(model.metrics).length > 0 ? (
                   <dl className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
                     {Object.entries(model.metrics).map(([key, value]) => (
-                      <div key={key} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
-                        <dd className="font-mono text-lg text-slate-900 dark:text-slate-100">
+                      <div key={key} className="rounded-lg bg-surface-2 p-3">
+                        <dd className="font-mono text-lg text-ink">
                           {typeof value === 'number' ? value.toFixed(4) : String(value)}
                         </dd>
-                        <dt className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        <dt className="text-[11px] font-medium text-ink-soft">
                           {key.replace(/_/g, ' ')}
                         </dt>
                         {METRIC_HELP[key] && (
-                          <p className="mt-0.5 text-[10px] leading-tight text-slate-400">
+                          <p className="mt-0.5 text-[10px] leading-tight text-ink-muted">
                             {METRIC_HELP[key]}
                           </p>
                         )}
@@ -176,7 +176,7 @@ export default function ModelsPage() {
                     ))}
                   </dl>
                 ) : (
-                  <p className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-500 dark:bg-slate-800/50">
+                  <p className="mt-4 rounded-lg bg-surface-2 p-3 text-xs text-ink-muted">
                     No metrics recorded — this is the deterministic fallback tier. It is not fitted to
                     data, so it has no holdout score. It exists so scoring never hard-depends on a
                     trained artifact being present and loadable.
@@ -188,7 +188,7 @@ export default function ModelsPage() {
         </Stagger>
       )}
 
-      <p className="mt-6 text-xs text-slate-400">{note}</p>
+      <p className="mt-6 text-xs text-ink-muted">{note}</p>
     </div>
   );
 }

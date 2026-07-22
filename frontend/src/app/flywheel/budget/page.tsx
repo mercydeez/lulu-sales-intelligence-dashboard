@@ -86,29 +86,29 @@ export default function BudgetDashboard() {
                 <Card padding="lg" className="h-full">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      <h2 className="text-sm font-semibold text-ink">
                         {budget.budget_type.replace(/_/g, ' ')}
                       </h2>
-                      <p className="text-[11px] text-slate-500">
+                      <p className="text-[11px] text-ink-muted">
                         {budget.period_start} → {budget.period_end}
                       </p>
                     </div>
                     {tight && (
                       <Badge variant="danger">
-                        <AlertTriangle className="w-3 h-3 mr-1" />tight
+                        <AlertTriangle className="w-3 h-3 me-1" />tight
                       </Badge>
                     )}
                   </div>
 
-                  <p className="mt-4 font-mono text-2xl text-slate-900 dark:text-slate-100">
+                  <p className="mt-4 font-mono text-2xl text-ink">
                     {aed(budget.available_aed)}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-ink-muted">
                     available of {aed(budget.allocated_aed)} {budget.currency}
                   </p>
 
                   {/* Stacked utilisation bar: spent, then reserved, then free. */}
-                  <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
+                  <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-surface-2"
                        role="img"
                        aria-label={`${aed(budget.spent_aed)} spent and ${aed(budget.reserved_aed)} reserved of ${aed(budget.allocated_aed)} allocated`}>
                     <div className="bg-rose-500 transition-[width] duration-500" style={{ width: `${spentPct}%` }} />
@@ -123,7 +123,7 @@ export default function BudgetDashboard() {
                       ['Released', budget.released_aed, 'text-teal-700 dark:text-teal-300'],
                     ] as const).map(([label, value, tone]) => (
                       <div key={label} className="flex justify-between">
-                        <dt className="text-slate-500">{label}</dt>
+                        <dt className="text-ink-muted">{label}</dt>
                         <dd className={`font-mono tabular-nums ${tone}`}>{aed(value)}</dd>
                       </div>
                     ))}
@@ -138,20 +138,20 @@ export default function BudgetDashboard() {
       {(data?.cash_requirement_by_date.length ?? 0) > 0 && (
         <Reveal>
           <Card padding="lg" className="mb-6">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            <h2 className="text-sm font-semibold text-ink">
               Cash requirement by date
             </h2>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-ink-muted">
               When approved procurement actually needs funding.
             </p>
             <ul className="mt-4 flex flex-wrap gap-3">
               {data!.cash_requirement_by_date.map((row) => (
                 <li key={row.date}
-                    className="rounded-lg border border-slate-200 px-4 py-3 dark:border-slate-700">
-                  <p className="font-mono text-lg text-slate-900 dark:text-slate-100">
+                    className="rounded-lg border border-line px-4 py-3">
+                  <p className="font-mono text-lg text-ink">
                     {aed(row.amount_aed, { compact: true })}
                   </p>
-                  <p className="text-[11px] text-slate-500">{row.date}</p>
+                  <p className="text-[11px] text-ink-muted">{row.date}</p>
                 </li>
               ))}
             </ul>
@@ -161,14 +161,14 @@ export default function BudgetDashboard() {
 
       <Reveal delay={0.05}>
         <Card padding="lg">
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Ledger</h2>
-          <p className="mt-1 text-xs text-slate-500">
+          <h2 className="text-sm font-semibold text-ink">Ledger</h2>
+          <p className="mt-1 text-xs text-ink-muted">
             Append-only. Each row records the balance before and after, so any figure on this page
             can be traced back to the movements that produced it.
           </p>
 
           {(data?.ledger.length ?? 0) === 0 ? (
-            <p className="mt-6 text-sm text-slate-500">
+            <p className="mt-6 text-sm text-ink-muted">
               No movements yet — approve and activate a campaign to reserve budget.
             </p>
           ) : (
@@ -183,18 +183,18 @@ export default function BudgetDashboard() {
                 <TableBody>
                   {data!.ledger.map((entry, i) => (
                     <TableRow key={`${entry.at}-${i}`}>
-                      <Td className="whitespace-nowrap text-xs text-slate-500">
+                      <Td className="whitespace-nowrap text-xs text-ink-muted">
                         {new Date(entry.at).toLocaleString()}
                       </Td>
                       <Td><Badge variant={ENTRY_TONE[entry.entry_type] ?? 'neutral'}>
                         {entry.entry_type.toLowerCase()}
                       </Badge></Td>
                       <Td className="font-mono tabular-nums">{aed(entry.amount_aed)}</Td>
-                      <Td className="font-mono text-xs tabular-nums text-slate-500">
+                      <Td className="font-mono text-xs tabular-nums text-ink-muted">
                         {aed(entry.balance_before)} → {aed(entry.balance_after)}
                       </Td>
                       <Td className="text-xs">{entry.campaign ?? '—'}</Td>
-                      <Td className="max-w-xs truncate text-xs text-slate-500" title={entry.reason ?? ''}>
+                      <Td className="max-w-xs truncate text-xs text-ink-muted" title={entry.reason ?? ''}>
                         {entry.reason ?? '—'}
                       </Td>
                     </TableRow>

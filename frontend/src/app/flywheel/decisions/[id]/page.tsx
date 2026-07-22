@@ -64,7 +64,7 @@ export default function DecisionTracePage() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <Link href="/flywheel/customers"
-            className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-teal-700 dark:hover:text-teal-300">
+            className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-ink-muted hover:text-teal-700 dark:hover:text-teal-300">
         <ArrowLeft className="w-3.5 h-3.5" />Customers
       </Link>
 
@@ -89,12 +89,12 @@ export default function DecisionTracePage() {
             ? <CheckCircle2 className="w-5 h-5 shrink-0 text-teal-700 dark:text-teal-300" />
             : <XCircle className="w-5 h-5 shrink-0 text-amber-700 dark:text-amber-400" />}
           <div>
-            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+            <p className="text-sm font-medium text-ink">
               {trace.reproducibility.matches
                 ? 'Reproducible from stored inputs'
                 : 'Recomputation differs from the recorded value'}
             </p>
-            <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
+            <p className="mt-0.5 text-xs text-ink-soft">
               Recomputing EIV from the persisted terms gives{' '}
               <span className="font-mono">{aed(trace.reproducibility.recomputed_eiv_aed)}</span> AED
               against a recorded{' '}
@@ -111,10 +111,10 @@ export default function DecisionTracePage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Reveal>
           <Card padding="lg" className="h-full">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            <h2 className="text-sm font-semibold text-ink">
               How the value was calculated
             </h2>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-ink-muted">
               Benefits multiply <em>uplift</em>, never churn probability — which is why a
               high-risk customer with no persuadability yields nothing.
             </p>
@@ -127,31 +127,31 @@ export default function DecisionTracePage() {
         <div className="space-y-6">
           <Reveal delay={0.05}>
             <Card padding="lg">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              <h2 className="text-sm font-semibold text-ink">
                 What the models proposed
               </h2>
               <dl className="mt-4 grid grid-cols-3 gap-3 text-center">
-                <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
-                  <dd className="font-mono text-lg text-slate-900 dark:text-slate-100">
+                <div className="rounded-lg bg-surface-2 p-3">
+                  <dd className="font-mono text-lg text-ink">
                     {pct(trace.model_inputs.churn_probability, 0)}
                   </dd>
-                  <dt className="text-[11px] text-slate-500">churn risk</dt>
+                  <dt className="text-[11px] text-ink-muted">churn risk</dt>
                 </div>
-                <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
+                <div className="rounded-lg bg-surface-2 p-3">
                   <dd className={`font-mono text-lg ${trace.model_inputs.uplift >= 0
                     ? 'text-teal-700 dark:text-teal-300' : 'text-rose-600 dark:text-rose-400'}`}>
                     {(trace.model_inputs.uplift * 100).toFixed(2)}%
                   </dd>
-                  <dt className="text-[11px] text-slate-500">uplift</dt>
+                  <dt className="text-[11px] text-ink-muted">uplift</dt>
                 </div>
-                <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
-                  <dd className="font-mono text-lg text-slate-900 dark:text-slate-100">
+                <div className="rounded-lg bg-surface-2 p-3">
+                  <dd className="font-mono text-lg text-ink">
                     {pct(trace.model_inputs.redemption_probability, 0)}
                   </dd>
-                  <dt className="text-[11px] text-slate-500">redemption</dt>
+                  <dt className="text-[11px] text-ink-muted">redemption</dt>
                 </div>
               </dl>
-              <p className="mt-3 text-[11px] text-slate-400">
+              <p className="mt-3 text-[11px] text-ink-muted">
                 {trace.model_inputs.churn_model ?? 'unknown model'}
                 {trace.model_inputs.algorithm && ` (${trace.model_inputs.algorithm})`}
                 {' · '}models propose only — this decision was made by a deterministic service.
@@ -161,24 +161,24 @@ export default function DecisionTracePage() {
 
           <Reveal delay={0.1}>
             <Card padding="lg">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              <h2 className="text-sm font-semibold text-ink">
                 Price & cost at the moment of decision
               </h2>
               <dl className="mt-3 space-y-1.5 text-xs">
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">Unit price</dt>
+                  <dt className="text-ink-muted">Unit price</dt>
                   <dd className="font-mono">{aed(trace.price_snapshot.unit_price_aed)}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">Unit cost</dt>
+                  <dt className="text-ink-muted">Unit cost</dt>
                   <dd className="font-mono">{aed(trace.price_snapshot.unit_cost_aed)}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">Discount applied</dt>
+                  <dt className="text-ink-muted">Discount applied</dt>
                   <dd className="font-mono">{trace.price_snapshot.discount_pct}%</dd>
                 </div>
               </dl>
-              <p className="mt-3 text-[11px] italic text-slate-400">{trace.price_snapshot.note}</p>
+              <p className="mt-3 text-[11px] italic text-ink-muted">{trace.price_snapshot.note}</p>
             </Card>
           </Reveal>
         </div>
@@ -187,7 +187,7 @@ export default function DecisionTracePage() {
       {Object.keys(inv ?? {}).length > 0 && (
         <Reveal delay={0.1}>
           <Card padding="lg" className="mt-6">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            <h2 className="text-sm font-semibold text-ink">
               Stock available to promise
             </h2>
             <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-3 font-mono text-xs">
@@ -200,13 +200,13 @@ export default function DecisionTracePage() {
                 ['demand buffer', inv.demand_buffer, '−'],
               ] as const).map(([label, value, sign]) => (
                 <span key={label} className="flex items-baseline gap-1">
-                  {sign && <span className="text-slate-400">{sign}</span>}
-                  <span className="rounded bg-slate-100 px-2 py-1 dark:bg-slate-800">
-                    {value ?? 0} <span className="text-slate-500">{label}</span>
+                  {sign && <span className="text-ink-muted">{sign}</span>}
+                  <span className="rounded bg-surface-2 px-2 py-1">
+                    {value ?? 0} <span className="text-ink-muted">{label}</span>
                   </span>
                 </span>
               ))}
-              <span className="text-slate-400">=</span>
+              <span className="text-ink-muted">=</span>
               <span className="rounded bg-teal-100 px-2.5 py-1 font-semibold text-teal-800 dark:bg-teal-500/20 dark:text-teal-300">
                 {inv.atp_units ?? 0} available
               </span>
@@ -217,7 +217,7 @@ export default function DecisionTracePage() {
 
       <Reveal delay={0.15}>
         <Card padding="lg" className="mt-6">
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+          <h2 className="text-sm font-semibold text-ink">
             Why this action
           </h2>
           <ul className="mt-3 flex flex-wrap gap-2">
@@ -230,21 +230,21 @@ export default function DecisionTracePage() {
 
           {trace.rejected_actions.length > 0 && (
             <>
-              <h3 className="mt-6 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <h3 className="mt-6 text-xs font-semibold uppercase tracking-wider text-ink-muted">
                 Considered and refused ({trace.rejected_actions.length})
               </h3>
               <ul className="mt-3 space-y-2">
                 {trace.rejected_actions.map((rejected, i) => (
                   <li key={i}
-                      className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
-                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                      className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border border-line p-3 text-xs">
+                    <span className="font-medium text-ink-soft">
                       {rejected.action.replace(/_/g, ' ').toLowerCase()}
                       {rejected.discount_pct && rejected.discount_pct !== '0'
                         ? ` at ${rejected.discount_pct}%` : ''}
                     </span>
                     <Badge variant="neutral">{reasonText(rejected.reason_code)}</Badge>
                     {rejected.detail && (
-                      <span className="w-full text-[11px] text-slate-500">{rejected.detail}</span>
+                      <span className="w-full text-[11px] text-ink-muted">{rejected.detail}</span>
                     )}
                   </li>
                 ))}

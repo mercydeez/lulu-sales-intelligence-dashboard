@@ -86,7 +86,7 @@ export default function SeasonalityPage() {
         <Card padding="lg" className="mb-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <div className="text-xs uppercase tracking-wide text-[var(--muted)] mb-1">
+              <div className="text-xs uppercase tracking-wide text-ink-muted mb-1">
                 Current demand factor
               </div>
               <div className="flex items-center gap-3">
@@ -94,15 +94,15 @@ export default function SeasonalityPage() {
                   {Number.parseFloat(season?.current_factor ?? '1').toFixed(2)}×
                 </span>
                 {season?.active_now?.length ? (
-                  <span className="text-sm text-[var(--muted)]">
+                  <span className="text-sm text-ink-muted">
                     ({season.active_now.map((e) => e.name).join(', ')})
                   </span>
                 ) : (
-                  <span className="text-sm text-[var(--muted)]">(a normal week)</span>
+                  <span className="text-sm text-ink-muted">(a normal week)</span>
                 )}
               </div>
             </div>
-            <p className="text-sm text-[var(--muted)] max-w-md">{season?.note}</p>
+            <p className="text-sm text-ink-muted max-w-md">{season?.note}</p>
           </div>
         </Card>
       </Reveal>
@@ -125,10 +125,10 @@ export default function SeasonalityPage() {
                   </TableHead>
                   <TableBody>
                     {entries.map((e) => (
-                      <TableRow key={e.id} className={e.active ? 'bg-[var(--surface-2)]' : ''}>
+                      <TableRow key={e.id} className={e.active ? 'bg-surface-2' : ''}>
                         <Td className="font-medium">{e.name}</Td>
-                        <Td className="text-[var(--muted)]">{e.kind}</Td>
-                        <Td className="tabular-nums text-[var(--muted)]">{e.starts_on} → {e.ends_on}</Td>
+                        <Td className="text-ink-muted">{e.kind}</Td>
+                        <Td className="tabular-nums text-ink-muted">{e.starts_on} → {e.ends_on}</Td>
                         <Td><FactorBadge value={e.demand_multiplier} /></Td>
                         <Td>{e.active ? <Badge variant="success">active now</Badge> : <Badge variant="neutral">scheduled</Badge>}</Td>
                       </TableRow>
@@ -145,18 +145,18 @@ export default function SeasonalityPage() {
             <div className="flex items-start justify-between gap-4 mb-3">
               <div>
                 <h3 className="font-medium flex items-center gap-2">
-                  <PackageX className="w-4 h-4 text-[var(--warning)]" /> Near-expiry stock
+                  <PackageX className="w-4 h-4 text-amber-600" /> Near-expiry stock
                 </h3>
-                <p className="text-sm text-[var(--muted)]">
+                <p className="text-sm text-ink-muted">
                   Ranked by value at risk. Clearing this can outrank a retention offer.
                 </p>
               </div>
               {shelf?.total_value_at_risk_aed ? (
-                <div className="text-right">
+                <div className="text-end">
                   <div className="text-lg font-semibold tabular-nums">
                     {aed(shelf.total_value_at_risk_aed)} AED
                   </div>
-                  <div className="text-xs text-[var(--muted)]">total at risk</div>
+                  <div className="text-xs text-ink-muted">total at risk</div>
                 </div>
               ) : null}
             </div>
@@ -178,9 +178,9 @@ export default function SeasonalityPage() {
                       <TableRow key={c.batch_id}>
                         <Td>
                           <div className="font-medium">{c.item_name}</div>
-                          <div className="text-xs text-[var(--muted)]">{c.category} · {c.batch_ref}</div>
+                          <div className="text-xs text-ink-muted">{c.category} · {c.batch_ref}</div>
                         </Td>
-                        <Td className="text-[var(--muted)]">{c.store_name}</Td>
+                        <Td className="text-ink-muted">{c.store_name}</Td>
                         <Td className="tabular-nums">{c.units}</Td>
                         <Td className="tabular-nums">{c.expires_on}</Td>
                         <Td>
@@ -198,7 +198,7 @@ export default function SeasonalityPage() {
             )}
 
             {candidates.some((c) => c.days_to_expiry <= 2) ? (
-              <div className="mt-4 flex items-start gap-2 text-sm text-[var(--danger)]">
+              <div className="mt-4 flex items-start gap-2 text-sm text-rose-600">
                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>
                   Some batches expire within two days. A deep markdown now recovers margin that

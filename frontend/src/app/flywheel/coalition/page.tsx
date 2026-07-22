@@ -30,10 +30,10 @@ function ShareBar({ weight }: { weight: number | null }) {
   const pct = Math.round((weight ?? 0) * 100);
   return (
     <div className="w-full">
-      <div className="h-2 rounded bg-[var(--surface-2)] overflow-hidden">
-        <div className="h-full bg-[var(--accent)]" style={{ width: `${pct}%` }} />
+      <div className="h-2 rounded bg-surface-2 overflow-hidden">
+        <div className="h-full bg-teal-600" style={{ width: `${pct}%` }} />
       </div>
-      <div className="text-[11px] text-[var(--muted)] mt-0.5 tabular-nums">{pct}%</div>
+      <div className="text-[11px] text-ink-muted mt-0.5 tabular-nums">{pct}%</div>
     </div>
   );
 }
@@ -111,14 +111,14 @@ export default function CoalitionPage() {
           <div className="flex items-start justify-between gap-4 mb-4">
             <div>
               <h3 className="font-medium">Attributed value by partner</h3>
-              <p className="text-sm text-[var(--muted)]">
+              <p className="text-sm text-ink-muted">
                 Multi-touch attribution across the partners each retained customer engaged with.
               </p>
             </div>
             {totalMargin > 0 ? (
-              <div className="text-right">
+              <div className="text-end">
                 <div className="text-lg font-semibold tabular-nums">{aed(totalMargin.toFixed(2))} AED</div>
-                <div className="text-xs text-[var(--muted)]">total attributed</div>
+                <div className="text-xs text-ink-muted">total attributed</div>
               </div>
             ) : null}
           </div>
@@ -150,7 +150,7 @@ export default function CoalitionPage() {
             </div>
           )}
 
-          <div className="mt-4 pt-4 border-t border-[var(--border)] text-xs text-[var(--muted)]">
+          <div className="mt-4 pt-4 border-t border-line text-xs text-ink-muted">
             Coalition loyalty (SHARE, ADNOC, e&amp; Smiles) spans grocery, fuel, hospitality and
             travel. Attributing a retained customer&rsquo;s value across the partners they engaged
             with is how the number stays honest — the retailer&rsquo;s own campaign is one partner

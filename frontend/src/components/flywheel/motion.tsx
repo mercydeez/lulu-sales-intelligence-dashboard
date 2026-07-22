@@ -155,7 +155,7 @@ export function LoopRing({
         className="max-w-full h-auto"
       >
         <circle cx={cx} cy={cy} r={r} fill="none"
-                className="stroke-slate-200 dark:stroke-slate-700" strokeWidth={2} />
+                className="stroke-line" strokeWidth={2} />
 
         {/* The travelling arc: a rotating dash that reads as circulation.
             Rotation is a transform, so it stays on the compositor. */}
@@ -191,7 +191,7 @@ export function LoopRing({
                 className={
                   isActive ? 'fill-teal-600'
                     : isPast ? 'fill-teal-300 dark:fill-teal-700'
-                      : 'fill-slate-300 dark:fill-slate-600'
+                      : 'fill-ink-muted'
                 }
               />
               <text
@@ -206,12 +206,12 @@ export function LoopRing({
         })}
 
         <text x={cx} y={cy - 10} textAnchor="middle"
-              className="fill-slate-400 dark:fill-slate-500 font-mono"
+              className="fill-ink-muted font-mono"
               fontSize={10} letterSpacing={2}>CLOSED</text>
         <text x={cx} y={cy + 12} textAnchor="middle"
-              className="fill-slate-900 dark:fill-slate-100 font-bold" fontSize={20}>LOOP</text>
+              className="fill-ink font-bold" fontSize={20}>LOOP</text>
         <text x={cx} y={cy + 29} textAnchor="middle"
-              className="fill-slate-400 dark:fill-slate-500" fontSize={9.5}>
+              className="fill-ink-muted" fontSize={9.5}>
           {current.label}
         </text>
       </svg>
@@ -222,10 +222,10 @@ export function LoopRing({
           const isActive = stage.key === activeStage;
           return (
             <li key={stage.key}
-                className={`flex items-baseline gap-2 ${isActive ? 'font-semibold text-teal-700 dark:text-teal-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                className={`flex items-baseline gap-2 ${isActive ? 'font-semibold text-teal-700 dark:text-teal-300' : 'text-ink-muted'}`}>
               <span className="font-mono text-[10px] w-4 shrink-0">{i + 1}</span>
               <span>{stage.label}</span>
-              <span className="text-slate-400 dark:text-slate-500 font-normal">— {stage.hint}</span>
+              <span className="text-ink-muted font-normal">— {stage.hint}</span>
               {isActive && <span className="sr-only">(current stage)</span>}
             </li>
           );
@@ -286,12 +286,12 @@ export function EivWaterfall({
               <div className="min-w-0">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className={`truncate text-xs ${term.kind === 'net'
-                    ? 'font-semibold text-slate-900 dark:text-slate-100'
-                    : 'text-slate-600 dark:text-slate-400'}`}>
+                    ? 'font-semibold text-ink'
+                    : 'text-ink-soft'}`}>
                     {term.label}
                   </span>
                 </div>
-                <div className="mt-1 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                <div className="mt-1 h-2 rounded-full bg-surface-2 overflow-hidden">
                   {reduce ? (
                     <div className={`h-full rounded-full ${tone}`} style={{ width: `${width}%` }} />
                   ) : (
@@ -311,7 +311,7 @@ export function EivWaterfall({
                   ? (term.value >= 0 ? 'text-teal-700 dark:text-teal-300 font-semibold'
                                      : 'text-rose-600 dark:text-rose-400 font-semibold')
                   : term.kind === 'cost' ? 'text-amber-700 dark:text-amber-400'
-                                         : 'text-slate-700 dark:text-slate-300'
+                                         : 'text-ink-soft'
               }`}>
                 {term.kind === 'cost' && term.value !== 0 ? '−' : ''}
                 {new Intl.NumberFormat('en-AE', { minimumFractionDigits: 2,
@@ -348,7 +348,7 @@ export function ApprovalChain({
     status === 'approved' ? 'border-teal-400 bg-teal-50 dark:bg-teal-500/10'
       : status === 'rejected' ? 'border-rose-400 bg-rose-50 dark:bg-rose-500/10'
         : status === 'changes_requested' ? 'border-amber-400 bg-amber-50 dark:bg-amber-500/10'
-          : 'border-slate-200 dark:border-slate-700';
+          : 'border-line';
 
   return (
     <ol className="space-y-3">
@@ -357,10 +357,10 @@ export function ApprovalChain({
         const isParallel = groupSteps.length > 1;
         return (
           <li key={group}>
-            <div className="mb-1.5 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+            <div className="mb-1.5 flex items-center gap-2 text-[11px] uppercase tracking-wider text-ink-muted">
               <span>Stage {gi + 1}</span>
               {isParallel && (
-                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                <span className="rounded bg-surface-2 px-1.5 py-0.5 font-medium text-ink-muted">
                   {groupSteps.length} in parallel
                 </span>
               )}
@@ -371,10 +371,10 @@ export function ApprovalChain({
                   <div className={`rounded-lg border p-3 ${tone(step.status)}`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                        <p className="truncate text-sm font-medium text-ink">
                           {step.label}
                         </p>
-                        <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        <p className="mt-0.5 text-[11px] text-ink-muted">
                           {step.required_role.replace(/_/g, ' ')}
                         </p>
                       </div>
@@ -382,14 +382,14 @@ export function ApprovalChain({
                         step.status === 'approved' ? 'bg-teal-600 text-white'
                           : step.status === 'rejected' ? 'bg-rose-600 text-white'
                             : step.status === 'changes_requested' ? 'bg-amber-500 text-white'
-                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                              : 'bg-surface-3 text-ink-soft'
                       }`}>
                         {step.status === 'changes_requested' ? 'changes' : step.status}
                       </span>
                     </div>
 
                     {step.decided_by && (
-                      <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                      <p className="mt-2 text-[11px] text-ink-muted">
                         by {step.decided_by}
                         {step.comment ? ` — “${step.comment}”` : ''}
                       </p>
@@ -411,11 +411,11 @@ export function ApprovalChain({
                           <button
                             type="button" disabled={busy}
                             onClick={() => onDecide(step.step_id, 'rejected')}
-                            className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium
-                                       text-slate-700 hover:bg-slate-50 focus-visible:outline
+                            className="rounded-md border border-line px-3 py-1.5 text-xs font-medium
+                                       text-ink-soft hover:bg-surface-2 focus-visible:outline
                                        focus-visible:outline-2 focus-visible:outline-offset-2
-                                       focus-visible:outline-slate-400 disabled:opacity-50
-                                       dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                                       focus-visible:outline-teal-500 disabled:opacity-50
+"
                           >
                             Reject
                           </button>
@@ -424,7 +424,7 @@ export function ApprovalChain({
                         // Show WHY the button is absent rather than hiding the
                         // work — an operator who cannot act should still know
                         // who can.
-                        <p className="mt-3 text-[11px] italic text-slate-400">
+                        <p className="mt-3 text-[11px] italic text-ink-muted">
                           Awaiting {step.required_role.replace(/_/g, ' ')} — you cannot act on this step
                         </p>
                       )

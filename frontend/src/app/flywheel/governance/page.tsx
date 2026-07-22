@@ -40,9 +40,9 @@ const REASON_LABEL: Record<string, string> = {
 /** Utilisation against a cap. Purely visual — never a reported number. */
 function CapBar({ used, cap }: { used: number; cap: number }) {
   const ratio = cap > 0 ? Math.min(1, used / cap) : 0;
-  const tone = ratio >= 0.9 ? 'var(--danger)' : ratio >= 0.6 ? 'var(--warning)' : 'var(--success)';
+  const tone = ratio >= 0.9 ? 'var(--signal-down)' : ratio >= 0.6 ? 'var(--warning-700)' : 'var(--signal-up)';
   return (
-    <div className="h-2 w-full rounded bg-[var(--surface-2)] overflow-hidden">
+    <div className="h-2 w-full rounded bg-surface-2 overflow-hidden">
       <div className="h-full rounded transition-all"
         style={{ width: `${ratio * 100}%`, background: tone }} />
     </div>
@@ -96,17 +96,17 @@ export default function GovernancePage() {
         <Card padding="lg" className="mb-6">
           <div className="flex flex-wrap items-center justify-between gap-6">
             <div className="flex items-start gap-3">
-              <BellOff className="w-5 h-5 mt-1 text-[var(--accent)] shrink-0" />
+              <BellOff className="w-5 h-5 mt-1 text-teal-700 shrink-0" />
               <div>
                 <div className="text-3xl font-semibold tabular-nums">
                   {data?.suppressed_30d ?? 0}
                 </div>
-                <div className="text-sm text-[var(--muted)]">
+                <div className="text-sm text-ink-muted">
                   contacts withheld in the last 30 days
                 </div>
               </div>
             </div>
-            <p className="text-sm text-[var(--muted)] max-w-xl">
+            <p className="text-sm text-ink-muted max-w-xl">
               {data?.interpretation}
             </p>
           </div>
@@ -134,7 +134,7 @@ export default function GovernancePage() {
                       <TableRow key={p.channel}>
                         <Td className="font-medium">
                           {p.channel}
-                          {!p.is_active && <Badge variant="neutral" className="ml-2">inactive</Badge>}
+                          {!p.is_active && <Badge variant="neutral" className="ms-2">inactive</Badge>}
                         </Td>
                         <Td className="tabular-nums">{p.max_per_week}</Td>
                         <Td className="tabular-nums">{p.max_per_day}</Td>
@@ -156,7 +156,7 @@ export default function GovernancePage() {
                 </Table>
               </div>
             )}
-            <p className="text-xs text-[var(--muted)] mt-3">
+            <p className="text-xs text-ink-muted mt-3">
               Load is average contacts per reached customer against the weekly cap — it shows
               whether the population is near its ceiling, which a raw send count cannot.
             </p>
@@ -166,7 +166,7 @@ export default function GovernancePage() {
         <StaggerItem>
           <Card padding="lg" className="mb-4">
             <h3 className="font-medium mb-1">Most-contacted customers</h3>
-            <p className="text-sm text-[var(--muted)] mb-3">
+            <p className="text-sm text-ink-muted mb-3">
               The people closest to over-contact. This is the list to check before
               launching another campaign into the same audience.
             </p>
@@ -184,7 +184,7 @@ export default function GovernancePage() {
                       <TableRow key={f.customer_id}>
                         <Td className="tabular-nums">#{f.customer_id}</Td>
                         <Td className="tabular-nums">{f.contacts_7d}</Td>
-                        <Td className="text-[var(--muted)]">
+                        <Td className="text-ink-muted">
                           {f.last_contact ? new Date(f.last_contact).toLocaleString() : '—'}
                         </Td>
                       </TableRow>
@@ -199,7 +199,7 @@ export default function GovernancePage() {
         <StaggerItem>
           <Card padding="lg">
             <h3 className="font-medium mb-1">Suppressions</h3>
-            <p className="text-sm text-[var(--muted)] mb-3">
+            <p className="text-sm text-ink-muted mb-3">
               When a customer qualifies for several live campaigns, exactly one wins. Every
               loser is recorded — a marketer whose campaign silently stops reaching people
               would never trust the system again.
@@ -232,7 +232,7 @@ export default function GovernancePage() {
                       <TableRow key={`${s.customer_id}-${i}`}>
                         <Td className="tabular-nums">#{s.customer_id}</Td>
                         <Td>{s.suppressed_campaign_name ?? `#${s.suppressed_campaign_id ?? '—'}`}</Td>
-                        <Td className="text-[var(--muted)]">
+                        <Td className="text-ink-muted">
                           {s.winning_campaign_name ?? (s.winning_campaign_id ? `#${s.winning_campaign_id}` : '—')}
                         </Td>
                         <Td>
@@ -240,7 +240,7 @@ export default function GovernancePage() {
                             {REASON_LABEL[s.reason_code] ?? s.reason_code}
                           </Badge>
                         </Td>
-                        <Td className="text-[var(--muted)]">
+                        <Td className="text-ink-muted">
                           {s.created_at ? new Date(s.created_at).toLocaleString() : '—'}
                         </Td>
                       </TableRow>
@@ -253,7 +253,7 @@ export default function GovernancePage() {
         </StaggerItem>
       </Stagger>
 
-      <div className="mt-6 flex items-start gap-2 text-xs text-[var(--muted)] max-w-3xl">
+      <div className="mt-6 flex items-start gap-2 text-xs text-ink-muted max-w-3xl">
         <Users className="w-4 h-4 mt-0.5 shrink-0" />
         <span>
           Consent is re-checked at issue time, not at audience build. An audience assembled on

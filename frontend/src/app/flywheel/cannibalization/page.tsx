@@ -29,17 +29,17 @@ import type { CampaignSummary, CannibalizationResult } from '@/types/flywheel';
 /** Bar showing incremental (green) vs cannibalized (amber) share of the lift. */
 function LiftSplit({ promoted, cannibalized }: { promoted: number; cannibalized: number }) {
   if (promoted <= 0) {
-    return <div className="text-xs text-[var(--muted)] italic">no measurable lift</div>;
+    return <div className="text-xs text-ink-muted italic">no measurable lift</div>;
   }
   const cannPct = Math.min(100, Math.round((cannibalized / promoted) * 100));
   const incPct = 100 - cannPct;
   return (
     <div className="w-full">
-      <div className="flex h-5 rounded overflow-hidden bg-[var(--surface-2)]">
-        <div className="bg-[var(--success)]" style={{ width: `${incPct}%` }} title="incremental" />
-        <div className="bg-[var(--warning)]" style={{ width: `${cannPct}%` }} title="cannibalized" />
+      <div className="flex h-5 rounded overflow-hidden bg-surface-2">
+        <div className="bg-signal-up" style={{ width: `${incPct}%` }} title="incremental" />
+        <div className="bg-amber-500" style={{ width: `${cannPct}%` }} title="cannibalized" />
       </div>
-      <div className="flex justify-between text-[11px] text-[var(--muted)] mt-1">
+      <div className="flex justify-between text-[11px] text-ink-muted mt-1">
         <span>{incPct}% new demand</span>
         <span>{cannPct}% moved from category</span>
       </div>
@@ -128,7 +128,7 @@ export default function CannibalizationPage() {
           <div className="flex items-start justify-between gap-4 mb-4">
             <div>
               <h3 className="font-medium">Promoted-SKU lift, split by source</h3>
-              <p className="text-sm text-[var(--muted)]">
+              <p className="text-sm text-ink-muted">
                 Difference-in-differences: promoted-SKU lift minus category lift, treatment vs control.
               </p>
             </div>
@@ -154,7 +154,7 @@ export default function CannibalizationPage() {
                     <TableRow key={`${r.promoted_item_id}-${i}`}>
                       <Td>
                         <div className="font-medium">{r.category}</div>
-                        <div className="text-xs text-[var(--muted)]">SKU {r.promoted_item_id ?? '—'}</div>
+                        <div className="text-xs text-ink-muted">SKU {r.promoted_item_id ?? '—'}</div>
                       </Td>
                       <Td className="tabular-nums">{r.promoted_lift_units}</Td>
                       <Td className="tabular-nums">{r.category_net_lift_units}</Td>
@@ -175,7 +175,7 @@ export default function CannibalizationPage() {
           )}
 
           {rows.some((r) => r.cannibalized_units > 0) ? (
-            <div className="mt-4 flex items-start gap-2 text-sm text-[var(--warning)]">
+            <div className="mt-4 flex items-start gap-2 text-sm text-amber-600">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
               <span>
                 Some lift was cannibalized from the category. A supplier is charged only on the
@@ -185,10 +185,10 @@ export default function CannibalizationPage() {
           ) : null}
 
           {rows.length > 0 ? (
-            <div className="mt-4 pt-4 border-t border-[var(--border)] space-y-2">
+            <div className="mt-4 pt-4 border-t border-line space-y-2">
               {rows.map((r, i) => (
-                <p key={i} className="text-xs text-[var(--muted)]">
-                  <span className="font-medium text-[var(--fg)]">{r.category}:</span> {r.note}
+                <p key={i} className="text-xs text-ink-muted">
+                  <span className="font-medium text-ink">{r.category}:</span> {r.note}
                 </p>
               ))}
             </div>

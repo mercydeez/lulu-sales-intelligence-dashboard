@@ -97,7 +97,7 @@ export default function ApprovalInbox() {
             className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline
                         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 ${
               filter === f ? 'bg-teal-700 text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                : 'bg-surface-2 text-ink-soft hover:bg-surface-3'
             }`}
             aria-pressed={filter === f}
           >
@@ -130,16 +130,16 @@ export default function ApprovalInbox() {
                   type="button"
                   onClick={() => open(request.request_id)}
                   aria-current={selected?.request_id === request.request_id ? 'true' : undefined}
-                  className={`w-full rounded-lg border p-4 text-left transition-colors
+                  className={`w-full rounded-lg border p-4 text-start transition-colors
                               focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
                               focus-visible:outline-teal-600 ${
                     selected?.request_id === request.request_id
                       ? 'border-teal-400 bg-teal-50/50 dark:border-teal-600 dark:bg-teal-500/5'
-                      : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'
+                      : 'border-line hover:border-line'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <p className="truncate text-sm font-medium text-ink">
                       {request.campaign_name ?? `Request #${request.request_id}`}
                     </p>
                     <Badge variant={
@@ -150,10 +150,10 @@ export default function ApprovalInbox() {
                       {request.status}
                     </Badge>
                   </div>
-                  <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                  <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-muted">
                     <div className="flex gap-1">
                       <dt>Discount</dt>
-                      <dd className="font-mono text-slate-700 dark:text-slate-300">
+                      <dd className="font-mono text-ink-soft">
                         {aed(request.discount_exposure_aed, { compact: true })}
                       </dd>
                     </div>
@@ -167,10 +167,10 @@ export default function ApprovalInbox() {
                     )}
                   </dl>
                   {request.awaiting.length > 0 && (
-                    <p className="mt-2 text-[11px] text-slate-500">
+                    <p className="mt-2 text-[11px] text-ink-muted">
                       Awaiting: {request.awaiting.join(', ')}
                       {request.can_act && (
-                        <span className="ml-1.5 font-medium text-teal-700 dark:text-teal-300">
+                        <span className="ms-1.5 font-medium text-teal-700 dark:text-teal-300">
                           — you can act
                         </span>
                       )}
@@ -185,45 +185,45 @@ export default function ApprovalInbox() {
             <Card padding="lg">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  <h2 className="text-base font-semibold text-ink">
                     {selected.campaign_name ?? `Request #${selected.request_id}`}
                   </h2>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <p className="mt-0.5 text-xs text-ink-muted">
                     {selected.request_type.replace(/_/g, ' ')} · requested by{' '}
                     {selected.requested_by ?? 'unknown'}
                     {selected.expires_at && ` · expires ${new Date(selected.expires_at).toLocaleDateString()}`}
                   </p>
                 </div>
-                <div className="text-right">
-                  <p className="font-mono text-2xl text-slate-900 dark:text-slate-100">
+                <div className="text-end">
+                  <p className="font-mono text-2xl text-ink">
                     {selected.progress.approved}/{selected.progress.total}
                   </p>
-                  <p className="text-[11px] text-slate-500">steps approved</p>
+                  <p className="text-[11px] text-ink-muted">steps approved</p>
                 </div>
               </div>
 
-              <dl className="mt-5 grid gap-4 sm:grid-cols-3 rounded-lg bg-slate-50 p-4 dark:bg-slate-800/50">
+              <dl className="mt-5 grid gap-4 sm:grid-cols-3 rounded-lg bg-surface-2 p-4">
                 <div>
-                  <dt className="text-[11px] text-slate-500">Discount exposure</dt>
+                  <dt className="text-[11px] text-ink-muted">Discount exposure</dt>
                   <dd className="font-mono text-lg text-amber-700 dark:text-amber-400">
                     {aed(selected.discount_exposure_aed)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-[11px] text-slate-500">Procurement exposure</dt>
+                  <dt className="text-[11px] text-ink-muted">Procurement exposure</dt>
                   <dd className="font-mono text-lg text-amber-700 dark:text-amber-400">
                     {aed(selected.procurement_exposure_aed)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-[11px] text-slate-500">Expected ROI</dt>
+                  <dt className="text-[11px] text-ink-muted">Expected ROI</dt>
                   <dd className="font-mono text-lg text-teal-700 dark:text-teal-300">
                     {selected.expected_roi !== null ? `${selected.expected_roi.toFixed(2)}×` : '—'}
                   </dd>
                 </div>
               </dl>
 
-              <h3 className="mt-6 mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <h3 className="mt-6 mb-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">
                 Approval chain
               </h3>
               <ApprovalChain steps={selected.steps} onDecide={decide} busy={busy} />

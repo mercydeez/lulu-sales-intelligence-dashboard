@@ -94,10 +94,10 @@ export default function ShadowModePage() {
       <Reveal>
         <Card padding="lg" className="mb-6">
           <div className="flex items-start gap-3">
-            <Lock className="w-5 h-5 mt-0.5 text-[var(--accent)] shrink-0" />
+            <Lock className="w-5 h-5 mt-0.5 text-teal-700 shrink-0" />
             <div>
               <h3 className="font-medium mb-1">The governing rule</h3>
-              <p className="text-sm text-[var(--muted)] max-w-3xl">{data?.governing_rule}</p>
+              <p className="text-sm text-ink-muted max-w-3xl">{data?.governing_rule}</p>
             </div>
           </div>
         </Card>
@@ -116,14 +116,14 @@ export default function ShadowModePage() {
               <div className="space-y-4">
                 {comparison.map((c) => (
                   <div key={c.model_label}
-                    className="rounded-lg border border-[var(--border)] p-4">
+                    className="rounded-lg border border-line p-4">
                     <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{c.model_label}</span>
                           {c.is_self_comparison ? (
                             <Badge variant="danger">
-                              <AlertTriangle className="w-3 h-3 mr-1 inline" />
+                              <AlertTriangle className="w-3 h-3 me-1 inline" />
                               not a real comparison
                             </Badge>
                           ) : (
@@ -131,18 +131,18 @@ export default function ShadowModePage() {
                           )}
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-end">
                         <div className="text-2xl font-semibold tabular-nums">
                           {pct(c.disagreement_rate)}
                         </div>
-                        <div className="text-xs text-[var(--muted)]">disagreement rate</div>
+                        <div className="text-xs text-ink-muted">disagreement rate</div>
                       </div>
                     </div>
 
                     {/* THE GUARD. A 0% rate from a self-comparison must never be
                         allowed to read as agreement. */}
                     {c.is_self_comparison && c.self_comparison_warning ? (
-                      <div className="flex items-start gap-2 text-sm text-[var(--danger)] bg-[var(--danger-soft)] rounded p-3 mb-3">
+                      <div className="flex items-start gap-2 text-sm text-rose-600 bg-rose-50 rounded p-3 mb-3">
                         <Ban className="w-4 h-4 mt-0.5 shrink-0" />
                         <span>{c.self_comparison_warning}</span>
                       </div>
@@ -156,13 +156,13 @@ export default function ShadowModePage() {
                           ))}
                         </div>
                         <div className="text-sm">
-                          <span className="text-[var(--muted)]">Model claims </span>
+                          <span className="text-ink-muted">Model claims </span>
                           <span className="tabular-nums font-medium">
                             {aed(c.claimed_eiv_delta_aed)} AED
                           </span>
-                          <span className="text-[var(--muted)]"> more EIV than rules</span>
+                          <span className="text-ink-muted"> more EIV than rules</span>
                         </div>
-                        <p className="text-xs text-[var(--muted)] mt-2">{c.claimed_delta_note}</p>
+                        <p className="text-xs text-ink-muted mt-2">{c.claimed_delta_note}</p>
                       </>
                     )}
                   </div>
@@ -175,7 +175,7 @@ export default function ShadowModePage() {
         <StaggerItem>
           <Card padding="lg">
             <h3 className="font-medium mb-1">Standing against the promotion bar</h3>
-            <p className="text-sm text-[var(--muted)] mb-4">
+            <p className="text-sm text-ink-muted mb-4">
               The bar was fixed before any evidence was gathered. It is not adjustable from
               this screen, by design.
             </p>
@@ -202,7 +202,7 @@ export default function ShadowModePage() {
                         </Td>
                         <Td className="tabular-nums">
                           {p.disagreement_rate === null ? '—' : pct(p.disagreement_rate)}
-                          <span className="text-[var(--muted)]"> / {pct(p.max_disagreement_rate, 0)} max</span>
+                          <span className="text-ink-muted"> / {pct(p.max_disagreement_rate, 0)} max</span>
                         </Td>
                         <Td>
                           {p.eligible_for_promotion
@@ -210,7 +210,7 @@ export default function ShadowModePage() {
                             : <Badge variant="neutral">not yet</Badge>}
                         </Td>
                         <Td>
-                          <ul className="text-xs text-[var(--muted)] space-y-1">
+                          <ul className="text-xs text-ink-muted space-y-1">
                             {p.blockers.map((b, i) => <li key={i}>• {b}</li>)}
                           </ul>
                         </Td>

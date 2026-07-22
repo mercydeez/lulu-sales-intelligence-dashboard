@@ -49,7 +49,7 @@ function IntervalBar({ lower, upper, estimate }: {
 }) {
   if (lower === null || upper === null) {
     return (
-      <div className="text-xs text-[var(--muted)] italic">
+      <div className="text-xs text-ink-muted italic">
         interval not yet computable
       </div>
     );
@@ -63,21 +63,21 @@ function IntervalBar({ lower, upper, estimate }: {
 
   return (
     <div className="w-full">
-      <div className="relative h-6 rounded bg-[var(--surface-2)] overflow-hidden">
+      <div className="relative h-6 rounded bg-surface-2 overflow-hidden">
         {/* zero line — the only reference that matters */}
-        <div className="absolute inset-y-0 w-px bg-[var(--border-strong)]" style={{ left: '50%' }} />
+        <div className="absolute inset-y-0 w-px bg-ink-muted" style={{ left: '50%' }} />
         <div
-          className={`absolute inset-y-1 rounded ${excludesZero ? 'bg-[var(--success-soft)]' : 'bg-[var(--surface-3)]'}`}
+          className={`absolute inset-y-1 rounded ${excludesZero ? 'bg-signal-up' : 'bg-surface-3'}`}
           style={{ left: `${left}%`, width: `${Math.max(1, right - left)}%` }}
         />
         <div
-          className={`absolute inset-y-0 w-0.5 ${excludesZero ? 'bg-[var(--success)]' : 'bg-[var(--muted)]'}`}
+          className={`absolute inset-y-0 w-0.5 ${excludesZero ? 'bg-signal-up' : 'bg-ink-muted'}`}
           style={{ left: `${mid}%` }}
         />
       </div>
-      <div className="flex justify-between text-[11px] text-[var(--muted)] mt-1 tabular-nums">
+      <div className="flex justify-between text-[11px] text-ink-muted mt-1 tabular-nums">
         <span>{(lower * 100).toFixed(1)}%</span>
-        <span className="font-medium text-[var(--fg)]">{(estimate * 100).toFixed(2)}%</span>
+        <span className="font-medium text-ink">{(estimate * 100).toFixed(2)}%</span>
         <span>{(upper * 100).toFixed(1)}%</span>
       </div>
     </div>
@@ -180,15 +180,15 @@ export default function IncrementalityPage() {
         <Card padding="lg" className="mb-6">
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div>
-              <div className="text-xs uppercase tracking-wide text-[var(--muted)] mb-1">
+              <div className="text-xs uppercase tracking-wide text-ink-muted mb-1">
                 Incremental margin per AED spent
               </div>
               <div className="text-4xl font-semibold tabular-nums">
                 {summary?.margin_per_aed_spent
                   ? `${aed(summary.margin_per_aed_spent)}`
-                  : <span className="text-[var(--muted)] text-2xl">not yet measurable</span>}
+                  : <span className="text-ink-muted text-2xl">not yet measurable</span>}
               </div>
-              <div className="text-sm text-[var(--muted)] mt-2 max-w-xl">
+              <div className="text-sm text-ink-muted mt-2 max-w-xl">
                 Net of VAT, against control. {summary?.margin_per_aed_spent
                   ? 'Every dirham of promo spend returned this much incremental gross margin.'
                   : 'No campaign has both spend and a measurable control outcome yet.'}
@@ -196,29 +196,29 @@ export default function IncrementalityPage() {
             </div>
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
               <div>
-                <div className="text-[var(--muted)]">Incremental margin</div>
+                <div className="text-ink-muted">Incremental margin</div>
                 <div className="text-lg font-medium tabular-nums">
                   {aed(summary?.incremental_margin_aed)} AED
                 </div>
               </div>
               <div>
-                <div className="text-[var(--muted)]">Total spend</div>
+                <div className="text-ink-muted">Total spend</div>
                 <div className="text-lg font-medium tabular-nums">
                   {aed(summary?.total_spend_aed)} AED
                 </div>
               </div>
               <div>
-                <div className="text-[var(--muted)]">Proven positive</div>
+                <div className="text-ink-muted">Proven positive</div>
                 <div className="text-lg font-medium tabular-nums">{summary?.proven_positive ?? 0}</div>
               </div>
               <div>
-                <div className="text-[var(--muted)]">Still measuring</div>
+                <div className="text-ink-muted">Still measuring</div>
                 <div className="text-lg font-medium tabular-nums">{summary?.inconclusive ?? 0}</div>
               </div>
             </div>
           </div>
           {summary?.proven_negative ? (
-            <div className="mt-4 flex items-start gap-2 text-sm text-[var(--danger)]">
+            <div className="mt-4 flex items-start gap-2 text-sm text-rose-600">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
               <span>
                 {summary.proven_negative} campaign(s) measured a NEGATIVE effect — the treated
@@ -226,7 +226,7 @@ export default function IncrementalityPage() {
               </span>
             </div>
           ) : null}
-          <div className="mt-4 pt-4 border-t border-[var(--border)] text-xs text-[var(--muted)]">
+          <div className="mt-4 pt-4 border-t border-line text-xs text-ink-muted">
             {summary?.note}
           </div>
         </Card>
@@ -262,13 +262,13 @@ export default function IncrementalityPage() {
                     </Badge>
                     {readout?.preregistration ? (
                       <Badge variant="teal">
-                        <ShieldCheck className="w-3 h-3 mr-1 inline" />pre-registered
+                        <ShieldCheck className="w-3 h-3 me-1 inline" />pre-registered
                       </Badge>
                     ) : (
                       <Badge variant="amber">not pre-registered</Badge>
                     )}
                   </div>
-                  <p className="text-sm text-[var(--muted)] max-w-2xl">
+                  <p className="text-sm text-ink-muted max-w-2xl">
                     {interp?.detail ?? 'The scheduler measures hourly. No readout has been produced yet.'}
                   </p>
                 </div>
@@ -280,7 +280,7 @@ export default function IncrementalityPage() {
               {point ? (
                 <>
                   <div className="mb-5">
-                    <div className="text-xs uppercase tracking-wide text-[var(--muted)] mb-2">
+                    <div className="text-xs uppercase tracking-wide text-ink-muted mb-2">
                       Effect on retention, with anytime-valid interval
                     </div>
                     <IntervalBar
@@ -292,29 +292,29 @@ export default function IncrementalityPage() {
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div>
-                      <div className="text-[var(--muted)]">Treatment</div>
+                      <div className="text-ink-muted">Treatment</div>
                       <div className="tabular-nums">
                         {point.treatment_converted}/{point.treatment_n}
-                        <span className="text-[var(--muted)] ml-1">
+                        <span className="text-ink-muted ms-1">
                           ({point.treatment_n ? pct(point.treatment_converted / point.treatment_n) : '—'})
                         </span>
                       </div>
                     </div>
                     <div>
-                      <div className="text-[var(--muted)]">Control (held out)</div>
+                      <div className="text-ink-muted">Control (held out)</div>
                       <div className="tabular-nums">
                         {point.control_converted}/{point.control_n}
-                        <span className="text-[var(--muted)] ml-1">
+                        <span className="text-ink-muted ms-1">
                           ({point.control_n ? pct(point.control_converted / point.control_n) : '—'})
                         </span>
                       </div>
                     </div>
                     <div>
-                      <div className="text-[var(--muted)]">Incremental margin</div>
+                      <div className="text-ink-muted">Incremental margin</div>
                       <div className="tabular-nums">{aed(point.incremental_margin_aed)} AED</div>
                     </div>
                     <div>
-                      <div className="text-[var(--muted)]">Margin per AED</div>
+                      <div className="text-ink-muted">Margin per AED</div>
                       <div className="tabular-nums">
                         {point.margin_per_aed_spent ? aed(point.margin_per_aed_spent) : '—'}
                       </div>
@@ -322,9 +322,9 @@ export default function IncrementalityPage() {
                   </div>
 
                   {point.validity_warnings?.length ? (
-                    <div className="mt-5 pt-4 border-t border-[var(--border)] space-y-2">
+                    <div className="mt-5 pt-4 border-t border-line space-y-2">
                       {point.validity_warnings.map((w, i) => (
-                        <div key={i} className="flex items-start gap-2 text-sm text-[var(--warning)]">
+                        <div key={i} className="flex items-start gap-2 text-sm text-amber-600">
                           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                           <span>{w}</span>
                         </div>
@@ -347,7 +347,7 @@ export default function IncrementalityPage() {
               <Card padding="lg">
                 <div className="mb-3">
                   <h3 className="font-medium">How the evidence accumulated</h3>
-                  <p className="text-sm text-[var(--muted)]">
+                  <p className="text-sm text-ink-muted">
                     The interval is valid at every point below simultaneously — it was
                     safe to watch it narrow, and safe to stop whenever.
                   </p>
@@ -366,7 +366,7 @@ export default function IncrementalityPage() {
                           <Td className="tabular-nums">{p.window_end}</Td>
                           <Td className="tabular-nums">{p.treatment_n}/{p.control_n}</Td>
                           <Td className="tabular-nums">{(p.incremental_retention * 100).toFixed(2)}%</Td>
-                          <Td className="tabular-nums text-[var(--muted)]">
+                          <Td className="tabular-nums text-ink-muted">
                             {p.ci_lower !== null && p.ci_upper !== null
                               ? `[${(p.ci_lower * 100).toFixed(1)}, ${(p.ci_upper * 100).toFixed(1)}]`
                               : '—'}
@@ -390,7 +390,7 @@ export default function IncrementalityPage() {
         </div>
       )}
 
-      <div className="mt-6 flex items-start gap-2 text-xs text-[var(--muted)] max-w-3xl">
+      <div className="mt-6 flex items-start gap-2 text-xs text-ink-muted max-w-3xl">
         <Activity className="w-4 h-4 mt-0.5 shrink-0" />
         <span>
           Intervals are empirical-Bernstein confidence sequences, valid under continuous

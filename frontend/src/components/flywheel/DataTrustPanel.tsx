@@ -59,7 +59,7 @@ const TONE = {
 export function DataTrustPanel({ report, loading, unavailable, className }: DataTrustPanelProps) {
   if (loading) {
     return (
-      <p role="status" className={`flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 ${className ?? ''}`}>
+      <p role="status" className={`flex items-center gap-2 text-xs text-ink-muted ${className ?? ''}`}>
         <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />
         Checking whether the input data can be trusted…
       </p>
@@ -68,7 +68,7 @@ export function DataTrustPanel({ report, loading, unavailable, className }: Data
 
   if (unavailable) {
     return (
-      <p role="status" className={`flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400 ${className ?? ''}`}>
+      <p role="status" className={`flex items-start gap-2 text-xs text-ink-muted ${className ?? ''}`}>
         <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <span>
           Could not check data readiness ({unavailable}). The simulation will still
@@ -113,7 +113,7 @@ export function DataTrustPanel({ report, loading, unavailable, className }: Data
           <h3 className={`text-sm font-semibold ${tone.text}`}>
             Data readiness — {tone.label}
           </h3>
-          <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
+          <p className="mt-0.5 text-xs text-ink-soft">
             {blocking
               ? 'The simulation is blocked until these are resolved. Every number it '
                 + 'produced would be derived from input that is known to be wrong.'
@@ -137,15 +137,15 @@ export function DataTrustPanel({ report, loading, unavailable, className }: Data
             {/* The trailing space is load-bearing: without it the detail and the
                 code concatenate into one run-on word for screen readers and any
                 text extraction, even though the margin separates them visually. */}
-            <span className="min-w-0 text-slate-700 dark:text-slate-300">
+            <span className="min-w-0 text-ink-soft">
               {f.detail}{' '}
-              <code className="ms-1.5 text-[10px] text-slate-400">{f.code}</code>
+              <code className="ms-1.5 text-[10px] text-ink-muted">{f.code}</code>
             </span>
           </li>
         ))}
       </ul>
 
-      <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">
+      <p className="mt-3 text-[11px] text-ink-muted">
         Checked {report.scope.items_evaluated} items across{' '}
         {report.scope.stores_evaluated} store(s). The same check runs server-side
         on simulate and again on activate.
