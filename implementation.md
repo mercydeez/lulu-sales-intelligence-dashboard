@@ -128,9 +128,11 @@ docker compose up -d backend                       # recreate so the env is pick
   purposes; SSE consumption is already centralized in `hooks/useEventStream.ts`. Don't re-flag these.
 
 ## Track 6 — UI overhaul: immersive, dynamic, color-coded 🟡 (foundation + key screens)
-Decision: polish **in-place** (no shadcn migration) + add **framer-motion**; **dark mode removed**;
+Decision: polish **in-place** (no shadcn migration) + add **framer-motion**; dark mode was removed
+during this overhaul, then **re-added later as the E4-2 light/dark/system theme** (`ThemeContext`,
+`ThemeToggle`, pre-paint `html.dark` — the current shipped state);
 "rich but tasteful" motion; foundation-first then key screens.
-- ✅ **Foundation** — removed dark mode (ThemeContext/toggle/script/`html.dark`); immersive tinted-mesh
+- ✅ **Foundation** — (dark mode later restored as E4-2 tri-state); immersive tinted-mesh
   canvas + dimensional surfaces + `hero-mesh`/accent gradients + `--series-*` palette (globals.css);
   Tailwind `series` scale + card/elevated/glow shadows + gradient images; framer-motion + shared
   motion primitives (`components/ui/motion.tsx`: Reveal/Stagger/RevealItem/MotionCard) under

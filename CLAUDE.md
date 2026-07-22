@@ -36,7 +36,7 @@ pytest tests/test_security.py -k <name>                           # single test
 cd frontend; npm install --legacy-peer-deps
 npm run dev
 npm run build
-npx tsc --noEmit        # CI currently runs this with `|| true` — type errors exist silently
+npx tsc --noEmit        # currently clean (0 errors); CI enforces it (no longer `|| true`)
 
 # Backups & DR (blueprint E0-1) — prod runs the `backup` sidecar automatically.
 # Dev exercise / on-demand:

@@ -69,8 +69,8 @@ This project deliberately documents its own simplifications — read this before
 git clone https://github.com/mercydeez/lulu-sales-intelligence-dashboard.git
 cd lulu-sales-intelligence-dashboard
 
-docker compose up -d      # starts db, redis, backend, frontend, and the diagnostics worker
-docker compose ps         # all five should be "Up"; db/redis show "healthy"
+docker compose up -d      # starts db, redis, backend, singletons, frontend, and the diagnostics worker
+docker compose ps         # all six should be "Up"; db/redis show "healthy"
                           # (an optional `ollama` service sits behind the `ai` profile, off by default)
 ```
 
@@ -121,7 +121,7 @@ Logging in as the regional/store users is the quickest way to see RBAC scoping i
 │  routers: auth, kpis, sales, analytics, history, inventory,   │
 │           alerts, promotions, employees, admin, reports,      │
 │           monitoring, ai, stream                              │
-│  lifespan: migration runner → employee seeder → DataGenerator │
+│  lifespan: migrations → seeders → import + outbox relays      │
 └───────────────┬─────────────────────────────┬────────────────┘
                 │                              │
         ┌───────▼────────┐            ┌────────▼────────┐
@@ -142,7 +142,7 @@ A separate **Node BullMQ diagnostics worker** shares the same Redis and writes e
 
 This is the core of the app:
 
-1. A `DataGenerator` asyncio task (started in the FastAPI lifespan) writes a synthetic sale every **~5–15s** to PostgreSQL and publishes the event as JSON to the Redis channel `sales:stream` (also `alerts:stream`, `inventory:stream`).
+1. A `DataGenerator` asyncio task (run in the dedicated single-replica `singletons` container — `app/commands/singletons.py` — not the API lifespan, so it runs in exactly one process) writes a synthetic sale every **~5–15s** to PostgreSQL and publishes the event as JSON to the Redis channel `sales:stream` (also `alerts:stream`, `inventory:stream`).
 2. SSE endpoints under `/stream/*` (sse-starlette) relay Redis pub/sub to browsers.
 3. Frontend components open an `EventSource` and update KPIs, the live table, and charts in place.
 
@@ -174,7 +174,7 @@ This is the core of the app:
 - **Alerts → Tasks** — persisted alert workflow: acknowledge, resolve-with-notes, and a "My Tasks" view.
 - **Promotions** — summary, active campaigns, category performance (real shape), and a create flow scoped to the user's accessible stores.
 - **Employees / Performance** — bio cards, role/store analytics, performance charts (line/bar/radar) over real seeded data.
-- **Admin** — honest **read-only** console (the admin backend is GET-only): dashboard, users, stores, activity feed; super-admin gated.
+- **Admin** — console: dashboard, users, stores, activity feed; super-admin gated. Read-mostly — the one write path is a role-gated create-user endpoint (`POST /api/admin/users`, super-admin / regional-manager).
 - **Reports** — single rich endpoint feeding KPIs + daily/category/store/item tables; **labelled in units** with a PDF export that states the no-price caveat.
 - **Monitoring** — live `/api/monitoring/*` health, system stats, and metrics with an auto-refresh toggle.
 - **AI assistant (Sage)** — grounded, RBAC-safe chat over live data with the local-first provider chain described above (NL→SQL on a least-privilege role, with a deterministic rule-based fallback that needs no LLM).
@@ -288,7 +288,7 @@ implementation.md             single living forward roadmap (what's shipped + wh
 
 **Done:** real-time pipeline · RBAC + server-side scoping · multi-tenancy with Postgres FORCE RLS on the request path · derived revenue model · seasonal + LightGBM forecasting with MAPE/WAPE backtest · Sage (grounded NL→SQL + deterministic fallback) · BullMQ diagnostics worker closing the detect→…→measure loop · local-first AI chain · full UI redesign · EN/AR + RTL · WCAG-AA contrast · production hardening (CSP/CORS, structured logging, covering index, pagination, transaction-safe alert generation).
 
-**Next:** activate the local LLM for free-form Sage answers (Ollama, config-only) · richer agentic increment (draft a PO/alert from an accepted action, still human-approved) · tenant data export & delete-on-request · frontend component tests · self-hosted Arabic web font · WebSocket upgrade from SSE.
+**Next:** frontend component tests · self-hosted Arabic web font · WebSocket upgrade from SSE. _(Local-LLM activation, the agentic draft-an-action increment, and tenant data export/delete-on-request have all shipped — see `implementation.md` Tracks 3/5 and the agentic increment.)_
 
 ---
 

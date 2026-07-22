@@ -107,7 +107,7 @@ Format: **Context → Decision → Consequences (good & bad)**. Status is one of
 
 **Context.** Several original screens shipped buttons (Add User, Edit, Save Settings, assignee pickers) with **no backend behind them**.
 
-**Decision.** Scope the UI to real endpoints. The **Admin** console is read-only because the admin API is GET-only. The Alerts assignee picker was dropped because the only user-listing endpoint is super-admin-only. Gaps are tracked as backend work, not faked in the UI.
+**Decision.** Scope the UI to real endpoints. The **Admin** console is read-mostly — its backend is GET-only apart from one role-gated create-user write (`POST /api/admin/users`). The Alerts assignee picker was dropped because the only user-listing endpoint is super-admin-only. Gaps are tracked as backend work, not faked in the UI.
 
 **Consequences.**
 - 👍 Nothing on screen lies about what it does.
