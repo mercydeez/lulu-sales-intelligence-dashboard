@@ -350,9 +350,20 @@ async def get_latest_redirect():
 # Handle legacy /api/stream/sales requests - redirect to /stream/sales
 @app.get("/api/stream/sales", tags=["Stream"])
 async def stream_sales_redirect(request: Request):
-    """SSE endpoint for real-time sales streaming (legacy URL support)"""
-    from app.routes.stream import event_generator
-    return EventSourceResponse(event_generator(request))
+    """Legacy URL for the sales SSE stream.
+
+    Redirects to the real, ticket-authenticated endpoint instead of invoking the
+    generator itself. It used to call `event_generator(request)` directly, which
+    was a hard 500 — the generator's signature is (request, current_user) — and,
+    had it ever worked, would have streamed live tenant sales with NO auth at all,
+    since this shim declares no ticket dependency. The query string is preserved
+    so an existing ?ticket= survives the hop.
+    """
+    from fastapi.responses import RedirectResponse
+    target = "/stream/sales"
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    return RedirectResponse(url=target, status_code=307)
 
 
 @app.get("/health")

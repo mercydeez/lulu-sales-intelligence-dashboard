@@ -12,6 +12,7 @@ the authenticated user, never from the request body.
 """
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -54,8 +55,11 @@ async def export_my_tenant(
     # enforce_quota; this one only records.
     from app.services.usage_metering import record_usage
     await record_usage(tenant_id, "export", metadata={"kind": "data_rights"})
-    # Force a download with a stable filename.
-    return JSONResponse(content=data, headers={
+    # Force a download with a stable filename. jsonable_encoder is required, not
+    # cosmetic: the exported rows carry UUID (and datetime/Decimal) values that the
+    # stdlib JSON encoder behind JSONResponse cannot serialize, which made this
+    # endpoint a hard 500 ("Object of type UUID is not JSON serializable").
+    return JSONResponse(content=jsonable_encoder(data), headers={
         "Content-Disposition": f'attachment; filename="tenant-{tenant_id}-export.json"'
     })
 
