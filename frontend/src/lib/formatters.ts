@@ -1,5 +1,5 @@
 /**
- * Formatting utilities for Lulu Intelligence Dashboard
+ * Formatting utilities for the dashboard
  * Includes AED (UAE Dirhams) currency formatting and standardized unit labels
  * Following enterprise standards similar to Apple, Microsoft, and major retailers
  */

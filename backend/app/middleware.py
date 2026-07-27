@@ -13,7 +13,7 @@ from fastapi import Request, Response, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from app.config import get_settings, logger
+from app.config import get_settings, logger, request_id_ctx
 
 
 settings = get_settings()
@@ -26,67 +26,140 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     """
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Generate unique request ID
-        request_id = str(uuid.uuid4())[:8]
+        # Reuse an inbound request id (from an upstream proxy/service) for
+        # end-to-end tracing, otherwise mint a new one.
+        incoming = request.headers.get("X-Request-ID")
+        request_id = incoming if incoming and len(incoming) <= 64 else str(uuid.uuid4())[:8]
         request.state.request_id = request_id
-        
+        # Publish to the contextvar so the logging filter stamps every log line
+        # produced while handling this request with the same id.
+        token = request_id_ctx.set(request_id)
+
         # Skip verbose logging for performance - only log errors
         start_time = time.time()
-        
+        try:
+            from app.services.metrics import get_metrics
+            get_metrics().start_request(request_id)
+        except Exception:
+            pass
+
+        status_code = 500
         try:
             response = await call_next(request)
+            status_code = response.status_code
             process_time = time.time() - start_time
-            
+
             # Add minimal headers
             response.headers["X-Request-ID"] = request_id
             response.headers["X-Process-Time"] = f"{process_time:.3f}"
-            
+
             # Only log slow requests (>500ms) in production
             if process_time > 0.5:
-                logger.warning(f"[{request_id}] SLOW: {request.method} {request.url.path} - {process_time:.3f}s")
-            
+                logger.warning(f"SLOW: {request.method} {request.url.path} - {process_time:.3f}s")
+
             return response
-            
+
         except Exception as e:
-            logger.error(f"[{request_id}] ERROR: {request.method} {request.url.path} - {str(e)}")
+            logger.error(f"ERROR: {request.method} {request.url.path} - {str(e)}")
             raise
+        finally:
+            try:
+                from app.services.metrics import get_metrics
+                get_metrics().end_request(request_id, request.method, request.url.path, status_code)
+            except Exception:
+                pass
+            request_id_ctx.reset(token)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
-    Redis-based rate limiting middleware for distributed deployments.
-    Falls back to in-memory limiting if Redis is unavailable.
-    Uses a sliding window algorithm per client IP.
+    Redis-based rate limiting for distributed deployments, with an in-memory
+    fallback. Sliding window, ONE bucket per request, scoped by identity (E0-7):
+
+        API key  >  authenticated user  >  anonymous IP
+
+    Per-IP alone was evadable by IP rotation, and in the other direction one hot
+    authenticated user exhausted the shared bucket for everyone NAT'd behind the
+    same IP. Identity resolution never touches the DB:
+      * API keys are identified by sha256 of the raw key (the same primitive
+        api_key_service persists) — a fabricated key just burns its own bucket
+        and still 401s at the route.
+      * Users are identified by the signature-VERIFIED user_id claim. An
+        unverified claim read would let an attacker mint unlimited buckets (and
+        escape the IP bucket) by forging user_ids; a raw-token hash would let
+        them reset the budget on every /auth/refresh. Tokens that don't verify
+        fall back to the anonymous IP bucket.
     """
-    
-    def __init__(self, app, requests_limit: int = None, window_seconds: int = None):
+
+    def __init__(self, app, requests_limit: int = None, window_seconds: int = None,
+                 user_requests_limit: int = None, api_key_requests_limit: int = None):
         super().__init__(app)
         self.requests_limit = requests_limit or settings.rate_limit_requests
         self.window_seconds = window_seconds or settings.rate_limit_window
+        self.user_requests_limit = user_requests_limit or settings.rate_limit_user_requests
+        self.api_key_requests_limit = api_key_requests_limit or settings.rate_limit_api_key_requests
         # In-memory fallback
         self._fallback_requests: Dict[str, list] = defaultdict(list)
-    
+
     def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP from request, considering proxies."""
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
+        """Extract client IP. X-Forwarded-For / X-Real-IP are honored ONLY when
+        trust_proxy_headers is set — otherwise they're spoofable and a client
+        could rotate them to evade per-IP rate limiting."""
+        if settings.trust_proxy_headers:
+            forwarded = request.headers.get("X-Forwarded-For")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
+            real_ip = request.headers.get("X-Real-IP")
+            if real_ip:
+                return real_ip
         return request.client.host if request.client else "unknown"
-    
-    async def _check_rate_limit_redis(self, client_ip: str) -> tuple[bool, int, int]:
+
+    def _resolve_identity(self, request: Request) -> tuple[str, str, int]:
+        """Resolve (scope, identity, limit) for this request. Cheap and DB-free;
+        runs before route dependencies, so it reads raw headers/cookies itself."""
+        auth = request.headers.get("authorization", "")
+        bearer = auth[7:].strip() if auth[:7].lower() == "bearer " else None
+
+        # 1. API key — X-API-Key header, or an lsk_-prefixed bearer (public_api
+        #    accepts both). Identity = sha256(raw key): no verification, no DB.
+        api_key = request.headers.get("x-api-key") or (
+            bearer if bearer and bearer.startswith("lsk_") else None
+        )
+        if api_key:
+            digest = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+            return "key", digest, self.api_key_requests_limit
+
+        # 2. Authenticated user — bearer JWT or the httpOnly access cookie.
+        #    MUST be signature-verified (see class docstring); quiet on failure.
+        token = bearer
+        if not token:
+            cookies = getattr(request, "cookies", None)
+            if isinstance(cookies, dict):
+                token = cookies.get("access_token")
+        if token:
+            try:
+                from app.services.jwt_keys import get_key_provider
+                claims = get_key_provider().verify(token)
+                user_id = claims.get("user_id")
+                if user_id is not None:
+                    return "user", str(user_id), self.user_requests_limit
+            except Exception:
+                pass  # unverifiable token → anonymous bucket
+
+        # 3. Anonymous — the strict per-IP bucket.
+        return "ip", self._get_client_ip(request), self.requests_limit
+
+    async def _check_rate_limit_redis(self, bucket: str, limit: int) -> tuple[bool, int, int]:
         """Check rate limit using Redis sliding window. Returns (allowed, remaining, retry_after)."""
         try:
             from app.services.redis_client import redis_client
             if not redis_client:
                 raise Exception("Redis not available")
-            
-            key = f"ratelimit:{client_ip}"
+
+            key = f"ratelimit:{bucket}"
             current_time = time.time()
             window_start = current_time - self.window_seconds
-            
+
             pipe = redis_client.pipeline()
             # Remove old entries
             pipe.zremrangebyscore(key, 0, window_start)
@@ -96,13 +169,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             pipe.zcard(key)
             # Set TTL on key
             pipe.expire(key, self.window_seconds + 1)
-            
+
             results = await pipe.execute()
             request_count = results[2]
-            
-            remaining = max(0, self.requests_limit - request_count)
-            
-            if request_count > self.requests_limit:
+
+            remaining = max(0, limit - request_count)
+
+            if request_count > limit:
                 # Get oldest request to calculate retry-after
                 oldest = await redis_client.zrange(key, 0, 0, withscores=True)
                 if oldest:
@@ -110,47 +183,59 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 else:
                     retry_after = self.window_seconds
                 return False, 0, max(1, retry_after)
-            
+
             return True, remaining, 0
-            
-        except Exception as e:
+
+        except Exception:
             # Fallback to in-memory
-            return self._check_rate_limit_memory(client_ip)
-    
-    def _check_rate_limit_memory(self, client_ip: str) -> tuple[bool, int, int]:
+            return self._check_rate_limit_memory(bucket, limit)
+
+    def _check_rate_limit_memory(self, bucket: str, limit: int) -> tuple[bool, int, int]:
         """Fallback in-memory rate limiting."""
         current_time = time.time()
         cutoff = current_time - self.window_seconds
-        self._fallback_requests[client_ip] = [
-            t for t in self._fallback_requests[client_ip] if t > cutoff
+        self._fallback_requests[bucket] = [
+            t for t in self._fallback_requests[bucket] if t > cutoff
         ]
-        
-        if len(self._fallback_requests[client_ip]) >= self.requests_limit:
-            oldest = min(self._fallback_requests[client_ip])
+
+        if len(self._fallback_requests[bucket]) >= limit:
+            oldest = min(self._fallback_requests[bucket])
             retry_after = int(self.window_seconds - (current_time - oldest))
             return False, 0, max(1, retry_after)
-        
-        self._fallback_requests[client_ip].append(current_time)
-        remaining = self.requests_limit - len(self._fallback_requests[client_ip])
+
+        self._fallback_requests[bucket].append(current_time)
+        remaining = limit - len(self._fallback_requests[bucket])
         return True, remaining, 0
-    
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip rate limiting for health checks and docs
         skip_paths = ["/health", "/docs", "/openapi.json", "/redoc"]
         if request.url.path in skip_paths:
             return await call_next(request)
-        
-        client_ip = self._get_client_ip(request)
+
+        scope, identity, limit = self._resolve_identity(request)
+        bucket = f"{scope}:{identity}"
         try:
-            allowed, remaining, retry_after = await self._check_rate_limit_redis(client_ip)
+            allowed, remaining, retry_after = await self._check_rate_limit_redis(bucket, limit)
         except Exception:
             # Redis path failed unexpectedly — fall back to in-memory limiting
-            allowed, remaining, retry_after = self._check_rate_limit_memory(client_ip)
-        
+            allowed, remaining, retry_after = self._check_rate_limit_memory(bucket, limit)
+
         if not allowed:
             request_id = getattr(request.state, 'request_id', 'unknown')
-            logger.warning(f"[{request_id}] Rate limit exceeded for IP: {client_ip}")
-            
+            logger.warning(f"[{request_id}] Rate limit exceeded for {scope}: {identity}")
+
+            try:
+                from app.services.security_events import record_event
+                # identity is a user_id / key hash / IP — never a raw credential.
+                await record_event("rate_limited", request=request,
+                                   ip_address=self._get_client_ip(request),
+                                   detail=f"Rate limit exceeded ({limit}/{self.window_seconds}s, scope={scope})",
+                                   evidence={"limit": limit, "window_s": self.window_seconds,
+                                             "scope": scope, "identity": identity})
+            except Exception:
+                pass
+
             return JSONResponse(
                 status_code=429,
                 content={
@@ -160,16 +245,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 },
                 headers={
                     "Retry-After": str(retry_after),
-                    "X-RateLimit-Limit": str(self.requests_limit),
+                    "X-RateLimit-Limit": str(limit),
                     "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Scope": scope,
                 }
             )
-        
+
         response = await call_next(request)
-        response.headers["X-RateLimit-Limit"] = str(self.requests_limit)
+        response.headers["X-RateLimit-Limit"] = str(limit)
         response.headers["X-RateLimit-Remaining"] = str(remaining)
         response.headers["X-RateLimit-Window"] = str(self.window_seconds)
-        
+        response.headers["X-RateLimit-Scope"] = scope
         return response
 
 
@@ -188,18 +274,25 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
         
-        # Content Security Policy
+        # Content Security Policy. connect-src is environment-driven (see
+        # settings.csp_connect_src) so production isn't pinned to localhost.
+        # 'unsafe-inline' is retained for script/style because the bundled
+        # Swagger UI and Next.js runtime require inline script/style; switching
+        # to per-request nonces would be the next tightening step.
         csp_directives = [
             "default-src 'self'",
             "script-src 'self' 'unsafe-inline'",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob: https:",
             "font-src 'self' data:",
-            "connect-src 'self' http://localhost:8000 ws://localhost:8000 http://localhost:3000",
+            f"connect-src {settings.csp_connect_src}",
+            "object-src 'none'",
             "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'",
         ]
+        if settings.environment == "production":
+            csp_directives.append("upgrade-insecure-requests")
         response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
         
         # HSTS - always set (browsers ignore it on HTTP anyway)
@@ -249,13 +342,21 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     
     EXEMPT_PATHS = {
         "/health", "/docs", "/openapi.json", "/redoc",
-        "/api/auth/login", "/api/auth/refresh",
+        "/api/auth/login", "/api/auth/refresh", "/api/auth/signup",
+        "/api/auth/2fa/verify",  # pre-auth 2FA step (no bearer yet)
+        "/api/auth/forgot-password", "/api/auth/reset-password",  # pre-auth
+        "/api/auth/verify-email",  # pre-auth (link from email)
+        "/api/auth/accept-invite",  # pre-auth (invite link from email)
         "/api/ai/chat/stream",  # Streaming endpoint
     }
     
     EXEMPT_PREFIXES = (
-        "/stream/",   # SSE endpoints
-        "/api/ai/",   # AI streaming
+        "/stream/",        # SSE endpoints
+        "/api/ai/",        # AI streaming
+        "/api/public/",    # Public API — authenticated by per-tenant API key, not cookies
+        "/api/payments/webhook/",  # Payment gateway webhooks — authenticated by
+                                   # HMAC signature (verify_webhook_signature), not a
+                                   # session; an external gateway cannot send a CSRF token.
     )
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -296,6 +397,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         csrf_header = request.headers.get("x-csrf-token")
         
         if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+            try:
+                from app.services.security_events import record_event
+                await record_event("csrf_failed", request=request,
+                                   detail=f"CSRF validation failed on {request.method} {request.url.path}")
+            except Exception:
+                pass
             return JSONResponse(
                 status_code=403,
                 content={
@@ -314,25 +421,49 @@ class SessionInvalidationMiddleware(BaseHTTPMiddleware):
     """
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Only check authenticated endpoints
+        # Pull the access token from the Bearer header OR the httpOnly cookie —
+        # a logged-out cookie session must be rejected the same as a Bearer one.
         auth_header = request.headers.get("authorization", "")
+        token = None
         if auth_header.startswith("Bearer "):
             token = auth_header.split(" ", 1)[1]
+        else:
+            token = request.cookies.get("access_token")
+
+        if token:
             token_hash = hashlib.sha256(token.encode()).hexdigest()
-            
+
+            revoked = False
+            reason = "logged-out / revoked token"
             try:
                 from app.services.redis_client import redis_client
-                if redis_client:
-                    is_blacklisted = await redis_client.get(f"blacklisted_token:{token_hash}")
-                    if is_blacklisted:
-                        return JSONResponse(
-                            status_code=401,
-                            content={
-                                "error": "Token Invalidated",
-                                "message": "This session has been logged out. Please login again."
-                            }
-                        )
-            except Exception:
-                pass  # If Redis is down, allow the request through (fail-open)
-        
+                if not redis_client:
+                    raise RuntimeError("redis_client unavailable")
+                revoked = bool(await redis_client.get(f"blacklisted_token:{token_hash}"))
+            except Exception as e:
+                # Can't consult the blacklist. Fail CLOSED by default so a revoked
+                # token isn't silently honored during a Redis outage.
+                if settings.auth_fail_open_on_redis_down:
+                    revoked = False
+                    logger.warning(f"Blacklist check failed ({e}); allowing (fail-open)")
+                else:
+                    revoked = True
+                    reason = "session store unavailable (fail-closed)"
+                    logger.error(f"Blacklist check failed ({e}); REJECTING (fail-closed)")
+
+            if revoked:
+                try:
+                    from app.services.security_events import record_event
+                    await record_event("token_blacklisted", request=request,
+                                       detail=f"Rejected request — {reason}")
+                except Exception:
+                    pass
+                return JSONResponse(
+                    status_code=401,
+                    content={
+                        "error": "Token Invalidated",
+                        "message": "This session is no longer valid. Please login again."
+                    }
+                )
+
         return await call_next(request)

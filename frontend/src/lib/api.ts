@@ -1,4 +1,8 @@
-import { Sale, SalesAggregation, DashboardMetrics, Prediction, Store, Item, BacktestResult, TrendPoint } from '@/types';
+import {
+  Sale, SalesAggregation, DashboardMetrics, AnalyticsKpis, Prediction, Store, Item, BacktestResult, TrendPoint,
+  StoreDistributionPoint, CategoryBreakdownPoint, TopItemPoint, RevenueProjection,
+  Finding, FindingsSummary,
+} from '@/types';
 import { apiRequest, clearApiCache } from './apiClient';
 
 // Per-endpoint cache TTLs in milliseconds. Caching, auth, refresh-retry and
@@ -74,6 +78,18 @@ export async function fetchKPIs(): Promise<DashboardMetrics> {
   return cachedFetch<DashboardMetrics>('/api/kpis', 'kpis');
 }
 
+/** Full /api/kpis payload (AED revenue, data range, unique counts) — the richer
+ *  view the analytics dashboard needs. Same endpoint as fetchKPIs, wider type. */
+export async function fetchAnalyticsKpis(): Promise<AnalyticsKpis> {
+  return cachedFetch<AnalyticsKpis>('/api/kpis', 'kpis');
+}
+
+/** Forward revenue projection (B1.7) — the forecasting engine valued at the
+ *  average unit price, scoped to the caller's tenant + stores. */
+export async function fetchRevenueProjection(horizon: number = 14): Promise<RevenueProjection> {
+  return cachedFetch<RevenueProjection>('/api/kpis/projection', 'predictions', { horizon });
+}
+
 export async function fetchTrend(days: number = 30, includeForecast: boolean = true): Promise<{ data: TrendPoint[] }> {
   return cachedFetch<{ data: TrendPoint[] }>('/api/analytics/trend', 'aggregated', {
     days,
@@ -87,4 +103,96 @@ export async function fetchBacktest(params?: {
   holdout_days?: number;
 }): Promise<BacktestResult> {
   return cachedFetch<BacktestResult>('/api/sales/predictions/backtest', 'predictions', params as Record<string, unknown>);
+}
+
+export async function fetchStoreDistribution(): Promise<{ data: StoreDistributionPoint[]; total: number }> {
+  return cachedFetch<{ data: StoreDistributionPoint[]; total: number }>('/api/analytics/stores', 'aggregated');
+}
+
+export async function fetchCategoryBreakdown(): Promise<{ data: CategoryBreakdownPoint[]; total: number }> {
+  return cachedFetch<{ data: CategoryBreakdownPoint[]; total: number }>('/api/analytics/categories', 'aggregated');
+}
+
+export async function fetchTopItems(limit: number = 10): Promise<{ data: TopItemPoint[] }> {
+  return cachedFetch<{ data: TopItemPoint[] }>('/api/analytics/top-items', 'aggregated', { limit });
+}
+
+// ============================================================================
+// DIAGNOSTICS / FINDINGS (A3) — live ops data, never cached.
+// ============================================================================
+export async function fetchFindings(params?: {
+  status?: string; severity?: string; category?: string; outcome?: string;
+  measured?: boolean; limit?: number;
+}): Promise<{ data: Finding[]; count: number }> {
+  return apiRequest('/api/findings', { params: params as Record<string, unknown> });
+}
+
+export async function fetchFindingsSummary(): Promise<FindingsSummary> {
+  return apiRequest('/api/findings/summary');
+}
+
+export async function acknowledgeFinding(id: number): Promise<{ id: number; status: string }> {
+  return apiRequest(`/api/findings/${id}/acknowledge`, { method: 'POST' });
+}
+
+export async function resolveFinding(id: number): Promise<{ id: number; status: string }> {
+  return apiRequest(`/api/findings/${id}/resolve`, { method: 'POST', body: {} });
+}
+
+export async function acceptFindingAction(id: number): Promise<{ id: number; accepted: boolean }> {
+  return apiRequest(`/api/findings/${id}/accept-action`, { method: 'POST' });
+}
+
+// ============================================================================
+// SECURITY OPERATIONS — real-time security telemetry, never cached.
+// ============================================================================
+export type SecuritySeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+export interface SecurityEvent {
+  id: number;
+  occurred_at: string;
+  event_type: string;
+  severity: SecuritySeverity;
+  category: 'threat' | 'audit';
+  actor_email: string | null;
+  ip_address: string | null;
+  method: string | null;
+  path: string | null;
+  detail: string | null;
+  evidence: Record<string, unknown>;
+}
+
+export interface SecuritySummary {
+  window_hours: number;
+  total_events: number;
+  by_severity: Record<SecuritySeverity, number>;
+  by_type: Record<string, number>;
+  threats_active: number;
+  failed_logins: number;
+  blocked_requests: number;
+  distinct_ips: number;
+  top_ips: { ip_address: string; events: number }[];
+  posture_score: number;
+  status: 'ok' | 'watch' | 'alert';
+}
+
+export interface SecurityKpi {
+  posture_score: number;
+  threats_active: number;
+  events_24h: number;
+  status: 'ok' | 'watch' | 'alert';
+}
+
+export async function fetchSecuritySummary(hours = 24): Promise<SecuritySummary> {
+  return apiRequest('/api/security/summary', { params: { hours } });
+}
+
+export async function fetchSecurityEvents(params?: {
+  severity?: string; event_type?: string; category?: string; hours?: number; limit?: number;
+}): Promise<{ data: SecurityEvent[]; count: number }> {
+  return apiRequest('/api/security/events', { params: params as Record<string, unknown> });
+}
+
+export async function fetchSecurityKpi(): Promise<SecurityKpi> {
+  return apiRequest('/api/security/kpi');
 }

@@ -1,0 +1,2 @@
+# ACME webroot: certbot (webroot mode) writes HTTP-01 challenge files here;
+# nginx serves them at /.well-known/acme-challenge/. See docs/runbooks/TLS_CERTS.md.

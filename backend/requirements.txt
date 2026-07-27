@@ -1,20 +1,58 @@
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
+# gunicorn is the process MANAGER; uvicorn.workers.UvicornWorker is the ASGI
+# worker. uvicorn's own --workers supervisor (Multiprocess) does NOT restart a
+# dead worker — a crashed/OOM'd worker silently reduces capacity while /health
+# still passes. gunicorn restarts workers and supports --max-requests recycling.
+gunicorn==21.2.0
+# E2-2: SFTP transport for scheduled imports. IMAP uses the stdlib (imaplib).
+paramiko==3.4.0
 sqlalchemy[asyncio]==2.0.25
+alembic==1.13.1
 asyncpg==0.29.0
+# psycopg2 is used ONLY by Alembic (sync driver — runs multi-statement DDL/DO
+# blocks the async driver can't). The app runtime stays on asyncpg.
+psycopg2-binary==2.9.9
 redis==5.0.1
 pydantic[email]==2.5.3
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
 email-validator==2.1.0
-alembic==1.13.1
 pandas==2.1.4
+# Excel import (E1-3). openpyxl reads .xlsx; xlrd 2.x reads ONLY legacy .xls.
+# Used directly (not via pandas.read_excel) so the parser stays pure + streamable.
+openpyxl==3.1.2
+xlrd==2.0.1
 numpy==1.26.3
+# Forecasting (ML tier) — small CPU wheel
+lightgbm==4.3.0
+# Backs lightgbm's sklearn API (LGBMClassifier/LGBMRegressor) and supplies the
+# ROC / precision-recall / AUC metrics for the stockout classifier. Pulls scipy.
+scikit-learn==1.5.2
+# Forecasting (DL tier) — CPU-only torch (the cpu index avoids the multi-GB CUDA
+# build). This still adds a few hundred MB to the image; remove these three lines
+# to drop the LSTM tier (the engine falls back to classical + LightGBM safely).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2
 httpx==0.26.0
 sse-starlette==2.0.0
-python-multipart==0.0.9
+# Sage v3 multi-agent graph (Phase 0). Pinned to the 0.1.x line on purpose: it
+# depends on langchain-core 0.2.x, which keeps pydantic at the pinned 2.5.3 —
+# the 0.2.x/langchain-core-0.3 line would force a pydantic 2.13 upgrade across
+# the whole stack. langgraph only activates when USE_SAGE_V3=true.
+langgraph==0.1.19
+langgraph-checkpoint==1.0.12
+langchain-core==0.2.43
+# (optional) langfuse tracing is env-gated and added in Phase 5 to avoid pulling
+# heavier deps before they're needed:
+# langfuse==2.*
+# 0.0.18 fixes CVE-2024-53981 (multipart parser DoS).
+python-multipart==0.0.18
 # Authentication
-python-jose[cryptography]==3.3.0
+# 3.4.0 fixes CVE-2024-33663 (algorithm confusion) and CVE-2024-33664 (JWT bomb
+# DoS). This library performs our JWT verification — see services/jwt_keys.py,
+# whose tests assert an RS256->HS256 confusion token is rejected. Drop-in bump.
+python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.1.2
 
@@ -22,4 +60,9 @@ bcrypt==4.1.2
 pytest==8.0.0
 pytest-asyncio>=0.23.0,<0.25.0
 pytest-cov==4.1.0
-aiohttp==3.9.3
+# Test-only HTTP client. 3.10.11 clears CVE-2024-30251/27306/52303/52304.
+aiohttp==3.10.11
+
+# Observability (K4 — CX_LOOPS_PLAN): error tracking. main.py inits it only
+# when SENTRY_DSN is set (guarded import), so the dep is inert by default.
+sentry-sdk[fastapi]==2.19.2

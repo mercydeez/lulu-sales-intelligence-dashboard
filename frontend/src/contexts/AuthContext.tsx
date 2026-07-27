@@ -3,12 +3,30 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { User, LoginCredentials, LoginResponse, AuthState, UserRole } from '@/types/auth';
 import { authFetch as clientAuthFetch, clearApiCache } from '@/lib/apiClient';
+import { Lock } from 'lucide-react';
 
 declare const process: { env: { NEXT_PUBLIC_API_URL?: string } };
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+export interface SignupData {
+  company_name: string;
+  email: string;
+  password: string;
+  first_name: string;
+  last_name: string;
+  seed_sample_data?: boolean;
+}
+
+export interface LoginResult {
+  ok: boolean;
+  requires2fa?: boolean;
+  mfaToken?: string;
+}
+
 interface AuthContextType extends AuthState {
-  login: (credentials: LoginCredentials) => Promise<boolean>;
+  login: (credentials: LoginCredentials) => Promise<LoginResult>;
+  verifyTwoFactor: (mfaToken: string, code: string) => Promise<boolean>;
+  signup: (data: SignupData) => Promise<boolean>;
   logout: () => Promise<void>;
   refreshToken: () => Promise<boolean>;
   hasPermission: (permission: string) => boolean;
@@ -21,10 +39,13 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Token storage keys
-const ACCESS_TOKEN_KEY = 'lulu_access_token';
-const REFRESH_TOKEN_KEY = 'lulu_refresh_token';
-const USER_KEY = 'lulu_user';
+// Only the user PROFILE is persisted (for cache scoping, E0-6). Access/refresh
+// tokens are httpOnly cookies the browser manages — never in localStorage (E0-5).
+// The two legacy token keys remain only so clearAuth can purge them from browsers
+// that stored them before E0-5.
+const LEGACY_ACCESS_TOKEN_KEY = 'app_access_token';
+const LEGACY_REFRESH_TOKEN_KEY = 'app_refresh_token';
+const USER_KEY = 'app_user';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -34,38 +55,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     error: null
   });
 
-  // Load auth state from storage on mount
+  // Restore the session on mount from the httpOnly cookie (E0-5) — there is no
+  // token in localStorage to gate on anymore. Validate with credentials only; on
+  // success rehydrate the profile from the stored copy or, if absent, from
+  // /api/auth/me (a fresh browser after login-elsewhere, or a cleared profile).
   useEffect(() => {
     const loadAuthState = async () => {
       try {
-        const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
-        const storedUser = localStorage.getItem(USER_KEY);
+        let response = await fetch(`${API_URL}/api/auth/validate`, { credentials: 'include' });
 
-        if (accessToken && storedUser) {
-          // Validate token with backend
-          const response = await fetch(`${API_URL}/api/auth/validate`, {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`
-            }
-          });
+        // Access cookie expired but the refresh cookie may still be valid.
+        if (!response.ok) {
+          const refreshed = await refreshTokenInternal();
+          if (!refreshed) { clearAuth(); return; }
+          response = await fetch(`${API_URL}/api/auth/validate`, { credentials: 'include' });
+          if (!response.ok) { clearAuth(); return; }
+        }
 
-          if (response.ok) {
-            const user = JSON.parse(storedUser);
-            setState({
-              user,
-              isAuthenticated: true,
-              isLoading: false,
-              error: null
-            });
-          } else {
-            // Try to refresh token
-            const refreshed = await refreshTokenInternal();
-            if (!refreshed) {
-              clearAuth();
-            }
+        const stored = localStorage.getItem(USER_KEY);
+        let user = stored ? JSON.parse(stored) : null;
+        if (!user) {
+          const me = await fetch(`${API_URL}/api/auth/me`, { credentials: 'include' });
+          if (me.ok) {
+            user = await me.json();
+            localStorage.setItem(USER_KEY, JSON.stringify(user));
           }
+        }
+
+        if (user) {
+          setState({ user, isAuthenticated: true, isLoading: false, error: null });
         } else {
-          setState(prev => ({ ...prev, isLoading: false }));
+          clearAuth();
         }
       } catch (error) {
         console.error('Auth load error:', error);
@@ -77,10 +97,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const clearAuth = () => {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     clearApiCache(); // never let one user's cached data outlive their session (M2)
+    // Drop any open SSE connection now rather than letting it sit out its linger
+    // window (hooks/useEventStream.ts). Sent as an event, not a direct call, to
+    // avoid an import cycle — that module imports authFetch from this one.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('auth:logout'));
+    }
     setState({
       user: null,
       isAuthenticated: false,
@@ -89,69 +115,104 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const login = async (credentials: LoginCredentials): Promise<boolean> => {
+  const signup = async (data: SignupData): Promise<boolean> => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    try {
+      const response = await fetch(`${API_URL}/api/auth/signup`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seed_sample_data: true, ...data }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        setState(prev => ({ ...prev, isLoading: false, error: body.detail || 'Sign up failed' }));
+        return false;
+      }
+      const signupResponse: LoginResponse = body;
+      clearApiCache();
+      // Tokens are set as httpOnly cookies by the backend — persist only the
+      // profile (used for cache scoping, E0-6), never the tokens (E0-5).
+      localStorage.setItem(USER_KEY, JSON.stringify(signupResponse.user));
+      setState({ user: signupResponse.user, isAuthenticated: true, isLoading: false, error: null });
+      return true;
+    } catch (error) {
+      console.error('Signup error:', error);
+      setState(prev => ({ ...prev, isLoading: false, error: 'Network error. Please try again.' }));
+      return false;
+    }
+  };
+
+  // Flip to logged-in from a successful auth response. Tokens arrived as httpOnly
+  // cookies (Set-Cookie); we persist ONLY the profile for cache scoping (E0-5/E0-6).
+  const establishSession = (loginResponse: LoginResponse) => {
+    clearApiCache(); // drop any cache from a previous session before this user's data lands (M2)
+    localStorage.setItem(USER_KEY, JSON.stringify(loginResponse.user));
+    setState({ user: loginResponse.user, isAuthenticated: true, isLoading: false, error: null });
+  };
+
+  const login = async (credentials: LoginCredentials): Promise<LoginResult> => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials)
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setState(prev => ({
-          ...prev,
-          isLoading: false,
-          error: data.detail || 'Login failed'
-        }));
-        return false;
+        setState(prev => ({ ...prev, isLoading: false, error: data.detail || 'Login failed' }));
+        return { ok: false };
       }
 
-      const loginResponse: LoginResponse = data;
+      // Account has 2-step verification: not logged in yet — caller collects a code.
+      if (data.requires_2fa) {
+        setState(prev => ({ ...prev, isLoading: false }));
+        return { ok: false, requires2fa: true, mfaToken: data.mfa_token };
+      }
 
-      // Drop any cache left over from a previous session before this user's data lands (M2)
-      clearApiCache();
-
-      // Store tokens and user
-      localStorage.setItem(ACCESS_TOKEN_KEY, loginResponse.access_token);
-      localStorage.setItem(REFRESH_TOKEN_KEY, loginResponse.refresh_token);
-      localStorage.setItem(USER_KEY, JSON.stringify(loginResponse.user));
-
-      setState({
-        user: loginResponse.user,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null
-      });
-
-      return true;
+      establishSession(data as LoginResponse);
+      return { ok: true };
     } catch (error) {
       console.error('Login error:', error);
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: 'Network error. Please try again.'
-      }));
+      setState(prev => ({ ...prev, isLoading: false, error: 'Network error. Please try again.' }));
+      return { ok: false };
+    }
+  };
+
+  const verifyTwoFactor = async (mfaToken: string, code: string): Promise<boolean> => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    try {
+      const response = await fetch(`${API_URL}/api/auth/2fa/verify`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mfa_token: mfaToken, code }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setState(prev => ({ ...prev, isLoading: false, error: data.detail || 'Invalid code' }));
+        return false;
+      }
+      establishSession(data as LoginResponse);
+      return true;
+    } catch (error) {
+      console.error('2FA verify error:', error);
+      setState(prev => ({ ...prev, isLoading: false, error: 'Network error. Please try again.' }));
       return false;
     }
   };
 
   const logout = async (): Promise<void> => {
     try {
-      const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
-      if (accessToken) {
-        await fetch(`${API_URL}/api/auth/logout`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        });
-      }
+      // Route through authFetch so the httpOnly cookies are sent and the CSRF
+      // double-submit header is attached — logout is a state-changing POST and
+      // is no longer Bearer-exempt. This clears the cookies + blacklists the token.
+      await clientAuthFetch(`${API_URL}/api/auth/logout`, { method: 'POST' });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
@@ -160,24 +221,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshTokenInternal = async (): Promise<boolean> => {
-    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-    if (!refreshToken) return false;
-
     try {
+      // The refresh token is an httpOnly cookie — send NO body (the endpoint
+      // requires a token field, so `{}` would 422; it falls back to the cookie
+      // when the body is absent). Rotated cookies come back as Set-Cookie.
       const response = await fetch(`${API_URL}/api/auth/refresh`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ refresh_token: refreshToken })
+        credentials: 'include',
       });
 
       if (!response.ok) return false;
 
       const data: LoginResponse = await response.json();
 
-      localStorage.setItem(ACCESS_TOKEN_KEY, data.access_token);
-      localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+      // Persist ONLY the profile — tokens live in the refreshed httpOnly cookies.
       localStorage.setItem(USER_KEY, JSON.stringify(data.user));
 
       setState({
@@ -235,6 +292,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         ...state,
         login,
+        verifyTwoFactor,
+        signup,
         logout,
         refreshToken,
         hasPermission,
@@ -268,8 +327,8 @@ export function withAuth<P extends object>(
 
     if (isLoading) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-900">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+        <div className="min-h-screen flex items-center justify-center bg-canvas">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500"></div>
         </div>
       );
     }
@@ -283,10 +342,13 @@ export function withAuth<P extends object>(
 
     if (requiredRoles && !hasRole(requiredRoles)) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-900">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-red-500 mb-2">Access Denied</h1>
-            <p className="text-slate-400">You don't have permission to access this page.</p>
+        <div className="min-h-screen flex items-center justify-center bg-canvas p-6">
+          <div className="text-center max-w-sm rounded-2xl border border-line bg-surface shadow-card p-8">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-coral-50">
+              <Lock className="h-6 w-6 text-coral-500" />
+            </div>
+            <h1 className="text-xl font-bold text-ink mb-1">Access Denied</h1>
+            <p className="text-ink-muted text-sm">You don&apos;t have permission to access this page.</p>
           </div>
         </div>
       );
@@ -296,14 +358,6 @@ export function withAuth<P extends object>(
   };
 }
 
-// Utility function to get auth header
-export function getAuthHeader(): Record<string, string> {
-  const token = typeof window !== 'undefined' 
-    ? localStorage.getItem(ACCESS_TOKEN_KEY) 
-    : null;
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
-}
-
 // Module-level authenticated fetch for non-React callers — the single API
-// client (auth header + 401 refresh-retry + redirect-on-failure).
+// client (httpOnly-cookie auth + CSRF header + 401 refresh-retry + redirect).
 export const authFetch = clientAuthFetch;

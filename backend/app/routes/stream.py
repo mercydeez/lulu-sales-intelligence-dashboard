@@ -2,7 +2,7 @@
 Stream API Routes - SSE Streaming and Latest Data
 Matches README: GET /stream/sales, GET /api/latest, GET /stream/alerts
 """
-from fastapi import APIRouter, Request, Depends, Query
+from fastapi import APIRouter, Request, Depends, Query, HTTPException
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,10 +13,11 @@ import asyncio
 import json
 import random
 
+from app.config import logger
 from app.services.database import get_db
-from app.services.redis_client import get_redis, CHANNEL_SALES_STREAM, CHANNEL_ALERTS_STREAM, CHANNEL_INVENTORY_STREAM, publish_alert, publish_inventory_update
+from app.services.redis_client import get_redis, CHANNEL_SALES_STREAM, CHANNEL_ALERTS_STREAM, CHANNEL_INVENTORY_STREAM, CHANNEL_SECURITY_STREAM, CHANNEL_OPERATIONS_STREAM, publish_alert, publish_inventory_update
 from app.models.sales import Sale, Store, Item
-from app.routes.auth import get_current_user, get_current_user_optional, get_current_user_from_ticket, can_access_store, get_accessible_store_ids
+from app.auth_deps import get_current_user, get_current_user_optional, get_current_user_from_ticket, can_access_store, get_accessible_store_ids
 
 router = APIRouter()
 
@@ -54,9 +55,11 @@ async def get_latest(
     items_result = await db.execute(select(Item))
     items = {i.id: i.name for i in items_result.scalars().all()}
     
-    # Get latest records
+    # Get latest records — tenant-scoped (defense in depth: correct even when RLS
+    # is off / for a full-access principal whose accessible-store scope is empty).
     allowed_stores = get_accessible_store_ids(current_user)
-    query = select(Sale)
+    tenant_id = current_user.get('tenant_id') or 1
+    query = select(Sale).where(Sale.tenant_id == tenant_id)
     if allowed_stores:
         query = query.where(Sale.store_id.in_(allowed_stores))
     query = query.order_by(Sale.created_at.desc()).limit(limit)
@@ -149,25 +152,40 @@ async def generate_returns(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Generate bulk return records immediately for visibility in charts.
-    This creates immediate return data that will show in all return graphs.
+    Generate bulk SYNTHETIC return records for visibility in charts. Demo only.
+
+    This is the second synthetic writer besides `services/data_generator.py`, and it
+    is reachable by any authenticated user. Under E0-8 it must obey the same rules:
+    demo mode only, demo tenant's stores/items only, every row stamped `is_synthetic`.
+    (It previously selected stores/items with no tenant filter at all, so a user of one
+    tenant could inject fabricated returns onto another tenant's stores.)
     """
     import random
     import uuid
     from datetime import date, timedelta, datetime as _datetime
     from app.models.sales import SalesStreamRaw, STREAM_ID_OFFSET
     from app.services.redis_client import publish_sale
-    
-    # Get stores and items
-    stores_result = await db.execute(select(Store))
+    from app.config import get_settings
+
+    settings = get_settings()
+    if not (settings.demo_mode and settings.live_generator_enabled):
+        raise HTTPException(
+            status_code=403,
+            detail="Synthetic returns can only be generated in demo mode.",
+        )
+
+    demo_tenant = settings.demo_tenant_id
+
+    # Scope to the demo tenant — never another tenant's stores/items.
+    stores_result = await db.execute(select(Store).where(Store.tenant_id == demo_tenant))
     stores = list(stores_result.scalars().all())
-    
-    items_result = await db.execute(select(Item))
+
+    items_result = await db.execute(select(Item).where(Item.tenant_id == demo_tenant))
     items = list(items_result.scalars().all())
-    
+
     if not stores or not items:
         return {"error": "No stores or items found", "generated": 0}
-    
+
     generated_returns = []
     today = date.today()
     
@@ -190,6 +208,8 @@ async def generate_returns(
             store_id=store.id,
             item_id=item.id,
             sales=return_value,
+            tenant_id=demo_tenant,
+            is_synthetic=True,
         )
 
         db.add(sale)
@@ -205,6 +225,8 @@ async def generate_returns(
             'category': item.category,
             'sales': sale.sales,
             'is_streaming': True,
+            'tenant_id': demo_tenant,
+            'is_synthetic': True,
             'created_at': sale.created_at.isoformat() if sale.created_at else datetime.now().isoformat(),
             'timestamp': return_ts.isoformat(),
             'transaction_type': 'return',
@@ -310,7 +332,14 @@ def generate_live_alert():
 
 
 def generate_inventory_update():
-    """Generate a random inventory update"""
+    """Generate a SYNTHETIC inventory update for the demo SSE feed.
+
+    Every field here is invented. It used to also emit
+    `unit_cost: random.uniform(10, 100)` — a fabricated money figure sitting in the
+    same payload as real-looking stock levels. Cost is never guessed (E2-3: it comes
+    from item_costs or it is absent), so the field is gone and the event now says
+    what it is.
+    """
     item = random.choice(MOCK_ITEMS)
     store = random.choice(MOCK_STORES)
     
@@ -338,7 +367,7 @@ def generate_inventory_update():
         "reorder_level": reorder_level,
         "max_stock": max_stock,
         "status": status,
-        "unit_cost": round(random.uniform(10, 100), 2),
+        "is_synthetic": True,
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -517,6 +546,101 @@ async def stream_alerts(
     return EventSourceResponse(alerts_event_generator(request, current_user))
 
 
+async def security_event_generator(request: Request, current_user: dict):
+    """Stream security events for the viewer's tenant only (admins). Each event the
+    app records is published to security:stream with its tenant_id; we forward only
+    those matching the viewer's tenant so one tenant never sees another's events."""
+    redis = await get_redis()
+    pubsub = redis.pubsub()
+    await pubsub.subscribe(CHANNEL_SECURITY_STREAM)
+    viewer_tenant = current_user.get("tenant_id") or 1
+
+    yield {"event": "connected", "data": json.dumps({"message": "Connected to security stream"})}
+
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message and message['type'] == 'message':
+                data = message['data']
+                try:
+                    evt = json.loads(data)
+                    if int(evt.get("tenant_id", 1)) == int(viewer_tenant):
+                        yield {"event": "security", "data": data}
+                except Exception as e:
+                    logger.warning(f"Error filtering security event: {e}")
+            await asyncio.sleep(0.1)
+    finally:
+        await pubsub.unsubscribe(CHANNEL_SECURITY_STREAM)
+        await pubsub.close()
+
+
+@router.get("/security")
+async def stream_security(
+    request: Request,
+    current_user: dict = Depends(get_current_user_from_ticket)
+):
+    """SSE endpoint for the real-time security feed (admin SOC panel). Tenant-filtered.
+
+    Returns events: `connected`, then `security` for each new security event.
+    """
+    if current_user.get("role") not in ("super_admin", "admin"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return EventSourceResponse(security_event_generator(request, current_user))
+
+
+async def operations_event_generator(request: Request, current_user: dict):
+    """Stream Operations Copilot status changes for the viewer's tenant only. Each
+    run/proposal transition is published to operations:stream with its tenant_id;
+    we forward only matching events so one tenant never sees another's queue."""
+    redis = await get_redis()
+    pubsub = redis.pubsub()
+    await pubsub.subscribe(CHANNEL_OPERATIONS_STREAM)
+    viewer_tenant = current_user.get("tenant_id") or 1
+
+    yield {"event": "connected", "data": json.dumps({"message": "Connected to operations stream"})}
+
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message and message['type'] == 'message':
+                data = message['data']
+                try:
+                    evt = json.loads(data)
+                    if int(evt.get("tenant_id", 1)) == int(viewer_tenant):
+                        yield {"event": "operations", "data": data}
+                except Exception as e:
+                    logger.warning(f"Error filtering operations event: {e}")
+            await asyncio.sleep(0.1)
+    finally:
+        await pubsub.unsubscribe(CHANNEL_OPERATIONS_STREAM)
+        await pubsub.close()
+
+
+@router.get("/operations")
+async def stream_operations(
+    request: Request,
+    current_user: dict = Depends(get_current_user_from_ticket)
+):
+    """SSE endpoint for the Operations Copilot queue. Tenant-filtered, and gated to
+    operators to match the rest of /api/operations (an analyst who cannot see the
+    REST surface must not receive its live feed either).
+
+    Returns events: `connected`, then `operations` for each run/proposal change.
+    """
+    role = current_user.get("role")
+    perms = current_user.get("permissions", {}) or {}
+    if role not in ("super_admin", "admin", "regional_manager", "store_manager") \
+            and not perms.get("can_manage_inventory"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Operator role required")
+    return EventSourceResponse(operations_event_generator(request, current_user))
+
+
 @router.get("/inventory")
 async def stream_inventory(
     request: Request,
@@ -532,3 +656,73 @@ async def stream_inventory(
     - event: inventory_update - Inventory level change
     """
     return EventSourceResponse(inventory_event_generator(request, current_user))
+
+
+async def flywheel_event_generator(request: Request, current_user: dict):
+    """Stream Flywheel campaign/approval/budget/offer events for the viewer's scope.
+
+    FILTERING IS SERVER-SIDE AND FAILS CLOSED (§21). Every event carries the
+    tenant it belongs to and, where relevant, a store id. We forward an event
+    only when BOTH match the viewer: same tenant, and — for store-scoped events —
+    a store the viewer can actually access. A store manager watching this stream
+    must never see another store's redemptions, so an event whose scope we cannot
+    establish is dropped rather than forwarded.
+
+    Events are published by the transactional outbox relay
+    (services/flywheel/outbox.py), never directly by the code that moved the money —
+    so a live dashboard reflects only COMMITTED state.
+    """
+    from app.services.flywheel.outbox import ALL_CHANNELS
+    from app.auth_deps import get_accessible_store_ids
+
+    redis = await get_redis()
+    pubsub = redis.pubsub()
+    for channel in ALL_CHANNELS:
+        await pubsub.subscribe(channel)
+
+    viewer_tenant = current_user.get("tenant_id") or 1
+    # Empty list means super_admin (all stores) — mirrors auth_deps semantics.
+    accessible = get_accessible_store_ids(current_user)
+
+    yield {"event": "connected",
+           "data": json.dumps({"message": "Connected to Flywheel stream",
+                               "channels": list(ALL_CHANNELS)})}
+
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message and message['type'] == 'message':
+                try:
+                    evt = json.loads(message['data'])
+                    if int(evt.get("tenant_id", -1)) != int(viewer_tenant):
+                        continue
+                    event_store = evt.get("store_id")
+                    if event_store is not None and accessible and int(event_store) not in accessible:
+                        continue
+                    yield {"event": evt.get("event", "flywheel"), "data": message['data']}
+                except Exception as e:
+                    logger.warning(f"Error filtering Flywheel event: {e}")
+            await asyncio.sleep(0.1)
+    finally:
+        for channel in ALL_CHANNELS:
+            await pubsub.unsubscribe(channel)
+        await pubsub.close()
+
+
+@router.get("/flywheel")
+async def stream_flywheel(
+    request: Request,
+    current_user: dict = Depends(get_current_user_from_ticket)
+):
+    """SSE endpoint for the Flywheel live control centre.
+
+    Example: GET /stream/flywheel?ticket=<stream ticket>
+
+    Events: `connected`, then one per outbox event —
+    `campaign.activated`, `campaign.auto_paused`, `campaign.measured`,
+    `approval.requested`, `approval.decided`, `offer.issued`,
+    `offer.redeemed`, `inventory.decremented`.
+    """
+    return EventSourceResponse(flywheel_event_generator(request, current_user))

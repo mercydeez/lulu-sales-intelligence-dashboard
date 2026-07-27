@@ -1,0 +1,46 @@
+# Trivy ignore list (E5-5).
+#
+# CI blocks on CRITICAL vulnerabilities with a fix available. Anything listed
+# here is an EXPLICIT, dated exception with an owner and a follow-up — not a way
+# to silence the scanner. Re-review every entry each release.
+#
+# Fixed in this pass (NOT ignored — upgraded in backend/requirements.txt):
+#   python-jose 3.3.0 -> 3.4.0   CVE-2024-33663, CVE-2024-33664
+#   python-multipart 0.0.9 -> 0.0.18  CVE-2024-53981
+#   aiohttp 3.9.3 -> 3.10.11     CVE-2024-30251/27306/52303/52304
+
+# torch 2.2.2 — CVE-2025-32434: torch.load() can execute arbitrary code when
+# loading an untrusted checkpoint. Fix is torch 2.6.0.
+# Why deferred: the fix is a major upgrade of a multi-GB CPU-wheel dependency
+# pinned against a custom index (--extra-index-url download.pytorch.org/whl/cpu)
+# and used by the optional DL forecasting tier; it needs its own change + a
+# forecast-accuracy regression run.
+# Why the risk is bounded here: we never torch.load() an untrusted checkpoint —
+# models are trained in-process by services/forecasting and never deserialized
+# from user input or the network. Exploitation requires an attacker-supplied
+# checkpoint file, which no code path accepts.
+# Owner: Krishna. Follow-up: upgrade torch to >=2.6.0 (E6 hardening).
+CVE-2025-32434
+
+# langchain-core 0.2.43 — CVE-2025-68664: arbitrary code execution via
+# serialization injection in langchain's load()/loads(). Fix is 0.3.81 / 1.2.5.
+# Why deferred: langchain-core is pinned to 0.2.x on purpose (requirements.txt:29)
+# — the 0.3 line forces a pydantic 2.5.3 -> 2.13 upgrade across the whole app,
+# which is its own migration + full regression, not a drop-in.
+# Why the risk is bounded here: nothing under backend/app imports langchain_core
+# or calls langchain load()/loads(); the CVE requires deserializing an
+# attacker-controlled LangChain-serialized object, and no code path does. Sage's
+# JSON handling uses the stdlib json module, not langchain serialization.
+# Owner: Krishna (coordinate the pydantic bump with Atharva's Sage v3 path).
+# Follow-up: upgrade langchain-core to >=0.3.81 with the pydantic migration.
+CVE-2025-68664
+
+# ecdsa (transitive via python-jose[cryptography]) — CVE-2024-23342: Minerva
+# timing attack on P-256 signing. NO upstream fix exists (the maintainers state
+# pure-Python side-channel resistance is out of scope), so ignore-unfixed does
+# not cover it once it is classified.
+# Why the risk is bounded: we sign JWTs with RSA (RS256) or HMAC (HS256) via the
+# `cryptography` backend — see services/jwt_keys.py. No ECDSA signing path is
+# reachable in this app; ecdsa is only pulled in as an unused python-jose extra.
+# Owner: Krishna. Follow-up: drop when python-jose stops depending on ecdsa.
+CVE-2024-23342

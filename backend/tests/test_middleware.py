@@ -12,6 +12,7 @@ from app.middleware import (
     RateLimitMiddleware,
     SecurityHeadersMiddleware,
     BodySizeLimitMiddleware,
+    CSRFMiddleware,
 )
 
 
@@ -19,14 +20,18 @@ from app.middleware import (
 # Helpers
 # =============================================================================
 
-def _make_request(path: str = "/test", method: str = "GET", content_length: int = 0):
+def _make_request(path: str = "/test", method: str = "GET", content_length: int = 0,
+                  headers: dict = None, client_host: str = "127.0.0.1"):
     """Create a minimal mock Request object."""
     request = MagicMock()
     request.url.path = path
     request.method = method
     request.client = MagicMock()
-    request.client.host = "127.0.0.1"
-    request.headers = {"content-length": str(content_length)}
+    request.client.host = client_host
+    request.headers = {"content-length": str(content_length), **(headers or {})}
+    # A real dict, not an auto-MagicMock: cookies.get() on a MagicMock returns a
+    # truthy mock, which would fake an authenticated user to the rate limiter.
+    request.cookies = {}
     request.state = MagicMock()
     return request
 
@@ -99,6 +104,184 @@ class TestRateLimitMiddleware:
             response = await middleware.dispatch(request, _ok_handler)
 
         assert response.status_code == 429
+
+
+# =============================================================================
+# RateLimitMiddleware — per-identity scoping (E0-7)
+# =============================================================================
+
+def _user_token(user_id: int) -> str:
+    """A real signed access token (conftest provides HS256 test secrets)."""
+    from app.services.auth_service import create_access_token
+    return create_access_token({"user_id": user_id, "tenant_id": 1, "role": "analyst"})
+
+
+def _no_redis(middleware):
+    return patch.object(middleware, "_check_rate_limit_redis",
+                        new_callable=AsyncMock, side_effect=Exception("no redis"))
+
+
+class TestRateLimitIdentityScoping:
+
+    @pytest.mark.asyncio
+    async def test_users_get_independent_buckets_behind_one_ip(self):
+        """Two authenticated users on the same IP (office NAT) must not share a
+        budget — and neither drains the anonymous IP bucket."""
+        middleware = RateLimitMiddleware(MagicMock(), requests_limit=2,
+                                         window_seconds=60, user_requests_limit=2)
+        alice = {"authorization": f"Bearer {_user_token(101)}"}
+        bob = {"authorization": f"Bearer {_user_token(202)}"}
+
+        with _no_redis(middleware):
+            # Alice exhausts HER bucket (limit 2) — 3rd request 429s.
+            await middleware.dispatch(_make_request(headers=alice), _ok_handler)
+            await middleware.dispatch(_make_request(headers=alice), _ok_handler)
+            alice_third = await middleware.dispatch(_make_request(headers=alice), _ok_handler)
+            # Bob, same IP, is untouched.
+            bob_first = await middleware.dispatch(_make_request(headers=bob), _ok_handler)
+            # Anonymous same-IP is untouched too.
+            anon = await middleware.dispatch(_make_request(), _ok_handler)
+
+        assert alice_third.status_code == 429
+        assert alice_third.headers["X-RateLimit-Scope"] == "user"
+        assert bob_first.status_code == 200
+        assert anon.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_ip_rotation_does_not_reset_a_users_budget(self):
+        """The old per-IP-only limiter was evadable by IP rotation; the per-user
+        bucket follows the verified user_id claim across IPs."""
+        middleware = RateLimitMiddleware(MagicMock(), requests_limit=100,
+                                         window_seconds=60, user_requests_limit=2)
+        hdrs = {"authorization": f"Bearer {_user_token(303)}"}
+
+        with _no_redis(middleware):
+            await middleware.dispatch(_make_request(headers=hdrs, client_host="10.0.0.1"), _ok_handler)
+            await middleware.dispatch(_make_request(headers=hdrs, client_host="10.0.0.2"), _ok_handler)
+            third = await middleware.dispatch(_make_request(headers=hdrs, client_host="10.0.0.3"), _ok_handler)
+
+        assert third.status_code == 429
+
+    @pytest.mark.asyncio
+    async def test_api_key_bucket_shared_across_both_transports(self):
+        """The same lsk_ key via X-API-Key and via Bearer shares ONE bucket."""
+        middleware = RateLimitMiddleware(MagicMock(), requests_limit=100,
+                                         window_seconds=60, api_key_requests_limit=2)
+        key = "lsk_abc123_secretsecret"
+
+        with _no_redis(middleware):
+            await middleware.dispatch(_make_request(headers={"x-api-key": key}), _ok_handler)
+            await middleware.dispatch(
+                _make_request(headers={"authorization": f"Bearer {key}"}), _ok_handler)
+            third = await middleware.dispatch(_make_request(headers={"x-api-key": key}), _ok_handler)
+
+        assert third.status_code == 429
+        assert third.headers["X-RateLimit-Scope"] == "key"
+
+    @pytest.mark.asyncio
+    async def test_forged_token_cannot_mint_its_own_bucket(self):
+        """An unverifiable JWT must NOT become a user identity (that would let an
+        attacker forge user_ids for unlimited buckets) — it falls back to the
+        anonymous IP bucket."""
+        middleware = RateLimitMiddleware(MagicMock(), requests_limit=2,
+                                         window_seconds=60, user_requests_limit=100)
+        forged = {"authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjo5OTl9.forged"}
+
+        with _no_redis(middleware):
+            r1 = await middleware.dispatch(_make_request(headers=forged), _ok_handler)
+            await middleware.dispatch(_make_request(headers=forged), _ok_handler)
+            third = await middleware.dispatch(_make_request(headers=forged), _ok_handler)
+
+        assert r1.headers["X-RateLimit-Scope"] == "ip"
+        assert third.status_code == 429  # the strict anonymous limit applied
+
+    @pytest.mark.asyncio
+    async def test_429_reports_the_scopes_own_limit(self):
+        middleware = RateLimitMiddleware(MagicMock(), requests_limit=50,
+                                         window_seconds=60, user_requests_limit=1)
+        hdrs = {"authorization": f"Bearer {_user_token(404)}"}
+
+        with _no_redis(middleware):
+            await middleware.dispatch(_make_request(headers=hdrs), _ok_handler)
+            blocked = await middleware.dispatch(_make_request(headers=hdrs), _ok_handler)
+
+        assert blocked.status_code == 429
+        assert blocked.headers["X-RateLimit-Limit"] == "1"  # the user limit, not the IP one
+        assert "Retry-After" in blocked.headers
+
+
+# =============================================================================
+# CSRFMiddleware — double-submit protection for cookie-auth mutations (E0-5)
+# =============================================================================
+
+def _csrf_request(method: str, path: str = "/api/kpis",
+                  cookies: dict = None, headers: dict = None):
+    request = MagicMock()
+    request.method = method
+    request.url.path = path
+    request.cookies = cookies or {}
+    request.headers = headers or {}
+    request.state = MagicMock()
+    return request
+
+
+class TestCSRFMiddleware:
+
+    @pytest.mark.asyncio
+    async def test_get_mints_the_csrf_cookie(self):
+        mw = CSRFMiddleware(MagicMock())
+        resp = JSONResponse({"ok": True})
+        with patch.object(resp, "set_cookie") as set_cookie:
+            async def _next(_req):
+                return resp
+            out = await mw.dispatch(_csrf_request("GET"), _next)
+        assert out.status_code == 200
+        set_cookie.assert_called_once()
+        assert set_cookie.call_args.kwargs.get("key") == "csrf_token"
+        assert set_cookie.call_args.kwargs.get("httponly") is False  # JS must read it
+
+    @pytest.mark.asyncio
+    async def test_cookie_auth_mutation_without_header_is_blocked(self):
+        """A cookie-auth POST with no X-CSRF-Token is a classic CSRF shape → 403."""
+        mw = CSRFMiddleware(MagicMock())
+        req = _csrf_request("POST", cookies={"csrf_token": "abc", "access_token": "j.w.t"})
+        called = False
+        async def _next(_req):
+            nonlocal called; called = True
+            return JSONResponse({"ok": True})
+        out = await mw.dispatch(req, _next)
+        assert out.status_code == 403
+        assert called is False  # the handler never ran
+
+    @pytest.mark.asyncio
+    async def test_cookie_auth_mutation_with_matching_header_passes(self):
+        mw = CSRFMiddleware(MagicMock())
+        req = _csrf_request("POST",
+                            cookies={"csrf_token": "match", "access_token": "j.w.t"},
+                            headers={"x-csrf-token": "match"})
+        async def _next(_req):
+            return JSONResponse({"ok": True})
+        out = await mw.dispatch(req, _next)
+        assert out.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_mismatched_token_is_blocked(self):
+        mw = CSRFMiddleware(MagicMock())
+        req = _csrf_request("POST",
+                            cookies={"csrf_token": "cookieval"},
+                            headers={"x-csrf-token": "different"})
+        out = await mw.dispatch(req, lambda _r: JSONResponse({"ok": True}))
+        assert out.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_bearer_auth_is_exempt(self):
+        """API clients using the Authorization header don't need CSRF."""
+        mw = CSRFMiddleware(MagicMock())
+        req = _csrf_request("POST", headers={"authorization": "Bearer j.w.t"})
+        async def _next(_req):
+            return JSONResponse({"ok": True})
+        out = await mw.dispatch(req, _next)
+        assert out.status_code == 200
 
 
 # =============================================================================

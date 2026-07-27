@@ -28,7 +28,7 @@ class OpenAIProvider(LLMProvider):
             "model": self.model,
             "messages": messages,
             "stream": True,
-            "temperature": 0.7,
+            "temperature": 0.2,
             "max_tokens": 1500,
         }
         try:
@@ -60,7 +60,7 @@ class OpenAIProvider(LLMProvider):
         payload = {
             "model": self.model,
             "messages": messages,
-            "temperature": 0.7,
+            "temperature": 0.2,
             "max_tokens": 1500,
         }
         try:

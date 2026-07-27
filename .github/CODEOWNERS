@@ -1,0 +1,66 @@
+# CODEOWNERS — path → auto-requested reviewer. See TEAM_OWNERSHIP.md for rationale.
+#
+# Owners:  Atharva → @mercydeez   Krishna → @krish2105   Yash → @Yashpetkar7
+#
+# For auto-review requests to fire, each owner must have write/push access to the
+# repo (add them as collaborators), then enable branch protection on `main`.
+#
+# Rule: the LAST matching pattern wins. Broad layer defaults come first; the AI/
+# Experience vertical overrides them afterward (bounded-context beats layer).
+
+# ── Repo-wide fallback ──────────────────────────────────────────────────────
+*                                             @mercydeez @krish2105 @Yashpetkar7
+
+# ── Backend / DB / CI — Krishna (layer default) ─────────────────────────────
+/backend/                                     @krish2105
+/database/                                    @krish2105
+/.github/workflows/                           @krish2105
+/docker-compose.yml                           @krish2105
+/docker-compose.production.yml                @krish2105
+
+# ── Frontend — Yash (layer default) ─────────────────────────────────────────
+/frontend/                                    @Yashpetkar7
+
+# ── Atharva — AI / Experience vertical inside the backend (override Krishna) ─
+/backend/app/services/ai_assistant.py         @mercydeez
+/backend/app/services/llm/                     @mercydeez
+/backend/app/services/nl2sql/                  @mercydeez
+/backend/app/services/sage2/                    @mercydeez
+/backend/app/services/sage3/                    @mercydeez
+/backend/app/services/rag/                      @mercydeez
+/backend/app/services/federation/              @mercydeez
+/backend/app/services/voice_service.py         @mercydeez
+/backend/app/services/decision_center.py       @mercydeez
+/backend/app/services/action_drafting.py       @mercydeez
+/backend/app/services/briefing.py              @mercydeez
+/backend/app/services/role_experience.py       @mercydeez
+/backend/app/services/roi.py                   @mercydeez
+/backend/app/routes/ai.py                      @mercydeez
+/backend/app/routes/decisions.py               @mercydeez
+/backend/app/routes/briefing.py                @mercydeez
+/backend/app/routes/experience.py              @mercydeez
+/backend/app/routes/findings.py                @mercydeez
+/backend/app/routes/search.py                  @mercydeez
+/backend/app/routes/roi.py                     @mercydeez
+/worker/                                       @mercydeez
+
+# ── Atharva — AI pages/components inside the frontend (override Yash) ────────
+/frontend/src/app/decisions/                   @mercydeez
+/frontend/src/app/briefing/                    @mercydeez
+/frontend/src/app/today/                       @mercydeez
+/frontend/src/app/action-drafts/               @mercydeez
+/frontend/src/app/insights/                    @mercydeez
+/frontend/src/app/forecast-lab/                @mercydeez
+/frontend/src/app/value/                       @mercydeez
+/frontend/src/components/ChatBot.tsx           @mercydeez
+/frontend/src/components/AIProvider.tsx        @mercydeez
+/frontend/src/components/AIToggleButton.tsx    @mercydeez
+/frontend/src/components/CommandPalette.tsx    @mercydeez
+
+# ── Governance docs — all three review ──────────────────────────────────────
+/DEVELOPMENT_CONTRACT.md                       @mercydeez @krish2105 @Yashpetkar7
+/TEAM_OWNERSHIP.md                             @mercydeez @krish2105 @Yashpetkar7
+/GIT_WORKFLOW.md                               @mercydeez @krish2105 @Yashpetkar7
+/PROJECT_STRUCTURE.md                          @mercydeez @krish2105 @Yashpetkar7
+/CONTRIBUTING.md                               @mercydeez @krish2105 @Yashpetkar7
+/.github/CODEOWNERS                            @mercydeez @krish2105 @Yashpetkar7

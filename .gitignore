@@ -37,7 +37,18 @@ yarn-error.log*
 Thumbs.db
 
 # Python
+.pytest_cache/
 *.egg-info/
 .eggs/
 venv/
 .venv/
+
+# Claude local settings
+.claude/settings.local.json
+
+# Editor/cloud-sync conflict copies ("file 2.py"). Never source.
+* 2.*
+
+# `docker cp backend/app <container>:/app/app` silently creates this nested
+# duplicate when the destination already exists. It is never real source.
+backend/app/app/

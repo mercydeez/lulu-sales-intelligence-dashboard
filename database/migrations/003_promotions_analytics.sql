@@ -1,5 +1,5 @@
 -- =============================================================================
--- LULU HYPERMARKET UAE - PROMOTIONS & ADVANCED ANALYTICS SCHEMA
+-- RETAIL IQ - PROMOTIONS & ADVANCED ANALYTICS SCHEMA
 -- Migration 003: Promotions, Pricing, Reports, Scheduled Jobs
 -- =============================================================================
 

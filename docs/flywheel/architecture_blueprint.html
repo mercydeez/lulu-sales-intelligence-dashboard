@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flywheel — End-to-End Architecture Blueprint</title>
+<style>
+  :root{
+    --ink:#14181f; --paper:#f5f6f8; --card:#ffffff;
+    --teal:#0d7d72; --teal-soft:#e4f1ef;         /* deterministic services / money-safe */
+    --indigo:#4a5ad8; --indigo-soft:#eceffb;      /* ML models / intelligence */
+    --amber:#c2610c; --amber-soft:#fbeddf;         /* guardrails / money signal */
+    --muted:#6a727e; --line:#e3e7ec; --line2:#eef1f4;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    line-height:1.5;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1060px;margin:0 auto;padding:40px 28px 56px;}
+
+  /* ---------- header ---------- */
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--teal);font-weight:600;margin:0 0 10px;}
+  h1{font-size:34px;line-height:1.06;letter-spacing:-.02em;margin:0;font-weight:800;}
+  h1 .ar{font-weight:600;color:var(--muted);font-size:26px;letter-spacing:0;}
+  .thesis{font-size:15.5px;color:#39414c;max-width:760px;margin:14px 0 0;}
+  .thesis b{color:var(--ink);}
+  .rule{height:3px;background:var(--teal);width:64px;border-radius:2px;margin:20px 0 0;}
+
+  /* ---------- actor key ---------- */
+  .key{display:flex;gap:22px;flex-wrap:wrap;margin:22px 0 0;font-size:12.5px;color:#39414c;}
+  .key .item{display:flex;align-items:center;gap:8px;}
+  .dot{width:11px;height:11px;border-radius:50%;flex:none;}
+  .dot.m{background:var(--indigo)} .dot.s{background:var(--teal)} .dot.g{background:var(--amber)}
+  .key b{font-weight:700}
+
+  /* ---------- hero: the loop ---------- */
+  .hero{display:grid;grid-template-columns:340px 1fr;gap:34px;align-items:center;
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:30px 32px;margin:30px 0 0;}
+  .ring svg{width:100%;height:auto;display:block;}
+  .loop-legend{margin:0;padding:0;list-style:none;counter-reset:l;}
+  .loop-legend li{display:flex;gap:14px;padding:11px 0;border-top:1px solid var(--line2);}
+  .loop-legend li:first-child{border-top:0;}
+  .loop-legend .n{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--teal);
+    width:22px;flex:none;padding-top:1px;}
+  .loop-legend .t{font-size:14px;}
+  .loop-legend .t b{font-weight:700;letter-spacing:.01em;}
+  .loop-legend .t span{color:var(--muted);}
+
+  /* ---------- pipeline bands ---------- */
+  .sec-label{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;margin:44px 0 14px;display:flex;align-items:center;gap:12px;}
+  .sec-label::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  .band{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:20px 22px 20px 22px;margin:0 0 14px;overflow:hidden;}
+  .band::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;}
+  .band.model::before{background:var(--indigo)} .band.svc::before{background:var(--teal)}
+  .band-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;}
+  .code{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--muted);
+    letter-spacing:.05em;flex:none;}
+  .band h3{margin:0;font-size:18px;font-weight:800;letter-spacing:-.01em;}
+  .tag{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    padding:3px 8px;border-radius:20px;}
+  .tag.model{background:var(--indigo-soft);color:var(--indigo);}
+  .tag.svc{background:var(--teal-soft);color:var(--teal);}
+  .lead{font-size:14px;color:#39414c;margin:8px 0 13px;}
+  .lead b{color:var(--ink)}
+  .rows{display:grid;gap:7px;}
+  .row{display:flex;gap:11px;font-size:13px;color:#39414c;align-items:baseline;}
+  .row .lab{font-family:var(--mono);font-size:10.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.04em;color:var(--muted);width:96px;flex:none;padding-top:1px;}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;}
+  .chip{font-family:var(--mono);font-size:11px;background:#f2f4f7;border:1px solid var(--line);
+    border-radius:6px;padding:2px 7px;color:#3d4551;white-space:nowrap;}
+  .chip.money{background:var(--amber-soft);border-color:#f2ddc7;color:var(--amber);font-weight:600;}
+  .flow{color:var(--muted);font-size:20px;text-align:center;margin:-4px 0 10px;line-height:1;}
+
+  /* ---------- foundations ---------- */
+  .found{background:#12161d;color:#e9edf2;border-radius:14px;padding:22px 24px;margin:20px 0 0;}
+  .found h4{margin:0 0 4px;font-size:13px;font-family:var(--mono);letter-spacing:.14em;
+    text-transform:uppercase;color:#7fd8cd;font-weight:600;}
+  .found p{margin:0 0 14px;font-size:12.5px;color:#aab3bf;}
+  .fgrid{display:flex;flex-wrap:wrap;gap:8px;}
+  .fchip{font-family:var(--mono);font-size:11.5px;background:#1c222b;border:1px solid #2a323d;
+    border-radius:7px;padding:5px 10px;color:#d6dde4;}
+
+  /* ---------- footer ---------- */
+  .foot{margin:26px 0 0;padding-top:18px;border-top:1px solid var(--line);
+    display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:flex-end;}
+  .stack{display:flex;flex-wrap:wrap;gap:6px;max-width:720px;}
+  .foot .note{font-size:11.5px;color:var(--muted);font-style:italic;max-width:260px;text-align:right;}
+  .byline{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:12px;}
+
+  /* reveal (respectful of reduced motion) */
+  .fade{opacity:0;transform:translateY(8px);animation:in .6s ease forwards;}
+  @keyframes in{to{opacity:1;transform:none}}
+  .b1{animation-delay:.05s}.b2{animation-delay:.12s}.b3{animation-delay:.19s}
+  .b4{animation-delay:.26s}.b5{animation-delay:.33s}.b6{animation-delay:.40s}
+  @media (prefers-reduced-motion:reduce){.fade{animation:none;opacity:1;transform:none}}
+
+  @media (max-width:760px){
+    .hero{grid-template-columns:1fr;}
+    .ring{max-width:300px;margin:0 auto;}
+    h1{font-size:27px} .row{flex-direction:column;gap:3px} .row .lab{width:auto}
+  }
+  @media print{
+    body{background:#fff} .wrap{padding:0}
+    .band,.hero{break-inside:avoid;box-shadow:none} .found{break-inside:avoid}
+    .fade{animation:none;opacity:1;transform:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <p class="eyebrow">Built as a new module on top of Retail IQ</p>
+  <h1>Flywheel&nbsp;AI <span class="ar">·  · "the loop"</span></h1>
+  <div class="rule"></div>
+  <p class="thesis">An end-to-end, closed-loop retention engine. It doesn't just predict who will churn —
+    it decides whether an offer is <b>incrementally</b> worth it, checks the shelf, routes the budget for
+    approval, goes live, and measures the real lift — then feeds that result back into the next decision.
+    The governing rule: <b>models propose; only deterministic, policy-checked services touch money or stock.</b></p>
+
+  <div class="key">
+    <div class="item"><span class="dot m"></span><span><b>Model</b> — proposes &amp; explains (no side-effects)</span></div>
+    <div class="item"><span class="dot s"></span><span><b>Service</b> — acts on money/stock, row-locked &amp; audited</span></div>
+    <div class="item"><span class="dot g"></span><span><b>Money</b> — Decimal / NUMERIC, Postgres is truth</span></div>
+  </div>
+
+  <!-- HERO: THE LOOP -->
+  <div class="hero fade b1">
+    <div class="ring">
+      <svg viewBox="0 0 320 320" role="img" aria-label="The Flywheel retention loop: six stages arranged in a ring that feeds back on itself">
+        <defs>
+          <marker id="ah" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#0d7d72"/>
+          </marker>
+        </defs>
+        <!-- ring -->
+        <circle cx="160" cy="160" r="112" fill="none" stroke="#d7dee1" stroke-width="2"/>
+        <!-- circulating arrows (clockwise) -->
+        <path d="M160 48 A112 112 0 0 1 244 96"  fill="none" stroke="#0d7d72" stroke-width="2" marker-end="url(#ah)"/>
+        <path d="M262 128 A112 112 0 0 1 262 192" fill="none" stroke="#0d7d72" stroke-width="2" marker-end="url(#ah)"/>
+        <path d="M244 224 A112 112 0 0 1 160 272" fill="none" stroke="#0d7d72" stroke-width="2" marker-end="url(#ah)"/>
+        <path d="M160 272 A112 112 0 0 1 76 224"  fill="none" stroke="#0d7d72" stroke-width="2" marker-end="url(#ah)"/>
+        <path d="M58 192 A112 112 0 0 1 58 128"   fill="none" stroke="#0d7d72" stroke-width="2" marker-end="url(#ah)"/>
+        <path d="M76 96 A112 112 0 0 1 160 48"    fill="none" stroke="#0d7d72" stroke-width="2" marker-end="url(#ah)"/>
+        <!-- nodes -->
+        <g font-family="ui-monospace,Menlo,monospace" font-weight="700" font-size="15">
+          <circle cx="160" cy="48"  r="17" fill="#0d7d72"/><text x="160" y="53" text-anchor="middle" fill="#fff">1</text>
+          <circle cx="256" cy="104" r="17" fill="#4a5ad8"/><text x="256" y="109" text-anchor="middle" fill="#fff">2</text>
+          <circle cx="256" cy="216" r="17" fill="#0d7d72"/><text x="256" y="221" text-anchor="middle" fill="#fff">3</text>
+          <circle cx="160" cy="272" r="17" fill="#0d7d72"/><text x="160" y="277" text-anchor="middle" fill="#fff">4</text>
+          <circle cx="64"  cy="216" r="17" fill="#0d7d72"/><text x="64"  y="221" text-anchor="middle" fill="#fff">5</text>
+          <circle cx="64"  cy="104" r="17" fill="#0d7d72"/><text x="64"  y="109" text-anchor="middle" fill="#fff">6</text>
+        </g>
+        <!-- center -->
+        <text x="160" y="150" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11"
+              letter-spacing="2" fill="#6a727e">CLOSED</text>
+        <text x="160" y="170" text-anchor="middle" font-weight="800" font-size="20" fill="#14181f">LOOP</text>
+        <text x="160" y="187" text-anchor="middle" font-size="9.5" fill="#9aa2ad">pays for itself</text>
+      </svg>
+    </div>
+    <ul class="loop-legend">
+      <li><span class="n">1</span><span class="t"><b>DATA</b> — <span>synthetic customers, events &amp; inventory (tenant-scoped)</span></span></li>
+      <li><span class="n">2</span><span class="t"><b>INTELLIGENCE</b> — <span>churn + uplift: who's at risk &amp; would an offer help?</span></span></li>
+      <li><span class="n">3</span><span class="t"><b>DECISION</b> — <span>pick the action that maximizes incremental value</span></span></li>
+      <li><span class="n">4</span><span class="t"><b>COMMERCIAL</b> — <span>inventory, procurement, budget &amp; stacked approval</span></span></li>
+      <li><span class="n">5</span><span class="t"><b>EXECUTION</b> — <span>go live, decide in real time, redeem safely</span></span></li>
+      <li><span class="n">6</span><span class="t"><b>MEASUREMENT</b> — <span>true lift vs a control group → feeds stage 1</span></span></li>
+    </ul>
+  </div>
+
+  <!-- PIPELINE -->
+  <div class="sec-label">The pipeline, stage by stage</div>
+
+  <!-- 01 DATA -->
+  <div class="band svc fade b1">
+    <div class="band-head"><span class="code">01</span><h3>Data foundation</h3><span class="tag svc">Service</span></div>
+    <p class="lead">An honest, reproducible synthetic layer that never corrupts existing Retail IQ sales facts — purchases <b>reference</b> real <code>sales_historical</code> rows rather than replacing them. Fixed seed, ten archetypes (loyal, declining, discount-sensitive, promotion-resistant, lapsed…).</p>
+    <div class="rows">
+      <div class="row"><span class="lab">Tables</span><div class="chips">
+        <span class="chip">flywheel_customers</span><span class="chip">flywheel_customer_events</span><span class="chip">flywheel_purchase_attributions</span><span class="chip">flywheel_customer_consents</span><span class="chip">flywheel_contact_log</span></div></div>
+      <div class="row"><span class="lab">Reused</span><div class="chips"><span class="chip">inventory</span><span class="chip">items</span><span class="chip money">item_costs</span><span class="chip">stores</span></div></div>
+      <div class="row"><span class="lab">Tech</span><div class="chips"><span class="chip">migration 075</span><span class="chip">FORCE RLS · 25 tables</span><span class="chip">seed=42</span></div></div>
+    </div>
+  </div>
+  <div class="flow">↓</div>
+
+  <!-- 02 INTELLIGENCE -->
+  <div class="band model fade b2">
+    <div class="band-head"><span class="code">02</span><h3>Intelligence — churn &amp; uplift</h3><span class="tag model">Model</span></div>
+    <p class="lead">Two questions, two model families. <b>Churn</b>: how likely to leave? <b>Uplift</b>: would an offer actually change that? A high churn score alone never triggers a discount.</p>
+    <div class="rows">
+      <div class="row"><span class="lab">Features</span><div class="chips"><span class="chip">recency</span><span class="chip">frequency</span><span class="chip">spend drift</span><span class="chip">interpurchase gap</span><span class="chip">category diversity</span><span class="chip">return ratio</span><span class="chip">promo response</span></div></div>
+      <div class="row"><span class="lab">Churn</span><div class="chips"><span class="chip">calibrated LightGBM (baseline)</span><span class="chip">GRU on ordered events</span><span class="chip">FT-Transformer</span><span class="chip">rule-based fallback (always available)</span></div></div>
+      <div class="row"><span class="lab">Uplift</span><div class="chips"><span class="chip">T-learner (treatment + control)</span><span class="chip">Qini / AUUC on holdout</span></div></div>
+      <div class="row"><span class="lab">Judged by</span><div class="chips"><span class="chip">PR-AUC</span><span class="chip">Brier (calibration)</span><span class="chip">Qini — never outcome AUC</span></div></div>
+      <div class="row"><span class="lab">Leakage</span><div class="chips"><span class="chip">features &lt; as_of</span><span class="chip">labels ≥ as_of</span><span class="chip">180d / 60d windows</span></div></div>
+    </div>
+  </div>
+  <div class="flow">↓</div>
+
+  <!-- 03 DECISION -->
+  <div class="band svc fade b3">
+    <div class="band-head"><span class="code">03</span><h3>Decision — next-best-action</h3><span class="tag svc">Service</span></div>
+    <p class="lead">A <b>deterministic</b> optimizer — containing no model — ranks typed actions by expected incremental value and stores every term plus the rejected alternatives, so each decision is reproducible from its inputs. Benefits multiply <b>uplift</b>, never churn probability: that is <i>why</i> a high risk score alone can never trigger a discount.</p>
+    <div class="rows">
+      <div class="row"><span class="lab">EIV =</span><div class="chips"><span class="chip">retained value</span><span class="chip">+ margin</span><span class="chip money">− discount</span><span class="chip money">− comms</span><span class="chip money">− fulfilment</span><span class="chip money">− procurement</span><span class="chip money">− stockout risk</span></div></div>
+      <div class="row"><span class="lab">Actions</span><div class="chips"><span class="chip">NO_ACTION</span><span class="chip">REMINDER</span><span class="chip">LOYALTY_POINTS</span><span class="chip">FREE_DELIVERY</span><span class="chip">%_DISCOUNT</span><span class="chip">BUNDLE</span><span class="chip">SUBSTITUTE</span><span class="chip">ALT_STORE</span><span class="chip">HUMAN_REVIEW</span></div></div>
+      <div class="row"><span class="lab">Persisted</span><div class="chips"><span class="chip">flywheel_decisions</span><span class="chip">reason codes</span><span class="chip">rejected_actions</span><span class="chip money">price/cost snapshot</span><span class="chip">replay check</span></div></div>
+    </div>
+  </div>
+  <div class="flow">↓</div>
+
+  <!-- 04 COMMERCIAL -->
+  <div class="band svc fade b4">
+    <div class="band-head"><span class="code">04</span><h3>Commercial — stock, procurement &amp; budget</h3><span class="tag svc">Service</span></div>
+    <p class="lead">"Can we afford it — in stock and in cash?" Available-to-Promise gates the offer; a fixed ladder resolves shortages; the budget ledger and a stacked approval chain gate the spend.</p>
+    <div class="rows">
+      <div class="row"><span class="lab">ATP =</span><div class="chips"><span class="chip">on-hand</span><span class="chip">+ incoming</span><span class="chip">− reservations</span><span class="chip">− soft allocations</span><span class="chip">− safety stock</span><span class="chip">− demand buffer</span></div></div>
+      <div class="row"><span class="lab">Shortage</span><div class="chips"><span class="chip">reduce audience</span><span class="chip">→ substitute</span><span class="chip">→ transfer</span><span class="chip">→ non-stock reward</span><span class="chip">→ procurement draft</span><span class="chip">→ suppress</span></div></div>
+      <div class="row"><span class="lab">Budget</span><div class="chips"><span class="chip money">ALLOCATED→RESERVED→COMMITTED→SPENT→RELEASED</span><span class="chip money">Decimal / NUMERIC</span><span class="chip money">DB CHECK: reserved+spent ≤ allocated</span></div></div>
+      <div class="row"><span class="lab">Approval</span><div class="chips"><span class="chip">marketing</span><span class="chip">inventory</span><span class="chip">procurement</span><span class="chip">finance</span><span class="chip">CFO</span><span class="chip">config rows, not code</span><span class="chip">parallel by step_order</span></div></div>
+      <div class="row"><span class="lab">Reused</span><div class="chips"><span class="chip">suppliers · product_suppliers</span><span class="chip">purchase_orders</span><span class="chip">stock_transfers</span></div></div>
+    </div>
+  </div>
+  <div class="flow">↓</div>
+
+  <!-- 05 EXECUTION -->
+  <div class="band svc fade b5">
+    <div class="band-head"><span class="code">05</span><h3>Execution — live &amp; real-time</h3><span class="tag svc">Service</span></div>
+    <p class="lead">A persisted state machine drives the campaign. At a customer interaction the decision API returns an action; redemption is a single, idempotent transaction that can never double-spend or oversell.</p>
+    <div class="rows">
+      <div class="row"><span class="lab">State</span><div class="chips"><span class="chip">DRAFT → … → ACTIVE → PAUSED → COMPLETED → MEASURED</span></div></div>
+      <div class="row"><span class="lab">Real-time</span><div class="chips"><span class="chip">POST /api/flywheel/decisioning/evaluate</span><span class="chip">idempotent redemption</span><span class="chip">SELECT … FOR UPDATE</span><span class="chip">NO_ACTION is a valid answer</span></div></div>
+      <div class="row"><span class="lab">Events</span><div class="chips"><span class="chip">flywheel_outbox (co-committed)</span><span class="chip">relay · SKIP LOCKED</span><span class="chip">GET /stream/flywheel</span><span class="chip">server-side tenant+store filter</span></div></div>
+      <div class="row"><span class="lab">Guardrails</span><div class="chips"><span class="chip money">auto-pause: budget</span><span class="chip">stock</span><span class="chip">margin</span><span class="chip">consent</span><span class="chip">stale data</span></div></div>
+    </div>
+  </div>
+  <div class="flow">↓</div>
+
+  <!-- 06 MEASUREMENT -->
+  <div class="band model fade b6">
+    <div class="band-head"><span class="code">06</span><h3>Measurement — the loop closes</h3><span class="tag model">Model</span></div>
+    <p class="lead">Customers are split treatment vs control by a <b>stable hash</b>, so lift is causal, not correlational. Results persist and inform the next campaign — closing the Flywheel loop back to stage 1.</p>
+    <div class="rows">
+      <div class="row"><span class="lab">Split</span><div class="chips"><span class="chip">blake2b(tenant, campaign, customer)</span><span class="chip">persisted at audience build</span></div></div>
+      <div class="row"><span class="lab">Metrics</span><div class="chips"><span class="chip">incremental retention = T − C</span><span class="chip">incremental margin</span><span class="chip">cost / retained</span><span class="chip">campaign ROI</span><span class="chip">uplift by risk band</span><span class="chip money">budget variance</span></div></div>
+      <div class="row"><span class="lab">Honesty</span><div class="chips"><span class="chip">gross revenue shown separately</span><span class="chip">small-control warnings surfaced</span><span class="chip">negative lift reported</span></div></div>
+    </div>
+  </div>
+
+  <!-- FOUNDATIONS -->
+  <div class="found fade b6">
+    <h4>Cross-cutting foundations</h4>
+    <p>These run underneath all six stages — inherited from Retail IQ and extended by Flywheel.</p>
+    <div class="fgrid">
+      <span class="fchip">Multi-tenant · FORCE RLS on all 25 tables</span>
+      <span class="fchip">RBAC · reuses app/auth_deps.py</span>
+      <span class="fchip">Full audit trail</span>
+      <span class="fchip">Transactional outbox</span>
+      <span class="fchip">Idempotency keys · DB-enforced</span>
+      <span class="fchip">Money = Decimal / NUMERIC</span>
+      <span class="fchip">Proof-carrying statuses</span>
+      <span class="fchip">Local-first Sage — LLM proposes, never acts</span>
+      <span class="fchip">EN / AR · RTL · a11y · reduced-motion</span>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="foot">
+    <div>
+      <div class="stack">
+        <span class="chip">Next.js 14</span><span class="chip">FastAPI</span><span class="chip">async SQLAlchemy</span><span class="chip">PostgreSQL 15</span><span class="chip">Redis 7</span><span class="chip">SSE</span><span class="chip">Docker</span><span class="chip">LightGBM</span><span class="chip">PyTorch · GRU / FT-Transformer</span><span class="chip">scikit-learn</span>
+      </div>
+      <div class="byline">Flywheel · Retention &amp; Commercial Orchestration for Retail IQ · Krishna Mathur</div>
+    </div>
+    <p class="note">All customers, histories and campaign outcomes are synthetic. No production accuracy is claimed.</p>
+  </div>
+
+</div>
+</body>
+</html>

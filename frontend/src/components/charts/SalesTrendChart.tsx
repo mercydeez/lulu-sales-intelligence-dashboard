@@ -2,18 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
-  ReferenceLine
+  ReferenceLine,
 } from 'recharts';
-import { TrendingUp, Calendar, Target } from 'lucide-react';
+import { TrendingUp } from 'lucide-react';
 import { fetchTrend } from '@/lib/api';
+import { CHART, CHART_MARGIN, Y_AXIS_WIDTH, gridProps, axisProps, tooltipContent, tooltipLabelStyle } from '@/lib/chart';
+import { Reveal } from '@/components/ui';
+import { useUaeCalendar } from '@/hooks/useUaeCalendar';
+import { calendarBands } from '@/components/charts/CalendarBands';
 
 interface TrendDataPoint {
   date: string;
@@ -29,6 +32,7 @@ export default function SalesTrendChart({ days = 30 }: SalesTrendChartProps) {
   const [data, setData] = useState<TrendDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const calendar = useUaeCalendar();
 
   useEffect(() => {
     setMounted(true);
@@ -61,39 +65,44 @@ export default function SalesTrendChart({ days = 30 }: SalesTrendChartProps) {
     return value.toString();
   };
 
-  // Find the transition point between historical and forecast
+  // Find the transition point between historical and forecast.
   const lastHistoricalIndex = data.findIndex(d => d.sales === null) - 1;
   const lastHistoricalDate = lastHistoricalIndex >= 0 ? data[lastHistoricalIndex]?.date : null;
 
   if (loading) {
     return (
-      <div className="glass rounded-2xl p-6 h-[400px] flex items-center justify-center">
-        <div className="shimmer w-full h-full rounded-xl"></div>
+      <div className="bg-surface border border-line rounded-2xl shadow-card p-6 h-[400px] flex items-center justify-center">
+        <div className="shimmer w-full h-full rounded-xl" />
       </div>
     );
   }
 
+  const historical = data.filter(d => d.sales);
+  const totalHistorical = historical.reduce((sum, d) => sum + (d.sales || 0), 0);
+  const totalForecast = data.filter(d => d.forecast).reduce((sum, d) => sum + (d.forecast || 0), 0);
+  const dailyAvg = historical.length > 0 ? Math.round(totalHistorical / historical.length) : 0;
+
   return (
-    <div className="glass rounded-2xl p-6">
+    <Reveal className="bg-surface border border-line rounded-2xl shadow-card p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-cyan-500/20">
-            <TrendingUp className="w-5 h-5 text-cyan-400" />
+          <div className="p-2 rounded-xl bg-teal-50 ring-1 ring-teal-100">
+            <TrendingUp className="w-5 h-5 text-teal-600" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-white">Sales Trend & Forecast</h3>
-            <p className="text-xs text-slate-400">Historical data with 7-day prediction</p>
+            <h3 className="text-lg font-semibold text-ink">Sales Trend &amp; Forecast</h3>
+            <p className="text-xs text-ink-muted">Historical units with 7-day prediction</p>
           </div>
         </div>
-        <div className="flex items-center gap-4 text-sm">
+        <div className="hidden sm:flex items-center gap-4 text-sm">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-cyan-400"></div>
-            <span className="text-slate-400">Historical</span>
+            <span className="w-3 h-0.5 rounded-full" style={{ background: CHART.teal }} />
+            <span className="text-ink-muted">Historical</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-purple-400 border-2 border-dashed border-purple-400"></div>
-            <span className="text-slate-400">Forecast</span>
+            <span className="w-3 h-0.5 rounded-full border-t-2 border-dashed" style={{ borderColor: CHART.violet }} />
+            <span className="text-ink-muted">Forecast</span>
           </div>
         </div>
       </div>
@@ -101,98 +110,81 @@ export default function SalesTrendChart({ days = 30 }: SalesTrendChartProps) {
       {/* Chart */}
       <div className="h-[320px]">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+          <AreaChart data={data} margin={CHART_MARGIN}>
             <defs>
-              <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+              <linearGradient id="trendSalesFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={CHART.teal} stopOpacity={0.28} />
+                <stop offset="95%" stopColor={CHART.teal} stopOpacity={0} />
               </linearGradient>
-              <linearGradient id="forecastGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+              <linearGradient id="trendForecastFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={CHART.violet} stopOpacity={0.2} />
+                <stop offset="95%" stopColor={CHART.violet} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-            <XAxis 
-              dataKey="date" 
-              tickFormatter={formatDate}
-              stroke="#64748b"
-              fontSize={12}
-              tickLine={false}
-              axisLine={{ stroke: '#334155' }}
-            />
-            <YAxis 
-              stroke="#64748b"
-              fontSize={12}
-              tickFormatter={formatNumber}
-              tickLine={false}
-              axisLine={{ stroke: '#334155' }}
-            />
+            {/* UAE retail calendar shading (E4-7) — behind grid and series */}
+            {calendarBands(calendar, data.map((d) => d.date))}
+            <CartesianGrid {...gridProps} />
+            <XAxis dataKey="date" tickFormatter={formatDate} {...axisProps} minTickGap={24} />
+            <YAxis tickFormatter={formatNumber} {...axisProps} width={Y_AXIS_WIDTH} />
             <Tooltip
-              contentStyle={{
-                backgroundColor: '#1e293b',
-                border: '1px solid #475569',
-                borderRadius: '12px',
-                color: '#f8fafc'
-              }}
-              labelFormatter={(label) => formatDate(label)}
+              contentStyle={tooltipContent}
+              labelStyle={tooltipLabelStyle}
+              labelFormatter={(label) => formatDate(String(label))}
               formatter={(value: number, name: string) => [
-                formatNumber(value),
-                name === 'sales' ? 'Historical Sales' : 'Forecasted Sales'
+                `${formatNumber(value)} units`,
+                name === 'sales' ? 'Historical' : 'Forecast',
               ]}
             />
             {lastHistoricalDate && (
-              <ReferenceLine 
-                x={lastHistoricalDate} 
-                stroke="#8b5cf6" 
+              <ReferenceLine
+                x={lastHistoricalDate}
+                stroke={CHART.violet}
                 strokeDasharray="5 5"
-                label={{ value: 'Forecast →', fill: '#8b5cf6', fontSize: 12, position: 'top' }}
+                label={{ value: 'Forecast →', fill: CHART.violet, fontSize: 11, position: 'top' }}
               />
             )}
-            <Line
+            <Area
               type="monotone"
               dataKey="sales"
-              stroke="#06b6d4"
-              strokeWidth={2}
+              stroke={CHART.teal}
+              strokeWidth={2.5}
+              fill="url(#trendSalesFill)"
               dot={false}
-              activeDot={{ r: 6, fill: '#06b6d4', stroke: '#0f172a', strokeWidth: 2 }}
+              activeDot={{ r: 5, fill: CHART.teal, stroke: 'var(--bg-card)', strokeWidth: 2 }}
               connectNulls={false}
+              animationDuration={900}
             />
-            <Line
+            <Area
               type="monotone"
               dataKey="forecast"
-              stroke="#8b5cf6"
-              strokeWidth={2}
+              stroke={CHART.violet}
+              strokeWidth={2.5}
               strokeDasharray="5 5"
+              fill="url(#trendForecastFill)"
               dot={false}
-              activeDot={{ r: 6, fill: '#8b5cf6', stroke: '#0f172a', strokeWidth: 2 }}
+              activeDot={{ r: 5, fill: CHART.violet, stroke: 'var(--bg-card)', strokeWidth: 2 }}
               connectNulls={false}
+              animationDuration={900}
             />
-          </LineChart>
+          </AreaChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Stats Footer */}
-      <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-slate-700/50">
+      {/* Stats Footer — all values are UNITS (volume), never AED. */}
+      <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-line">
         <div className="text-center">
-          <div className="text-2xl font-bold text-white">
-            {formatNumber(data.filter(d => d.sales).reduce((sum, d) => sum + (d.sales || 0), 0))}
-          </div>
-          <div className="text-xs text-slate-400">Total Historical</div>
+          <div className="text-2xl font-bold text-ink tabular-nums">{formatNumber(totalHistorical)}</div>
+          <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mt-1">Total Historical</div>
         </div>
         <div className="text-center">
-          <div className="text-2xl font-bold text-purple-400">
-            {formatNumber(data.filter(d => d.forecast).reduce((sum, d) => sum + (d.forecast || 0), 0))}
-          </div>
-          <div className="text-xs text-slate-400">7-Day Forecast</div>
+          <div className="text-2xl font-bold tabular-nums" style={{ color: CHART.violet }}>{formatNumber(totalForecast)}</div>
+          <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mt-1">7-Day Forecast</div>
         </div>
         <div className="text-center">
-          <div className="text-2xl font-bold text-emerald-400">
-            {data.length > 0 ? formatNumber(Math.round(data.filter(d => d.sales).reduce((sum, d) => sum + (d.sales || 0), 0) / data.filter(d => d.sales).length)) : 0}
-          </div>
-          <div className="text-xs text-slate-400">Daily Average</div>
+          <div className="text-2xl font-bold tabular-nums" style={{ color: CHART.teal }}>{formatNumber(dailyAvg)}</div>
+          <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted mt-1">Daily Average</div>
         </div>
       </div>
-    </div>
+    </Reveal>
   );
 }

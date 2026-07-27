@@ -107,6 +107,7 @@ class TestProdSecurityValidation:
             jwt_secret_key="a-very-strong-production-secret-that-is-adequately-long",
             secret_key="another-strong-production-secret-key-for-the-app-layer",
             database_url="postgresql+asyncpg://produser:str0ng@db:5432/proddb",
+            use_rls_role=True,  # tightened bar: prod requires the RLS role
         )
         issues = s.validate_security()
         assert any("debug=True" in i for i in issues)

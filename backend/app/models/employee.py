@@ -179,7 +179,14 @@ class EmployeePerformance(Base):
     employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
     
     # Period
-    period_type = Column(String(20), nullable=False, default="monthly")
+    # DB column is the PG enum `performance_period` (migration 004); bind it as
+    # such (sending the lowercase .value) so ORM inserts cast correctly — same
+    # pattern as Employee.department / Employee.status.
+    period_type = Column(
+        Enum(PerformancePeriod, name="performance_period", create_type=False,
+             values_callable=lambda e: [m.value for m in e]),
+        nullable=False, default="monthly"
+    )
     period_start = Column(Date, nullable=False)
     period_end = Column(Date, nullable=False)
     
@@ -296,7 +303,14 @@ class EmployeeTransaction(Base):
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
     
     # Transaction Details
-    transaction_type = Column(String(20), nullable=False, default="sale")
+    # DB column is the PG enum `transaction_type` (migration 004); bind it as
+    # such (sending the lowercase .value) so ORM inserts cast correctly — same
+    # pattern as Employee.department / Employee.status / period_type.
+    transaction_type = Column(
+        Enum(TransactionType, name="transaction_type", create_type=False,
+             values_callable=lambda e: [m.value for m in e]),
+        nullable=False, default="sale"
+    )
     transaction_date = Column(Date, nullable=False)
     transaction_time = Column(Time, nullable=False)
     

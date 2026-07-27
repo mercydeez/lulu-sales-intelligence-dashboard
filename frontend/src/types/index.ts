@@ -52,6 +52,111 @@ export interface DashboardMetrics {
   streaming_records_count: number;
 }
 
+// Full shape returned by GET /api/kpis (backend KPIResponse) — richer than
+// DashboardMetrics (adds AED revenue fields, data range, unique counts). Lives
+// here (not under components/) so lib/api + lib/queries can type it without a
+// component dependency; re-exported from components/analytics/types for back-compat.
+export interface AnalyticsKpis {
+  total_historical_records: number;
+  total_streaming_records: number;
+  total_sales_today: number;
+  total_sales_week: number;
+  total_sales_month: number;
+  average_daily_sales: number;
+  total_revenue_today: number;
+  total_revenue_week: number;
+  total_revenue_month: number;
+  average_daily_revenue: number;
+  unique_stores: number;
+  unique_items: number;
+  data_range_start: string | null;
+  data_range_end: string | null;
+  last_stream_timestamp: string | null;
+  sales_trend: 'up' | 'down' | 'stable';
+  revenue_trend: 'up' | 'down' | 'stable';
+}
+
+export interface RevenueProjectionPoint {
+  date: string;
+  units: number;
+  revenue: number;
+  revenue_lower: number;
+  revenue_upper: number;
+}
+
+export interface RevenueProjection {
+  horizon_days: number;
+  currency: string;
+  model_version: string;
+  projected_units: number;
+  projected_revenue: number;
+  avg_daily_units: number;
+  avg_daily_revenue: number;
+  daily: RevenueProjectionPoint[];
+  status: 'ready' | 'insufficient_history';
+}
+
+// These three mirror /api/analytics/{stores,categories,top-items}, whose money
+// field is AED revenue. The field is `total_revenue` (AED) per the units/AED
+// convention — never `total_sales` (which denotes units elsewhere).
+export interface StoreDistributionPoint {
+  store_id: number;
+  store_name: string;
+  total_revenue: number;
+  percentage: number;
+}
+
+export interface CategoryBreakdownPoint {
+  category: string;
+  total_revenue: number;
+  percentage: number;
+}
+
+export interface TopItemPoint {
+  item_id: number;
+  item_name: string;
+  category: string;
+  total_revenue: number;
+}
+
+// Diagnostics findings (A3) — written by the BullMQ worker, read by the Insights panel.
+export type FindingSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type FindingStatus = 'open' | 'acknowledged' | 'resolved';
+export type FindingOutcome = 'pending' | 'improved' | 'unchanged' | 'worsened';
+
+export interface Finding {
+  id: number;
+  rule: string;
+  category: string;
+  severity: FindingSeverity;
+  title: string;
+  detail: string;
+  evidence: Record<string, number | string>;
+  entity_type: string | null;
+  entity_id: string | null;
+  entity_name: string | null;
+  metric_value: number | null;
+  status: FindingStatus;
+  recommended_action: string | null;
+  action_type: string;
+  action_accepted_at: string | null;
+  action_accepted_by: string | null;
+  outcome_status: FindingOutcome;
+  metric_before: number | null;
+  metric_after: number | null;
+  measured_at: string | null;
+  detected_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+}
+
+export interface FindingsSummary {
+  open: number;
+  by_severity: Partial<Record<FindingSeverity, number>>;
+  by_status: Partial<Record<FindingStatus, number>>;
+  by_outcome: Partial<Record<FindingOutcome, number>>;
+}
+
 export interface StreamEvent {
   event_type: string;
   data: Sale;

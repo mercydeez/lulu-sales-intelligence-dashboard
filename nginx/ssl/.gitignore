@@ -1,0 +1,5 @@
+# TLS certificates and private keys live here at runtime (mounted read-only at
+# /etc/nginx/ssl) but must NEVER be committed. Generate a staging pair with
+# scripts/gen-self-signed-ssl.sh; production follows docs/runbooks/TLS_CERTS.md.
+*
+!.gitignore

@@ -1,6 +1,6 @@
-# Lulu Sales Intelligence Dashboard
+# Retail IQ
 
-> **Enterprise-grade real-time sales analytics platform for Lulu Hypermarket UAE** — featuring live streaming data, AI-powered insights, role-based access control, and comprehensive retail operations management.
+> A full-stack, real-time retail sales-intelligence dashboard for a UAE supermarket chain — built as a **portfolio / MVP demonstration** of real-time data systems, analytics, RBAC security, and local-first AI. The data is **synthetic** (see [Data & Honesty Notes](#data--honesty-notes)); the engineering is real.
 
 [![CI Pipeline](https://github.com/mercydeez/lulu-sales-intelligence-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/mercydeez/lulu-sales-intelligence-dashboard/actions/workflows/ci.yml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688?logo=fastapi)](https://fastapi.tiangolo.com)
@@ -8,458 +8,287 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql)](https://www.postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis)](https://redis.io)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](https://docs.docker.com/compose/)
-[![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python)](https://www.python.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
 ---
 
 ## Table of Contents
 
-- [Problem Statement](#problem-statement)
-- [Solution Overview](#solution-overview)
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Features](#features)
+- [What This Is](#what-this-is)
+- [Data & Honesty Notes](#data--honesty-notes)
 - [Getting Started](#getting-started)
-- [Environment Configuration](#environment-configuration)
-- [API Documentation](#api-documentation)
-- [Deployment](#deployment)
-- [Testing](#testing)
+- [Live URLs & Demo Logins](#live-urls--demo-logins)
+- [Architecture](#architecture)
+- [The Live-Data Pipeline](#the-live-data-pipeline)
+- [Tech Stack](#tech-stack)
+- [Features (what actually works)](#features-what-actually-works)
 - [Security](#security)
-- [Scalability](#scalability)
-- [Ethical AI & Responsible Design](#ethical-ai--responsible-design)
-- [Future Improvements](#future-improvements)
+- [Configuration](#configuration)
+- [Testing & CI](#testing--ci)
+- [Project Structure](#project-structure)
+- [Further Reading](#further-reading)
+- [Roadmap](#roadmap)
 - [Author](#author)
 
 ---
 
-## Problem Statement
+## What This Is
 
-Large-scale retailers generate millions of transactions daily across geographically distributed stores. Key operational challenges include:
+A real-time retail sales-intelligence dashboard for a fictional UAE supermarket chain ("Meridian"). It demonstrates:
 
-- **Delayed visibility** into real-time sales performance across regions
-- **Fragmented data** making cross-store inventory management reactive rather than proactive
-- **Limited AI integration** for forecasting, anomaly detection, and actionable insights
-- **Lack of role-based governance** exposing sensitive financial data without access controls
-- **Manual reporting workflows** consuming analyst time on repetitive tasks
+- **A live data pipeline** — a background generator writes a synthetic sale every ~5–15s to PostgreSQL and publishes it to Redis; Server-Sent Events relay it to the browser, which updates without polling.
+- **Analytics & forecasting** — sales trends, category/store breakdowns, top items, and a seasonal demand forecast with a MAPE backtest against a seasonal-naive baseline.
+- **RBAC security** — JWT auth with region→store access scoping, rate limiting, CSRF, and a hardened security-header/middleware stack.
+- **Operational modules** — inventory/expiry, alerts→tasks, promotions, employee performance, an admin console, reports, and system monitoring.
+- **Local-first AI** — a chat assistant that prefers a local Ollama model, optionally uses OpenAI, and always falls back to a deterministic rule-based responder backed by live DB data (no paid API key required to run).
 
-## Solution Overview
-
-Lulu Intelligence Dashboard is a production-grade, full-stack analytics platform that provides:
-
-1. **Real-time streaming** — Server-Sent Events (SSE) push live sales data to dashboards with sub-second latency
-2. **AI-powered assistant** — Natural language chatbot with OpenAI integration for querying sales data, generating insights, and voice interaction
-3. **Role-based access control (RBAC)** — Granular permissions at region, store, and feature levels with JWT authentication
-4. **Predictive analytics** — Time-series forecasting using statistical models for demand planning
-5. **Operational modules** — Inventory management, promotions engine, employee performance tracking, and alert systems
+It is a **single-developer MVP**, not a deployed production system. The honesty notes below say exactly what is real, what is synthetic, and what is simplified.
 
 ---
 
-## Architecture
+## Data & Honesty Notes
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      NGINX (Reverse Proxy)                  │
-└─────────────┬───────────────────────────┬───────────────────┘
-              │                           │
-┌─────────────▼────────────┐  ┌───────────▼───────────────────┐
-│   Next.js 14 Frontend    │  │     FastAPI Backend           │
-│                          │  │                               │
-│  • App Router (RSC)      │  │  • REST API + SSE Streaming   │
-│  • Tailwind CSS          │  │  • JWT Auth + RBAC            │
-│  • Recharts Viz          │  │  • AI Chat (OpenAI)           │
-│  • Auth Context          │  │  • Background Data Generator  │
-│  • SSE Consumers         │  │  • Redis Pub/Sub              │
-└──────────────────────────┘  └──────┬──────────┬─────────────┘
-                                     │          │
-                              ┌──────▼───┐ ┌────▼─────┐
-                              │PostgreSQL │ │  Redis   │
-                              │   15     │ │    7     │
-                              │          │ │          │
-                              │• Sales   │ │• Pub/Sub │
-                              │• Users   │ │• Cache   │
-                              │• RBAC    │ │• Sessions│
-                              │• Employees│ │• Rate    │
-                              │• Inventory│ │  Limiting│
-                              └──────────┘ └──────────┘
-```
+This project deliberately documents its own simplifications — read this before trusting any figure on screen.
 
-### Data Flow
-
-1. **Background Generator** creates realistic sales events every 10 seconds
-2. Events are written to PostgreSQL and published to Redis channels
-3. SSE endpoints stream data to connected frontend clients
-4. Frontend components update in real-time without polling
-5. AI assistant queries live data for natural language responses
-
----
-
-## Tech Stack
-
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Frontend** | Next.js 14, TypeScript, Tailwind CSS | Server-side rendering, type safety, responsive UI |
-| **Visualization** | Recharts, Lucide Icons | Interactive charts, consistent iconography |
-| **Backend** | FastAPI, Python 3.11 | Async REST API, SSE streaming, middleware stack |
-| **Database** | PostgreSQL 15 | Persistent storage, complex analytics queries |
-| **Cache/PubSub** | Redis 7 | Real-time messaging, response caching, rate limiting |
-| **AI/ML** | OpenAI GPT, Deepgram STT/TTS | Conversational AI, voice interface |
-| **Auth** | JWT (python-jose), bcrypt | Stateless auth, secure password hashing |
-| **Infrastructure** | Docker Compose, NGINX | Container orchestration, reverse proxy |
-
----
-
-## Features
-
-### Core Dashboard
-- **Real-time KPIs** — Total sales, average transaction, active stores, streaming counts
-- **Live sales feed** — SSE-powered table showing transactions as they occur
-- **Interactive charts** — Sales trends, store comparisons, category breakdowns, daily patterns
-
-### AI Assistant
-- **Natural language chat** — Ask questions like "What were Dubai store sales this week?"
-- **Streaming responses** — Token-by-token AI responses with OpenAI integration
-- **Voice interface** — Speech-to-text input and text-to-speech output via Deepgram
-- **Intelligent fallback** — Data-driven responses when OpenAI is unavailable
-
-### Authentication & Authorization
-- **JWT authentication** — Access + refresh token flow with automatic renewal
-- **Role hierarchy** — Super Admin → Regional Manager → Store Manager → Analyst
-- **Row-level security** — Users see only data for their assigned stores/regions
-- **Session management** — Token blacklisting on logout, failed-attempt lockout
-
-### Inventory Management
-- **Stock monitoring** — Real-time stock levels derived from sales velocity
-- **Reorder alerts** — Automatic low-stock and out-of-stock notifications
-- **Category analytics** — Inventory health by product category
-
-### Employee Performance
-- **360° employee profiles** — Bio cards with performance history
-- **Performance scoring** — Composite scores from sales, attendance, customer ratings
-- **Live streaming** — Real-time performance metric updates via SSE
-
-### Promotions Engine
-- **Active promotions** — Track running campaigns with performance metrics
-- **AI suggestions** — Data-driven promotion recommendations
-- **ROI tracking** — Measure promotion effectiveness against baselines
-
-### Alerts & Monitoring
-- **Anomaly detection** — Statistical deviation alerts for unusual sales patterns
-- **System health** — Database, Redis, and API health monitoring
-- **Rate limiting** — Redis-backed sliding window with in-memory fallback
-
-### Reporting
-- **PDF export** — Professional reports with charts and tables
-- **Multi-format** — Sales, inventory, and performance report types
+- **The data is synthetic.** Historical rows come from the public Kaggle *Store Item Demand Forecasting* dataset: **10 stores × 50 items, daily, 2013–2017**. On a fresh database the dates are **shifted forward** so that "today" always has data. Live rows are produced by an in-app generator, not a real POS.
+- **`sales` values are UNITS, not currency.** The dataset has no price column. The number you see as a raw count is units sold.
+- **Revenue (AED) is *derived*.** Migration `005` adds a per-item `unit_price_aed`; revenue = `units × unit_price_aed`. This derivation is applied **only** in the `/api/analytics/*` endpoints and KPIs. The **Reports** screen (`/api/reports/sales`) intentionally shows **raw units** and labels them as such, because that endpoint does not join the price.
+- **Stores/employees/promotions are generated**, not from a real HR or merchandising system. Employee gender distribution and performance weights are explicit and visible, not hidden heuristics.
+- **The AI assistant does not need a paid key.** Default path is local Ollama; OpenAI is opt-in via env var; if neither is configured it answers from live database aggregates via a rule-based responder.
+- **"Real-time" means ~5–15s**, the generator's cadence — not sub-second tick data.
 
 ---
 
 ## Getting Started
 
 ### Prerequisites
-
-- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
+- [Docker](https://docs.docker.com/get-docker/) + Docker Compose
 - Git
 
 ### Quick Start
-
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/lulu-intelligence-dashboard.git
-cd lulu-intelligence-dashboard
+git clone https://github.com/mercydeez/lulu-sales-intelligence-dashboard.git
+cd lulu-sales-intelligence-dashboard
 
-# Start all services
-docker compose up -d
-
-# Verify services are running
-docker compose ps
+docker compose up -d      # starts db, redis, backend, singletons, frontend, and the diagnostics worker
+docker compose ps         # all six should be "Up"; db/redis show "healthy"
+                          # (an optional `ollama` service sits behind the `ai` profile, off by default)
 ```
 
-The application will be available at:
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Docs (Swagger)**: http://localhost:8000/docs
+**Migrations apply themselves.** On startup the backend runs a migration runner that applies every `database/migrations/00*.sql` in order (tracked in a `schema_migrations` table), then a runtime employee seeder. `database/init.sql` also auto-runs the first time the Postgres volume is created (bulk-loads the CSV history and seeds demo users). No manual `psql` step is required.
 
-### Database Migrations
+To start completely fresh (re-trigger `init.sql`): `docker compose down -v && docker compose up -d`.
 
-On first run, apply the database migrations:
+> **macOS/Linux note:** the repo's helper scripts (`rebuild.ps1`) are PowerShell; on macOS/Linux just use the `docker compose` commands above.
 
-**Linux / macOS:**
-```bash
-cat database/migrations/001_auth_system.sql | docker exec -i sales_db psql -U salesuser -d salesdb
-cat database/migrations/002_inventory_alerts.sql | docker exec -i sales_db psql -U salesuser -d salesdb
-cat database/migrations/003_promotions_analytics.sql | docker exec -i sales_db psql -U salesuser -d salesdb
-cat database/migrations/004_employee_system.sql | docker exec -i sales_db psql -U salesuser -d salesdb
-```
+---
 
-**Windows (PowerShell):**
-```powershell
-Get-Content database/migrations/001_auth_system.sql | docker exec -i sales_db psql -U salesuser -d salesdb
-Get-Content database/migrations/002_inventory_alerts.sql | docker exec -i sales_db psql -U salesuser -d salesdb
-Get-Content database/migrations/003_promotions_analytics.sql | docker exec -i sales_db psql -U salesuser -d salesdb
-Get-Content database/migrations/004_employee_system.sql | docker exec -i sales_db psql -U salesuser -d salesdb
-```
+## Live URLs & Demo Logins
 
-### Default Users
+With the stack running:
 
-After running migrations, three demo users are created:
+| Service | URL |
+|---|---|
+| **Frontend (dashboard)** | http://localhost:3000 |
+| **Backend API** | http://localhost:8000 |
+| **Swagger / OpenAPI docs** | http://localhost:8000/docs |
+| **Health check** | http://localhost:8000/health |
 
-| Role | Email | Access Scope |
+Demo users (password for all three: **`Demo@2026!`**):
+
+| Role | Email | Access scope |
 |------|-------|-------------|
-| Super Admin | `atharva@lulu.ae` | Full access to all regions and stores |
-| Regional Manager | `krishna@lulu.ae` | Dubai region only |
-| Store Manager | `yash@lulu.ae` | Al Barsha store only |
+| Super Admin | `atharva@retaildemo.app` | all regions & stores |
+| Regional Manager | `krishna@retaildemo.app` | Dubai region only |
+| Store Manager | `yash@retaildemo.app` | Al Barsha store only |
+
+Logging in as the regional/store users is the quickest way to see RBAC scoping in action — the same screens show only the data each role is allowed to see.
+
+**Self-serve onboarding (SaaS):** new customers don't need a seeded account — visit **`/signup`** to provision an isolated tenant workspace (optionally pre-loaded with sample data so the dashboard works immediately), then invite teammates from the app. Every tenant's data is isolated (app-layer scoping + Postgres RLS); a second seeded tenant (`owner@northwind.ae`) demonstrates two-tenant isolation. See [`docs/PUBLIC_API.md`](docs/PUBLIC_API.md) for the per-tenant public API + embeddable AI.
 
 ---
 
-## Environment Configuration
+## Architecture
 
-### Backend Variables
+```
+                 Browser (Next.js 14, App Router, 'use client' pages)
+                  │  REST (fetch via a single auth-aware API client)
+                  │  SSE (EventSource → ticket-authenticated /stream/*)
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    FastAPI (async, Python 3.11)               │
+│  middleware: SecurityHeaders → CSRF → BodySize →              │
+│              SessionInvalidation → RateLimit → RequestID → CORS│
+│  routers: auth, kpis, sales, analytics, history, inventory,   │
+│           alerts, promotions, employees, admin, reports,      │
+│           monitoring, ai, stream                              │
+│  lifespan: migrations → seeders → import + outbox relays      │
+└───────────────┬─────────────────────────────┬────────────────┘
+                │                              │
+        ┌───────▼────────┐            ┌────────▼────────┐
+        │  PostgreSQL 15  │            │     Redis 7     │
+        │  • sales_*      │            │  • pub/sub      │
+        │  • users / RBAC │            │    (sales/alerts│
+        │  • employees    │            │     /inventory) │
+        │  • alerts/inv   │            │  • rate-limit   │
+        │                 │            │  • token block  │
+        └─────────────────┘            └─────────────────┘
+```
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | `postgresql+asyncpg://salesuser:salespass@postgres:5432/salesdb` | PostgreSQL connection |
-| `REDIS_URL` | `redis://redis:6379` | Redis connection |
-| `JWT_SECRET_KEY` | — | **Required in production**: Secret for JWT signing |
-| `CORS_ORIGINS` | `http://localhost:3000` | Allowed CORS origins |
-| `OPENAI_API_KEY` | — | Optional: Enables AI chat features |
-| `DEEPGRAM_API_KEY` | — | Optional: Enables voice interface |
-| `ENVIRONMENT` | `development` | Set to `production` for hardened security |
-| `RATE_LIMIT_REQUESTS` | `100` | Max requests per minute per IP |
-
-### Frontend Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Backend API base URL |
-| `NEXT_PUBLIC_SSE_URL` | `http://localhost:8000/api/stream` | SSE streaming endpoint |
+A separate **Node BullMQ diagnostics worker** shares the same Redis and writes explainable `findings` (detect/diagnose) plus their measured outcomes; the backend and frontend read them. NGINX is present only in `docker-compose.production.yml` (TLS termination / reverse proxy); the dev stack talks to the services directly.
 
 ---
 
-## API Documentation
+## The Live-Data Pipeline
 
-Interactive Swagger documentation is available at `/docs` when the backend is running.
+This is the core of the app:
 
-### Key Endpoints
+1. A `DataGenerator` asyncio task (run in the dedicated single-replica `singletons` container — `app/commands/singletons.py` — not the API lifespan, so it runs in exactly one process) writes a synthetic sale every **~5–15s** to PostgreSQL and publishes the event as JSON to the Redis channel `sales:stream` (also `alerts:stream`, `inventory:stream`).
+2. SSE endpoints under `/stream/*` (sse-starlette) relay Redis pub/sub to browsers.
+3. Frontend components open an `EventSource` and update KPIs, the live table, and charts in place.
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `POST` | `/api/auth/login` | — | Authenticate user |
-| `POST` | `/api/auth/logout` | Bearer | Invalidate session |
-| `GET` | `/api/kpis` | Bearer | Dashboard KPI metrics |
-| `GET` | `/api/sales/` | Bearer | Sales data with filtering |
-| `GET` | `/api/sales/aggregated` | Bearer | Aggregated analytics |
-| `GET` | `/stream/sales` | — | SSE real-time sales stream |
-| `GET` | `/api/analytics/trends` | Bearer | Sales trend analysis |
-| `POST` | `/api/ai/chat/stream` | Bearer | AI chat (streaming) |
-| `GET` | `/api/inventory` | Bearer | Inventory status |
-| `GET` | `/api/alerts` | Bearer | Active alerts |
-| `GET` | `/api/employees` | Bearer | Employee listing |
-| `GET` | `/api/reports/sales` | Bearer | Sales reports |
-| `GET` | `/health` | — | System health check |
+**SSE auth:** because `EventSource` can't send an `Authorization` header, the streams are authenticated with a short-lived **stream ticket** — the client POSTs `/api/auth/stream-ticket` and passes the returned token as `?ticket=…`. The working stream URL is `/stream/sales`.
+
+**Sales storage** uses a three-table design unified by a view: `sales_historical` (CSV) + `sales_stream_raw` (live events) → `sales_fact_view` (the union every reader queries). The legacy single `sales` table was dropped in migration `007`.
 
 ---
 
-## Deployment
+## Tech Stack
 
-### Production with Docker Compose
-
-```bash
-docker compose -f docker-compose.production.yml up -d
-```
-
-### Production Checklist
-
-1. **Set strong secrets** — Override `JWT_SECRET_KEY` via environment variables
-2. **Enable HTTPS** — Configure NGINX with TLS certificates
-3. **Restrict CORS** — Set `CORS_ORIGINS` to your production domain only
-4. **Database backups** — Configure PostgreSQL point-in-time recovery
-5. **Log aggregation** — Forward container logs to a centralized logging system
-6. **Health monitoring** — Use `/api/monitoring/health` with your alerting system
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 14 (App Router, TypeScript), Tailwind CSS, Recharts, Lucide |
+| Backend | FastAPI, async SQLAlchemy 2 + asyncpg, sse-starlette, Python 3.11 |
+| Database | PostgreSQL 15 |
+| Cache / Pub-Sub | Redis 7 |
+| AI | Ollama (local default) · OpenAI (optional) · rule-based fallback |
+| Auth | JWT (python-jose), bcrypt (passlib) |
+| Infra | Docker Compose (+ NGINX in the production compose) |
 
 ---
 
-## Testing
+## Features (what actually works)
 
-The project includes a **pytest-based test suite** covering security validation, configuration, health checks, and middleware.
-
-### Running Tests Locally
-
-```bash
-# Inside the backend container
-docker exec sales_backend python -m pytest tests/ -v --tb=short
-
-# Or locally (with dependencies installed)
-cd backend
-pytest tests/ -v
-```
-
-### Test Modules
-
-| Module | Description |
-|--------|-------------|
-| `test_security.py` | Validates insecure-default detection, production fail-fast, staging checks |
-| `test_config.py` | Settings defaults, overrides, and logger setup |
-| `test_health.py` | `/health` endpoint response structure and fields |
-| `test_middleware.py` | Request ID generation, rate limiting, security headers |
-
-### CI/CD Pipeline
-
-Every push and pull request to `main` triggers a **GitHub Actions** workflow that:
-
-1. **Backend** — Installs Python 3.11, runs pytest
-2. **Frontend** — Installs Node 20, TypeScript check, Next.js production build
-3. **Docker** — Validates compose config, builds both images
-
-See the badge at the top of this README for current build status.
-
-### Health Check Verification
-
-```bash
-curl http://localhost:8000/health
-```
-
-Expected response:
-```json
-{
-  "status": "healthy",
-  "database": "healthy",
-  "redis": "healthy",
-  "version": "1.0.0"
-}
-```
-
-### Error Handling
-
-All API errors return a **consistent JSON structure**:
-
-```json
-{
-  "error": true,
-  "status_code": 422,
-  "message": "Validation failed",
-  "details": [{"field": "body → email", "message": "invalid email", "type": "value_error"}],
-  "path": "/api/auth/login",
-  "timestamp": "2026-02-25T12:00:00+00:00"
-}
-```
-
-Three global handlers cover: HTTP errors, validation errors, and unhandled exceptions (logged server-side, safe 500 returned to clients).
+- **Live operations home** — real-time KPIs (count-up tickers, reduced-motion aware), live sales feed, trend/category/store charts, returns analysis.
+- **Analytics & Forecast** — real `/api/analytics/*` data; an interactive seasonal forecast with a **MAPE backtest vs a seasonal-naive baseline**. (Figures here are AED revenue — the only place units are priced.)
+- **Inventory / Procurement** — stock levels derived from sales velocity, low-stock/out-of-stock alerts, an SSE-degraded connection banner.
+- **Alerts → Tasks** — persisted alert workflow: acknowledge, resolve-with-notes, and a "My Tasks" view.
+- **Promotions** — summary, active campaigns, category performance (real shape), and a create flow scoped to the user's accessible stores.
+- **Employees / Performance** — bio cards, role/store analytics, performance charts (line/bar/radar) over real seeded data.
+- **Admin** — console: dashboard, users, stores, activity feed; super-admin gated. Read-mostly — the one write path is a role-gated create-user endpoint (`POST /api/admin/users`, super-admin / regional-manager).
+- **Reports** — single rich endpoint feeding KPIs + daily/category/store/item tables; **labelled in units** with a PDF export that states the no-price caveat.
+- **Monitoring** — live `/api/monitoring/*` health, system stats, and metrics with an auto-refresh toggle.
+- **AI assistant (Sage)** — grounded, RBAC-safe chat over live data with the local-first provider chain described above (NL→SQL on a least-privilege role, with a deterministic rule-based fallback that needs no LLM).
+- **Insights (diagnostics)** — a Node BullMQ worker runs deterministic rules over the live data to surface *what's going wrong* (revenue drops, category slumps, laggard stores, return spikes), each with evidence and a recommended action. When an operator accepts an action, a **measure** pass re-checks the metric and **auto-resolves** the finding once it recovers — closing the detect→diagnose→recommend→act→measure loop.
+- **Design & a11y** — a "Sunset Pop" design system, **EN/AR with RTL**, WCAG-AA-checked contrast, focus-visible keyboard rings, and `aria-live` on live regions.
 
 ---
 
 ## Security
 
-### Authentication & Session Management
-- **JWT tokens** with configurable expiration (30min access, 7-day refresh)
-- **bcrypt** password hashing with automatic salting
-- **Account lockout** after 5 failed attempts (30-minute cooldown)
-- **Token blacklisting** on logout via Redis
-
-### API Protection
-- **Rate limiting** — Redis-backed sliding window (100 req/min default)
-- **CSRF protection** — Double-submit cookie pattern for non-Bearer requests
-- **Request body limits** — Configurable max payload size (10MB default)
-- **Security headers** — CSP, HSTS, X-Frame-Options, X-Content-Type-Options
-
-### Infrastructure
-- **Non-root containers** — Backend runs as unprivileged user
-- **Network isolation** — Services communicate via internal Docker network
-- **No secret leakage** — Secrets loaded from environment variables
+- **JWT auth** — access + refresh with rotation; logout blacklists token hashes in Redis (checked by `SessionInvalidationMiddleware`, which fails open if Redis is down).
+- **RBAC** — region→store expansion; managers/admins are scoped server-side to their accessible stores. Note: the `admin`, `inventory`, `promotions`, `alerts`, `reports` routers enforce auth/roles; read/stream endpoints use optional auth or stream tickets.
+- **Multi-tenant isolation** — app-layer `tenant_id` scoping is primary, backed by Postgres **FORCE RLS**: the authenticated request path connects as a non-owner `app_rw` role with the tenant bound to a GUC before any query runs, so the database itself enforces isolation (on by default; `USE_RLS_ROLE=false` falls back to the owner connection). Two-tenant isolation is verified end-to-end.
+- **Hardened middleware** — CSP (env-driven `connect-src`, `object-src 'none'`, prod `upgrade-insecure-requests`), HSTS, `X-Frame-Options`, `X-Content-Type-Options`; CORS with **enumerated** methods/headers (required once credentials are allowed); Redis sliding-window rate limiting with in-memory fallback; CSRF double-submit for non-Bearer requests; request body-size limit.
+- **Structured logging** — a per-request `request_id` (reusing an inbound `X-Request-ID`) is threaded through **every** log line via a contextvar + log filter; optional JSON log output.
+- **Fail-fast config** — in `production`/`staging`, startup raises on default secrets, short JWT keys, or default DB credentials.
+- **Hardening details** are recorded in [`docs/architecture/ADR.md`](docs/architecture/ADR.md) (ADR-009) and the **Track 2** section of [`implementation.md`](implementation.md).
 
 ---
 
-## Scalability
+## Configuration
 
-| Component | Scaling Strategy |
-|-----------|-----------------|
-| **Frontend** | Horizontal scaling behind load balancer; standalone Next.js output |
-| **Backend** | Stateless design enables horizontal scaling; Redis handles shared state |
-| **Database** | Read replicas for analytics queries; connection pooling via SQLAlchemy |
-| **Redis** | Redis Cluster for high availability; separate instances for cache vs pub/sub |
-| **SSE Streams** | Per-connection pub/sub; scales with Redis pub/sub capacity |
+Backend settings (pydantic-settings; env vars or `.env`):
 
----
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `DATABASE_URL` | `postgresql+asyncpg://salesuser:salespass@postgres:5432/salesdb` | — |
+| `REDIS_URL` | `redis://redis:6379` | — |
+| `ENVIRONMENT` | `development` | `production`/`staging` enable fail-fast security checks |
+| `JWT_SECRET_KEY` / `SECRET_KEY` | dev defaults | **must be ≥32 chars & non-default in production** |
+| `CORS_ORIGINS` | `http://localhost:3000,http://frontend:3000` | comma-separated, enumerated |
+| `CSP_CONNECT_SRC` | localhost dev origins | set to your API/ws origins in prod |
+| `OLLAMA_URL` / `OLLAMA_MODEL` | — / `llama3.2` | enables the local AI provider |
+| `OPENAI_API_KEY` | — | optional; opt-in AI provider |
+| `LOG_JSON` | `false` | emit one JSON log object per line |
+| `RATE_LIMIT_REQUESTS` | `100` | per minute per IP |
 
-## Ethical AI & Responsible Design
-
-### Data Fairness
-- **Balanced synthetic data** — Employee generation uses equitable gender distribution rather than biased assumptions
-- **Inclusive options** — UI forms offer Male, Female, Non-binary, and "Prefer not to say" for gender
-- **Transparent scoring** — Performance scoring weights are visible and configurable, not opaque
-
-### AI Transparency
-- **Fallback responses** — When AI is unavailable, the system provides data-driven responses rather than hallucinated content
-- **Context limits** — AI conversation memory is bounded to prevent resource abuse
-- **No PII in AI context** — The AI assistant uses only aggregated business metrics, never individual customer data
-
-### Access Control
-- **Least privilege** — Each role sees only the data necessary for their responsibilities
-- **Audit logging** — All authentication events and data access are logged for accountability
+Frontend: `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`).
 
 ---
 
-## Future Improvements
+## Testing & CI
 
-### Completed
-- [x] **Security validation** — Fail-fast on insecure defaults in production/staging
-- [x] **Test suite** — pytest-based tests for security, config, health, and middleware
-- [x] **CI/CD pipeline** — GitHub Actions for backend tests, frontend builds, and Docker validation
-- [x] **Global error handlers** — Consistent JSON error responses with structured validation details
+```bash
+# full backend suite (in the running container)
+docker exec sales_backend python -m pytest tests/ -v --tb=short
 
-### Planned
-- [ ] **ML forecasting** — Replace statistical models with LSTM/Prophet trained on historical data
-- [ ] **WebSocket upgrade** — Bidirectional real-time communication replacing SSE
-- [ ] **Frontend tests** — React Testing Library with component-level coverage
-- [ ] **Internationalization** — Arabic, Hindi, Urdu support for UAE workforce
-- [ ] **Mobile views** — Responsive layouts for store managers on the floor
-- [ ] **2FA** — Two-factor authentication (DB schema already prepared)
-- [ ] **Accessibility** — WCAG 2.1 AA compliance with ARIA labels and keyboard navigation
+# or locally
+cd backend && pytest
+```
+
+200+ backend tests cover config, security/RBAC, AI-RBAC & Sage guardrails, NL→SQL guard, accuracy guards, health, and middleware. **GitHub Actions** (`.github/workflows/ci.yml`) runs jobs on push/PR to `main`:
+
+1. **Backend** — install deps, verify imports, run the full `pytest tests/`.
+2. **Frontend** — `npx tsc --noEmit` (type check, enforced) + `npm run build`.
+3. **Docker** — `docker compose config -q` + build the images + the diagnostics worker's unit tests.
+4. **Smoke** — boot the full stack, poll `/health`, then run the golden-number + NL→SQL pipeline tests and a worker scan/measure pass against the live stack.
+
+Health check:
+```bash
+curl http://localhost:8000/health
+# {"status":"healthy","database":"healthy","redis":"healthy","version":"1.0.0","environment":"development"}
+```
+
+All API errors return a consistent envelope (`error`, `status_code`, `message`, `path`, `timestamp`); validation errors add field-level `details`.
 
 ---
 
 ## Project Structure
 
 ```
-├── .github/
-│   └── workflows/
-│       └── ci.yml            # GitHub Actions CI pipeline
-├── backend/                  # FastAPI Python backend
-│   ├── app/
-│   │   ├── main.py          # Application entry point, lifespan & error handlers
-│   │   ├── config.py        # Pydantic settings with security validation
-│   │   ├── middleware.py     # Security middleware stack
-│   │   ├── models/          # SQLAlchemy ORM models
-│   │   ├── routes/          # API route handlers
-│   │   ├── services/        # Business logic layer
-│   │   └── utils/           # Shared utilities
-│   ├── tests/               # pytest test suite
-│   │   ├── conftest.py      # Shared fixtures
-│   │   ├── test_security.py # Security validation tests
-│   │   ├── test_config.py   # Configuration tests
-│   │   ├── test_health.py   # Health endpoint tests
-│   │   └── test_middleware.py # Middleware tests
-│   ├── pytest.ini           # pytest configuration
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/                 # Next.js TypeScript frontend
-│   ├── src/
-│   │   ├── app/             # App Router pages
-│   │   ├── components/      # Reusable React components
-│   │   ├── contexts/        # Auth context provider
-│   │   ├── hooks/           # Custom React hooks (SSE, data)
-│   │   ├── lib/             # API client & formatting utilities
-│   │   └── types/           # TypeScript type definitions
-│   ├── Dockerfile
-│   └── package.json
-├── database/                 # SQL schema & migrations
-│   ├── init.sql             # Base schema (auto-run on container init)
-│   └── migrations/          # Versioned migration scripts
-├── data/                     # Training data (CSV)
-├── nginx/                    # Reverse proxy configuration
-├── docker-compose.yml        # Development environment
-└── docker-compose.production.yml  # Production environment
+backend/                      FastAPI app
+  app/
+    main.py                   entry point, lifespan, error handlers, middleware order
+    config.py                 pydantic settings, security validation, logging (req-id, JSON)
+    middleware.py             security headers, CSRF, rate limit, request-id, session check
+    models/                   SQLAlchemy ORM models
+    routes/                   one module per feature area
+    services/                 data generator, migration runner, seeders, redis, data_sync
+  tests/                      pytest suite (config, security, health, middleware)
+database/
+  init.sql                    base schema + CSV load + demo users (fresh-volume only)
+  migrations/00*.sql          versioned migrations (auto-applied by the runner)
+frontend/
+  src/app/*/page.tsx          one 'use client' page per screen (thin composers)
+  src/components/<feature>/   feature-folder components + barrels
+  src/contexts/               AuthContext, LanguageContext (EN/AR)
+  src/lib/                    auth-aware API client, formatters, PDF export
+docs/                         indexed documentation (architecture, product, archive)
+docker-compose.yml            dev stack
+docker-compose.production.yml prod stack (adds NGINX)
+implementation.md             single living forward roadmap (what's shipped + what's next)
 ```
+
+---
+
+## Further Reading
+
+- [docs/README.md](docs/README.md) - documentation index and folder guide.
+
+- **Contributing & team (three-developer parallel workflow):** [`DEVELOPMENT_CONTRACT.md`](DEVELOPMENT_CONTRACT.md), [`CONTRIBUTING.md`](CONTRIBUTING.md), [`TEAM_OWNERSHIP.md`](TEAM_OWNERSHIP.md), [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md), [`GIT_WORKFLOW.md`](GIT_WORKFLOW.md).
+- [`docs/product/DEMO_SCRIPT.md`](docs/product/DEMO_SCRIPT.md) — a guided 8-minute walkthrough for reviewers.
+- [`docs/architecture/ADR.md`](docs/architecture/ADR.md) — architecture decision records (the *why* behind the design).
+- [`docs/product/PITCH.md`](docs/product/PITCH.md) — one-page pitch: problem, approach, and engineering tradeoffs.
+- [`implementation.md`](implementation.md) — the single living forward roadmap (verified state + the remaining tracks).
+- [`docs/archive/GAP_ANALYSIS.md`](docs/archive/GAP_ANALYSIS.md) — the original honest audit that drove the roadmap.
+
+---
+
+## Roadmap
+
+**Done:** real-time pipeline · RBAC + server-side scoping · multi-tenancy with Postgres FORCE RLS on the request path · derived revenue model · seasonal + LightGBM forecasting with MAPE/WAPE backtest · Sage (grounded NL→SQL + deterministic fallback) · BullMQ diagnostics worker closing the detect→…→measure loop · local-first AI chain · full UI redesign · EN/AR + RTL · WCAG-AA contrast · production hardening (CSP/CORS, structured logging, covering index, pagination, transaction-safe alert generation).
+
+**Next:** frontend component tests · self-hosted Arabic web font · WebSocket upgrade from SSE. _(Local-LLM activation, the agentic draft-an-action increment, and tenant data export/delete-on-request have all shipped — see `implementation.md` Tracks 3/5 and the agentic increment.)_
 
 ---
 
@@ -467,10 +296,10 @@ Three global handlers cover: HTTP errors, validation errors, and unhandled excep
 
 **Atharva Soundankar** — [GitHub](https://github.com/mercydeez)
 
-A production-grade demonstration of full-stack engineering, real-time data systems, and AI integration for enterprise retail analytics.
+A portfolio demonstration of full-stack engineering, real-time data systems, and pragmatic, honestly-scoped AI integration.
 
----
+<p align="center"><sub>FastAPI · Next.js · PostgreSQL · Redis · Docker</sub></p>
 
-<p align="center">
-  <sub>Built with FastAPI · Next.js · PostgreSQL · Redis · OpenAI</sub>
-</p>
+
+
+

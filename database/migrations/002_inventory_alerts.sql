@@ -1,5 +1,5 @@
 -- =============================================================================
--- LULU HYPERMARKET UAE - INVENTORY MANAGEMENT SCHEMA
+-- RETAIL IQ - INVENTORY MANAGEMENT SCHEMA
 -- Migration 002: Inventory, Stock Levels, Transfers, Alerts
 -- =============================================================================
 

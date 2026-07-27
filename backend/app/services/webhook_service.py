@@ -1,0 +1,219 @@
+"""
+Outbound webhook service (B4).
+
+Tenants register HTTPS endpoints + the events they want; `dispatch_event` POSTs
+a signed JSON payload to every active, subscribed endpoint for a tenant. Each
+delivery carries an HMAC-SHA256 signature (`X-Webhook-Signature: sha256=<hex>`) over
+the exact request body so receivers can verify authenticity with their secret.
+
+Delivery is best-effort and fire-and-forget — a slow or failing receiver must
+never block the request/stream path that produced the event.
+"""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+import json
+import secrets
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import logger
+from app.services.database import async_session
+
+SIGNATURE_HEADER = "X-Webhook-Signature"
+DELIVERY_TIMEOUT = 5.0
+
+
+def generate_secret() -> str:
+    return "whsec_" + secrets.token_urlsafe(32)
+
+
+def sign_payload(secret: str, body: bytes) -> str:
+    """HMAC-SHA256 of the raw body, hex-encoded — the value receivers recompute."""
+    return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+
+
+def verify_signature(secret: str, body: bytes, signature: str) -> bool:
+    """Constant-time check a receiver would run. Accepts the bare hex or the
+    `sha256=<hex>` header form."""
+    expected = sign_payload(secret, body)
+    sig = signature.split("=", 1)[1] if signature.startswith("sha256=") else signature
+    return hmac.compare_digest(expected, sig)
+
+
+def _subscribed(events: List[str], event: str) -> bool:
+    return "*" in events or event in events
+
+
+# Published catalog of the events a tenant can subscribe to (Workstream J). Keep in
+# sync with the dispatch_event_background call sites across the app + worker.
+EVENT_CATALOG: List[Dict] = [
+    {"event": "finding.created", "description": "A diagnostics finding was detected."},
+    {"event": "finding.resolved", "description": "A finding was resolved (manually or by the measure loop)."},
+    {"event": "action.accepted", "description": "An operator accepted a finding's recommended action."},
+    {"event": "action.drafted", "description": "A human-approvable action draft was generated."},
+    {"event": "outcome.improved", "description": "An accepted recommendation's metric recovered."},
+    {"event": "outcome.worsened", "description": "An accepted recommendation's metric got worse."},
+    {"event": "forecast.completed", "description": "A forecast/backtest run finished."},
+    {"event": "import.completed", "description": "A CSV import finished (rows written)."},
+    {"event": "import.failed", "description": "A CSV import failed; no rows were written."},
+    {"event": "stockout.risk", "description": "An item is at/near stockout."},
+    {"event": "purchase_order.created", "description": "A purchase order was created."},
+    {"event": "purchase_order.approved", "description": "A purchase order was approved."},
+    {"event": "billing.invoice.created", "description": "A VAT invoice was issued."},
+    {"event": "billing.payment_failed", "description": "A payment attempt failed."},
+    {"event": "webhook.test", "description": "A test event you triggered from the dev portal."},
+]
+CATALOG_EVENTS = {e["event"] for e in EVENT_CATALOG}
+
+
+# ---------------------------------------------------------------------------
+# CRUD
+# ---------------------------------------------------------------------------
+async def create_webhook(
+    db: AsyncSession, tenant_id: int, url: str,
+    events: Optional[List[str]] = None, description: Optional[str] = None,
+    created_by: Optional[int] = None,
+) -> Dict:
+    secret = generate_secret()
+    row = (await db.execute(text("""
+        INSERT INTO tenant_webhooks (tenant_id, url, secret, events, description, created_by)
+        VALUES (:tenant_id, :url, :secret, :events, :description, :created_by)
+        RETURNING id, created_at
+    """), {
+        "tenant_id": tenant_id, "url": url, "secret": secret,
+        "events": events or ["*"], "description": description, "created_by": created_by,
+    })).fetchone()
+    await db.commit()
+    return {
+        "id": row.id, "url": url, "events": events or ["*"],
+        "description": description,
+        "secret": secret,   # shown so the receiver can be configured to verify
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+async def list_webhooks(db: AsyncSession, tenant_id: int) -> List[Dict]:
+    rows = (await db.execute(text("""
+        SELECT id, url, events, description, active, last_delivery_at,
+               last_status, failure_count, created_at
+        FROM tenant_webhooks WHERE tenant_id = :tid ORDER BY created_at DESC
+    """), {"tid": tenant_id})).fetchall()
+    return [{
+        "id": r.id, "url": r.url, "events": list(r.events) if r.events else [],
+        "description": r.description, "active": r.active,
+        "last_delivery_at": r.last_delivery_at.isoformat() if r.last_delivery_at else None,
+        "last_status": r.last_status, "failure_count": int(r.failure_count or 0),
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]
+
+
+async def delete_webhook(db: AsyncSession, tenant_id: int, webhook_id: int) -> bool:
+    res = await db.execute(text(
+        "DELETE FROM tenant_webhooks WHERE id = :id AND tenant_id = :tid"
+    ), {"id": webhook_id, "tid": tenant_id})
+    await db.commit()
+    return (res.rowcount or 0) > 0
+
+
+# ---------------------------------------------------------------------------
+# Delivery
+# ---------------------------------------------------------------------------
+async def _deliver(url: str, secret: str, body: bytes) -> int:
+    import httpx
+    headers = {
+        "Content-Type": "application/json",
+        SIGNATURE_HEADER: f"sha256={sign_payload(secret, body)}",
+        "User-Agent": "RetailIQ-Webhooks/1.0",
+    }
+    async with httpx.AsyncClient(timeout=DELIVERY_TIMEOUT) as client:
+        resp = await client.post(url, content=body, headers=headers)
+        return resp.status_code
+
+
+async def dispatch_event(tenant_id: int, event: str, data: Dict) -> int:
+    """POST a signed `{event, tenant_id, data, sent_at}` payload to every active,
+    subscribed endpoint for the tenant. Returns the number of endpoints attempted.
+    Best-effort: per-endpoint failures are logged, never raised."""
+    async with async_session() as db:
+        rows = (await db.execute(text("""
+            SELECT id, url, secret, events FROM tenant_webhooks
+            WHERE tenant_id = :tid AND active = TRUE
+        """), {"tid": tenant_id})).fetchall()
+
+        targets = [r for r in rows if _subscribed(list(r.events) if r.events else ["*"], event)]
+        if not targets:
+            return 0
+
+        payload = {
+            "event": event,
+            "tenant_id": tenant_id,
+            "data": data,
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+        }
+        body = json.dumps(payload, default=str).encode("utf-8")
+
+        attempted = 0
+        for r in targets:
+            attempted += 1
+            try:
+                status = await _deliver(r.url, r.secret, body)
+                await db.execute(text("""
+                    UPDATE tenant_webhooks
+                    SET last_delivery_at = :now, last_status = :status,
+                        failure_count = CASE WHEN :status >= 400
+                                             THEN failure_count + 1 ELSE 0 END
+                    WHERE id = :id
+                """), {"now": datetime.now(timezone.utc), "status": status, "id": r.id})
+                await _log_delivery(db, tenant_id, r.id, event, status, status < 400, None)
+            except Exception as e:
+                logger.warning(f"Webhook delivery to {r.url} failed: {e}")
+                await db.execute(text("""
+                    UPDATE tenant_webhooks
+                    SET last_delivery_at = :now, failure_count = failure_count + 1
+                    WHERE id = :id
+                """), {"now": datetime.now(timezone.utc), "id": r.id})
+                await _log_delivery(db, tenant_id, r.id, event, None, False, str(e)[:500])
+        await db.commit()
+        return attempted
+
+
+async def _log_delivery(db, tenant_id: int, webhook_id: int, event: str,
+                        status: Optional[int], ok: bool, error: Optional[str]) -> None:
+    """Append a row to the delivery log (best-effort — never breaks dispatch)."""
+    try:
+        await db.execute(text("""
+            INSERT INTO webhook_deliveries (tenant_id, webhook_id, event, status_code, ok, error)
+            VALUES (:tid, :wid, :event, :status, :ok, :error)
+        """), {"tid": tenant_id, "wid": webhook_id, "event": event,
+               "status": status, "ok": ok, "error": error})
+    except Exception as e:
+        logger.warning(f"Could not log webhook delivery: {e}")
+
+
+async def list_deliveries(db, tenant_id: int, webhook_id: int, limit: int = 20) -> List[Dict]:
+    """Recent delivery attempts for one webhook (tenant-scoped)."""
+    rows = (await db.execute(text("""
+        SELECT id, event, status_code, ok, error, delivered_at
+        FROM webhook_deliveries
+        WHERE tenant_id = :tid AND webhook_id = :wid
+        ORDER BY delivered_at DESC LIMIT :limit
+    """), {"tid": tenant_id, "wid": webhook_id, "limit": max(1, min(limit, 100))})).mappings().all()
+    return [
+        {**dict(r), "delivered_at": r["delivered_at"].isoformat() if r["delivered_at"] else None}
+        for r in rows
+    ]
+
+
+def dispatch_event_background(tenant_id: int, event: str, data: Dict) -> None:
+    """Fire-and-forget dispatch — schedule on the running loop without awaiting,
+    so producers (alerts, stream) never block on webhook delivery."""
+    try:
+        asyncio.get_running_loop().create_task(dispatch_event(tenant_id, event, data))
+    except RuntimeError:
+        pass  # no running loop (e.g. called from sync context) — skip

@@ -1,0 +1,44 @@
+# Gitleaks configuration (E5-5).
+#
+# CI scans the FULL git history (286+ commits) on every push and fails the build
+# on any finding. The allowlist below is deliberately NARROW: each entry names a
+# specific known-false-positive by path + regex. We do NOT allowlist whole
+# directories (e.g. backend/tests/) — that would create a blind spot where a real
+# secret could later hide.
+#
+# Every real credential in this repo is environment-injected; config.py's
+# validate_security() refuses to boot production on a default secret.
+#
+# Run locally exactly as CI does:
+#   docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.24.3 \
+#     detect --source /repo --config /repo/.gitleaks.toml --redact --exit-code 1
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known non-secrets: test placeholders, storage-key names, doc examples"
+
+# Path-scoped regexes. `regexes` matches the detected secret; `paths` the file.
+regexes = [
+  # Rate-limiter test uses a fabricated API key shaped like a real one so the
+  # middleware's `lsk_` branch is exercised. Not a credential — no such key exists.
+  '''lsk_abc123_secretsecret''',
+  # Public-API docs show the Bearer form with an obvious placeholder.
+  '''lsk_(YOUR_API_KEY|ab12cd34_x+)''',
+  # localStorage key NAMES (not values) that the generic-api-key rule mistakes
+  # for secrets because the identifier is literally `KEY`.
+  # frontend/src/lib/nav/favorites.ts: const KEY = 'riq.nav.favorites.v1'
+  '''riq\.nav\.favorites\.v\d+''',
+]
+
+paths = [
+  # Sample env file: every value is a documented placeholder, and the real values
+  # are injected. Keeping this scoped to the one file, not all of /docs.
+  '''^\.env\.example$''',
+]
+
+# Commit-scoped allowances are intentionally empty: nothing in this repo's history
+# needs one. If a future finding is a genuine leak, ROTATE the credential — do not
+# add it here.
+commits = []

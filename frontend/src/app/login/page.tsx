@@ -2,21 +2,38 @@
 
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { PRODUCT_NAME } from '@/lib/brand';
+import { track } from '@/lib/telemetry';
 import {
-  Eye, EyeOff, Lock, Mail, AlertCircle, Loader2, ShoppingBag,
-  TrendingUp, ShieldCheck, Activity, Sparkles, ArrowRight,
+  Eye, EyeOff, Lock, Mail, AlertCircle, Loader2,
+  TrendingUp, ShieldCheck, Activity, ArrowRight, KeyRound,
 } from 'lucide-react';
+import { BrandIcon } from '@/components/branding/BrandIcon';
 
+// Labels/features are translation keys (src/locales/auth.ts) — resolved with
+// t() at render so the screen is fully EN/AR (E4-4 core screen).
 const DEMO_ACCOUNTS = [
-  { label: 'Super Admin', email: 'atharva@lulu.ae', accent: 'from-coral-500 to-violet-500' },
-  { label: 'Regional Mgr', email: 'krishna@lulu.ae', accent: 'from-violet-500 to-teal-400' },
-  { label: 'Store Mgr', email: 'yash@lulu.ae', accent: 'from-amber-400 to-coral-500' },
+  { labelKey: 'auth.demo.superAdmin', email: 'atharva@retaildemo.app' },
+  { labelKey: 'auth.demo.regional', email: 'krishna@retaildemo.app' },
+  { labelKey: 'auth.demo.store', email: 'yash@retaildemo.app' },
 ];
+
+const FEATURES = [
+  { icon: Activity, textKey: 'auth.feature.live' },
+  { icon: TrendingUp, textKey: 'auth.feature.forecast' },
+  { icon: ShieldCheck, textKey: 'auth.feature.rbac' },
+];
+
+const EASE = [0.22, 1, 0.36, 1] as const;
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isLoading, error, clearError } = useAuth();
+  const { login, verifyTwoFactor, isLoading, error, clearError } = useAuth();
+  const { t, toggleLang } = useLanguage();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,221 +41,342 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState('');
 
+  // 2-step verification: set once the password step returns a challenge.
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLocalError('');
     clearError();
-
     if (!email || !password) {
-      setLocalError('Please enter both email and password');
+      setLocalError(t('auth.errBoth'));
       return;
     }
+    const res = await login({ email, password, remember_me: rememberMe });
+    if (res.ok) {
+      track('login_succeeded');
+      router.push('/');
+    } else if (res.requires2fa && res.mfaToken) setMfaToken(res.mfaToken);
+  };
 
-    const success = await login({ email, password, remember_me: rememberMe });
-    if (success) router.push('/');
+  const handleVerify = async (e: FormEvent) => {
+    e.preventDefault();
+    setLocalError('');
+    clearError();
+    if (code.replace(/\s/g, '').length < 6) {
+      setLocalError(t('auth.errCode'));
+      return;
+    }
+    const ok = await verifyTwoFactor(mfaToken!, code.replace(/\s/g, ''));
+    if (ok) {
+      track('login_2fa_succeeded');
+      router.push('/');
+    }
+  };
+
+  const [forgotMsg, setForgotMsg] = useState('');
+  const handleForgot = async () => {
+    setForgotMsg(''); setLocalError('');
+    if (!email) { setLocalError(t('auth.errForgotNeedsEmail')); return; }
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      await fetch(`${API_URL}/api/auth/forgot-password`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+    } catch { /* ignore — generic message either way */ }
+    setForgotMsg(t('auth.forgotSent'));
   };
 
   const fillDemo = (demoEmail: string) => {
     setEmail(demoEmail);
-    setPassword('Lulu@2026!');
+    setPassword('Demo@2026!');
     setLocalError('');
     clearError();
   };
 
   const displayError = error || localError;
+  const inputCls =
+    'w-full ps-12 pe-4 py-3 rounded-xl bg-surface border border-line text-ink placeholder-ink-muted ' +
+    'shadow-sm focus:outline-none focus:ring-4 focus:ring-teal-500/15 focus:border-teal-500 transition-all';
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2">
+    <div className="min-h-screen bg-canvas lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       {/* ============================= BRAND PANEL ============================= */}
-      <div className="relative hidden lg:flex flex-col justify-between overflow-hidden sunset-gradient p-12 text-white">
-        {/* Decorative blobs */}
-        <div className="blob w-96 h-96 bg-amber-300/50 -top-20 -left-16 animate-blob" />
-        <div className="blob w-80 h-80 bg-teal-300/40 bottom-10 -right-10 animate-blob" style={{ animationDelay: '3s' }} />
-        <div className="blob w-72 h-72 bg-violet-400/40 top-1/2 left-1/3 animate-blob" style={{ animationDelay: '6s' }} />
-
+      <aside className="relative hidden lg:flex flex-col justify-between overflow-hidden hero-mesh p-12 text-white">
         {/* Brand */}
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm ring-1 ring-white/30">
-            <ShoppingBag className="w-6 h-6" />
+        <motion.div
+          initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: EASE }}
+          className="relative z-10 flex items-center gap-3"
+        >
+          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-white/10 ring-1 ring-white/25">
+            <BrandIcon size={24} decorative className="text-white" />
           </div>
-          <span className="text-xl font-bold tracking-tight">Lulu Intelligence</span>
-        </div>
+          <span className="text-xl font-bold tracking-tight">{PRODUCT_NAME}</span>
+        </motion.div>
 
         {/* Hero copy */}
         <div className="relative z-10 max-w-md">
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur-sm ring-1 ring-white/25 mb-5">
-            <Sparkles className="w-3.5 h-3.5" /> Real-time retail analytics
-          </div>
-          <h1 className="text-4xl font-bold leading-tight mb-4">
-            Every sale, every store, the moment it happens.
-          </h1>
-          <p className="text-white/85 text-lg leading-relaxed">
-            Live KPIs, demand forecasting, and inventory intelligence across the
-            Lulu Hypermarket UAE network — in one playful, powerful dashboard.
-          </p>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: EASE, delay: 0.05 }}
+          >
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium ring-1 ring-white/20 mb-5">
+              <span className="inline-flex h-2 w-2 rounded-full bg-emerald-300" />
+              {t('auth.badge')}
+            </div>
+            <h1 className="text-4xl font-bold leading-tight mb-4">
+              {t('auth.heroTitle')}
+            </h1>
+            <p className="text-white/85 text-lg leading-relaxed">
+              {t('auth.heroSub')}
+            </p>
+          </motion.div>
 
-          {/* Feature pills */}
-          <div className="mt-8 space-y-3">
-            {[
-              { icon: Activity, text: 'Live sales stream updating every few seconds' },
-              { icon: TrendingUp, text: 'Seasonal demand forecasts with accuracy scoring' },
-              { icon: ShieldCheck, text: 'Role-based access scoped to your stores' },
-            ].map(({ icon: Icon, text }) => (
-              <div key={text} className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/15 backdrop-blur-sm ring-1 ring-white/25">
+          <motion.div className="mt-10 space-y-4" initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.08, delayChildren: 0.2 } } }}>
+            {FEATURES.map(({ icon: Icon, textKey }) => (
+              <motion.div
+                key={textKey}
+                variants={{ hidden: { opacity: 0, x: -16 }, show: { opacity: 1, x: 0, transition: { ease: EASE } } }}
+                className="flex items-center gap-3 text-sm"
+              >
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 ring-1 ring-white/15">
                   <Icon className="w-4 h-4" />
                 </div>
-                <span className="text-white/90 text-sm">{text}</span>
-              </div>
+                <span className="text-white/90 text-sm">{t(textKey)}</span>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         </div>
 
         <div className="relative z-10 text-white/70 text-xs">
-          Independent student project · synthetic data · © 2026 Lulu Hypermarket UAE
+          {t('auth.footnote')}
         </div>
-      </div>
+      </aside>
 
       {/* ============================= FORM PANEL ============================= */}
-      <div className="flex items-center justify-center p-6 sm:p-12">
-        <div className="w-full max-w-md">
+      <div className="flex min-h-screen items-center justify-center bg-surface px-6 py-10 sm:px-12 lg:min-h-0 lg:border-s lg:border-line">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: EASE }}
+          className="w-full max-w-[25.5rem]"
+        >
+          {/* Language toggle — the Topbar only renders when authenticated, so
+              the login screen needs its own EN/AR switch (E4-4). */}
+          <div className="flex justify-end mb-8">
+            <button
+              type="button"
+              onClick={toggleLang}
+              className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted hover:bg-surface-2 transition-colors"
+            >
+              {t('lang.toggle')}
+            </button>
+          </div>
+
           {/* Mobile brand */}
           <div className="lg:hidden text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl sunset-gradient mb-4 shadow-sunset">
-              <ShoppingBag className="w-8 h-8 text-white" />
+            <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-teal-700">
+              <BrandIcon size={32} decorative className="text-white" />
             </div>
-            <h1 className="text-2xl font-bold gradient-text">Lulu Intelligence</h1>
-            <p className="text-ink-muted text-sm">UAE Sales Analytics Dashboard</p>
+            <h1 className="text-2xl font-bold text-ink">{PRODUCT_NAME}</h1>
+            <p className="text-ink-muted text-sm">{t('auth.tagline')}</p>
           </div>
 
           <div className="mb-8">
-            <h2 className="text-3xl font-bold text-ink mb-2">Welcome back 👋</h2>
-            <p className="text-ink-soft">Sign in to your analytics workspace.</p>
+            <p className="mb-2 text-sm font-semibold text-teal-700">{PRODUCT_NAME}</p>
+            <h2 className="text-3xl font-bold tracking-tight text-ink mb-2">{t('auth.welcome')}</h2>
+            <p className="text-sm leading-6 text-ink-soft">{t('auth.signInSub')}</p>
           </div>
 
-          {/* Error Alert */}
+          {/* Error / info alerts */}
           {displayError && (
-            <div className="mb-6 p-4 rounded-2xl bg-coral-50 border border-coral-200 flex items-start gap-3 animate-fade-in">
+            <motion.div
+              initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+              className="mb-6 flex items-start gap-3 rounded-xl border border-coral-200 bg-coral-50 p-4"
+            >
               <AlertCircle className="w-5 h-5 text-coral-600 flex-shrink-0 mt-0.5" />
               <p className="text-coral-700 text-sm">{displayError}</p>
-            </div>
+            </motion.div>
+          )}
+          {forgotMsg && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+              className="mb-6 flex items-start gap-3 rounded-xl border border-teal-200 bg-teal-50 p-4"
+            >
+              <ShieldCheck className="w-5 h-5 text-teal-600 flex-shrink-0 mt-0.5" />
+              <p className="text-teal-700 text-sm">{forgotMsg}</p>
+            </motion.div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Email */}
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-ink-soft mb-2">
-                Email Address
-              </label>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail className="w-5 h-5 text-ink-muted group-focus-within:text-coral-500 transition-colors" />
-                </div>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-white border border-coral-100 text-ink placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
-                  placeholder="your.email@lulu.ae"
-                  autoComplete="email"
-                  disabled={isLoading}
-                />
+          {mfaToken ? (
+            <form onSubmit={handleVerify} className="space-y-5">
+              <div className="flex items-center gap-3 rounded-xl border border-teal-100 bg-teal-50 p-4">
+                <ShieldCheck className="w-5 h-5 text-teal-600 shrink-0" />
+                <p className="text-sm text-teal-800 dark:text-teal-200">
+                  {t('auth.mfaNotice')}
+                </p>
               </div>
-            </div>
-
-            {/* Password */}
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-ink-soft mb-2">
-                Password
-              </label>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className="w-5 h-5 text-ink-muted group-focus-within:text-coral-500 transition-colors" />
+              <div>
+                <label htmlFor="code" className="block text-sm font-medium text-ink-soft mb-2">
+                  {t('auth.authCode')}
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none">
+                    <KeyRound className="w-5 h-5 text-ink-muted group-focus-within:text-teal-600 transition-colors" />
+                  </div>
+                  <input
+                    id="code"
+                    inputMode="numeric"
+                    autoFocus
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/[^0-9 ]/g, '').slice(0, 7))}
+                    className={`${inputCls} tracking-[0.4em] text-lg`}
+                    placeholder="123456"
+                    autoComplete="one-time-code"
+                    disabled={isLoading}
+                  />
                 </div>
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-12 py-3.5 rounded-2xl bg-white border border-coral-100 text-ink placeholder-ink-muted shadow-sm focus:outline-none focus:ring-4 focus:ring-coral-500/15 focus:border-coral-400 transition-all"
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  disabled={isLoading}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-ink-muted hover:text-coral-500 transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </div>
+              <SubmitButton isLoading={isLoading} idle={t('auth.verify')} busy={t('auth.verifying')} />
+              <button
+                type="button"
+                onClick={() => { setMfaToken(null); setCode(''); setLocalError(''); clearError(); }}
+                className="w-full text-sm font-medium text-ink-muted hover:text-ink transition-colors"
+              >
+                {t('auth.backToSignIn')}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Email */}
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-ink-soft mb-2">
+                  {t('auth.email')}
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none">
+                    <Mail className="w-5 h-5 text-ink-muted group-focus-within:text-teal-600 transition-colors" />
+                  </div>
+                  <input
+                    id="email" type="email" value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className={inputCls}
+                    placeholder="your.email@retaildemo.app"
+                    autoComplete="email" disabled={isLoading}
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-ink-soft mb-2">
+                  {t('auth.password')}
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none">
+                    <Lock className="w-5 h-5 text-ink-muted group-focus-within:text-teal-600 transition-colors" />
+                  </div>
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={`${inputCls} pe-12`}
+                    placeholder="••••••••"
+                    autoComplete="current-password" disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
+                    className="absolute inset-y-0 end-0 pe-4 flex items-center text-ink-muted hover:text-teal-600 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Remember / Forgot */}
+              <div className="flex items-center justify-between">
+                <label className="flex items-center cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-line text-teal-600 focus:ring-teal-500/30 cursor-pointer accent-teal-600"
+                    disabled={isLoading}
+                  />
+                  <span className="ms-2 text-sm text-ink-soft">{t('auth.rememberMe')}</span>
+                </label>
+                <button type="button" onClick={handleForgot} className="text-sm font-medium text-teal-700 hover:text-teal-800 dark:hover:text-teal-200 transition-colors">
+                  {t('auth.forgot')}
                 </button>
               </div>
-            </div>
 
-            {/* Remember / Forgot */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-coral-200 text-coral-500 focus:ring-coral-500/30 cursor-pointer accent-coral-500"
-                  disabled={isLoading}
-                />
-                <span className="ml-2 text-sm text-ink-soft">Remember me</span>
-              </label>
-              <button type="button" className="text-sm font-medium text-violet-600 hover:text-coral-500 transition-colors">
-                Forgot password?
-              </button>
-            </div>
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="btn-sunset w-full py-3.5 px-4 rounded-2xl font-semibold flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" /> Signing in...
-                </>
-              ) : (
-                <>
-                  Sign In <ArrowRight className="w-5 h-5" />
-                </>
-              )}
-            </button>
-          </form>
+              <SubmitButton isLoading={isLoading} idle={t('auth.signIn')} busy={t('auth.signingIn')} />
+            </form>
+          )}
 
           {/* Demo accounts */}
           <div className="mt-8">
             <div className="flex items-center gap-3 mb-3">
-              <span className="h-px flex-1 bg-coral-100" />
-              <span className="text-xs font-medium text-ink-muted">Try a demo account</span>
-              <span className="h-px flex-1 bg-coral-100" />
+              <span className="h-px flex-1 bg-line" />
+              <span className="text-xs font-medium text-ink-muted">{t('auth.tryDemo')}</span>
+              <span className="h-px flex-1 bg-line" />
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {DEMO_ACCOUNTS.map((acc) => (
-                <button
+            <div className="space-y-2">
+              {DEMO_ACCOUNTS.map((acc, index) => (
+                <motion.button
                   key={acc.email}
                   type="button"
                   onClick={() => fillDemo(acc.email)}
                   disabled={isLoading}
-                  className="card-pop rounded-2xl border border-coral-100 bg-white p-3 text-left hover:border-coral-300 disabled:opacity-60"
+                  className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2.5 text-start transition-colors hover:border-teal-300 hover:bg-teal-50/40 disabled:opacity-60"
                 >
-                  <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${acc.accent} mb-2`} />
-                  <p className="text-xs font-semibold text-ink leading-tight">{acc.label}</p>
-                  <p className="text-[10px] text-ink-muted truncate">{acc.email}</p>
-                </button>
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-2 font-mono text-xs font-semibold text-teal-700">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-semibold leading-tight text-ink">{t(acc.labelKey)}</span>
+                    <span className="block truncate text-[11px] text-ink-muted">{acc.email}</span>
+                  </span>
+                </motion.button>
               ))}
             </div>
             <p className="mt-3 text-center text-xs text-ink-muted">
-              Password for all demos: <span className="font-mono font-medium text-ink-soft">Lulu@2026!</span>
+              {t('auth.demoPassword')} <span className="font-mono font-medium text-ink-soft">Demo@2026!</span>
             </p>
           </div>
-        </div>
+
+          <p className="mt-8 text-center text-sm text-ink-soft">
+            {t('auth.newHere')}{' '}
+            <Link href="/signup" className="font-semibold text-teal-700 hover:text-teal-800 dark:hover:text-teal-200">{t('auth.createWorkspace')}</Link>
+          </p>
+          <p className="mt-3 text-center">
+            <Link href="/status" className="text-xs text-ink-muted hover:text-ink transition-colors">{t('status.title')}</Link>
+          </p>
+        </motion.div>
       </div>
     </div>
+  );
+}
+
+/** Primary authentication action — intentionally calm and direct. */
+function SubmitButton({ isLoading, idle, busy }: { isLoading: boolean; idle: string; busy: string }) {
+  return (
+    <button
+      type="submit"
+      disabled={isLoading}
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-3 font-semibold text-white transition-colors hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {isLoading ? (
+        <><Loader2 className="w-5 h-5 animate-spin" /> {busy}</>
+      ) : (
+        <>{idle} <ArrowRight className="w-5 h-5" /></>
+      )}
+    </button>
   );
 }

@@ -10,12 +10,12 @@ from fastapi import HTTPException
 
 from app.main import app
 from app.routes.auth import get_current_user, can_access_store, get_accessible_store_ids
-from app.services.database import get_db
+from app.services.database import get_db, get_read_db
 
 # Mock users
 MOCK_SUPER_ADMIN = {
     "id": 1,
-    "email": "atharva@lulu.ae",
+    "email": "atharva@retaildemo.app",
     "role": "super_admin",
     "status": "active",
     "permissions": {
@@ -27,7 +27,7 @@ MOCK_SUPER_ADMIN = {
 
 MOCK_REGIONAL_MANAGER = {
     "id": 2,
-    "email": "krishna@lulu.ae",
+    "email": "krishna@retaildemo.app",
     "role": "regional_manager",
     "status": "active",
     "permissions": {
@@ -39,7 +39,7 @@ MOCK_REGIONAL_MANAGER = {
 
 MOCK_STORE_MANAGER = {
     "id": 3,
-    "email": "yash@lulu.ae",
+    "email": "yash@retaildemo.app",
     "role": "store_manager",
     "status": "active",
     "permissions": {
@@ -85,6 +85,9 @@ async def test_sales_rbac_store_manager(mock_db_session):
     """Store manager (Yash) can only access their store's sales."""
     app.dependency_overrides[get_current_user] = lambda: MOCK_STORE_MANAGER
     app.dependency_overrides[get_db] = lambda: mock_db_session
+    # E10-7: analytics/history read through get_read_db (the replica dependency).
+    # Overriding only get_db would let those routes open a real connection.
+    app.dependency_overrides[get_read_db] = lambda: mock_db_session
     
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -102,6 +105,9 @@ async def test_sales_rbac_regional_manager(mock_db_session):
     """Regional manager (Krishna) can access regional stores but not other regions."""
     app.dependency_overrides[get_current_user] = lambda: MOCK_REGIONAL_MANAGER
     app.dependency_overrides[get_db] = lambda: mock_db_session
+    # E10-7: analytics/history read through get_read_db (the replica dependency).
+    # Overriding only get_db would let those routes open a real connection.
+    app.dependency_overrides[get_read_db] = lambda: mock_db_session
     
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -119,6 +125,9 @@ async def test_sales_rbac_super_admin(mock_db_session):
     """Super admin (Atharva) can access any store."""
     app.dependency_overrides[get_current_user] = lambda: MOCK_SUPER_ADMIN
     app.dependency_overrides[get_db] = lambda: mock_db_session
+    # E10-7: analytics/history read through get_read_db (the replica dependency).
+    # Overriding only get_db would let those routes open a real connection.
+    app.dependency_overrides[get_read_db] = lambda: mock_db_session
     
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -131,6 +140,9 @@ async def test_sales_rbac_super_admin(mock_db_session):
 async def test_metrics_rbac(mock_db_session):
     """Metrics endpoint enforces store access permissions."""
     app.dependency_overrides[get_db] = lambda: mock_db_session
+    # E10-7: analytics/history read through get_read_db (the replica dependency).
+    # Overriding only get_db would let those routes open a real connection.
+    app.dependency_overrides[get_read_db] = lambda: mock_db_session
     
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -148,6 +160,9 @@ async def test_metrics_rbac(mock_db_session):
 async def test_predictions_rbac(mock_db_session):
     """Predictions endpoint enforces store access permissions."""
     app.dependency_overrides[get_db] = lambda: mock_db_session
+    # E10-7: analytics/history read through get_read_db (the replica dependency).
+    # Overriding only get_db would let those routes open a real connection.
+    app.dependency_overrides[get_read_db] = lambda: mock_db_session
     
     # Mock predictor service to bypass real calculations
     with patch("app.routes.sales.predictor.predict", new_callable=AsyncMock) as mock_predict:
@@ -170,6 +185,9 @@ async def test_predictions_rbac(mock_db_session):
 async def test_history_rbac(mock_db_session):
     """History endpoint enforces store access permissions."""
     app.dependency_overrides[get_db] = lambda: mock_db_session
+    # E10-7: analytics/history read through get_read_db (the replica dependency).
+    # Overriding only get_db would let those routes open a real connection.
+    app.dependency_overrides[get_read_db] = lambda: mock_db_session
     
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -188,6 +206,9 @@ async def test_employees_rbac(mock_db_session):
     """Employees endpoints enforce store access permissions."""
     # Setup dependencies
     app.dependency_overrides[get_db] = lambda: mock_db_session
+    # E10-7: analytics/history read through get_read_db (the replica dependency).
+    # Overriding only get_db would let those routes open a real connection.
+    app.dependency_overrides[get_read_db] = lambda: mock_db_session
     
     # Setup mock sessioncontext manager yielding mock_db_session
     mock_context = AsyncMock()

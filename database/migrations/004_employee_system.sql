@@ -1,5 +1,5 @@
 -- =============================================================================
--- LULU HYPERMARKET UAE - EMPLOYEE MANAGEMENT SYSTEM
+-- RETAIL IQ - EMPLOYEE MANAGEMENT SYSTEM
 -- Migration 004: Employee Biodata, Performance Tracking, Transaction Attribution
 -- =============================================================================
 

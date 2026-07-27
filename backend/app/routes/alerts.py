@@ -13,7 +13,7 @@ from app.services.database import async_session
 from app.services.data_sync import DataSyncService
 from app.services.alert_service import AlertService
 from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE_TTL
-from app.routes.auth import get_current_user
+from app.auth_deps import get_current_user
 from app.config import logger
 
 router = APIRouter(tags=["Alerts & Notifications"])
@@ -165,7 +165,8 @@ async def get_alert_stats(
             
             alerts = await DataSyncService.generate_alerts_from_sales(
                 session,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=current_user.get("tenant_id") or 1
             )
             
             # Generate daily stats
@@ -437,7 +438,8 @@ async def get_inventory_alerts(
             
             alerts = await DataSyncService.generate_alerts_from_sales(
                 session,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=current_user.get("tenant_id") or 1
             )
             
             # Filter only inventory alerts
@@ -461,7 +463,8 @@ async def get_sales_alerts(
             
             alerts = await DataSyncService.generate_alerts_from_sales(
                 session,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=current_user.get("tenant_id") or 1
             )
             
             # Filter only sales alerts

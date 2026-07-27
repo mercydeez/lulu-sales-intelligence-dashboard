@@ -12,6 +12,10 @@ from app.config import get_settings
 settings = get_settings()
 
 
+class DemoScopeError(RuntimeError):
+    """The generator cannot prove its writes are confined to the demo tenant."""
+
+
 class DataGenerator:
     """
     Generates realistic streaming sales data with volatility, returns, and market fluctuations.
@@ -20,8 +24,21 @@ class DataGenerator:
     - Market volatility and demand shocks
     - Seasonal patterns and time-of-day effects
     - Random promotional bursts and slow periods
+
+    Tenant confinement (E0-8). Every row this class writes is stamped with
+    `tenant_id = settings.demo_tenant_id` and `is_synthetic = True`, and the
+    store/item ids it draws from are loaded from that tenant only — never a
+    hardcoded 1..10 range that could collide with a real tenant's stores.
+    Three independent layers must all agree before a fake sale exists:
+
+      1. config: `validate_security()` refuses LIVE_GENERATOR_ENABLED outside DEMO_MODE
+      2. this class: `start()` refuses to run, and refuses an empty demo scope
+      3. postgres: migration 057's trigger rejects a synthetic row on any other tenant
+
+    Layer 3 is the one that actually holds — 1 and 2 are process-level and a
+    future writer could bypass them.
     """
-    
+
     # Transaction type weights - Realistic retail return rates (10-15%)
     TRANSACTION_TYPES = {
         'regular_sale': 0.65,       # Normal sales (majority of transactions)
@@ -37,16 +54,49 @@ class DataGenerator:
         'expired', 'quality_issue', 'duplicate_purchase'
     ]
     
-    def __init__(self):
+    def __init__(self, tenant_id: int | None = None):
         self.historical_stats = {}
         self.is_running = False
         self.market_sentiment = 1.0  # Fluctuates between 0.5 and 1.5
         self.last_sentiment_update = datetime.now()
         self.consecutive_returns = 0
         self.volatility_factor = 1.0
-    
+        # The only tenant this generator may ever write to.
+        self.tenant_id = settings.demo_tenant_id if tenant_id is None else tenant_id
+        # Populated by _load_tenant_scope(); empty until then, which start() treats
+        # as fatal rather than falling back to a guessed id range.
+        self.store_ids: list[int] = []
+        self.item_ids: list[int] = []
+
+    async def _load_tenant_scope(self):
+        """Load the demo tenant's store/item ids — the only ids we may write.
+
+        Replaces the old `random.randint(1, 10)` / `randint(1, 50)`, which assumed
+        the demo tenant owns stores 1-10 and items 1-50. That held for the seeded
+        volume and nothing else: the moment a real tenant is provisioned, those id
+        ranges stop meaning what the generator thought they meant.
+        """
+        from app.models.sales import Store, Item
+
+        async with async_session() as session:
+            stores = await session.execute(
+                select(Store.id).where(Store.tenant_id == self.tenant_id).order_by(Store.id)
+            )
+            items = await session.execute(
+                select(Item.id).where(Item.tenant_id == self.tenant_id).order_by(Item.id)
+            )
+            self.store_ids = [r[0] for r in stores.fetchall()]
+            self.item_ids = [r[0] for r in items.fetchall()]
+
+        if not self.store_ids or not self.item_ids:
+            raise DemoScopeError(
+                f"demo tenant {self.tenant_id} owns "
+                f"{len(self.store_ids)} stores / {len(self.item_ids)} items — "
+                "refusing to generate synthetic sales with nothing safe to write to."
+            )
+
     async def _load_historical_stats(self):
-        """Load statistical properties from historical data"""
+        """Load statistical properties from the demo tenant's historical data"""
         async with async_session() as session:
             # Get historical sales statistics
             result = await session.execute(
@@ -59,9 +109,10 @@ class DataGenerator:
                     func.max(Sale.sales).label('max_sales')
                 )
                 .where(Sale.is_streaming == False)
+                .where(Sale.tenant_id == self.tenant_id)
                 .group_by(Sale.store_id, Sale.item_id)
             )
-            
+
             for row in result.fetchall():
                 key = (row.store_id, row.item_id)
                 self.historical_stats[key] = {
@@ -70,7 +121,7 @@ class DataGenerator:
                     'min': int(row.min_sales) if row.min_sales else 0,
                     'max': int(row.max_sales) if row.max_sales else 100
                 }
-    
+
     def _update_market_conditions(self):
         """Update market sentiment and volatility - simulates real-world fluctuations"""
         now = datetime.now()
@@ -198,50 +249,66 @@ class DataGenerator:
         
         return int(value)
     
+    def _pick_store_item(self) -> tuple[int, int]:
+        """Draw a (store_id, item_id) from the demo tenant's own ids."""
+        if not self.store_ids or not self.item_ids:
+            raise DemoScopeError("tenant scope not loaded — call _load_tenant_scope() first")
+        return random.choice(self.store_ids), random.choice(self.item_ids)
+
+    def _new_stream_row(self, store_id: int, item_id: int, sales_value: int) -> SalesStreamRaw:
+        """Build the row. tenant_id and is_synthetic are not optional here — the
+        DB trigger from migration 057 rejects the insert if they disagree."""
+        if store_id not in self.store_ids or item_id not in self.item_ids:
+            raise DemoScopeError(
+                f"refusing to write store={store_id} item={item_id}: outside demo tenant "
+                f"{self.tenant_id}'s scope"
+            )
+        return SalesStreamRaw(
+            event_id=uuid.uuid4(),
+            store_id=store_id,
+            item_id=item_id,
+            sales=sales_value,
+            tenant_id=self.tenant_id,
+            is_synthetic=True,
+        )
+
     async def _generate_and_store_sale(self):
         """Generate a new sale with realistic volatility and store it"""
         from app.models.sales import Store, Item
-        
+
         # Update market conditions
         self._update_market_conditions()
-        
+
         # Determine transaction type
         transaction_type = self._get_transaction_type()
-        
+
         # Limit consecutive returns for realistic patterns
         if self.consecutive_returns >= 3 and transaction_type == 'return':
             transaction_type = 'regular_sale'  # Realistic: rarely more than 3 returns in a row
-        
+
         async with async_session() as session:
-            # Randomly select store and item
-            store_id = random.randint(1, 10)
-            item_id = random.randint(1, 50)
-            
+            store_id, item_id = self._pick_store_item()
+
             # Certain items have higher return rates (electronics, perishables) - realistic 20-25%
             high_return_items = [1, 5, 12, 25, 38, 50]  # Problem items (electronics, perishables)
             if item_id in high_return_items and random.random() < 0.20:  # 20% return rate for problem items
                 transaction_type = 'return'
-            
+
             # Fetch store and item names
             store_result = await session.execute(
                 select(Store).where(Store.id == store_id)
             )
             store = store_result.scalar_one_or_none()
-            
+
             item_result = await session.execute(
                 select(Item).where(Item.id == item_id)
             )
             item = item_result.scalar_one_or_none()
-            
+
             # Generate sale value with volatility
             sales_value = self._generate_sale_value(store_id, item_id, transaction_type)
-            
-            sale = SalesStreamRaw(
-                event_id=uuid.uuid4(),
-                store_id=store_id,
-                item_id=item_id,
-                sales=sales_value,
-            )
+
+            sale = self._new_stream_row(store_id, item_id, sales_value)
 
             session.add(sale)
             await session.commit()
@@ -275,6 +342,8 @@ class DataGenerator:
                 'category': item.category if item else 'General',
                 'sales': sale.sales,
                 'is_streaming': True,
+                'tenant_id': self.tenant_id,
+                'is_synthetic': True,
                 'created_at': sale.created_at.isoformat(),
                 'timestamp': sale.created_at.isoformat(),
                 'transaction_type': transaction_type,
@@ -288,10 +357,24 @@ class DataGenerator:
             return sale_data
     
     async def start(self):
-        """Start the data generation loop with variable intervals"""
-        self.is_running = True
+        """Start the data generation loop with variable intervals.
+
+        Refuses to run outside demo mode. `main.py` already gates the call site;
+        this repeats the check so a future caller cannot skip it by accident.
+        """
+        if not (settings.demo_mode and settings.live_generator_enabled):
+            raise DemoScopeError(
+                "synthetic sale generator requires DEMO_MODE and LIVE_GENERATOR_ENABLED"
+            )
+
+        await self._load_tenant_scope()
         await self._load_historical_stats()
-        
+        print(
+            f"🎲 Synthetic generator confined to tenant {self.tenant_id}: "
+            f"{len(self.store_ids)} stores, {len(self.item_ids)} items"
+        )
+
+        self.is_running = True
         while self.is_running:
             try:
                 sale_data = await self._generate_and_store_sale()

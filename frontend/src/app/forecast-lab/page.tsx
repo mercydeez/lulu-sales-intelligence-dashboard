@@ -1,0 +1,784 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { Brain, RefreshCw, TrendingUp, Cpu } from 'lucide-react';
+import {
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
+  ComposedChart, Area, Legend, ReferenceLine,
+} from 'recharts';
+import { useAuth } from '@/contexts/AuthContext';
+import { CHART_MARGIN, Y_AXIS_WIDTH, Y_AXIS_CATEGORY_WIDTH } from '@/lib/chart';
+import { PageHeader, Card, Button, Badge, EmptyState, ErrorState, SkeletonText, Tabs, Reveal, singleLineTick } from '@/components/ui';
+
+interface Leader { model: string; tier: string; accuracy: number | null; mape: number | null; }
+interface FeatureImp { feature: string; weight: number; }
+interface HeatCell { store_id: number; store_name: string; accuracy: number | null; }
+interface Classifier {
+  model?: string; labels?: string[]; matrix?: number[][];
+  precision?: number; recall?: number; accuracy?: number; f1?: number;
+  threshold?: number; threshold_units?: number; tested_days?: number;
+  roc?: { fpr: number; tpr: number }[]; roc_auc?: number | null;
+  pr?: { recall: number; precision: number }[]; average_precision?: number | null;
+}
+interface Metrics {
+  status?: string;
+  accuracy: number | null; selected_model: string | null; mape: number | null;
+  leaderboard: Leader[];
+  forecast: { date: string; forecast: number; lower?: number; upper?: number }[];
+  backtest: { date: string; actual: number; predicted: number }[];
+  interval_pct?: number | null;
+  accuracy_trend: { date: string; accuracy: number }[];
+  category_heatmap: { store_id: number; store_name: string; category: string; accuracy: number | null }[];
+  item_accuracy: { item_id: number; item_name: string; category: string; accuracy: number | null }[];
+  feature_importance: FeatureImp[]; classifier: Classifier; heatmap: HeatCell[];
+  business_impact?: {
+    horizon_days?: number;
+    projected_units?: number; avg_unit_price_aed?: number; projected_revenue_aed?: number;
+    revenue_formula?: string;
+    risk_days_caught?: number; revenue_protected_aed?: number; protected_formula?: string;
+  };
+  // Forecasting v2 (E7-1): UAE-calendar accuracy vs the seasonal-naive baseline,
+  // with Ramadan-window accuracy reported separately and honestly.
+  forecasting_version?: string;
+  baseline_model?: string;
+  baseline_mape?: number | null; baseline_wape?: number | null;
+  selected_model_mape?: number | null; selected_model_wape?: number | null;
+  wape_improvement_vs_baseline_pct?: number | null;
+  ramadan_accuracy?: number | null; ramadan_mape?: number | null; ramadan_wape?: number | null;
+  ramadan_eval_days?: number; ramadan_accuracy_reason?: string;
+  calendar_feature_summary?: {
+    uses_uae_calendar?: boolean; uses_weather_features?: boolean; lunar_dates_approximate?: boolean;
+  };
+  methodology_note?: string;
+  // v3: ML/DL algorithm cards for the Technical view + the blended ensemble members.
+  algorithms?: Algo[];
+  ensemble_members?: string[];
+}
+interface Algo {
+  model: string; label: string; family: string; detail: string; hyperparams: string;
+  accuracy: number | null; tier?: string;
+}
+
+// Human-readable reasons for an absent Ramadan number — never fabricate accuracy.
+const RAMADAN_REASON_LABEL: Record<string, string> = {
+  not_computed: 'Not yet computed — model metrics are still warming up.',
+  no_ramadan_dates_in_backtest_window:
+    'No Ramadan days fell inside the back-test window, so Ramadan-specific accuracy is not measured yet.',
+  insufficient_history: 'Not enough sales history to measure Ramadan accuracy.',
+};
+
+const MODEL_LABEL: Record<string, string> = {
+  lightgbm: 'LightGBM (ML)', lstm: 'LSTM (Deep learning)', gru: 'GRU / RNN (Deep learning)',
+  cnn: 'CNN (Deep learning)', tcn: 'TCN (Deep learning)', transformer: 'Transformer (Deep learning)',
+  nbeats: 'N-BEATS (Deep learning)', seasonal_trend: 'Seasonal trend', seasonal_naive: 'Naive baseline',
+  ensemble: 'Ensemble blend (stacking)',
+};
+
+function accColor(a: number | null): string {
+  if (a === null) return '#d6d6cf';
+  if (a >= 90) return '#639922';
+  if (a >= 80) return '#97c459';
+  if (a >= 70) return '#ef9f27';
+  return '#e24b4a';
+}
+
+function health(a: number | null): { label: string; cls: string } {
+  if (a === null) return { label: 'no data', cls: 'bg-surface-2 text-ink-muted' };
+  if (a >= 90) return { label: 'healthy', cls: 'bg-teal-50 text-teal-700' };
+  if (a >= 75) return { label: 'fair', cls: 'bg-amber-50 text-amber-700' };
+  return { label: 'needs work', cls: 'bg-coral-50 text-coral-700' };
+}
+
+export default function ForecastLabPage() {
+  const { authFetch } = useAuth();
+  const [data, setData] = useState<Metrics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<'exec' | 'tech'>('exec');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [retraining, setRetraining] = useState(false);
+
+  const fetchMetrics = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await authFetch('/api/analytics/model-metrics?horizon=14');
+      if (res.ok) setData(await res.json());
+      // An honest failure state — a failed fetch must not masquerade as
+      // "no model metrics yet".
+      else setError(`Model metrics request failed (${res.status})`);
+    } catch (e) {
+      console.error('model-metrics failed', e);
+      setError('Could not reach the forecasting service');
+    } finally {
+      setLoading(false);
+    }
+  }, [authFetch]);
+
+  useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
+
+  // Real-time retrain: POST triggers a synchronous train of every model NOW and
+  // returns the fresh metrics (vs GET which reads cache + warms in the background).
+  const retrainNow = useCallback(async () => {
+    setRetraining(true);
+    setError(null);
+    try {
+      const res = await authFetch('/api/analytics/model-metrics/recompute?horizon=14', { method: 'POST' });
+      if (res.ok) setData(await res.json());
+      else setError(`Retrain failed (${res.status})`);
+    } catch {
+      setError('Could not reach the forecasting service');
+    } finally {
+      setRetraining(false);
+    }
+  }, [authFetch]);
+
+  // Models train off the request path; a cold scope returns status "warming".
+  // Poll until the background trainer has cached the result.
+  const warming = data?.status === 'warming';
+  useEffect(() => {
+    if (!warming) return;
+    const t = setTimeout(fetchMetrics, 8000);
+    return () => clearTimeout(t);
+  }, [warming, data, fetchMetrics]);
+
+  const acc = data?.accuracy ?? null;
+  const h = health(acc);
+  const isTech = view === 'tech';
+  const clf = data?.classifier ?? {};
+  const hasClf = !!(clf.matrix && clf.matrix.length === 2);
+  const bi = data?.business_impact;
+
+  return (
+    <main className="min-h-screen p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        <PageHeader
+          title="Forecast Lab"
+          description="How accurate our predictions are, and the models behind them"
+          icon={<Brain className="w-5 h-5" />}
+          actions={
+            <div className="flex items-center gap-2">
+              <Tabs
+                items={[{ id: 'exec', label: 'Executive' }, { id: 'tech', label: 'Technical' }]}
+                value={view}
+                onChange={(id) => setView(id as 'exec' | 'tech')}
+              />
+              <Button variant="secondary" size="md" onClick={retrainNow} disabled={retraining}
+                title="Retrain every model now (real-time)">
+                <Cpu className={`w-4 h-4 ${retraining ? 'animate-pulse' : ''}`} />
+                <span className="ms-1 hidden sm:inline">{retraining ? 'Training…' : 'Retrain'}</span>
+              </Button>
+              <Button variant="secondary" size="md" onClick={fetchMetrics} aria-label="Refresh">
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          }
+        />
+
+        {loading ? (
+          <Card variant="solid" padding="lg"><SkeletonText lines={8} /></Card>
+        ) : error ? (
+          <Card variant="solid" padding="lg">
+            <ErrorState title="Couldn't load model metrics" description={error} onRetry={fetchMetrics} />
+          </Card>
+        ) : warming ? (
+          <Card variant="solid" padding="lg">
+            <EmptyState
+              icon={<RefreshCw className="w-6 h-6 animate-spin" />}
+              title="Training models…"
+              description="Forecast models are training in the background. This page refreshes automatically when they're ready (usually under a minute)." />
+          </Card>
+        ) : !data ? (
+          <Card variant="solid" padding="lg">
+            <EmptyState icon={<Brain className="w-6 h-6" />} title="No model metrics yet"
+              description="Once there is enough sales history, model accuracy and diagnostics appear here." />
+          </Card>
+        ) : (
+          <Reveal>
+            {/* Headline row. EXECUTIVE = plain outcomes (accuracy + money). TECHNICAL
+                = model internals (selected model + MAPE). This is the real split. */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+              <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid rgb(var(--a-teal))' }}>
+                <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Forecast accuracy</div>
+                <div className="text-3xl font-semibold text-ink tabular-nums">{acc !== null ? `${acc}%` : '—'}</div>
+                <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${h.cls}`}>{h.label}</span>
+              </div>
+              {isTech ? (
+                <>
+                  <div className="bg-surface border border-line rounded-lg p-5">
+                    <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Model in use</div>
+                    <div className="text-xl font-medium text-ink">{MODEL_LABEL[data.selected_model || ''] || data.selected_model || '—'}</div>
+                    <div className="text-xs text-ink-muted mt-1">auto-picked by backtest (lowest WAPE)</div>
+                  </div>
+                  <div className="bg-surface border border-line rounded-lg p-5">
+                    <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Error (MAPE)</div>
+                    <div className="text-3xl font-semibold text-ink tabular-nums">{data.mape !== null ? `${data.mape}%` : '—'}</div>
+                    <div className="text-xs text-ink-muted mt-1">lower is better</div>
+                  </div>
+                </>
+              ) : bi && bi.projected_revenue_aed != null ? (
+                <>
+                  <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid rgb(var(--a-teal))' }}>
+                    <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Projected revenue · next {bi.horizon_days}d</div>
+                    <div className="text-2xl font-semibold text-ink tabular-nums">AED {Number(bi.projected_revenue_aed).toLocaleString()}</div>
+                    <div className="text-xs text-ink-muted mt-1">what we expect to sell</div>
+                  </div>
+                  <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid rgb(var(--a-amber))' }}>
+                    <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Revenue exposure caught</div>
+                    <div className="text-2xl font-semibold text-ink tabular-nums">AED {Number(bi.revenue_protected_aed).toLocaleString()}</div>
+                    <div className="text-xs text-ink-muted mt-1">at-risk sales the forecast flagged early</div>
+                  </div>
+                </>
+              ) : (
+                <div className="bg-surface border border-line rounded-lg p-5 sm:col-span-2">
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">What it means</div>
+                  <div className="text-sm text-ink-soft mt-1">The system predicts demand for the next two weeks and flags where stock is at risk.</div>
+                </div>
+              )}
+            </div>
+
+            {/* Technical view keeps the money cards + the exact formulas. */}
+            {isTech && bi && bi.projected_revenue_aed != null && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid rgb(var(--a-teal))' }}>
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Projected revenue · next {bi.horizon_days}d</div>
+                  <div className="text-3xl font-semibold text-ink tabular-nums">AED {Number(bi.projected_revenue_aed).toLocaleString()}</div>
+                  <div className="text-xs text-ink-muted mt-1">How: {bi.revenue_formula}</div>
+                </div>
+                <div className="bg-surface border border-line rounded-lg p-5" style={{ borderLeft: '3px solid rgb(var(--a-amber))' }}>
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Revenue exposure caught</div>
+                  <div className="text-3xl font-semibold text-ink tabular-nums">AED {Number(bi.revenue_protected_aed).toLocaleString()}</div>
+                  <div className="text-xs text-ink-muted mt-1">How: {bi.protected_formula}</div>
+                </div>
+              </div>
+            )}
+
+            {/* EXECUTIVE: a single plain Ramadan-readiness stat, no WAPE jargon. */}
+            {!isTech && (
+              <Card variant="solid" padding="md" className="mb-4">
+                <h3 className="text-base font-medium text-ink mb-1">Ramadan readiness</h3>
+                {data.ramadan_accuracy != null ? (
+                  <p className="text-sm text-ink-soft">
+                    Over the last Ramadan days we can measure, demand predictions were{' '}
+                    <span className="font-semibold" style={{ color: accColor(data.ramadan_accuracy) }}>
+                      {data.ramadan_accuracy}% accurate
+                    </span>. The model uses UAE retail-calendar signals (Ramadan, Eid, DSF, National Day).
+                  </p>
+                ) : (
+                  <p className="text-sm text-ink-muted">
+                    {RAMADAN_REASON_LABEL[data.ramadan_accuracy_reason || 'not_computed'] ||
+                      'Ramadan accuracy is not measured yet.'} We never show a fabricated seasonal number.
+                  </p>
+                )}
+              </Card>
+            )}
+
+            {/* Forecasting v2 (E7-1): UAE-calendar accuracy vs seasonal-naive baseline,
+                Ramadan window reported separately + honestly. Feeds E7-2 publication. */}
+            {isTech && (
+            <Card variant="solid" padding="md" className="mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-base font-medium text-ink">Ramadan &amp; UAE-calendar accuracy</h3>
+                {data.forecasting_version && (
+                  <span className="text-[11px] font-mono uppercase tracking-wide text-ink-muted">
+                    {data.forecasting_version}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-ink-muted mb-4">
+                The selected model is scored against a seasonal-naive baseline on the same held-out
+                days. Ramadan accuracy is shown only when the back-test window actually contains
+                Ramadan dates — we never fabricate a seasonal number.
+              </p>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="bg-surface-2 rounded-lg p-4">
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Ramadan accuracy</div>
+                  {data.ramadan_accuracy != null ? (
+                    <>
+                      <div className="text-2xl font-semibold text-ink tabular-nums" style={{ color: accColor(data.ramadan_accuracy) }}>
+                        {data.ramadan_accuracy}%
+                      </div>
+                      <div className="text-xs text-ink-muted mt-1">
+                        over {data.ramadan_eval_days ?? 0} Ramadan day{data.ramadan_eval_days === 1 ? '' : 's'}
+                        {data.ramadan_mape != null && ` · MAPE ${data.ramadan_mape}%`}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-2xl font-semibold text-ink-muted tabular-nums">—</div>
+                      <div className="text-xs text-ink-muted mt-1">
+                        {RAMADAN_REASON_LABEL[data.ramadan_accuracy_reason || 'not_computed'] ||
+                          'Not measured yet.'}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="bg-surface-2 rounded-lg p-4">
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Selected model error</div>
+                  <div className="text-2xl font-semibold text-ink tabular-nums">
+                    {data.selected_model_wape != null ? `${data.selected_model_wape}%` : '—'}
+                  </div>
+                  <div className="text-xs text-ink-muted mt-1">WAPE (lower is better)</div>
+                </div>
+
+                <div className="bg-surface-2 rounded-lg p-4">
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Baseline error</div>
+                  <div className="text-2xl font-semibold text-ink tabular-nums">
+                    {data.baseline_wape != null ? `${data.baseline_wape}%` : '—'}
+                  </div>
+                  <div className="text-xs text-ink-muted mt-1">seasonal-naive WAPE</div>
+                </div>
+
+                <div className="bg-surface-2 rounded-lg p-4">
+                  <div className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">Improvement vs baseline</div>
+                  {data.wape_improvement_vs_baseline_pct != null ? (
+                    <div
+                      className="text-2xl font-semibold tabular-nums"
+                      style={{ color: data.wape_improvement_vs_baseline_pct >= 0 ? '#639922' : '#e24b4a' }}
+                    >
+                      {data.wape_improvement_vs_baseline_pct >= 0 ? '+' : ''}
+                      {data.wape_improvement_vs_baseline_pct}%
+                    </div>
+                  ) : (
+                    <div className="text-2xl font-semibold text-ink-muted tabular-nums">—</div>
+                  )}
+                  <div className="text-xs text-ink-muted mt-1">error reduction</div>
+                </div>
+              </div>
+
+              {data.calendar_feature_summary && (
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {data.calendar_feature_summary.uses_uae_calendar && (
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-teal-50 text-teal-700">UAE calendar features</span>
+                  )}
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-2 text-ink-muted">
+                    Weather features: {data.calendar_feature_summary.uses_weather_features ? 'on' : 'neutral'}
+                  </span>
+                  {data.calendar_feature_summary.lunar_dates_approximate && (
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">Lunar dates approximate</span>
+                  )}
+                </div>
+              )}
+            </Card>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+              {/* "Which model won" is a technical comparison of algorithms — Technical only. */}
+              {isTech && (
+              <Card variant="solid" padding="md">
+                <h3 className="text-base font-medium text-ink mb-4">Which model won</h3>
+                {data.leaderboard.length === 0 ? (
+                  <p className="text-sm text-ink-muted">Not enough history to compare models yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {data.leaderboard.map((m) => (
+                      <div key={m.model}>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-ink-soft">
+                            {MODEL_LABEL[m.model] || m.model}
+                            {m.model === data.selected_model && (
+                              <span className="ms-1 text-[10px] text-teal-700">● winner</span>
+                            )}
+                          </span>
+                          <span className="text-ink tabular-nums">{m.accuracy ?? '—'}%</span>
+                        </div>
+                        <div className="h-1.5 bg-surface-2 rounded-full">
+                          <div className="h-1.5 rounded-full" style={{ width: `${m.accuracy ?? 0}%`, background: accColor(m.accuracy) }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+              )}
+
+              <Card variant="solid" padding="md" className={isTech ? '' : 'lg:col-span-2'}>
+                <h3 className="text-base font-medium text-ink mb-4">Accuracy by store</h3>
+                {data.heatmap.length === 0 ? (
+                  <p className="text-sm text-ink-muted">No per-store breakdown available yet.</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {data.heatmap.map((c) => (
+                      <div key={c.store_id} className="rounded-md p-2 text-center" style={{ background: accColor(c.accuracy) + '22' }}>
+                        <div className="text-[11px] text-ink-soft truncate">{c.store_name}</div>
+                        <div className="text-sm font-medium tabular-nums" style={{ color: accColor(c.accuracy) }}>
+                          {c.accuracy !== null ? `${c.accuracy}%` : '—'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            <div className="bg-surface-2 rounded-lg p-4 text-sm text-ink-soft leading-relaxed mb-4">
+              <span className="font-medium text-ink">What this means: </span>
+              Our demand predictions are right about {acc ?? '—'}% of the time, measured against real past sales the
+              models never saw. The system automatically uses the best of several models
+              ({MODEL_LABEL[data.selected_model || ''] || 'the top performer'} currently). Stores shaded amber or red
+              are where forecasts need attention.
+            </div>
+
+            {view === 'tech' && (
+              <div className="space-y-4">
+                {/* Models & Algorithms — the ML/DL methods that actually ran this
+                    backtest, best-first, with the selected winner + ensemble members. */}
+                {data.algorithms && data.algorithms.length > 0 && (
+                  <Card variant="solid" padding="md">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Cpu className="w-4 h-4 text-ink-muted" />
+                      <h3 className="text-base font-medium text-ink">Models &amp; algorithms</h3>
+                    </div>
+                    <p className="text-xs text-ink-muted mb-3">
+                      Every model below trained on this data and competed on the same held-out days.
+                      The winner is auto-selected by lowest WAPE; the ensemble blends the top learners.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {data.algorithms.map((a) => {
+                        const isWinner = a.model === data.selected_model;
+                        const isMember = (data.ensemble_members || []).includes(a.model);
+                        return (
+                          <div key={a.model}
+                            className={`rounded-lg border p-3 ${isWinner ? 'border-teal-400 bg-teal-50/40' : 'border-line bg-surface'}`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-medium text-ink truncate">{a.label}</span>
+                                {isWinner && <Badge variant="teal">selected</Badge>}
+                                {isMember && !isWinner && <Badge variant="violet">in ensemble</Badge>}
+                              </div>
+                              <span className="text-sm tabular-nums shrink-0" style={{ color: accColor(a.accuracy) }}>
+                                {a.accuracy != null ? `${a.accuracy}%` : '—'}
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono uppercase tracking-wide text-ink-muted mt-0.5">{a.family}</div>
+                            <p className="text-xs text-ink-soft mt-1.5 leading-relaxed">{a.detail}</p>
+                            <p className="text-[11px] text-ink-muted mt-1.5 font-mono">{a.hyperparams}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {data.ensemble_members && data.ensemble_members.length > 0 && (
+                      <p className="text-xs text-ink-muted mt-3">
+                        <span className="font-medium text-ink-soft">Ensemble blend:</span>{' '}
+                        {data.ensemble_members.map((m) => MODEL_LABEL[m] || m).join(' + ')} — weighted by inverse error (1/WAPE).
+                      </p>
+                    )}
+                  </Card>
+                )}
+
+                <Card variant="solid" padding="md">
+                  <h3 className="text-base font-medium text-ink mb-1">Model comparison</h3>
+                  <p className="text-xs text-ink-muted mb-3">Every model scored on the same held-out days. Higher accuracy / lower MAPE is better.</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-start text-ink-muted border-b border-line">
+                          <th className="py-2 font-medium">Model</th>
+                          <th className="py-2 font-medium">Tier</th>
+                          <th className="py-2 font-medium text-end">Accuracy</th>
+                          <th className="py-2 font-medium text-end">MAPE</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.leaderboard.length === 0 ? (
+                          <tr><td colSpan={4} className="py-3 text-ink-muted">Not enough history to compare models yet.</td></tr>
+                        ) : data.leaderboard.map((m) => (
+                          <tr key={m.model} className="border-b border-line/40">
+                            <td className="py-2 text-ink">
+                              {MODEL_LABEL[m.model] || m.model}
+                              {m.model === data.selected_model && <span className="ms-2 text-xs text-teal-700">● winner</span>}
+                            </td>
+                            <td className="py-2 text-ink-muted uppercase text-xs">{m.tier}</td>
+                            <td className="py-2 text-end tabular-nums">{m.accuracy ?? '—'}%</td>
+                            <td className="py-2 text-end tabular-nums text-ink-muted">{m.mape ?? '—'}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+
+                {data.backtest.length > 0 && (
+                  <Card variant="solid" padding="md">
+                    <h3 className="text-base font-medium text-ink mb-1">Forecast vs actual</h3>
+                    <p className="text-xs text-ink-muted mb-3">
+                      The winning model&apos;s predictions on the last {data.backtest.length} days it never saw,
+                      against what really happened. The closer the lines, the more we can trust the forward forecast.
+                    </p>
+                    <div style={{ width: '100%', height: 240 }}>
+                      <ResponsiveContainer>
+                        <LineChart data={data.backtest} margin={CHART_MARGIN}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                          <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                          <YAxis width={Y_AXIS_WIDTH} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                          <Tooltip />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Line type="monotone" dataKey="actual" name="Actual" stroke="var(--series-1)" strokeWidth={2} dot={false} />
+                          <Line type="monotone" dataKey="predicted" name="Predicted" stroke="var(--series-3)" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </Card>
+                )}
+
+                <Card variant="solid" padding="md">
+                  <h3 className="text-base font-medium text-ink mb-1 flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-primary-700" /> Demand forecast (next {data.forecast.length} days)
+                  </h3>
+                  <p className="text-xs text-ink-muted mb-3">
+                    Forward forecast from the winning model
+                    {data.interval_pct ? `, shaded with the ${data.interval_pct}% prediction interval (from backtest error).` : '.'}
+                  </p>
+                  <div style={{ width: '100%', height: 240 }}>
+                    <ResponsiveContainer>
+                      <ComposedChart data={data.forecast.map((p) => ({ ...p, band: [p.lower ?? p.forecast, p.upper ?? p.forecast] }))} margin={CHART_MARGIN}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                        <YAxis width={Y_AXIS_WIDTH} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                        <Tooltip />
+                        <Area type="monotone" dataKey="band" name="Interval" stroke="none" fill="var(--series-1)" fillOpacity={0.12} />
+                        <Line type="monotone" dataKey="forecast" name="Forecast" stroke="var(--series-1)" strokeWidth={2} dot={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+
+                {data.accuracy_trend.length >= 2 && (() => {
+                  const trend = data.accuracy_trend;
+                  const delta = trend[trend.length - 1].accuracy - trend[0].accuracy;
+                  const dir = delta > 2 ? 'improving' : delta < -2 ? 'declining' : 'stable';
+                  const dirCls = dir === 'improving'
+                    ? 'bg-teal-50 text-teal-700'
+                    : dir === 'declining' ? 'bg-coral-50 text-coral-700' : 'bg-surface-2 text-ink-muted';
+                  return (
+                    <Card variant="solid" padding="md">
+                      <h3 className="text-base font-medium text-ink mb-1 flex items-center gap-2">
+                        Accuracy over time
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${dirCls}`}>
+                          {dir} {delta > 0 ? '+' : ''}{delta.toFixed(1)}pts
+                        </span>
+                      </h3>
+                      <p className="text-xs text-ink-muted mb-3">
+                        The current model ({MODEL_LABEL[data.selected_model || ''] || data.selected_model})
+                        scored on successive held-out windows — is accuracy holding up?
+                      </p>
+                      <div style={{ width: '100%', height: 220 }}>
+                        <ResponsiveContainer>
+                          <LineChart data={trend} margin={CHART_MARGIN}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                            <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                            <YAxis width={Y_AXIS_WIDTH} domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                            <Tooltip />
+                            <Line type="monotone" dataKey="accuracy" name="Accuracy %" stroke="var(--series-1)" strokeWidth={2} dot={{ r: 3 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </Card>
+                  );
+                })()}
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Card variant="solid" padding="md">
+                    <h3 className="text-base font-medium text-ink mb-1">What drives demand</h3>
+                    <p className="text-xs text-ink-muted mb-3">LightGBM feature importance (% of total).</p>
+                    {data.feature_importance.length === 0 ? (
+                      <p className="text-sm text-ink-muted">Available after the ML model is installed (rebuild backend).</p>
+                    ) : (
+                      <div style={{ width: '100%', height: 240 }}>
+                        <ResponsiveContainer>
+                          <BarChart data={data.feature_importance} layout="vertical" margin={{ top: 4, right: 24, left: 8, bottom: 4 }}>
+                            <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                            <YAxis type="category" dataKey="feature" width={Y_AXIS_CATEGORY_WIDTH} tick={singleLineTick((v) => v, { fontSize: 10 })} />
+                            <Tooltip />
+                            <Bar dataKey="weight" radius={[0, 4, 4, 0]}>
+                              {data.feature_importance.map((_, i) => <Cell key={i} fill="var(--series-1)" />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </Card>
+
+                  <Card variant="solid" padding="md">
+                    <h3 className="text-base font-medium text-ink mb-1">Stockout-risk classifier</h3>
+                    <p className="text-xs text-ink-muted mb-3">
+                      Confusion matrix on held-out days {clf.model ? `(${clf.model})` : ''}
+                      {clf.threshold != null ? `, at the F1-tuned threshold ${clf.threshold}` : ''}.
+                    </p>
+                    {!hasClf ? (
+                      <p className="text-sm text-ink-muted">Available after the ML model is installed (rebuild backend).</p>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-3 gap-1 text-xs max-w-xs">
+                          <div></div>
+                          <div className="text-center text-ink-muted">Pred: Normal</div>
+                          <div className="text-center text-ink-muted">Pred: Risk</div>
+                          <div className="flex items-center text-ink-muted">Actual: Normal</div>
+                          <div className="text-center py-3 rounded bg-teal-50 text-teal-700 font-medium tabular-nums">{clf.matrix![0][0]}</div>
+                          <div className="text-center py-3 rounded bg-coral-50 text-coral-700 tabular-nums">{clf.matrix![0][1]}</div>
+                          <div className="flex items-center text-ink-muted">Actual: Risk</div>
+                          <div className="text-center py-3 rounded bg-coral-50 text-coral-700 tabular-nums">{clf.matrix![1][0]}</div>
+                          <div className="text-center py-3 rounded bg-teal-50 text-teal-700 font-medium tabular-nums">{clf.matrix![1][1]}</div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          <Badge variant="neutral" size="sm">Precision {clf.precision}%</Badge>
+                          <Badge variant="neutral" size="sm">Recall {clf.recall}%</Badge>
+                          <Badge variant="neutral" size="sm">Accuracy {clf.accuracy}%</Badge>
+                          <Badge variant="neutral" size="sm">F1 {clf.f1}%</Badge>
+                        </div>
+                        <p className="text-xs text-ink-muted mt-3">
+                          Of the days flagged as low-stock risk, {clf.precision}% really were — caught over {clf.tested_days} held-out days.
+                        </p>
+                      </>
+                    )}
+                  </Card>
+                </div>
+
+                {(clf.roc?.length || clf.pr?.length) ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {clf.roc && clf.roc.length > 0 && (
+                      <Card variant="solid" padding="md">
+                        <h3 className="text-base font-medium text-ink mb-1 flex items-center gap-2">
+                          ROC curve
+                          {clf.roc_auc != null && (
+                            <Badge variant="neutral" size="sm">AUC {clf.roc_auc}</Badge>
+                          )}
+                        </h3>
+                        <p className="text-xs text-ink-muted mb-3">
+                          True-positive vs false-positive rate across thresholds. Closer to the top-left is better; the dashed line is random.
+                        </p>
+                        <div style={{ width: '100%', height: 220 }}>
+                          <ResponsiveContainer>
+                            <LineChart data={clf.roc} margin={CHART_MARGIN}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                              <XAxis type="number" dataKey="fpr" domain={[0, 1]} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} label={{ value: 'FPR', position: 'insideBottom', offset: -2, fontSize: 10, fill: 'var(--chart-text)' }} />
+                              <YAxis type="number" dataKey="tpr" domain={[0, 1]} width={Y_AXIS_WIDTH} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                              <Tooltip />
+                              <ReferenceLine segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]} stroke="var(--chart-ref)" strokeDasharray="4 4" />
+                              <Line type="monotone" dataKey="tpr" stroke="var(--series-1)" strokeWidth={2} dot={false} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </Card>
+                    )}
+
+                    {clf.pr && clf.pr.length > 0 && (
+                      <Card variant="solid" padding="md">
+                        <h3 className="text-base font-medium text-ink mb-1 flex items-center gap-2">
+                          Precision-recall curve
+                          {clf.average_precision != null && (
+                            <Badge variant="neutral" size="sm">AP {clf.average_precision}</Badge>
+                          )}
+                        </h3>
+                        <p className="text-xs text-ink-muted mb-3">
+                          Precision vs recall across thresholds — the honest view when risk days are rare.
+                        </p>
+                        <div style={{ width: '100%', height: 220 }}>
+                          <ResponsiveContainer>
+                            <LineChart data={clf.pr} margin={CHART_MARGIN}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                              <XAxis type="number" dataKey="recall" domain={[0, 1]} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} label={{ value: 'Recall', position: 'insideBottom', offset: -2, fontSize: 10, fill: 'var(--chart-text)' }} />
+                              <YAxis type="number" dataKey="precision" domain={[0, 1]} width={Y_AXIS_WIDTH} tick={{ fontSize: 10, fill: 'var(--chart-text)' }} />
+                              <Tooltip />
+                              <Line type="monotone" dataKey="precision" stroke="var(--series-3)" strokeWidth={2} dot={false} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </Card>
+                    )}
+                  </div>
+                ) : null}
+
+                {data.category_heatmap.length > 0 && (() => {
+                  const cats = Array.from(new Set(data.category_heatmap.map((c) => c.category))).sort();
+                  const stores = Array.from(
+                    new Map(data.category_heatmap.map((c) => [c.store_id, c.store_name])).entries()
+                  ).sort((a, b) => a[0] - b[0]);
+                  const cell = new Map(
+                    data.category_heatmap.map((c) => [`${c.store_id}|${c.category}`, c.accuracy])
+                  );
+                  const drillItems = selectedCategory
+                    ? data.item_accuracy
+                        .filter((it) => it.category === selectedCategory)
+                        .sort((a, b) => (b.accuracy ?? -1) - (a.accuracy ?? -1))
+                    : [];
+                  return (
+                    <Card variant="solid" padding="md">
+                      <h3 className="text-base font-medium text-ink mb-1">Accuracy by store × category</h3>
+                      <p className="text-xs text-ink-muted mb-3">
+                        Forecast accuracy for each category in each store. Click a category to see the items behind it.
+                      </p>
+                      <div className="overflow-x-auto">
+                        <table className="text-xs border-separate" style={{ borderSpacing: 2 }}>
+                          <thead>
+                            <tr>
+                              <th className="text-start font-medium text-ink-muted px-2 sticky start-0 bg-surface">Category</th>
+                              {stores.map(([sid, sname]) => (
+                                <th key={sid} className="font-medium text-ink-muted px-1 whitespace-nowrap" title={sname}>
+                                  {sname.replace(/^Meridian Hypermarket\s+/i, '').slice(0, 10)}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {cats.map((cat) => (
+                              <tr key={cat}>
+                                <td className="px-2 sticky start-0 bg-surface">
+                                  <button
+                                    onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
+                                    className={`text-start hover:underline ${selectedCategory === cat ? 'text-primary-700 font-medium' : 'text-ink-soft'}`}
+                                  >
+                                    {cat}
+                                  </button>
+                                </td>
+                                {stores.map(([sid]) => {
+                                  const a = cell.get(`${sid}|${cat}`) ?? null;
+                                  return (
+                                    <td key={sid} className="text-center rounded tabular-nums"
+                                        style={{ background: accColor(a) + '33', color: a !== null ? '#3a3a34' : '#b6b6ae', minWidth: 36, padding: '6px 2px' }}
+                                        title={`${cat} · ${a !== null ? a + '%' : 'no data'}`}>
+                                      {a !== null ? a : '—'}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {selectedCategory && (
+                        <div className="mt-4 border-t border-line pt-3">
+                          <h4 className="text-sm font-medium text-ink mb-2">Items in {selectedCategory}</h4>
+                          {drillItems.length === 0 ? (
+                            <p className="text-xs text-ink-muted">No per-item accuracy available.</p>
+                          ) : (
+                            <div className="space-y-2 max-w-md">
+                              {drillItems.map((it) => (
+                                <div key={it.item_id}>
+                                  <div className="flex justify-between text-xs mb-0.5">
+                                    <span className="text-ink-soft">{it.item_name}</span>
+                                    <span className="text-ink tabular-nums">{it.accuracy ?? '—'}%</span>
+                                  </div>
+                                  <div className="h-1.5 bg-surface-2 rounded-full">
+                                    <div className="h-1.5 rounded-full" style={{ width: `${it.accuracy ?? 0}%`, background: accColor(it.accuracy) }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })()}
+              </div>
+            )}
+          </Reveal>
+        )}
+      </div>
+    </main>
+  );
+}

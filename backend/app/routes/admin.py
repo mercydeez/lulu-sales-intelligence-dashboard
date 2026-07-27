@@ -9,10 +9,12 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 
 from app.services.database import async_session
-from app.routes.auth import get_current_user
+from app.auth_deps import get_current_user
 from app.config import logger
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+# NOTE: main.py mounts this router with prefix="/api/admin", so this router must
+# NOT add its own "/admin" prefix (that produced the broken /api/admin/admin/* paths).
+router = APIRouter(tags=["Admin"])
 
 
 # =============================================================================
@@ -58,7 +60,7 @@ async def get_users(
     current_user: dict = Depends(get_current_user)
 ):
     """Get all users (admin only)"""
-    if current_user.get("role") != "super_admin":
+    if current_user.get("role") not in ("super_admin", "regional_manager"):
         raise HTTPException(status_code=403, detail="Admin access required")
     
     async with async_session() as session:
@@ -76,15 +78,15 @@ async def get_users(
                 params["role"] = role
             
             if is_active is not None:
-                filters.append("u.is_active = :is_active")
+                filters.append("(u.status = 'active') = :is_active")
                 params["is_active"] = is_active
-            
+
             where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
-            
+
             query = f"""
-                SELECT 
+                SELECT
                     u.id, u.email, u.first_name, u.last_name, u.role,
-                    u.is_active, u.created_at, u.last_login
+                    (u.status = 'active') AS is_active, u.created_at, u.last_login_at
                 FROM users u
                 {where_clause}
                 ORDER BY u.created_at DESC
@@ -138,30 +140,33 @@ async def get_user(
     current_user: dict = Depends(get_current_user)
 ):
     """Get user details (admin only)"""
-    if current_user.get("role") != "super_admin":
+    if current_user.get("role") not in ("super_admin", "regional_manager"):
         raise HTTPException(status_code=403, detail="Admin access required")
     
     async with async_session() as session:
         try:
             result = await session.execute(
                 text("""
-                    SELECT 
+                    SELECT
                         u.id, u.email, u.first_name, u.last_name, u.role,
-                        u.is_active, u.created_at, u.last_login,
-                        up.accessible_stores, up.can_view_all_stores,
-                        up.can_manage_inventory, up.can_manage_promotions,
-                        up.can_view_financials, up.can_export
+                        (u.status = 'active') AS is_active, u.created_at, u.last_login_at,
+                        COALESCE(array_agg(up.store_id) FILTER (WHERE up.store_id IS NOT NULL), '{}') AS store_ids,
+                        bool_or(up.can_manage_inventory) AS can_manage_inventory,
+                        bool_or(up.can_manage_promotions) AS can_manage_promotions,
+                        bool_or(up.can_view_financials) AS can_view_financials,
+                        bool_or(up.can_export) AS can_export
                     FROM users u
                     LEFT JOIN user_permissions up ON u.id = up.user_id
                     WHERE u.id = :user_id
+                    GROUP BY u.id
                 """),
                 {"user_id": user_id}
             )
             row = result.fetchone()
-            
+
             if not row:
                 raise HTTPException(status_code=404, detail="User not found")
-            
+
             return {
                 "id": row[0],
                 "email": row[1],
@@ -172,12 +177,12 @@ async def get_user(
                 "created_at": row[6].isoformat() if row[6] else None,
                 "last_login": row[7].isoformat() if row[7] else None,
                 "permissions": {
-                    "accessible_stores": row[8] or [],
-                    "can_view_all_stores": row[9] or False,
-                    "can_manage_inventory": row[10] or False,
-                    "can_manage_promotions": row[11] or False,
-                    "can_view_financials": row[12] or False,
-                    "can_export": row[13] or False
+                    "accessible_stores": list(row[8]) if row[8] else [],
+                    "can_view_all_stores": row[4] == "super_admin",
+                    "can_manage_inventory": row[9] or False,
+                    "can_manage_promotions": row[10] or False,
+                    "can_view_financials": row[11] or False,
+                    "can_export": row[12] or False
                 }
             }
             
@@ -186,6 +191,87 @@ async def get_user(
         except Exception as e:
             logger.error(f"Get user error: {e}")
             raise HTTPException(status_code=500, detail="Failed to fetch user")
+
+
+@router.post("/users", status_code=201)
+async def create_user(
+    payload: UserCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a new user (super-admin only)."""
+    if current_user.get("role") not in ("super_admin", "regional_manager"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    from app.services.auth_service import get_password_hash
+
+    valid_roles = {"super_admin", "regional_manager", "store_manager", "analyst"}
+    if payload.role not in valid_roles:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid role. Must be one of: {', '.join(sorted(valid_roles))}",
+        )
+    if len(payload.password) < 8:
+        raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
+    email = payload.email.strip().lower()
+    if "@" not in email or "." not in email:
+        raise HTTPException(status_code=422, detail="Invalid email address")
+    if not payload.first_name.strip() or not payload.last_name.strip():
+        raise HTTPException(status_code=422, detail="First and last name are required")
+
+    async with async_session() as session:
+        try:
+            existing = await session.execute(
+                text("SELECT 1 FROM users WHERE email = :email"), {"email": email}
+            )
+            if existing.fetchone():
+                raise HTTPException(status_code=409, detail="A user with this email already exists")
+
+            result = await session.execute(
+                text("""
+                    INSERT INTO users (email, password_hash, first_name, last_name, role, status)
+                    VALUES (:email, :pw, :first, :last, CAST(:role AS user_role), 'active')
+                    RETURNING id, email, first_name, last_name, role, created_at
+                """),
+                {
+                    "email": email,
+                    "pw": get_password_hash(payload.password),
+                    "first": payload.first_name.strip(),
+                    "last": payload.last_name.strip(),
+                    "role": payload.role,
+                },
+            )
+            row = result.fetchone()
+            user_id = row[0]
+
+            # Optional store-level access grants
+            for sid in (payload.store_ids or []):
+                await session.execute(
+                    text("""
+                        INSERT INTO user_permissions (user_id, store_id, can_view, can_edit, can_export)
+                        VALUES (:uid, :sid, TRUE, TRUE, TRUE)
+                    """),
+                    {"uid": user_id, "sid": sid},
+                )
+
+            await session.commit()
+            logger.info(f"Admin {current_user.get('email')} created user {email} ({payload.role})")
+
+            return {
+                "id": row[0],
+                "email": row[1],
+                "first_name": row[2],
+                "last_name": row[3],
+                "role": row[4],
+                "is_active": True,
+                "created_at": row[5].isoformat() if row[5] else None,
+                "last_login": None,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Create user error: {e}")
+            raise HTTPException(status_code=500, detail="Failed to create user")
 
 
 @router.get("/stores")
@@ -198,15 +284,18 @@ async def get_stores(
             accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
             
             # Get stores with recent sales data
+            # total_revenue_30d is AED revenue (VALUE), derived as units × unit_price_aed —
+            # the table renders it with formatCurrency. Volume (units) is items_sold count.
             query = """
-                SELECT 
+                SELECT
                     s.id, s.name, s.location,
-                    COALESCE(SUM(sl.sales), 0) as total_sales_30d,
+                    COALESCE(SUM(sl.sales * i.unit_price_aed), 0) as total_revenue_30d,
                     COUNT(DISTINCT sl.item_id) as items_sold,
                     MAX(sl.date) as last_sale_date
                 FROM stores s
-                LEFT JOIN sales_fact_view sl ON s.id = sl.store_id 
+                LEFT JOIN sales_fact_view sl ON s.id = sl.store_id
                     AND sl.date >= CURRENT_DATE - INTERVAL '30 days'
+                LEFT JOIN items i ON i.id = sl.item_id
                 GROUP BY s.id, s.name, s.location
                 ORDER BY s.id
             """
@@ -222,7 +311,7 @@ async def get_stores(
                         "id": row[0],
                         "name": row[1],
                         "location": row[2],
-                        "total_sales_30d": int(row[3]) if row[3] else 0,
+                        "total_revenue_30d": float(row[3]) if row[3] else 0.0,
                         "items_sold": int(row[4]) if row[4] else 0,
                         "last_sale_date": row[5].isoformat() if row[5] else None,
                         "status": "active"
@@ -323,16 +412,16 @@ async def get_admin_dashboard(
     current_user: dict = Depends(get_current_user)
 ):
     """Get admin dashboard overview from real data"""
-    if current_user.get("role") != "super_admin":
+    if current_user.get("role") not in ("super_admin", "regional_manager"):
         raise HTTPException(status_code=403, detail="Admin access required")
     
     async with async_session() as session:
         try:
             # Get user counts
             user_result = await session.execute(text("""
-                SELECT 
+                SELECT
                     COUNT(*) as total,
-                    SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active,
+                    SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
                     SUM(CASE WHEN role = 'super_admin' THEN 1 ELSE 0 END) as admins,
                     SUM(CASE WHEN role = 'regional_manager' THEN 1 ELSE 0 END) as regional,
                     SUM(CASE WHEN role = 'store_manager' THEN 1 ELSE 0 END) as store_managers
@@ -345,10 +434,10 @@ async def get_admin_dashboard(
                 SELECT COUNT(*) FROM stores
             """))
             store_count = store_result.scalar() or 0
-            
+
             # Get today's sales summary
             sales_result = await session.execute(text("""
-                SELECT 
+                SELECT
                     COALESCE(SUM(sales), 0) as today_sales,
                     COUNT(DISTINCT store_id) as active_stores,
                     COUNT(DISTINCT item_id) as items_sold
@@ -356,7 +445,7 @@ async def get_admin_dashboard(
                 WHERE date = CURRENT_DATE
             """))
             sales_row = sales_result.fetchone()
-            
+
             # Get 7-day trend
             trend_result = await session.execute(text("""
                 SELECT date, SUM(sales) as total
@@ -366,7 +455,7 @@ async def get_admin_dashboard(
                 ORDER BY date
             """))
             daily_trend = [{"date": r[0].isoformat(), "sales": int(r[1])} for r in trend_result.fetchall()]
-            
+
             return {
                 "users": {
                     "total": int(user_row[0]) if user_row[0] else 0,
@@ -386,7 +475,7 @@ async def get_admin_dashboard(
                 },
                 "daily_trend": daily_trend
             }
-            
+
         except Exception as e:
             logger.error(f"Admin dashboard error: {e}")
             return {
@@ -403,14 +492,14 @@ async def get_recent_activity(
     current_user: dict = Depends(get_current_user)
 ):
     """Get recent system activity from real sales data"""
-    if current_user.get("role") != "super_admin":
+    if current_user.get("role") not in ("super_admin", "regional_manager"):
         raise HTTPException(status_code=403, detail="Admin access required")
-    
+
     async with async_session() as session:
         try:
             # Get recent sales activity
             result = await session.execute(text("""
-                SELECT 
+                SELECT
                     s.date,
                     st.name as store_name,
                     i.name as item_name,
@@ -422,7 +511,7 @@ async def get_recent_activity(
                 ORDER BY s.created_at DESC
                 LIMIT :limit
             """), {"limit": limit})
-            
+
             activities = []
             for row in result.fetchall():
                 activities.append({
@@ -431,9 +520,9 @@ async def get_recent_activity(
                     "date": row[0].isoformat() if row[0] else None,
                     "timestamp": row[4].isoformat() if row[4] else None
                 })
-            
+
             return {"activities": activities, "total": len(activities)}
-            
+
         except Exception as e:
             logger.error(f"Get activity error: {e}")
             return {"activities": [], "total": 0}

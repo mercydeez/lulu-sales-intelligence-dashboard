@@ -15,7 +15,24 @@
 -- identity map would otherwise collapse colliding rows).
 -- =============================================================================
 
-CREATE OR REPLACE VIEW sales_fact_view AS
+-- The analytics materialized views (migration 003) were defined on the legacy
+-- `sales` table. Drop them, retire the table, then recreate them on the unified
+-- view so fresh and existing databases converge on the same schema.
+DROP MATERIALIZED VIEW IF EXISTS mv_daily_sales_by_store;
+DROP MATERIALIZED VIEW IF EXISTS mv_weekly_sales_by_category;
+DROP MATERIALIZED VIEW IF EXISTS mv_hourly_sales_pattern;
+
+-- Rebuild the unified view after dropping its dependents. Some databases already
+-- have the newer tenant-aware shape from init.sql/011, and Postgres does not let
+-- CREATE OR REPLACE VIEW remove columns from an existing view definition.
+DROP VIEW IF EXISTS sales_fact_view;
+
+-- Retire the legacy table. CASCADE removes its RLS policies and indexes.
+-- Nothing reads or writes it anymore (readers -> view, generator -> stream_raw),
+-- and the view does not depend on it.
+DROP TABLE IF EXISTS sales CASCADE;
+
+CREATE VIEW sales_fact_view AS
 SELECT
     id,
     date,
@@ -37,18 +54,6 @@ SELECT
     'streaming'::text AS source,
     COALESCE(created_at, timestamp) AS created_at
 FROM sales_stream_raw;
-
--- The analytics materialized views (migration 003) were defined on the legacy
--- `sales` table. Drop them, retire the table, then recreate them on the unified
--- view so fresh and existing databases converge on the same schema.
-DROP MATERIALIZED VIEW IF EXISTS mv_daily_sales_by_store;
-DROP MATERIALIZED VIEW IF EXISTS mv_weekly_sales_by_category;
-DROP MATERIALIZED VIEW IF EXISTS mv_hourly_sales_pattern;
-
--- Retire the legacy table. CASCADE removes its RLS policies and indexes.
--- Nothing reads or writes it anymore (readers -> view, generator -> stream_raw),
--- and the view does not depend on it.
-DROP TABLE IF EXISTS sales CASCADE;
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_daily_sales_by_store AS
 SELECT

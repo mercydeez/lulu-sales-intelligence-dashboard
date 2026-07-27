@@ -22,7 +22,12 @@ settings = get_settings()
 # =============================================================================
 
 SECRET_KEY = settings.jwt_secret_key
-ALGORITHM = "HS256"
+# ALGORITHM is the *active* signing algorithm (HS256 by default, RS256 when
+# JWT_ALGORITHM=RS256). Kept as a module constant for backward compatibility with
+# callers/tests that import it; all real signing/verification goes through the key
+# provider (services/jwt_keys.py), which also accepts legacy HS256 tokens during a
+# rotation window. See E5-6 / docs/runbooks/JWT_KEY_ROTATION.md.
+ALGORITHM = (getattr(settings, "jwt_algorithm", "HS256") or "HS256").upper()
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 REMEMBER_ME_REFRESH_TOKEN_EXPIRE_DAYS = 30
@@ -40,8 +45,10 @@ class TokenData(BaseModel):
     user_id: int
     email: str
     role: str
+    tenant_id: Optional[int] = None
     permissions: Dict[str, Any] = {}
     exp: datetime
+    iat: Optional[datetime] = None
 
 
 class Token(BaseModel):
@@ -138,12 +145,28 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
 # JWT TOKEN UTILITIES
 # =============================================================================
 
+def _sign(claims: dict) -> str:
+    """Sign claims with the active key (RS256 with a `kid` header, or legacy
+    HS256). Single choke point so every token issued shares one policy."""
+    from app.services.jwt_keys import get_key_provider
+    return get_key_provider().sign(claims)
+
+
+def _verify(token: str) -> dict:
+    """Verify a token against the current keyset (RS256 by `kid`, or legacy
+    HS256 while the fallback is enabled). Raises JWTError on any failure."""
+    from app.services.jwt_keys import get_key_provider
+    return get_key_provider().verify(token)
+
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT access token"""
+    """Create JWT access token. Carries `iat` so a password reset can revoke all
+    access tokens issued before the reset (see revoke_user_sessions)."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire, "type": "access", "jti": secrets.token_hex(8)})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    now = datetime.now(timezone.utc)
+    expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire, "iat": now, "type": "access", "jti": secrets.token_hex(8)})
+    return _sign(to_encode)
 
 
 def create_refresh_token(data: dict, remember_me: bool = False) -> str:
@@ -157,22 +180,90 @@ def create_refresh_token(data: dict, remember_me: bool = False) -> str:
         "jti": secrets.token_hex(8),
         "remember_me": remember_me,
     })
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return _sign(to_encode)
 
 
-def decode_token(token: str) -> Optional[TokenData]:
-    """Decode and validate JWT token"""
+def decode_token(token: str, expected_type: Optional[str] = "access") -> Optional[TokenData]:
+    """Decode and validate a JWT.
+
+    `expected_type` pins the token's `type` claim (default "access") so a
+    long-lived refresh token can't be replayed as a Bearer access token (token
+    type confusion). Pass `expected_type="refresh"` on the refresh path, or
+    `None` to skip the check.
+    """
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = _verify(token)
+        if expected_type is not None and payload.get("type") != expected_type:
+            logger.warning(
+                f"Rejected token: expected type '{expected_type}', got '{payload.get('type')}'"
+            )
+            return None
         return TokenData(
             user_id=payload.get("user_id"),
             email=payload.get("email"),
             role=payload.get("role"),
+            tenant_id=payload.get("tenant_id"),
             permissions=payload.get("permissions", {}),
-            exp=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
+            exp=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc),
+            iat=datetime.fromtimestamp(payload["iat"], tz=timezone.utc) if payload.get("iat") else None,
         )
     except JWTError as e:
         logger.error(f"JWT decode error: {e}")
+        return None
+
+
+# =============================================================================
+# 2FA LOGIN CHALLENGE — a short-lived token issued after a correct password when
+# the account has 2FA on. It is NOT an access token (distinct `type`), so it can't
+# be used to call the API; /2fa/verify exchanges it + a TOTP code for real tokens.
+# =============================================================================
+
+def create_mfa_challenge(user_id: int) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=5)
+    return _sign({"user_id": user_id, "type": "mfa_challenge", "exp": expire})
+
+
+def decode_mfa_challenge(token: str) -> Optional[int]:
+    try:
+        payload = _verify(token)
+        if payload.get("type") != "mfa_challenge":
+            return None
+        return payload.get("user_id")
+    except JWTError:
+        return None
+
+
+def create_password_reset_token(user_id: int) -> str:
+    """Short-lived (30 min) single-purpose reset token. Distinct `type` so it can't
+    be used as an access token; bound to the user."""
+    expire = datetime.now(timezone.utc) + timedelta(minutes=30)
+    return _sign(
+        {"user_id": user_id, "type": "pwd_reset", "exp": expire, "jti": secrets.token_hex(8)}
+    )
+
+
+def decode_password_reset_token(token: str) -> Optional[int]:
+    try:
+        payload = _verify(token)
+        if payload.get("type") != "pwd_reset":
+            return None
+        return payload.get("user_id")
+    except JWTError:
+        return None
+
+
+def create_email_verify_token(user_id: int) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(days=3)
+    return _sign({"user_id": user_id, "type": "email_verify", "exp": expire})
+
+
+def decode_email_verify_token(token: str) -> Optional[int]:
+    try:
+        payload = _verify(token)
+        if payload.get("type") != "email_verify":
+            return None
+        return payload.get("user_id")
+    except JWTError:
         return None
 
 
@@ -199,14 +290,64 @@ async def blacklist_token(token: str, ttl_seconds: int) -> None:
 
 
 async def is_token_blacklisted(token: str) -> bool:
-    """Check the Redis blacklist. Returns False when Redis is unavailable (fail-open)."""
+    """Check the Redis JWT blacklist.
+
+    Fails CLOSED by default (returns True => treat as revoked) when Redis is
+    unreachable, so a logged-out / rotated token can't be honored during an
+    outage. Operators can opt into fail-open via AUTH_FAIL_OPEN_ON_REDIS_DOWN.
+    """
     try:
         from app.services.redis_client import redis_client
         if redis_client:
             return bool(await redis_client.get(f"blacklisted_token:{_token_hash(token)}"))
+        # Redis not initialized — can't verify revocation.
+        raise RuntimeError("redis_client unavailable")
     except Exception as e:
-        logger.warning(f"Failed to check token blacklist in Redis: {e}")
-    return False
+        fail_open = get_settings().auth_fail_open_on_redis_down
+        logger.warning(
+            f"Token blacklist check failed ({e}); "
+            f"{'allowing (fail-open)' if fail_open else 'REJECTING (fail-closed)'}"
+        )
+        return not fail_open
+
+
+# =============================================================================
+# PER-USER SESSION REVOCATION EPOCH (Redis-backed)
+# -----------------------------------------------------------------------------
+# We don't persist sessions (auth is stateless JWT + per-token blacklist), so to
+# revoke ALL of a user's outstanding access tokens at once (e.g. after a password
+# reset) we record a cutoff timestamp. Any access token whose `iat` predates the
+# cutoff is rejected by get_current_user.
+# =============================================================================
+
+def _revoke_key(user_id: int) -> str:
+    return f"auth:revoke_before:{user_id}"
+
+
+async def revoke_user_sessions(user_id: int) -> None:
+    """Invalidate every access token issued for this user up to now."""
+    try:
+        from app.services.redis_client import redis_client
+        if redis_client:
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+            # TTL slightly beyond the max access-token lifetime is enough.
+            await redis_client.set(_revoke_key(user_id), str(now_ts),
+                                   ex=max(ACCESS_TOKEN_EXPIRE_MINUTES * 60 * 2, 3600))
+    except Exception as e:
+        logger.warning(f"Failed to set session revocation epoch for user {user_id}: {e}")
+
+
+async def tokens_revoked_before(user_id: int) -> Optional[datetime]:
+    """Return the revocation cutoff for a user, or None if none is set."""
+    try:
+        from app.services.redis_client import redis_client
+        if redis_client:
+            raw = await redis_client.get(_revoke_key(user_id))
+            if raw:
+                return datetime.fromtimestamp(int(raw), tz=timezone.utc)
+    except Exception as e:
+        logger.warning(f"Failed to read session revocation epoch for user {user_id}: {e}")
+    return None
 
 
 # =============================================================================
@@ -226,10 +367,17 @@ class AuthService:
             from sqlalchemy import text
             result = await session.execute(
                 text("""
-                    SELECT id, email, password_hash, first_name, last_name, role, status,
-                           job_title, department, failed_login_attempts, locked_until,
-                           two_factor_enabled, two_factor_secret
-                    FROM users WHERE email = :email
+                    SELECT u.id, u.email, u.password_hash, u.first_name, u.last_name, u.role,
+                           u.status, u.job_title, u.department, u.failed_login_attempts,
+                           u.locked_until, u.two_factor_enabled, u.two_factor_secret,
+                           u.tenant_id, u.email_verified,
+                           COALESCE(u.is_platform_developer, FALSE) AS is_platform_developer,
+                           -- E10-2: carried out of this query so /login can check the
+                           -- tenant's isolation tier without a second round-trip.
+                           COALESCE(t.isolation_tier, 'shared') AS isolation_tier
+                    FROM users u
+                    LEFT JOIN tenants t ON t.id = u.tenant_id
+                    WHERE u.email = :email
                 """),
                 {"email": email.lower()}
             )
@@ -237,6 +385,10 @@ class AuthService:
             
             if not user_row:
                 logger.warning(f"Login attempt for non-existent user: {email}")
+                from app.services.security_events import record_event
+                await record_event("login_failed", actor_email=email, ip_address=ip_address,
+                                    detail=f"Login attempt for unknown account {email}",
+                                    evidence={"reason": "unknown_user"})
                 return None, "Invalid email or password"
             
             user = dict(user_row._mapping)
@@ -271,14 +423,25 @@ class AuthService:
                     {"attempts": new_attempts, "locked_until": locked_until, "id": user['id']}
                 )
                 await session.commit()
-                
+
                 # Log failed attempt
                 await AuthService._log_audit(
-                    session, user['id'], 'login_failed', 
+                    session, user['id'], 'login_failed',
                     f"Failed login attempt ({new_attempts}/{MAX_LOGIN_ATTEMPTS})",
                     ip_address
                 )
-                
+
+                from app.services.security_events import record_event
+                await record_event(
+                    "account_locked" if locked_until else "login_failed",
+                    tenant_id=user.get('tenant_id'), actor_user_id=user['id'],
+                    actor_email=email, ip_address=ip_address,
+                    detail=(f"Account {email} locked after {new_attempts} failed attempts"
+                            if locked_until else
+                            f"Failed login for {email} ({new_attempts}/{MAX_LOGIN_ATTEMPTS})"),
+                    evidence={"attempts": new_attempts, "max": MAX_LOGIN_ATTEMPTS},
+                )
+
                 if locked_until:
                     return None, f"Too many failed attempts. Account locked for {LOCKOUT_DURATION_MINUTES} minutes"
                 return None, "Invalid email or password"
@@ -298,7 +461,7 @@ class AuthService:
             )
             
             # Get user permissions
-            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'])
+            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'], user.get('tenant_id'))
             
             # Log successful login
             await AuthService._log_audit(
@@ -319,19 +482,40 @@ class AuthService:
                 "status": user['status'],
                 "job_title": user['job_title'],
                 "department": user['department'],
+                "tenant_id": user.get('tenant_id'),
+                "two_factor_enabled": bool(user.get('two_factor_enabled')),
+                "email_verified": bool(user.get('email_verified')),
+                # E10-2: /login refuses a tenant whose isolation tier this
+                # deployment cannot deliver. Omitting it here makes that check read
+                # None -> 'shared' and silently pass, which is the exact failure the
+                # tier exists to prevent.
+                "isolation_tier": user.get('isolation_tier') or 'shared',
+                # Platform-operator boundary (Platform Console): a per-user flag,
+                # deliberately NOT implied by super_admin (every self-signup owner
+                # is a super_admin of their own tenant; this must never leak to them).
+                "is_platform_developer": bool(user.get('is_platform_developer')),
                 "permissions": permissions
             }
-            
+
             return user_data, None
     
     @staticmethod
-    async def _get_user_permissions(session: AsyncSession, user_id: int, role: str) -> Dict:
-        """Get user permissions including accessible stores and regions"""
+    async def _get_user_permissions(session: AsyncSession, user_id: int, role: str,
+                                    tenant_id: Optional[int] = None) -> Dict:
+        """Get user permissions including accessible stores and regions.
+
+        A super_admin sees everything WITHIN THEIR TENANT — when tenant_id is
+        provided, the accessible-stores list is scoped to that tenant so one
+        tenant's owner never sees another tenant's store IDs (B2)."""
         from sqlalchemy import text
-        
-        # Super admin has access to everything
+
+        # Super admin has access to everything (within their tenant when known)
         if role == 'super_admin':
-            stores_result = await session.execute(text("SELECT id FROM stores"))
+            if tenant_id is not None:
+                stores_result = await session.execute(
+                    text("SELECT id FROM stores WHERE tenant_id = :tid"), {"tid": tenant_id})
+            else:
+                stores_result = await session.execute(text("SELECT id FROM stores"))
             regions_result = await session.execute(text("SELECT code FROM regions"))
             return {
                 "accessible_stores": [r[0] for r in stores_result.fetchall()],
@@ -429,11 +613,15 @@ class AuthService:
     @staticmethod
     async def create_tokens(user_data: Dict, remember_me: bool = False) -> Token:
         """Create access and refresh tokens for user"""
-        # Keep JWT payload minimal — permissions are looked up from DB on each request
+        # Keep JWT payload minimal — permissions are looked up from DB on each request.
+        # tenant_id IS embedded so the request path can bind the RLS tenant GUC
+        # before the DB session opens (services/database.resolve_request_tenant),
+        # independent of dependency-resolution order.
         token_data = {
             "user_id": user_data["id"],
             "email": user_data["email"],
             "role": user_data["role"],
+            "tenant_id": user_data.get("tenant_id"),
         }
         
         # Access token is always short-lived. remember_me only extends the refresh token.
@@ -456,14 +644,13 @@ class AuthService:
         its remaining lifetime and a new pair is issued (rotation). A replayed
         refresh token is rejected.
         """
-        token_data = decode_token(refresh_token)
+        token_data = decode_token(refresh_token, expected_type="refresh")
         if not token_data:
             return None
 
-        # Verify it's a refresh token
-        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("type") != "refresh":
-            return None
+        # Already validated as a refresh token above; decode again only to read
+        # the remember_me claim used to preserve the rotated token's lifetime.
+        payload = _verify(refresh_token)
 
         # Reject already-used (rotated) or logged-out refresh tokens
         if await is_token_blacklisted(refresh_token):
@@ -475,7 +662,8 @@ class AuthService:
             from sqlalchemy import text
             result = await session.execute(
                 text("""
-                    SELECT id, email, first_name, last_name, role, status, job_title, department
+                    SELECT id, email, first_name, last_name, role, status, job_title, department,
+                           tenant_id
                     FROM users WHERE id = :id AND status = 'active'
                 """),
                 {"id": token_data.user_id}
@@ -486,7 +674,12 @@ class AuthService:
                 return None
 
             user = dict(user_row._mapping)
-            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'])
+            # tenant_id MUST be selected above: create_tokens embeds it as the JWT
+            # claim the request path reads to bind the RLS tenant GUC, and
+            # _get_user_permissions scopes a super_admin's accessible stores to it.
+            # Omitting it minted refreshed tokens with tenant_id=None (RLS fell back
+            # to tenant 1) and gave super_admins cross-tenant store access.
+            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'], user.get('tenant_id'))
 
             user_data = {**user, "permissions": permissions}
 
@@ -520,8 +713,10 @@ class AuthService:
             from sqlalchemy import text
             result = await session.execute(
                 text("""
-                    SELECT id, email, first_name, last_name, role, status, 
-                           job_title, department, last_login_at, created_at
+                    SELECT id, email, first_name, last_name, role, status,
+                           job_title, department, last_login_at, created_at,
+                           tenant_id, email_verified,
+                           COALESCE(is_platform_developer, FALSE) AS is_platform_developer
                     FROM users WHERE id = :id
                 """),
                 {"id": user_id}
@@ -532,7 +727,7 @@ class AuthService:
                 return None
             
             user = dict(user_row._mapping)
-            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'])
+            permissions = await AuthService._get_user_permissions(session, user['id'], user['role'], user.get('tenant_id'))
             
             return {**user, "permissions": permissions}
     
@@ -576,20 +771,196 @@ class AuthService:
             
             await AuthService._log_audit(session, user_id, 'change_password', "Password changed")
             await session.commit()
-            
+
+            from app.services.security_events import record_event
+            await record_event("password_changed", actor_user_id=user_id,
+                               detail="Account password was changed")
+
             return True, "Password changed successfully"
     
     @staticmethod
-    async def get_all_users() -> List[Dict]:
-        """Get all users (admin only)"""
+    async def mark_email_verified(user_id: int) -> bool:
         async with async_session() as session:
             from sqlalchemy import text
+            res = await session.execute(
+                text("UPDATE users SET email_verified = TRUE WHERE id = :id"), {"id": user_id})
+            await session.commit()
+            return (res.rowcount or 0) > 0
+
+    @staticmethod
+    async def get_user_id_by_email(email: str) -> Optional[int]:
+        async with async_session() as session:
+            from sqlalchemy import text
+            row = (await session.execute(
+                text("SELECT id FROM users WHERE email = :e AND status = 'active'"),
+                {"e": email.lower()})).fetchone()
+            return row.id if row else None
+
+    @staticmethod
+    async def reset_password(user_id: int, new_password: str) -> tuple[bool, str]:
+        """Set a new password WITHOUT the current one (post reset-token validation)."""
+        is_valid, message = validate_password_strength(new_password)
+        if not is_valid:
+            return False, message
+        async with async_session() as session:
+            from sqlalchemy import text
+            res = await session.execute(text("""
+                UPDATE users SET password_hash = :h, password_changed_at = :now,
+                    must_change_password = FALSE, failed_login_attempts = 0, locked_until = NULL
+                WHERE id = :id
+            """), {"h": get_password_hash(new_password), "now": datetime.now(timezone.utc), "id": user_id})
+            if (res.rowcount or 0) == 0:
+                return False, "User not found"
+            await AuthService._log_audit(session, user_id, 'password_reset', "Password reset via email token")
+            await session.commit()
+            return True, "Password has been reset"
+
+    # =========================================================================
+    # TWO-FACTOR AUTHENTICATION (TOTP)
+    # =========================================================================
+
+    @staticmethod
+    async def start_2fa_setup(user_id: int) -> Dict:
+        """Generate (or replace) a pending TOTP secret and return enrollment data.
+        The secret is stored but two_factor_enabled stays FALSE until confirmed."""
+        from app.services import totp
+        from app.config import get_settings
+        async with async_session() as session:
+            from sqlalchemy import text
+            row = (await session.execute(
+                text("SELECT email FROM users WHERE id = :id"), {"id": user_id})).fetchone()
+            if not row:
+                return {}
+            secret = totp.generate_secret()
+            await session.execute(text("""
+                UPDATE users SET two_factor_secret = :s, two_factor_enabled = FALSE
+                WHERE id = :id
+            """), {"s": secret, "id": user_id})
+            await session.commit()
+            issuer = get_settings().product_name
+            return {
+                "secret": secret,
+                "otpauth_uri": totp.provisioning_uri(secret, row.email, issuer),
+                "issuer": issuer,
+                "account": row.email,
+            }
+
+    @staticmethod
+    async def _get_2fa_secret(session, user_id: int):
+        from sqlalchemy import text
+        row = (await session.execute(text(
+            "SELECT two_factor_secret, two_factor_enabled FROM users WHERE id = :id"),
+            {"id": user_id})).fetchone()
+        return row
+
+    @staticmethod
+    async def confirm_2fa(user_id: int, code: str) -> tuple[bool, str, list]:
+        """Verify the first code against the pending secret, enable 2FA, and mint
+        one-time backup/recovery codes (returned ONCE for the user to save)."""
+        import json as _json
+        from app.services import totp
+        async with async_session() as session:
+            from sqlalchemy import text
+            row = await AuthService._get_2fa_secret(session, user_id)
+            if not row or not row.two_factor_secret:
+                return False, "Start 2FA setup first", []
+            if not totp.verify(row.two_factor_secret, code):
+                return False, "Invalid code — check your authenticator app", []
+            codes = totp.generate_backup_codes()
+            hashes = [totp.hash_backup_code(c) for c in codes]
+            await session.execute(text(
+                "UPDATE users SET two_factor_enabled = TRUE, "
+                "two_factor_backup_codes = CAST(:codes AS jsonb) WHERE id = :id"),
+                {"codes": _json.dumps(hashes), "id": user_id})
+            await session.commit()
+            return True, "Two-factor authentication enabled", codes
+
+    @staticmethod
+    async def disable_2fa(user_id: int, code: str) -> tuple[bool, str]:
+        """Disable 2FA after verifying a current code (so a hijacked session can't)."""
+        from app.services import totp
+        async with async_session() as session:
+            from sqlalchemy import text
+            row = await AuthService._get_2fa_secret(session, user_id)
+            if not row or not row.two_factor_enabled:
+                return False, "2FA is not enabled"
+            if not totp.verify(row.two_factor_secret or "", code):
+                return False, "Invalid code"
+            await session.execute(text(
+                "UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL, "
+                "two_factor_backup_codes = '[]'::jsonb WHERE id = :id"),
+                {"id": user_id})
+            await session.commit()
+            return True, "Two-factor authentication disabled"
+
+    @staticmethod
+    async def verify_2fa(user_id: int, code: str) -> bool:
+        """Verify a login-time code: TOTP first, then a one-time backup code
+        (consumed on use)."""
+        import json as _json
+        from sqlalchemy import text
+        from app.services import totp
+        async with async_session() as session:
+            row = (await session.execute(text(
+                "SELECT two_factor_secret, two_factor_enabled, two_factor_backup_codes "
+                "FROM users WHERE id = :id"), {"id": user_id})).fetchone()
+            if not row or not row.two_factor_enabled or not row.two_factor_secret:
+                return False
+            if totp.verify(row.two_factor_secret, code):
+                return True
+            # One-time backup code: consume it on a match.
+            stored = row.two_factor_backup_codes or []
+            if isinstance(stored, str):
+                stored = _json.loads(stored)
+            h = totp.hash_backup_code(code)
+            if h in stored:
+                remaining = [c for c in stored if c != h]
+                await session.execute(text(
+                    "UPDATE users SET two_factor_backup_codes = CAST(:c AS jsonb) WHERE id = :id"),
+                    {"c": _json.dumps(remaining), "id": user_id})
+                await session.commit()
+                return True
+            return False
+
+    @staticmethod
+    async def get_all_users(page: int = 1, limit: int = 50, tenant_id: Optional[int] = None) -> Dict:
+        """List users for ONE tenant (admin only), paginated to bound the result set.
+
+        Scoped to `tenant_id` so a per-tenant super_admin (every self-signup owner
+        is one) can never enumerate another tenant's users. A platform-wide
+        operator view must use a separate privileged role — not this endpoint.
+        Callers must pass tenant_id; `None` would list across tenants and is only
+        for trusted internal/platform use.
+        """
+        page = max(1, page)
+        limit = max(1, min(limit, 200))
+        offset = (page - 1) * limit
+        where = "" if tenant_id is None else "WHERE tenant_id = :tenant_id"
+        async with async_session() as session:
+            from sqlalchemy import text
+            params: Dict[str, Any] = {"limit": limit, "offset": offset}
+            if tenant_id is not None:
+                params["tenant_id"] = tenant_id
             result = await session.execute(
-                text("""
+                text(f"""
                     SELECT id, email, first_name, last_name, role, status,
                            job_title, department, last_login_at, created_at
                     FROM users
+                    {where}
                     ORDER BY created_at DESC
-                """)
+                    LIMIT :limit OFFSET :offset
+                """),
+                params,
             )
-            return [dict(row._mapping) for row in result.fetchall()]
+            users = [dict(row._mapping) for row in result.fetchall()]
+            total = (await session.execute(
+                text(f"SELECT COUNT(*) FROM users {where}"),
+                {"tenant_id": tenant_id} if tenant_id is not None else {},
+            )).scalar() or 0
+            return {
+                "users": users,
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "pages": max(1, (total + limit - 1) // limit),
+            }

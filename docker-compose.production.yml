@@ -1,17 +1,19 @@
 version: '3.8'
 
 # =============================================================================
-# Lulu Intelligence Dashboard - Production Configuration
+# Retail IQ - Production Configuration
 # =============================================================================
-# 
+#
 # Usage:
-#   docker-compose -f docker-compose.production.yml up -d
+#   cp .env.production.example .env.production   # fill in REAL secrets
+#   docker compose -f docker-compose.production.yml --env-file .env.production up -d
+#   # demo generator (synthetic data) is opt-in via a profile:
+#   docker compose -f docker-compose.production.yml --profile demo up -d
 #
-# Prerequisites:
-#   1. Copy .env.production to .env and customize values
-#   2. Generate SSL certificates for HTTPS
-#   3. Configure your domain and DNS
-#
+# Runtime topology (see docs/production/RUNTIME_PROCESSES.md):
+#   postgres → redis → migrate (one-shot) → backend + worker (+ optional generator)
+# The API process serves API ONLY. Migrations run in the `migrate` job. The
+# synthetic generator runs ONLY under the `demo` profile with DEMO_MODE=true.
 # =============================================================================
 
 services:
@@ -19,20 +21,29 @@ services:
   # PostgreSQL Database
   # ===========================================================================
   postgres:
-    image: postgres:15-alpine
-    container_name: lulu_db_prod
+    image: pgvector/pgvector:pg15  # pgvector-enabled PG15 (semantic layer / RAG needs the `vector` type)
+    container_name: app_db_prod
     restart: always
+    # E6-5 follow-up: the pool is per-process, so with `gunicorn --workers N` the
+    # API alone can want N×(pool+overflow) connections; add the singletons + worker
+    # containers and the default max_connections=100 is exhausted. 200 fits
+    # WEB_CONCURRENCY=2 × 20/worker + sidecars comfortably (see LOAD_TEST_BASELINE.md).
+    command: ["postgres", "-c", "max_connections=200"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-salesuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
       POSTGRES_DB: ${POSTGRES_DB:-salesdb}
-      # Production tuning
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./database/seed_data.sql:/docker-entrypoint-initdb.d/02-seed.sql
-      - ./data/train.csv:/data/train.csv
+      # E0-4: production uses the SCHEMA-ONLY prod-init.sql (base tables the
+      # migrations build on) — NOT the demo init.sql. It seeds NO demo users,
+      # NO stores/items, NO synthetic sales. Real data is loaded through the
+      # product; the first admin is provisioned by the operator (see
+      # docs/runbooks/DEPLOY_PIPELINE.md). The authoritative schema comes from the
+      # `migrate` job (database/migrations/*), applied on top of this base.
+      # train.csv is INTENTIONALLY NOT mounted in production (demo-only).
+      - ./database/prod-init.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-salesuser} -d ${POSTGRES_DB:-salesdb}"]
       interval: 10s
@@ -40,10 +51,7 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - lulu_network
-    # Production: Don't expose port externally, only internal access
-    # ports:
-    #   - "5432:5432"
+      - app_network
     deploy:
       resources:
         limits:
@@ -52,28 +60,29 @@ services:
           memory: 512M
 
   # ===========================================================================
-  # Redis Cache & Pub/Sub
+  # Redis Cache & Pub/Sub — password REQUIRED in production
   # ===========================================================================
   redis:
     image: redis:7-alpine
-    container_name: lulu_redis_prod
+    container_name: app_redis_prod
     restart: always
     command: >
-      redis-server 
-      --appendonly yes 
-      --maxmemory 256mb 
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?Redis password required}
+      --appendonly yes
+      --maxmemory 256mb
       --maxmemory-policy allkeys-lru
       --tcp-keepalive 60
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
     networks:
-      - lulu_network
+      - app_network
     deploy:
       resources:
         limits:
@@ -82,39 +91,155 @@ services:
           memory: 128M
 
   # ===========================================================================
-  # FastAPI Backend
+  # Migrate (one-shot) — owns DB migrations. Backend/worker gate on this.
   # ===========================================================================
-  backend:
+  migrate:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: lulu_backend_prod
-    restart: always
+    container_name: app_migrate_prod
+    command: ["python", "-m", "app.commands.migrate"]
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-salesdb}
-      REDIS_URL: redis://redis:6379
       ENVIRONMENT: production
+      # migrate connects as the owner role; it does not need app secrets and does
+      # not start the API, so validate_security() is not invoked here.
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT secret required}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-100}
-      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-60}
-      STREAMING_INTERVAL_SECONDS: ${STREAMING_INTERVAL_SECONDS:-60}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://frontend:3000}
+      SECRET_KEY: ${SECRET_KEY:?App secret required}
+      LOG_JSON: ${LOG_JSON:-true}
+      # Role-password sync (services/role_password_sync) runs at the END of the
+      # migration pass IN THIS PROCESS: it ALTERs the non-owner roles' passwords
+      # to match what backend/worker/sage connect with. These MUST be present
+      # here — the migrations (re)assert dev-default passwords on app_rw /
+      # worker_rw / sage_ro, and without these vars the sync has nothing to read,
+      # so those roles keep the dev passwords and every backend-RLS / worker /
+      # sage connection fails auth on a real deploy. Same values the backend and
+      # worker services receive below; empty default keeps dev a silent no-op.
+      RLS_DATABASE_URL: ${RLS_DATABASE_URL:-}
+      WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:-}
+      SAGE_DATABASE_URL: ${SAGE_DATABASE_URL:-}
     volumes:
       - ./database/migrations:/app/database/migrations:ro
     depends_on:
       postgres:
         condition: service_healthy
+    restart: "no"
+    networks:
+      - app_network
+
+  # ===========================================================================
+  # FastAPI Backend — serves API ONLY (no migrate/seed/generator in lifespan)
+  # ===========================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: app_backend_prod
+    restart: always
+    # E6-5 follow-up: multi-worker serving. gunicorn manages the workers (its
+    # supervisor restarts a dead one; `uvicorn --workers` does not) and recycles
+    # them periodically. Set PER SERVICE, never in the Dockerfile CMD, so prod can
+    # never silently inherit a worker count. Default 2; raise WEB_CONCURRENCY once
+    # the singleton loops are confirmed out of the API (they are — see singletons).
+    command: >
+      gunicorn app.main:app
+      -k uvicorn.workers.UvicornWorker
+      -w ${WEB_CONCURRENCY:-2}
+      -b 0.0.0.0:8000
+      --timeout 120
+      --graceful-timeout 30
+      --max-requests 2000
+      --max-requests-jitter 200
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-salesdb}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      REDIS_SELF_HOSTED: "true"
+      ENVIRONMENT: production
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT secret required}
+      SECRET_KEY: ${SECRET_KEY:?App secret required}
+      # E5-6 JWT signing. Set JWT_ALGORITHM=RS256 and inject the private key from a
+      # secret vault as a mounted file (JWT_PRIVATE_KEY_PATH); publish "<kid>.pem"
+      # public keys into JWT_PUBLIC_KEYS_DIR. Mount them via the jwt_keys volume
+      # below. Defaults keep HS256 so an un-provisioned deploy still boots.
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_PRIVATE_KEY_PATH: ${JWT_PRIVATE_KEY_PATH:-}
+      JWT_PUBLIC_KEYS_DIR: ${JWT_PUBLIC_KEYS_DIR:-}
+      JWT_ACTIVE_KID: ${JWT_ACTIVE_KID:-}
+      JWT_ALLOW_HS256_FALLBACK: ${JWT_ALLOW_HS256_FALLBACK:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_JSON: ${LOG_JSON:-true}
+      # Tenant isolation: connect the request path as the non-owner app_rw role.
+      # Provide a strong RLS_DATABASE_URL with the app_rw password in production
+      # (see DEPLOYMENT.md). Leave empty to derive app_rw creds (dev-grade — not
+      # recommended for real data).
+      USE_RLS_ROLE: ${USE_RLS_ROLE:-true}
+      RLS_DATABASE_URL: ${RLS_DATABASE_URL:-}
+      SAGE_DATABASE_URL: ${SAGE_DATABASE_URL:-}
+      # Production modes — demo OFF, startup work OFF (handled by jobs above).
+      DEMO_MODE: ${DEMO_MODE:-false}
+      RUN_MIGRATIONS_ON_STARTUP: "false"
+      RUN_SEED_ON_STARTUP: "false"
+      LIVE_GENERATOR_ENABLED: ${LIVE_GENERATOR_ENABLED:-false}
+      ALLOW_DEMO_USERS: ${ALLOW_DEMO_USERS:-false}
+      EXPOSE_API_DOCS: ${EXPOSE_API_DOCS:-false}
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-100}
+      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-60}
+      STREAMING_INTERVAL_SECONDS: ${STREAMING_INTERVAL_SECONDS:-60}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS origins required (no wildcard)}
+      CSP_CONNECT_SRC: ${CSP_CONNECT_SRC:-'self'}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
+      # E0-2 uptime monitoring + alerting. ALERT_WEBHOOK_URL is a SECRET — set it
+      # in your env, never commit it. Route the webhook to founder phone/SMS via
+      # Better Stack / Healthchecks.io / PagerDuty / Twilio / Slack.
+      ALERT_ENABLED: ${ALERT_ENABLED:-false}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_WEBHOOK_TIMEOUT_SECONDS: ${ALERT_WEBHOOK_TIMEOUT_SECONDS:-5}
+      ALERT_MIN_SEVERITY: ${ALERT_MIN_SEVERITY:-critical}
+      ALERT_DEDUP_TTL_SECONDS: ${ALERT_DEDUP_TTL_SECONDS:-300}
+      WORKER_HEARTBEAT_STALE_SECONDS: ${WORKER_HEARTBEAT_STALE_SECONDS:-120}
+      BACKUP_MANIFEST_PATH: ${BACKUP_MANIFEST_PATH:-/backups/latest.json}
+      BACKUP_STALE_AFTER_HOURS: ${BACKUP_STALE_AFTER_HOURS:-30}
+      # E5-3 UAE data residency. When DATA_RESIDENCY_REQUIRED=true the API refuses
+      # to boot unless DATA_REGION is an approved UAE region (docs/runbooks/
+      # DATA_RESIDENCY.md). Deploy this compose on an in-country host (AWS
+      # me-central-1 / Azure UAE North) with in-region backups.
+      DATA_REGION: ${DATA_REGION:-}
+      DATA_RESIDENCY_REQUIRED: ${DATA_RESIDENCY_REQUIRED:-false}
+      APPROVED_DATA_REGIONS: ${APPROVED_DATA_REGIONS:-me-central-1,me-central,uae-north,uae-central,uae,ae}
+      BACKUP_REGION: ${BACKUP_REGION:-}
+      CROSS_BORDER_TRANSFER_ALLOWED: ${CROSS_BORDER_TRANSFER_ALLOWED:-false}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
+      DATA_RESIDENCY_STATEMENT_ENABLED: ${DATA_RESIDENCY_STATEMENT_ENABLED:-true}
+    # Read-only view of the E0-1 backup volume so /health can report backup
+    # freshness (it never writes backups).
+    volumes:
+      - postgres_backups:/backups:ro
+      # E5-6: mount the vault-provisioned JWT keys read-only. Point this host path
+      # at where your secret vault writes active.key (private) + public/<kid>.pem.
+      # Set JWT_PRIVATE_KEY_PATH=/run/secrets/jwt/active.key and
+      # JWT_PUBLIC_KEYS_DIR=/run/secrets/jwt/public to match. No-op if the source
+      # path is empty (HS256 mode). See docs/runbooks/JWT_KEY_ROTATION.md.
+      - ${JWT_KEYS_HOST_DIR:-./secrets/jwt}:/run/secrets/jwt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # The backend image is python:slim and does NOT ship curl, so the
+      # previous curl-based probe could never succeed: the container sat
+      # permanently "unhealthy" and nginx + frontend, which depend on
+      # service_healthy, never left "Created". Python is guaranteed present.
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health/ready', timeout=5).status==200 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
     networks:
-      - lulu_network
+      - app_network
     deploy:
       resources:
         limits:
@@ -124,6 +249,151 @@ services:
       replicas: 1
 
   # ===========================================================================
+  # Diagnostics worker (Node + BullMQ). Least-privilege worker_rw role.
+  # ===========================================================================
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: app_worker_prod
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      WORKER_DATABASE_URL: postgresql://worker_rw:${WORKER_DB_PASSWORD:?Worker DB password required}@postgres:5432/${POSTGRES_DB:-salesdb}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-salesdb}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      DIAGNOSTICS_INTERVAL_MS: ${DIAGNOSTICS_INTERVAL_MS:-300000}
+      NOTIFY_WEBHOOK_URL: ${NOTIFY_WEBHOOK_URL:-}
+      NOTIFY_MIN_SEVERITY: ${NOTIFY_MIN_SEVERITY:-high}
+      # E0-2 worker heartbeat -> Redis key health:worker:diagnostics, read by /health.
+      WORKER_HEARTBEAT_INTERVAL_MS: ${WORKER_HEARTBEAT_INTERVAL_MS:-30000}
+      WORKER_HEARTBEAT_STALE_SECONDS: ${WORKER_HEARTBEAT_STALE_SECONDS:-120}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - app_network
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 96M
+
+  # ===========================================================================
+  # Singletons — the ONE process for every continuous background loop.
+  #
+  # E6-5 follow-up. These used to run inside the API lifespan; under
+  # `gunicorn --workers N` that ran N of each (N generators, N concurrent
+  # partition DROPs). Here they run in exactly one always-on container, so
+  # duplication is impossible by construction.
+  #
+  # Always-on (NOT demo-profiled) because partition_maintenance, cache_warmer and
+  # forecast_trainer are needed in REAL production. The synthetic generator and
+  # demo_reset self-gate on DEMO_MODE + LIVE_GENERATOR_ENABLED (both default
+  # false), so a non-demo deploy runs the maintenance loops and generates NOTHING.
+  # Migration 057's trigger enforces E0-8 at the DB regardless.
+  # ===========================================================================
+  singletons:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: app_singletons_prod
+    command: ["python", "-m", "app.commands.singletons"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-salesuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-salesdb}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      ENVIRONMENT: production
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      SECRET_KEY: ${SECRET_KEY}
+      USE_RLS_ROLE: ${USE_RLS_ROLE:-true}
+      RLS_DATABASE_URL: ${RLS_DATABASE_URL:-}
+      LOG_JSON: ${LOG_JSON:-true}
+      # Generator/demo_reset self-gate on these — default OFF, so real production
+      # generates nothing. A demo deploy sets DEMO_MODE=true + LIVE_GENERATOR_ENABLED=true.
+      DEMO_MODE: ${DEMO_MODE:-false}
+      LIVE_GENERATOR_ENABLED: ${LIVE_GENERATOR_ENABLED:-false}
+      STREAMING_INTERVAL_SECONDS: ${STREAMING_INTERVAL_SECONDS:-60}
+      WORKER_HEARTBEAT_STALE_SECONDS: ${WORKER_HEARTBEAT_STALE_SECONDS:-120}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: always
+    deploy:
+      replicas: 1  # exactly one, always — this is what makes duplication impossible
+    networks:
+      - app_network
+
+  # ===========================================================================
+  # Automated backups (blueprint E0-1). Daily pg_dump -> local volume + optional
+  # offsite object storage, self-verified, with a monitoring manifest. Runs an
+  # immediate backup on start to prove the path works at deploy time.
+  #   - Restore drill: scripts/drill-restore.sh (CI-enforced every push).
+  #   - Runbooks: docs/runbooks/BACKUP_AND_RESTORE.md + RESTORE_FROM_BACKUP.md
+  # Uses the same postgres:15-alpine image so pg_dump matches the server version.
+  # ===========================================================================
+  backup:
+    image: pgvector/pgvector:pg15  # pgvector-enabled PG15 (semantic layer / RAG needs the `vector` type)
+    container_name: app_backup_prod
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-salesuser}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-salesdb}
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_AT_UTC: ${BACKUP_AT_UTC:-02:00}
+      BACKUP_ON_START: ${BACKUP_ON_START:-1}
+      # Offsite (object storage) is OFF unless BACKUP_S3_URL is set. When set,
+      # aws-cli is installed on start and creds come from the AWS_* vars below.
+      BACKUP_S3_URL: ${BACKUP_S3_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
+      # E5-3 residency: keep the offsite bucket in the same UAE region as the data.
+      # Default to AWS_DEFAULT_REGION so a single AWS_DEFAULT_REGION=me-central-1
+      # keeps backups in-country. Reported by the residency posture as backup_region.
+      BACKUP_REGION: ${BACKUP_REGION:-${AWS_DEFAULT_REGION:-}}
+      # Dead-man's-switch: pinged only on a verified success (wire to E0-2 monitor).
+      BACKUP_HEARTBEAT_URL: ${BACKUP_HEARTBEAT_URL:-}
+    # Best-effort install of aws-cli + curl for offsite/heartbeat; the scheduler
+    # runs regardless (offsite/heartbeat degrade to a logged skip if unavailable).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        if [ -n "$${BACKUP_S3_URL}" ] || [ -n "$${BACKUP_HEARTBEAT_URL}" ]; then
+          apk add --no-cache --quiet aws-cli curl >/dev/null 2>&1 || true;
+        fi;
+        exec /bin/sh /scripts/backup-scheduler.sh
+    volumes:
+      - ./scripts:/scripts:ro
+      - postgres_backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app_network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # ===========================================================================
   # Next.js Frontend
   # ===========================================================================
   frontend:
@@ -131,23 +401,39 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8000}
-    container_name: lulu_frontend_prod
+        # REQUIRED — inlined into the browser bundle at build time; a Docker-internal
+        # default like http://backend:8000 can never be reached by a real browser.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Set NEXT_PUBLIC_API_URL to the public https origin the browser will call (e.g. https://app.example.com) — it is baked into the frontend at build time}
+        # Telemetry (CX measurement loop) — empty = silent no-op. Inlined at build.
+        NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
+        NEXT_PUBLIC_POSTHOG_HOST: ${NEXT_PUBLIC_POSTHOG_HOST:-https://eu.i.posthog.com}
+    container_name: app_frontend_prod
     restart: always
     environment:
+      # Next standalone binds to process.env.HOSTNAME, and Docker sets
+      # HOSTNAME to the container hostname — so the server listened on
+      # 172.x.x.x:3000 only, and NO loopback probe could reach it. The
+      # healthcheck failed forever even though the app served fine
+      # through nginx. 0.0.0.0 is what you want in a container anyway.
+      HOSTNAME: "0.0.0.0"
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8000}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Set NEXT_PUBLIC_API_URL to the public https origin the browser will call (e.g. https://app.example.com) — it is baked into the frontend at build time}
+      NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
+      NEXT_PUBLIC_POSTHOG_HOST: ${NEXT_PUBLIC_POSTHOG_HOST:-https://eu.i.posthog.com}
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      # Same reason as the backend probe: the Next standalone image is
+      # node:slim with no curl. Node is guaranteed present.
+      test: ["CMD", "node", "-e",
+             "require('http').get('http://localhost:3000', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
     networks:
-      - lulu_network
+      - app_network
     deploy:
       resources:
         limits:
@@ -158,9 +444,13 @@ services:
   # ===========================================================================
   # Nginx Reverse Proxy (Production)
   # ===========================================================================
+  # nginx re-resolves its upstreams every 10s via Docker's embedded DNS
+  # (see the resolver block in nginx/nginx.conf), so recreating backend or
+  # frontend self-heals — no nginx restart required. Proven by
+  # scripts/test-nginx-reresolve.sh.
   nginx:
     image: nginx:alpine
-    container_name: lulu_nginx_prod
+    container_name: app_nginx_prod
     restart: always
     ports:
       - "80:80"
@@ -168,12 +458,15 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      # ACME webroot served at /.well-known/acme-challenge/ for certbot HTTP-01
+      # renewals (docs/runbooks/TLS_CERTS.md)
+      - ./nginx/certbot-www:/var/www/certbot:ro
       - nginx_logs:/var/log/nginx
     depends_on:
       - frontend
       - backend
     networks:
-      - lulu_network
+      - app_network
     deploy:
       resources:
         limits:
@@ -183,7 +476,7 @@ services:
 # Networks
 # =============================================================================
 networks:
-  lulu_network:
+  app_network:
     driver: bridge
     ipam:
       config:
@@ -198,4 +491,10 @@ volumes:
   redis_data:
     driver: local
   nginx_logs:
+    driver: local
+  # Local backup store (blueprint E0-1). Back this with a host bind-mount or a
+  # volume driver that is itself backed up / snapshotted; set BACKUP_S3_URL for
+  # a true offsite copy (a backup on the same host as the DB is not disaster
+  # recovery).
+  postgres_backups:
     driver: local

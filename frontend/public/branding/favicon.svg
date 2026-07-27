@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Retail Intelligence">
+  <rect width="64" height="64" rx="16" fill="#0F766E"/>
+  <g fill="#fff" fill-rule="evenodd" transform="translate(3 0) scale(.64)">
+    <path d="M18 64l10-10v24H18z"/>
+    <path d="M30 52l10-10v36H30z"/>
+    <path d="M42 18h10v60H42z"/>
+    <path d="M52 18h8c12 0 12 34 0 34h-8zM52 28h6c6 0 6 14 0 14h-6z"/>
+    <path d="M44 48h10l20 30H64z"/>
+  </g>
+</svg>

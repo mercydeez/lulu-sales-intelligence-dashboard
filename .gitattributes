@@ -1,0 +1,14 @@
+# Line-ending policy. The repo is developed on Windows (core.autocrlf=true) but
+# shell scripts run inside Linux containers (busybox sh in the backup sidecar,
+# alpine in CI). CRLF endings break those shells (`set -o pipefail\r` errors), so
+# force LF on everything that is executed by a POSIX shell or copied into an image.
+*.sh            text eol=lf
+Dockerfile*     text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+
+# Windows-side scripts stay CRLF.
+*.ps1           text eol=crlf
+
+# Let Git auto-detect the rest.
+*               text=auto

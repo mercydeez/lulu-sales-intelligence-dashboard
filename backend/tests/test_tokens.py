@@ -7,8 +7,10 @@ mocked at the service boundary.
 """
 import pytest
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from fastapi import Response
 from jose import jwt
 
 from app.services.auth_service import (
@@ -29,7 +31,7 @@ def _payload(token: str) -> dict:
     return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
 
-TOKEN_DATA = {"user_id": 1, "email": "atharva@lulu.ae", "role": "super_admin"}
+TOKEN_DATA = {"user_id": 1, "email": "atharva@retaildemo.app", "role": "super_admin"}
 
 
 # =============================================================================
@@ -108,11 +110,13 @@ class TestBlacklist:
             assert await is_token_blacklisted(token) is True
 
     @pytest.mark.asyncio
-    async def test_fails_open_when_redis_down(self):
+    async def test_fails_closed_when_redis_down(self):
+        # Secure default: if the blacklist can't be consulted, treat the token as
+        # revoked (return True) so a logged-out / rotated token isn't honored.
         broken = AsyncMock()
         broken.get = AsyncMock(side_effect=ConnectionError("redis down"))
         with patch("app.services.redis_client.redis_client", broken):
-            assert await is_token_blacklisted("any-token") is False
+            assert await is_token_blacklisted("any-token") is True
 
 
 # =============================================================================
@@ -175,3 +179,88 @@ class TestRefreshRotation:
     async def test_access_token_rejected_as_refresh(self):
         access = create_access_token(TOKEN_DATA)
         assert await AuthService.refresh_access_token(access) is None
+
+
+# =============================================================================
+# 5. Token-type confusion (P0 fix) — decode_token pins the `type` claim so a
+#    long-lived refresh token cannot be replayed as a Bearer access token.
+# =============================================================================
+
+class TestTokenTypeConfusion:
+
+    def test_access_token_accepted_on_access_path(self):
+        # Default expected_type="access" accepts a real access token.
+        assert decode_token(create_access_token(TOKEN_DATA)) is not None
+
+    def test_refresh_token_rejected_on_access_path(self):
+        # The core fix: a refresh token must NOT validate as an access token.
+        assert decode_token(create_refresh_token(TOKEN_DATA)) is None
+
+    def test_refresh_token_accepted_when_expected(self):
+        assert decode_token(
+            create_refresh_token(TOKEN_DATA), expected_type="refresh"
+        ) is not None
+
+    def test_type_check_can_be_skipped(self):
+        # expected_type=None preserves the legacy "any valid JWT" behaviour.
+        assert decode_token(create_refresh_token(TOKEN_DATA), expected_type=None) is not None
+
+
+# =============================================================================
+# 6. httpOnly cookie auth (P1.3 / E0-5) — the cookie helpers set/clear secure
+#    auth cookies. Since E0-5 the httpOnly cookie is the ONLY browser transport:
+#    the frontend no longer keeps tokens in XSS-exfiltratable localStorage, and
+#    state-changing cookie-auth requests carry the CSRF double-submit header.
+#    (Tokens are still in the login/refresh JSON body for API clients; the
+#    at-rest theft channel is what E0-5 closes — see e2e/xss-theft.spec.ts.)
+# =============================================================================
+
+def _set_cookie_headers(response: Response) -> list[str]:
+    return [v.decode() for k, v in response.raw_headers if k == b"set-cookie"]
+
+
+class TestCookieAuth:
+
+    def _tokens(self):
+        return SimpleNamespace(
+            access_token="acc.jwt.value",
+            refresh_token="ref.jwt.value",
+            expires_in=1800,
+        )
+
+    def test_set_auth_cookies_sets_both_httponly(self):
+        from app.routes.auth import set_auth_cookies, ACCESS_COOKIE, REFRESH_COOKIE
+        resp = Response()
+        set_auth_cookies(resp, self._tokens())
+        headers = _set_cookie_headers(resp)
+        joined = "\n".join(headers)
+        assert f"{ACCESS_COOKIE}=acc.jwt.value" in joined
+        assert f"{REFRESH_COOKIE}=ref.jwt.value" in joined
+        # Both cookies must be httpOnly + scoped to the whole site.
+        assert all("HttpOnly" in h for h in headers)
+        assert all("Path=/" in h for h in headers)
+
+    def test_dev_cookies_not_secure(self):
+        # Testing/dev env: allow http on localhost (no Secure flag).
+        from app.routes.auth import set_auth_cookies
+        resp = Response()
+        set_auth_cookies(resp, self._tokens())
+        assert all("Secure" not in h for h in _set_cookie_headers(resp))
+
+    def test_prod_cookies_are_secure(self, production_settings):
+        # set_auth_cookies lives in app.auth_deps (routes.auth re-exports it),
+        # so the settings lookup to patch is auth_deps' module global.
+        from app import auth_deps
+        resp = Response()
+        with patch.object(auth_deps, "get_settings", return_value=production_settings):
+            auth_deps.set_auth_cookies(resp, self._tokens())
+        assert all("Secure" in h for h in _set_cookie_headers(resp))
+
+    def test_clear_auth_cookies_expires_both(self):
+        from app.routes.auth import clear_auth_cookies, ACCESS_COOKIE, REFRESH_COOKIE
+        resp = Response()
+        clear_auth_cookies(resp)
+        joined = "\n".join(_set_cookie_headers(resp))
+        # delete_cookie emits an expiry in the past for each cookie.
+        assert ACCESS_COOKIE in joined and REFRESH_COOKIE in joined
+        assert "Max-Age=0" in joined or "01 Jan 1970" in joined

@@ -2,15 +2,15 @@
 Monitoring Routes
 Provides endpoints for metrics, health checks, and system status.
 """
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Response, HTTPException
 from datetime import datetime
 from typing import Dict, Any
 
 from app.config import get_settings, logger
 from app.services.metrics import get_metrics
 from app.services.database import engine, async_session
-from app.services.redis_client import get_redis
-from app.routes.auth import get_current_user
+from app.services.redis_client import get_redis, cache_get, cache_set
+from app.auth_deps import get_current_user, require_role
 from sqlalchemy import text
 
 
@@ -161,6 +161,136 @@ async def liveness_check() -> Dict[str, str]:
     return {"status": "alive", "timestamp": datetime.utcnow().isoformat()}
 
 
+@router.get("/public-status")
+async def public_status() -> Dict[str, Any]:
+    """Public component status for the /status page (CX trust loop — K2,
+    docs/product/CX_LOOPS_PLAN.md). Unauthenticated by design; Redis-cached
+    60s so a thousand open status tabs cost one probe a minute. Exposes
+    component states ONLY — no versions, hosts, or error strings (info-leak
+    safe). Always returns 200: the payload carries the health verdict.
+    """
+    cache_key = "public_status:v1"
+    try:
+        cached = await cache_get(cache_key)
+        if cached:
+            return cached
+    except Exception:
+        pass  # the cache path must never take the status endpoint down
+
+    async def db_ok() -> bool:
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            return True
+        except Exception:
+            return False
+
+    async def redis_ok() -> bool:
+        try:
+            r = await get_redis()
+            await r.ping()
+            return True
+        except Exception:
+            return False
+
+    database_up = await db_ok()
+    cache_up = await redis_ok()
+    payload: Dict[str, Any] = {
+        "status": "operational" if (database_up and cache_up) else "degraded",
+        "components": {
+            "api": "operational",  # this handler answered
+            "database": "operational" if database_up else "down",
+            "cache_stream": "operational" if cache_up else "down",
+        },
+        "checked_at": datetime.utcnow().isoformat() + "Z",
+    }
+    if cache_up:
+        try:
+            await cache_set(cache_key, payload, expire=60)
+        except Exception:
+            pass
+    return payload
+
+
+@router.get("/residency")
+async def data_residency() -> Dict[str, Any]:
+    """Public data-residency posture (E5-3) for a `/trust`-style page. Reports the
+    configured region, backup region, cross-border policy, external-AI caveat, and
+    log retention — region ids + booleans only, NO secrets. Honest: it reports
+    exactly what the operator configured, never an unbacked compliance claim.
+    Returns 404 when the operator has disabled the public statement."""
+    s = get_settings()
+    if not getattr(s, "data_residency_statement_enabled", True):
+        raise HTTPException(status_code=404, detail="residency_statement_disabled")
+    from app.services.data_residency import residency_posture
+    payload = residency_posture(s)
+    payload["checked_at"] = datetime.utcnow().isoformat() + "Z"
+    return payload
+
+
+@router.get("/forecast-methodology")
+async def forecast_methodology() -> Dict[str, Any]:
+    """Public forecast methodology + measured accuracy (E7-2).
+
+    "Ramadan-accurate, and we show our error rate." Competitors publish claims;
+    this publishes the error bars. Unauthenticated on purpose — a prospect must be
+    able to check our arithmetic before trusting us with their data.
+
+    Anonymous by construction: unitless error rates, the baseline we score against,
+    and which calendar features are on. No revenue, no store, no tenant, no volume.
+
+    Honesty: Ramadan accuracy is reported ONLY when the back-test window actually
+    contained Ramadan dates; otherwise it comes back null with the reason. We do
+    not extrapolate a seasonal claim from a season we never measured. A cold cache
+    returns `warming`, not a stale or invented number.
+    """
+    s = get_settings()
+    if not getattr(s, "forecast_methodology_public", True):
+        raise HTTPException(status_code=404, detail="forecast_methodology_disabled")
+
+    from app.services.forecast_lab import model_metrics_cache_key
+    from app.services.cache import get_cached
+
+    cached = await get_cached(model_metrics_cache_key(s.demo_tenant_id, None, 14))
+
+    if not cached or cached.get("status") != "ready":
+        return {
+            "status": "warming",
+            "reason": "the reference models are still training; no number is published until they are",
+            "baseline_model": "seasonal_naive",
+            "checked_at": datetime.utcnow().isoformat() + "Z",
+        }
+
+    # A strict whitelist. Everything else in the model-metrics payload — revenue,
+    # per-store heatmaps, item accuracy — stays private by never being copied here.
+    fields = (
+        "forecasting_version", "baseline_model",
+        "baseline_mape", "baseline_wape",
+        "selected_model", "selected_model_mape", "selected_model_wape",
+        "wape_improvement_vs_baseline_pct",
+        "ramadan_accuracy", "ramadan_mape", "ramadan_wape",
+        "ramadan_eval_days", "ramadan_accuracy_reason",
+        "calendar_feature_summary", "methodology_note",
+    )
+    payload: Dict[str, Any] = {k: cached.get(k) for k in fields}
+    payload["status"] = "ready"
+    payload["dataset"] = "reference tenant (synthetic UAE retail history)"
+    payload["checked_at"] = datetime.utcnow().isoformat() + "Z"
+    return payload
+
+
+@router.get("/jwks.json")
+async def jwks() -> Dict[str, Any]:
+    """Public JSON Web Key Set (E5-6). Publishes the RS256 **public** keys so any
+    downstream verifier (worker, public API, another service) can validate tokens
+    WITHOUT holding the private signing key — the whole point of moving off the
+    shared HS256 secret. Contains public key material only; returns an empty set
+    when running legacy HS256 (a symmetric secret is never published). Safe to
+    cache; keys change only on rotation."""
+    from app.services.jwt_keys import get_key_provider
+    return get_key_provider().public_jwks()
+
+
 @router.get("/stats")
 async def system_stats(current_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """
@@ -233,5 +363,31 @@ async def system_stats(current_user: dict = Depends(get_current_user)) -> Dict[s
         }
     except Exception as e:
         stats["cache"]["error"] = str(e)
-    
+
     return stats
+
+
+@router.post("/alerts/test")
+async def send_test_alert(user: dict = Depends(require_role("super_admin", "admin"))) -> Dict[str, Any]:
+    """Admin-only: emit a TEST alert through the configured webhook so an operator
+    can prove the founder-phone path end-to-end (E0-2 acceptance evidence).
+
+    Requires super_admin/admin. Never returns the webhook URL — only whether the
+    alert was sent and the alerting provider status. If alerting is disabled or no
+    webhook is configured, it reports that honestly instead of sending.
+    """
+    from app.services.alerting import send_alert, alerting_status
+
+    result = await send_alert(
+        title=f"{settings.product_name} test alert",
+        message=f"Manual test alert triggered by {user.get('email', 'admin')}.",
+        severity="critical",
+        check="manual_test",
+        status="test",
+    )
+    return {
+        "requested_by": user.get("email"),
+        "alerting": alerting_status(),   # {status, provider} — no URL
+        "result": result,                # {sent: bool, reason?: str}
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }

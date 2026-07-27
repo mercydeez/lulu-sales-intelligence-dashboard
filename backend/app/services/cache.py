@@ -4,9 +4,15 @@ High-performance caching layer using Redis for API responses
 """
 import json
 import hashlib
+from decimal import Decimal
 from typing import Optional, Any, Callable
 from functools import wraps
-from app.services.redis_client import redis_client
+# Import the module (not the name) so we always read the LIVE client. The global
+# `redis_client` is None at import time and reassigned in init_redis() at startup;
+# `from ... import redis_client` would capture that None forever and silently
+# disable caching (every request would recompute its query). Reading
+# `_redis.redis_client` at call time picks up the connected client.
+from app.services import redis_client as _redis
 from app.config import logger
 
 # Cache TTLs in seconds
@@ -27,18 +33,42 @@ CACHE_TTL = {
 }
 
 
+def _json_default(o: Any):
+    """JSON fallback for non-native types. Decimal must become a JSON *number*
+    so a cache HIT matches the uncached path (FastAPI also encodes Decimal as a
+    number); stringifying it caused values like avg_basket_size to come back as
+    "12.5" and break `.toFixed()` on the frontend. Everything else (date,
+    datetime, …) falls back to its ISO/str form as before."""
+    if isinstance(o, Decimal):
+        return float(o)
+    return str(o)
+
+
 def generate_cache_key(prefix: str, **kwargs) -> str:
-    """Generate a unique cache key from prefix and parameters"""
+    """Generate a unique, TENANT-SCOPED cache key from prefix and parameters.
+
+    The active tenant (tenant_context) is ALWAYS folded into the key so a cached
+    response can never be served across tenants. This is essential: super_admins
+    of different tenants share the same scope params (e.g. accessible_stores=[] =>
+    the 'all' scope), which previously collided on a single key and leaked one
+    tenant's data to another. Defaults to tenant 1 outside a request (cache warmer).
+    Imported lazily to avoid a circular import with services.database."""
+    try:
+        from app.services.database import tenant_context
+        tid = tenant_context.get()
+    except Exception:
+        tid = "_"
     params_str = json.dumps(kwargs, sort_keys=True, default=str)
     params_hash = hashlib.md5(params_str.encode()).hexdigest()[:12]
-    return f"cache:{prefix}:{params_hash}"
+    return f"cache:t{tid}:{prefix}:{params_hash}"
 
 
 async def get_cached(key: str) -> Optional[Any]:
     """Get value from cache"""
     try:
-        if redis_client:
-            value = await redis_client.get(key)
+        client = _redis.redis_client
+        if client:
+            value = await client.get(key)
             if value:
                 logger.debug(f"Cache HIT: {key}")
                 return json.loads(value)
@@ -51,9 +81,10 @@ async def get_cached(key: str) -> Optional[Any]:
 async def set_cached(key: str, value: Any, ttl: int = None):
     """Set value in cache with TTL"""
     try:
-        if redis_client:
+        client = _redis.redis_client
+        if client:
             ttl = ttl or CACHE_TTL['default']
-            await redis_client.set(key, json.dumps(value, default=str), ex=ttl)
+            await client.set(key, json.dumps(value, default=_json_default), ex=ttl)
             logger.debug(f"Cache SET: {key} (TTL: {ttl}s)")
     except Exception as e:
         logger.warning(f"Cache set error: {e}")
@@ -62,10 +93,11 @@ async def set_cached(key: str, value: Any, ttl: int = None):
 async def delete_cached(pattern: str):
     """Delete cache keys matching pattern"""
     try:
-        if redis_client:
-            keys = await redis_client.keys(f"cache:{pattern}:*")
+        client = _redis.redis_client
+        if client:
+            keys = await client.keys(f"cache:{pattern}:*")
             if keys:
-                await redis_client.delete(*keys)
+                await client.delete(*keys)
                 logger.debug(f"Cache DELETE: {len(keys)} keys matching {pattern}")
     except Exception as e:
         logger.warning(f"Cache delete error: {e}")

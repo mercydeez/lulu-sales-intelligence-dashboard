@@ -1,0 +1,207 @@
+"""
+Sage v2 orchestrator: decompose → route → recompose.
+
+A multi-part business question is split into sub-questions; each is answered
+independently and GROUNDED (NL→SQL over the sage_* layer through the allow-list
+guard + sage_ro, document RAG, or an API call); the sub-answers are recomposed
+into one source-attributed table. Nothing is invented — every cell traces to a
+returned row / retrieved chunk.
+
+Two decomposition paths:
+  • LLM (when a provider is configured): free-form decompose + per-sub NL→SQL.
+  • Deterministic (no LLM): keyword intents → curated template SQL (intents.py).
+The deterministic path makes the flagship multi-part question answerable today and
+is the test oracle; the LLM path generalizes it. Both share the guard + executor.
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+from app.config import get_settings
+from app.services.llm import LLMError, get_provider_chain
+from app.services.nl2sql.guard import SqlGuardError, validate_sql
+from app.services.nl2sql.executor import SageExecutionError, execute_sage_sql
+from app.services.nl2sql.pipeline import _generate_sql
+from . import intents as I
+from .decompose import llm_decompose
+
+logger = logging.getLogger(__name__)
+
+# Canonical attribution token for the platform's own data. Reads
+# settings.product_name so the internal-source name follows the brand from one
+# place; sage3.hybrid_executor and federation.catalog use the same setting.
+INTERNAL_SOURCE = get_settings().product_name
+
+MAX_ROWS = 200
+
+
+@dataclass
+class SubAnswer:
+    label: str
+    ok: bool
+    rows: List[dict] = field(default_factory=list)
+    sql: Optional[str] = None
+    error: Optional[str] = None
+    source: str = INTERNAL_SOURCE   # domain/source attribution
+
+
+@dataclass
+class MultiPartResult:
+    ok: bool
+    answer: str = ""
+    parts: List[SubAnswer] = field(default_factory=list)
+    used_llm: bool = False
+    reason: str = ""
+
+
+def _num(v):
+    """Format a number with thousands separators, dropping a trailing .0."""
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)
+    return f"{v:,}" if isinstance(v, (int, float)) else str(v)
+
+
+def _format_value(rows: List[dict]) -> str:
+    """Render a sub-answer's rows for the recomposed table — rows-only, no invention."""
+    if not rows:
+        return "_no data_"
+    if len(rows) == 1:
+        cells = list(rows[0].values())
+        if len(cells) == 1:
+            return _num(cells[0])
+        # multi-column single row, e.g. target: value/unit
+        return " ".join(_num(v) for v in cells)
+    # list answer: join the first column across rows
+    key = next(iter(rows[0].keys()))
+    vals = [str(r.get(key, "")) for r in rows]
+    return ", ".join(vals)
+
+
+def _recompose(parts: List[SubAnswer]) -> str:
+    """Bold-line summary — renders cleanly in the chat (which supports **bold** +
+    line breaks, not markdown tables) and stays readable as plain text / JSON.
+    Every value is rows-only; non-default sources (docs / APIs) are attributed."""
+    lines = ["Here's the breakdown:", ""]
+    multi_source = len({p.source for p in parts if p.ok}) > 1
+    for p in parts:
+        if not p.ok:
+            lines.append(f"**{p.label}:** _unavailable ({p.error})_")
+            continue
+        val = _format_value(p.rows)
+        attrib = f"  _(source: {p.source})_" if (multi_source and p.source != INTERNAL_SOURCE) else ""
+        lines.append(f"**{p.label}:** {val}{attrib}")
+    return "\n".join(lines)
+
+
+async def _run_sql(label: str, sql: str, tenant_id: int,
+                   allowed_stores: Optional[List[int]] = None) -> SubAnswer:
+    try:
+        safe = validate_sql(sql, MAX_ROWS)
+    except SqlGuardError as e:
+        return SubAnswer(label, False, sql=sql, error=f"guard: {e}")
+    try:
+        rows = await execute_sage_sql(safe, tenant_id, allowed_stores)
+        return SubAnswer(label, True, rows=rows, sql=safe)
+    except SageExecutionError as e:
+        return SubAnswer(label, False, sql=safe, error=str(e))
+
+
+async def _run_doc(label: str, query: str, question: str, tenant_id: int, providers,
+                   role: Optional[str] = None,
+                   allowed_stores: Optional[List[int]] = None) -> SubAnswer:
+    """Document sub-answer via the zero-hallucination pipeline (rag/pipeline.py):
+    RBAC-scoped retrieval → confidence gate → constrained, cited generation →
+    output guardrails. A below-threshold sub-question refuses (ok=False) rather
+    than guessing — the recompose renders it as 'unavailable', never a fabricated
+    fact. role/allowed_stores scope retrieval to what this caller may see."""
+    from app.services.rag.pipeline import answer_grounded
+    g = await answer_grounded(query or question, tenant_id, role=role,
+                              allowed_stores=allowed_stores, providers=providers)
+    src = g.citations[0] if g.citations else "Document"
+    if not g.ok:
+        return SubAnswer(label, False, error=g.answer, source=src)
+    return SubAnswer(label, True, rows=[{"answer": g.answer}], source=src)
+
+
+async def _deterministic(question: str, tenant_id: int, providers=None,
+                         allowed_stores: Optional[List[int]] = None,
+                         role: Optional[str] = None) -> List[SubAnswer]:
+    zone = I.extract_zone(question)
+    parts: List[SubAnswer] = []
+    for intent in I.match_intents(question):
+        label = intent.label
+        if intent.zone_aware and zone:
+            label = f"{intent.label} ({zone})"
+        if intent.kind == "document":
+            parts.append(await _run_doc(label, intent.doc_query, question, tenant_id,
+                                        providers, role, allowed_stores))
+        else:
+            parts.append(await _run_sql(label, intent.build_sql(zone), tenant_id, allowed_stores))
+
+    # External API sources (S4) — only present when configured; otherwise no-op.
+    from .api_source import match_api_sources, call_source
+    for src in match_api_sources(question):
+        res = await call_source(src)
+        parts.append(SubAnswer(
+            f"{src.name} (live API)", res["ok"],
+            rows=[{src.name: res["value"]}] if res["ok"] else [],
+            error=None if res["ok"] else res["error"], source=src.name,
+        ))
+    return parts
+
+
+async def _llm(question: str, tenant_id: int, providers,
+               allowed_stores: Optional[List[int]] = None) -> List[SubAnswer]:
+    """LLM decompose → per-sub NL→SQL (guarded). Empty list signals 'fall back'."""
+    subs = await llm_decompose(question, providers)
+    if not subs:
+        return []
+    parts: List[SubAnswer] = []
+    for sub in subs:
+        sql = await _generate_sql(sub, providers)
+        if not sql:
+            parts.append(SubAnswer(sub, False, error="no SQL generated"))
+            continue
+        parts.append(await _run_sql(sub, sql, tenant_id, allowed_stores))
+    return parts
+
+
+def is_multipart(question: str) -> bool:
+    """Engage Sage v2 only for genuinely multi-part questions; single asks stay on
+    the (cheaper) federated Sage path."""
+    q = question.lower()
+    if len(I.match_intents(question)) >= 2:
+        return True
+    # crude conjunction/comma heuristic for the LLM path
+    return q.count(",") >= 2 or q.count(" and ") >= 2
+
+
+async def answer_multipart(question: str, tenant_id: int, role: str = "admin",
+                           providers=None,
+                           allowed_stores: Optional[List[int]] = None) -> MultiPartResult:
+    """Decompose → answer each sub → recompose. Never raises.
+
+    `allowed_stores` is the caller's accessible-store RBAC scope, threaded to
+    every guarded sub-query and DB-enforced via the app.allowed_store_ids GUC
+    (migration 040). Empty/None => super_admin / all stores in the tenant."""
+    providers = providers if providers is not None else get_provider_chain()
+
+    parts: List[SubAnswer] = []
+    used_llm = False
+    if providers:
+        try:
+            parts = await _llm(question, tenant_id, providers, allowed_stores)
+            used_llm = bool(parts)
+        except LLMError:
+            parts = []
+    if not parts:
+        parts = await _deterministic(question, tenant_id, providers, allowed_stores, role)
+
+    if not parts:
+        return MultiPartResult(ok=False, reason="no recognized sub-questions")
+    if not any(p.ok for p in parts):
+        return MultiPartResult(ok=False, parts=parts, reason="all sub-questions failed")
+
+    return MultiPartResult(ok=True, answer=_recompose(parts), parts=parts, used_llm=used_llm)

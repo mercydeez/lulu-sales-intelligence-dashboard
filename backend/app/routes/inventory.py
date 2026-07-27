@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.database import get_db, async_session
 from app.services.data_sync import DataSyncService
 from app.services.cache import get_cached, set_cached, generate_cache_key, CACHE_TTL
-from app.routes.auth import get_current_user, require_permission
+from app.auth_deps import get_current_user, require_permission
 from app.config import logger
 
 router = APIRouter(tags=["Inventory Management"])
@@ -57,23 +57,25 @@ async def get_inventory_summary(
 ):
     """Get inventory summary with key metrics from real sales data"""
     accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
-    
+    tenant_id = current_user.get("tenant_id") or 1
+
     # Validate store access
     if store_id and store_id not in accessible_stores:
         raise HTTPException(status_code=403, detail="Access denied to this store")
-    
-    # Check cache first
-    cache_key = generate_cache_key("inventory_summary", store_id=store_id, stores=accessible_stores)
+
+    # Check cache first (tenant-scoped)
+    cache_key = generate_cache_key("inventory_summary", tenant=tenant_id, store_id=store_id, stores=accessible_stores)
     cached = await get_cached(cache_key)
     if cached:
         return cached
-    
+
     async with async_session() as session:
         try:
             summary = await DataSyncService.get_inventory_summary(
                 session,
                 store_id=store_id,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=tenant_id
             )
             
             # Cache result
@@ -103,31 +105,35 @@ async def get_inventory_items(
     status: Optional[str] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
+    # le=500 covers the full derived inventory (10 stores x 50 items) so a
+    # single request can return an unpaginated scoped view for any role.
+    limit: int = Query(50, ge=1, le=500),
     current_user: dict = Depends(get_current_user)
 ):
     """Get inventory items with filtering and pagination from real sales data"""
     accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
-    
+    tenant_id = current_user.get("tenant_id") or 1
+
     # Validate store access
     if store_id and store_id not in accessible_stores:
         raise HTTPException(status_code=403, detail="Access denied to this store")
-    
-    # Check cache first
+
+    # Check cache first (tenant-scoped)
     cache_key = generate_cache_key(
-        "inventory_items", 
-        store_id=store_id, 
-        category=category, 
-        status=status, 
+        "inventory_items",
+        tenant=tenant_id,
+        store_id=store_id,
+        category=category,
+        status=status,
         search=search,
-        page=page, 
+        page=page,
         limit=limit,
         stores=accessible_stores
     )
     cached = await get_cached(cache_key)
     if cached:
         return cached
-    
+
     async with async_session() as session:
         try:
             result = await DataSyncService.get_inventory_from_sales(
@@ -138,7 +144,8 @@ async def get_inventory_items(
                 search=search,
                 accessible_stores=accessible_stores,
                 page=page,
-                limit=limit
+                limit=limit,
+                tenant_id=tenant_id
             )
             
             # Cache result
@@ -169,10 +176,11 @@ async def get_low_stock_items(
     async with async_session() as session:
         try:
             accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
-            
+            tenant_id = current_user.get("tenant_id") or 1
+
             if store_id and store_id not in accessible_stores:
                 raise HTTPException(status_code=403, detail="Access denied to this store")
-            
+
             # Get items with low_stock or out_of_stock status
             result = await DataSyncService.get_inventory_from_sales(
                 session,
@@ -180,9 +188,10 @@ async def get_low_stock_items(
                 status="low_stock",
                 accessible_stores=accessible_stores,
                 page=1,
-                limit=limit
+                limit=limit,
+                tenant_id=tenant_id
             )
-            
+
             # Also get out of stock items
             out_of_stock = await DataSyncService.get_inventory_from_sales(
                 session,
@@ -190,7 +199,8 @@ async def get_low_stock_items(
                 status="out_of_stock",
                 accessible_stores=accessible_stores,
                 page=1,
-                limit=limit
+                limit=limit,
+                tenant_id=tenant_id
             )
             
             # Combine and sort by quantity
@@ -215,18 +225,20 @@ async def get_inventory_by_category(
 ):
     """Get inventory breakdown by category from real sales data"""
     accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
-    
-    # Check cache first
-    cache_key = generate_cache_key("inventory_categories", stores=accessible_stores)
+    tenant_id = current_user.get("tenant_id") or 1
+
+    # Check cache first (tenant-scoped)
+    cache_key = generate_cache_key("inventory_categories", tenant=tenant_id, stores=accessible_stores)
     cached = await get_cached(cache_key)
     if cached:
         return cached
-    
+
     async with async_session() as session:
         try:
             categories = await DataSyncService.get_categories_inventory(
                 session,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=tenant_id
             )
             result = {"categories": categories}
             
@@ -247,22 +259,23 @@ async def get_store_inventory(
 ):
     """Get inventory for a specific store"""
     accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
-    
+    tenant_id = current_user.get("tenant_id") or 1
+
     if store_id not in accessible_stores:
         raise HTTPException(status_code=403, detail="Access denied to this store")
-    
+
     async with async_session() as session:
         try:
-            # Get store info
+            # Get store info (tenant-scoped)
             store_query = await session.execute(
-                text("SELECT id, name, location FROM stores WHERE id = :store_id"),
-                {"store_id": store_id}
+                text("SELECT id, name, location FROM stores WHERE id = :store_id AND tenant_id = :tenant_id"),
+                {"store_id": store_id, "tenant_id": tenant_id}
             )
             store_row = store_query.fetchone()
-            
+
             if not store_row:
                 raise HTTPException(status_code=404, detail="Store not found")
-            
+
             # Get inventory for this store
             result = await DataSyncService.get_inventory_from_sales(
                 session,
@@ -270,14 +283,16 @@ async def get_store_inventory(
                 category=category,
                 accessible_stores=accessible_stores,
                 page=1,
-                limit=100
+                limit=100,
+                tenant_id=tenant_id
             )
-            
+
             # Get summary for this store
             summary = await DataSyncService.get_inventory_summary(
                 session,
                 store_id=store_id,
-                accessible_stores=accessible_stores
+                accessible_stores=accessible_stores,
+                tenant_id=tenant_id
             )
             
             return {
@@ -487,6 +502,45 @@ async def get_inventory_analytics(
                 "top_categories": [],
                 "total_movement": 0
             }
+
+
+@router.get("/reorder-suggestions")
+async def get_reorder_suggestions(
+    store_id: Optional[int] = None,
+    lead_time_days: int = Query(7, ge=1, le=60, description="Fallback when the supplier's own lead time is unknown"),
+    cover_target_days: int = Query(7, ge=0, le=60),
+    limit: int = Query(20, ge=1, le=100),
+    service_level: float = Query(0.95, ge=0.50, le=0.9999,
+                                 description="Target chance of not stocking out within a lead time (E7-6)"),
+    current_user: dict = Depends(get_current_user),
+):
+    """Forecast-driven reorder list (B1.7 + E7-6): the forecasting engine projects
+    each item's demand, safety stock is sized from the OBSERVED demand variability
+    at the requested service level, and items at or below their reorder point are
+    surfaced with a recommended order quantity plus the formula that produced it.
+
+    Where an item has too little history to measure σ, no safety stock is claimed —
+    the suggestion falls back to days-of-cover and says so (`needs`)."""
+    from app.auth_deps import get_accessible_store_ids
+    from app.services.forecast_service import reorder_suggestions
+
+    accessible_stores = current_user.get("permissions", {}).get("accessible_stores", [])
+    if store_id and accessible_stores and store_id not in accessible_stores:
+        raise HTTPException(status_code=403, detail="Access denied to this store")
+
+    tenant_id = current_user.get("tenant_id") or 1
+    allowed = get_accessible_store_ids(current_user)
+    async with async_session() as session:
+        try:
+            return await reorder_suggestions(
+                session, tenant_id=tenant_id, allowed=allowed, store_id=store_id,
+                lead_time_days=lead_time_days, cover_target_days=cover_target_days,
+                limit=limit, service_level=service_level,
+            )
+        except Exception as e:
+            logger.error(f"Error computing reorder suggestions: {e}")
+            return {"suggestions": [], "count": 0, "critical_count": 0,
+                    "lead_time_days": lead_time_days}
 
 
 # =============================================================================

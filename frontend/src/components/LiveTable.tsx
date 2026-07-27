@@ -2,10 +2,9 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { Wifi, WifiOff, Clock, Timer, Zap } from 'lucide-react';
+import { Badge, EmptyState, LiveIndicator } from '@/components/ui';
 import { useEventStream } from '@/hooks/useEventStream';
 import { authFetch } from '@/contexts/AuthContext';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface StreamSale {
   id: number;
@@ -55,13 +54,13 @@ function formatTimestamp(timestamp: string | undefined | null): string {
 function getTimeAgo(timestamp: string | undefined | null): string {
   const then = parseTimestamp(timestamp);
   if (!then) return 'just now';
-  
+
   const now = new Date();
   const diffMs = now.getTime() - then.getTime();
   const diffSecs = Math.floor(diffMs / 1000);
   const diffMins = Math.floor(diffSecs / 60);
   const diffHours = Math.floor(diffMins / 60);
-  
+
   if (diffSecs < 0) return 'just now';
   if (diffSecs < 5) return 'just now';
   if (diffSecs < 60) return `${diffSecs}s ago`;
@@ -118,16 +117,16 @@ export default function LiveTable() {
       setSales((prev) => {
         const newSale = { ...sale, isNew: true };
         const updated = [newSale, ...prev.slice(0, 19)];
-        
+
         // Remove highlight after 2 seconds
         setTimeout(() => {
-          setSales((current) => 
-            current.map((s) => 
+          setSales((current) =>
+            current.map((s) =>
               s.id === sale.id ? { ...s, isNew: false } : s
             )
           );
         }, 2000);
-        
+
         return updated;
       });
     }
@@ -142,61 +141,51 @@ export default function LiveTable() {
   return (
     <div className="glass rounded-2xl overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-700/50 flex items-center justify-between bg-slate-800/50">
+      <div className="px-6 py-4 border-b border-line flex items-center justify-between bg-surface-2/70">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-cyan-500/20">
-            <Zap className="w-5 h-5 text-cyan-400" />
+          <div className="p-2 rounded-xl bg-teal-50 ring-1 ring-teal-100">
+            <Zap className="w-5 h-5 text-teal-600" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-white">Live Sales Feed</h3>
-            <p className="text-xs text-slate-400">Real-time streaming data</p>
+            <h3 className="text-lg font-semibold text-ink">Live Sales Feed</h3>
+            <p className="text-xs text-ink-muted">Real-time streaming data</p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-4">
           {/* Next stream countdown */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-700/50">
-            <Timer className="w-4 h-4 text-amber-400" />
-            <span className="text-sm text-slate-300">
-              Next: <span className="font-mono text-amber-400">{nextStreamIn}s</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-2">
+            <Timer className="w-4 h-4 text-ink-muted" />
+            <span className="text-sm text-ink-soft">
+              Next: <span className="font-mono text-ink tabular-nums">{nextStreamIn}s</span>
             </span>
           </div>
-          
+
           {/* Connection status */}
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${
-            connected ? 'bg-emerald-500/20' : 'bg-rose-500/20'
+            connected ? 'bg-emerald-100' : 'bg-rose-100'
           }`}>
             {connected ? (
               <>
-                <Wifi className="w-4 h-4 text-emerald-400" />
-                <span className="text-sm text-emerald-400">Connected</span>
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
+                <Wifi className="w-4 h-4 text-emerald-600" />
+                <span className="text-sm text-emerald-700">Connected</span>
               </>
             ) : (
               <>
-                <WifiOff className="w-4 h-4 text-rose-400" />
-                <span className="text-sm text-rose-400">Disconnected</span>
+                <WifiOff className="w-4 h-4 text-rose-600" />
+                <span className="text-sm text-rose-700">Disconnected</span>
               </>
             )}
           </div>
 
-          {/* Live indicator */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-500/20">
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
-            </span>
-            <span className="text-sm font-bold text-rose-400">LIVE</span>
-          </div>
+          {/* Live indicator — canonical teal pulse (rose = danger, not "live") */}
+          <LiveIndicator />
         </div>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="px-6 py-3 bg-amber-500/10 border-b border-amber-500/30 text-amber-400 text-sm flex items-center gap-2">
+        <div className="px-6 py-3 bg-amber-50 border-b border-amber-200 text-amber-700 text-sm flex items-center gap-2">
           <Clock className="w-4 h-4" />
           {error}
         </div>
@@ -205,128 +194,116 @@ export default function LiveTable() {
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="min-w-full">
-          <thead className="bg-slate-800/80">
+          <thead className="bg-surface-2/70">
             <tr>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-start text-xs font-semibold text-ink-muted uppercase tracking-wide">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4" />
                   Timestamp
                 </div>
               </th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-start text-xs font-semibold text-ink-muted uppercase tracking-wide">
                 Store
               </th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-start text-xs font-semibold text-ink-muted uppercase tracking-wide">
                 Item
               </th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-start text-xs font-semibold text-ink-muted uppercase tracking-wide">
                 Sales
               </th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-start text-xs font-semibold text-ink-muted uppercase tracking-wide">
                 Status
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-700/30">
+          <tbody className="divide-y divide-line">
             {sales.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
-                  <div className="flex flex-col items-center gap-2">
-                    <Zap className="w-8 h-8 text-slate-600" />
-                    <span>Waiting for streaming data...</span>
-                  </div>
+                <td colSpan={5} className="px-4 py-2">
+                  <EmptyState
+                    icon={<Zap className="w-7 h-7" />}
+                    title="Waiting for streaming data"
+                    description="Live sales appear here the moment they happen."
+                  />
                 </td>
               </tr>
             ) : (
               sales.map((sale, index) => (
-                <tr 
+                <tr
                   key={sale.id}
                   className={`transition-all duration-500 ${
-                    sale.isNew 
-                      ? sale.sales < 0 
-                        ? 'animate-glow bg-rose-500/10' 
-                        : 'animate-glow bg-cyan-500/10'
-                      : index % 2 === 0 
-                        ? 'bg-slate-800/30' 
-                        : 'bg-slate-900/30'
-                  } hover:bg-slate-700/30`}
+                    sale.isNew
+                      ? sale.sales < 0
+                        ? 'bg-rose-50'
+                        : 'bg-teal-50'
+                      : index % 2 === 0
+                        ? 'bg-surface-2/40'
+                        : 'bg-surface'
+                  } hover:bg-teal-50/40`}
                 >
                   {/* Timestamp Column */}
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium text-white">
+                      <span className="text-sm font-medium text-ink">
                         {mounted ? formatTimestamp(sale.timestamp) : '--'}
                       </span>
                       <span className={`text-xs ${
-                        sale.isNew 
-                          ? sale.sales < 0 
-                            ? 'text-rose-400 font-semibold'
-                            : 'text-cyan-400 font-semibold' 
-                          : 'text-slate-500'
+                        sale.isNew
+                          ? sale.sales < 0
+                            ? 'text-rose-600 font-semibold'
+                            : 'text-teal-600 font-semibold'
+                          : 'text-ink-muted'
                       }`}>
                         {mounted ? getTimeAgo(sale.timestamp) : '--'}
                       </span>
                     </div>
                   </td>
-                  
+
                   {/* Store Column */}
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        sale.sales < 0 ? 'bg-rose-500/20' : 'bg-purple-500/20'
+                        sale.sales < 0 ? 'bg-rose-100' : 'bg-surface-2'
                       }`}>
-                        <span className={`text-xs font-bold ${
-                          sale.sales < 0 ? 'text-rose-400' : 'text-purple-400'
+                        <span className={`text-xs font-bold tabular-nums ${
+                          sale.sales < 0 ? 'text-rose-600' : 'text-ink-soft'
                         }`}>{sale.store_id}</span>
                       </div>
-                      <div className="text-sm font-medium text-white">
+                      <div className="text-sm font-medium text-ink">
                         {sale.store_name || `Store ${sale.store_id}`}
                       </div>
                     </div>
                   </td>
-                  
+
                   {/* Item Column */}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-slate-300">
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="text-sm text-ink-soft">
                       {sale.item_name || `Item ${sale.item_id}`}
                     </div>
                   </td>
-                  
+
                   {/* Sales Column */}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-3 py-1.5 text-sm font-bold rounded-lg ${
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className={`px-3 py-1.5 text-sm font-bold tabular-nums rounded-lg ${
                       sale.sales < 0
-                        ? 'bg-rose-500/30 text-rose-300'
-                        : sale.isNew 
-                          ? 'bg-cyan-500/30 text-cyan-300' 
-                          : 'bg-slate-700/50 text-white'
+                        ? 'bg-rose-100 text-rose-700'
+                        : sale.isNew
+                          ? 'bg-teal-100 text-teal-700'
+                          : 'bg-surface-2 text-ink'
                     }`}>
                       {sale.sales < 0 ? sale.sales : `+${sale.sales}`}
                     </span>
                   </td>
-                  
-                  {/* Status Column */}
-                  <td className="px-6 py-4 whitespace-nowrap">
+
+                  {/* Status Column — shared Badge; the header's single LiveIndicator
+                      carries the pulse (a ping per row was ambient noise) */}
+                  <td className="px-4 py-3 whitespace-nowrap">
                     {sale.sales < 0 ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold bg-rose-500/20 text-rose-400 rounded-full">
-                        <span className="relative flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
-                        </span>
-                        Return
-                      </span>
+                      <Badge variant="danger" size="sm">Return</Badge>
                     ) : sale.is_streaming ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold bg-emerald-500/20 text-emerald-400 rounded-full">
-                        <span className="relative flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-                        </span>
-                        Live
-                      </span>
+                      <Badge variant="teal" size="sm">Live</Badge>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold bg-slate-600/30 text-slate-400 rounded-full">
-                        Historical
-                      </span>
+                      <Badge variant="neutral" size="sm">Historical</Badge>
                     )}
                   </td>
                 </tr>
@@ -335,9 +312,9 @@ export default function LiveTable() {
           </tbody>
         </table>
       </div>
-      
+
       {/* Footer */}
-      <div className="px-6 py-3 border-t border-slate-700/50 bg-slate-800/30 flex items-center justify-between text-sm text-slate-500">
+      <div className="px-6 py-3 border-t border-line bg-surface-2/40 flex items-center justify-between text-sm text-ink-muted">
         <span>Showing latest {sales.length} records</span>
         <span className="flex items-center gap-2">
           <Clock className="w-4 h-4" />
