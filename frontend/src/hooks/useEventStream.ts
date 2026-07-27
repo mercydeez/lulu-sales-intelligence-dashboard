@@ -4,7 +4,18 @@ import { useEffect, useState, useRef } from 'react';
 import { authFetch } from '@/contexts/AuthContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const RECONNECT_MS = 5000;
+
+// Reconnect backoff: retry fast on the first blip, then back off. A flat 5s meant
+// every transient drop cost a full 5 seconds of dead stream.
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 8000;
+
+// Keep a channel open briefly after its last subscriber unmounts. Leaving a live
+// page and coming back used to tear the EventSource down and redo the entire
+// handshake on return — an awaited POST /api/auth/stream-ticket, then the SSE
+// connect — which is what made those tab switches feel slow. Inside this window
+// the existing connection is simply reused.
+const STREAM_LINGER_MS = 30000;
 
 type Handler = (data: any) => void;
 
@@ -37,6 +48,10 @@ interface Conn {
   /** components listening for connection-status changes */
   statusListeners: Set<() => void>;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
+  /** pending teardown while the channel lingers with no subscribers */
+  idleTimer: ReturnType<typeof setTimeout> | null;
+  /** consecutive failed opens, for backoff; reset on a successful connect */
+  retryAttempt: number;
   opening: boolean;
 }
 
@@ -55,6 +70,8 @@ function getConn(endpoint: string): Conn {
       attached: new Set(),
       statusListeners: new Set(),
       reconnectTimer: null,
+      idleTimer: null,
+      retryAttempt: 0,
       opening: false,
     };
     conns.set(endpoint, c);
@@ -89,6 +106,56 @@ function attachEvent(c: Conn, eventName: string) {
   });
 }
 
+/** Full teardown. Only runs once the linger window expires with no subscribers. */
+function closeConn(c: Conn) {
+  if (c.reconnectTimer) {
+    clearTimeout(c.reconnectTimer);
+    c.reconnectTimer = null;
+  }
+  if (c.idleTimer) {
+    clearTimeout(c.idleTimer);
+    c.idleTimer = null;
+  }
+  if (c.es) {
+    c.es.close();
+    c.es = null;
+  }
+  c.isConnected = false;
+  c.error = null;
+  c.attached.clear();
+  c.opening = false;
+  c.retryAttempt = 0;
+}
+
+/** Exponential backoff, capped. Never schedules once the channel is unused. */
+function scheduleReconnect(c: Conn) {
+  if (c.reconnectTimer || c.refCount === 0) return;
+  const delay = Math.min(RECONNECT_BASE_MS * 2 ** c.retryAttempt, RECONNECT_MAX_MS);
+  c.retryAttempt += 1;
+  c.reconnectTimer = setTimeout(() => {
+    c.reconnectTimer = null;
+    void openConnection(c);
+  }, delay);
+}
+
+/**
+ * Close every channel immediately, ignoring the linger window. Called on logout
+ * so no stream outlives the session it was authorized under. Wired via a window
+ * event rather than an import from AuthContext, which would be a cycle (this
+ * module already imports authFetch from there).
+ */
+export function closeAllEventStreams() {
+  conns.forEach((c) => {
+    c.refCount = 0;
+    closeConn(c);
+    notifyStatus(c);
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('auth:logout', () => closeAllEventStreams());
+}
+
 async function openConnection(c: Conn) {
   if (c.opening || c.es || c.refCount === 0) return;
   c.opening = true;
@@ -110,6 +177,7 @@ async function openConnection(c: Conn) {
     es.onopen = () => {
       c.isConnected = true;
       c.error = null;
+      c.retryAttempt = 0;
       notifyStatus(c);
     };
 
@@ -124,13 +192,7 @@ async function openConnection(c: Conn) {
       es.close();
       c.es = null;
       c.attached.clear();
-      if (c.reconnectTimer) clearTimeout(c.reconnectTimer);
-      if (c.refCount > 0) {
-        c.reconnectTimer = setTimeout(() => {
-          c.reconnectTimer = null;
-          openConnection(c);
-        }, RECONNECT_MS);
-      }
+      scheduleReconnect(c);
     };
 
     c.opening = false;
@@ -139,13 +201,7 @@ async function openConnection(c: Conn) {
     c.isConnected = false;
     c.error = err?.message || 'Connection failed. Reconnecting…';
     notifyStatus(c);
-    if (c.reconnectTimer) clearTimeout(c.reconnectTimer);
-    if (c.refCount > 0) {
-      c.reconnectTimer = setTimeout(() => {
-        c.reconnectTimer = null;
-        openConnection(c);
-      }, RECONNECT_MS);
-    }
+    scheduleReconnect(c);
   }
 }
 
@@ -173,6 +229,14 @@ export function useEventStream(
 
     const c = getConn(endpoint);
     c.refCount += 1;
+
+    // A channel lingering from a recent unmount is still live: cancel its pending
+    // teardown and reuse it. This is what makes navigating back to a live page
+    // instant instead of re-running the ticket + connect handshake.
+    if (c.idleTimer) {
+      clearTimeout(c.idleTimer);
+      c.idleTimer = null;
+    }
 
     // Register a STABLE wrapper per event that dispatches to the LATEST handler
     // via handlersRef (refreshed every render). Registering the concrete closure
@@ -221,18 +285,14 @@ export function useEventStream(
       c.refCount -= 1;
       if (c.refCount <= 0) {
         c.refCount = 0;
-        if (c.reconnectTimer) {
-          clearTimeout(c.reconnectTimer);
-          c.reconnectTimer = null;
-        }
-        if (c.es) {
-          c.es.close();
-          c.es = null;
-        }
-        c.isConnected = false;
-        c.error = null;
-        c.attached.clear();
-        c.opening = false;
+        // Don't tear down yet — linger, so a quick navigation away and back
+        // reuses this connection. Teardown only happens if nobody re-subscribes
+        // before the window expires.
+        if (c.idleTimer) clearTimeout(c.idleTimer);
+        c.idleTimer = setTimeout(() => {
+          c.idleTimer = null;
+          if (c.refCount === 0) closeConn(c);
+        }, STREAM_LINGER_MS);
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -101,6 +101,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     clearApiCache(); // never let one user's cached data outlive their session (M2)
+    // Drop any open SSE connection now rather than letting it sit out its linger
+    // window (hooks/useEventStream.ts). Sent as an event, not a direct call, to
+    // avoid an import cycle — that module imports authFetch from this one.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('auth:logout'));
+    }
     setState({
       user: null,
       isAuthenticated: false,

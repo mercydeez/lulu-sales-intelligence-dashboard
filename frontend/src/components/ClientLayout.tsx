@@ -84,8 +84,20 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  // Show loading while checking auth
-  if (isLoading) {
+  // A redirect is already queued by the effects above. Those run AFTER paint, so
+  // rendering the current tree here would flash the screen we're navigating away
+  // from for a frame or two — most visibly the login page (an authed user landing
+  // on /login) and the dashboard (a signed-out user landing on a protected page).
+  // Decide during render instead and hold the loader until the route settles.
+  const redirectPending =
+    !isLoading &&
+    ((!isAuthenticated && !isPublicPath) ||
+      (isAuthenticated && isPublicPath) ||
+      // role home: '/' is about to be replaced with the role's own landing page
+      (isAuthenticated && pathname === '/' && !!config?.home && config.home !== '/'));
+
+  // Show loading while checking auth, or while a redirect is in flight
+  if (isLoading || redirectPending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">

@@ -29,9 +29,15 @@
  *     this repo has already fixed once.
  *
  * So: transform-only, enter-only, no presence choreography. Worst case — zero
- * animation frames ever run — the page sits 8px off-target and is completely
+ * animation frames ever run — the page sits 4px off-target and is completely
  * readable. See components/flywheel/motion.tsx: motion is never load-bearing
  * for meaning.
+ *
+ * DURATION IS DELIBERATELY SHORT. The settle was 320ms over 8px, which read as
+ * lag on every single tab switch — the transition never gates content (see
+ * above), but a third of a second of drift on each navigation is felt as the app
+ * being slow. 160ms over 4px still registers as "rose into place" without
+ * putting perceptible latency in front of every route change.
  */
 import { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
@@ -44,9 +50,9 @@ export function PageTransition({ children }: { children: ReactNode }) {
   return (
     <motion.div
       key={pathname}
-      initial={reduce ? false : { y: 8 }}
+      initial={reduce ? false : { y: 4 }}
       animate={{ y: 0 }}
-      transition={{ duration: reduce ? 0 : 0.32, ease: EASE }}
+      transition={{ duration: reduce ? 0 : 0.16, ease: EASE }}
     >
       {children}
     </motion.div>

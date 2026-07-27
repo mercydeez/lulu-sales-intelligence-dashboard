@@ -18,6 +18,24 @@ export function useNavBadges(): Record<string, number> {
   const { isAuthenticated, authFetch, hasRole } = useAuth();
   const [badges, setBadges] = useState<Record<string, number>>({});
 
+  // The /approvals and /decisions counts used to list `pathname` in their dep
+  // arrays, so every single route change re-fired two uncached round-trips before
+  // the next page could settle — the shell mounts once, so this cost applied to
+  // every tab switch regardless of destination. Refresh on a timer instead, plus
+  // whenever the user actually lands on the page a badge is for (the only place a
+  // stale count is visible).
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const id = setInterval(() => setTick((n) => n + 1), 60000);
+    return () => clearInterval(id);
+  }, [isAuthenticated]);
+
+  // Collapse every unrelated route to one value so moving among them is a no-op.
+  const badgeRoute =
+    pathname === '/approvals' || pathname === '/decisions' ? pathname : '';
+  const refreshKey = `${tick}:${badgeRoute}`;
+
   const set = (href: string, n: number) =>
     setBadges((prev) => (prev[href] === n ? prev : { ...prev, [href]: n }));
 
@@ -49,7 +67,7 @@ export function useNavBadges(): Record<string, number> {
       } catch { /* hidden on failure */ }
     })();
     return () => { active = false; };
-  }, [isAuthenticated, authFetch, pathname]);
+  }, [isAuthenticated, authFetch, refreshKey]);
 
   // /decisions — pending decisions
   useEffect(() => {
@@ -64,7 +82,7 @@ export function useNavBadges(): Record<string, number> {
       } catch { /* hidden on failure */ }
     })();
     return () => { active = false; };
-  }, [isAuthenticated, authFetch, pathname]);
+  }, [isAuthenticated, authFetch, refreshKey]);
 
   // /security — active threats (super_admin only), polled
   useEffect(() => {
