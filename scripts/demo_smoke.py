@@ -138,7 +138,39 @@ def main() -> int:
     except Exception:  # noqa: BLE001
         warn(f"could not parse data_range_end={end!r}")
 
-    print("\n== 4. endpoint sweep ==")
+    print("\n== 4. flywheel readiness ==")
+    # Campaign Studio eligibility = churn score + consent + store scope. Churn
+    # scores depend on feature snapshots, which depend on seeded customers. Miss
+    # any link and the Studio dead-ends on "No customers matched" with no clue
+    # which step is missing, so check the chain explicitly.
+    st, body = get(BACKEND + "/api/flywheel/customers?limit=200", token)
+    if st == 200:
+        d = json.loads(body)
+        rows = d.get("customers") or d.get("items") or d.get("data") or []
+        # Prefer a server-reported total; fall back to the page length.
+        n_cust = d.get("total") if isinstance(d.get("total"), int) else len(rows)
+        scored = sum(1 for r in rows if isinstance(r, dict) and (
+            r.get("churn_probability") is not None or r.get("risk_band")))
+        (ok if n_cust else fail)(f"flywheel customers seeded: {n_cust}")
+        if n_cust and not scored:
+            fail("customers exist but none carry a churn score -> Campaign Studio "
+                 "will dead-end on 'No customers matched'. Run POST "
+                 "/api/flywheel/features/build then POST /api/flywheel/churn/score")
+        elif scored:
+            ok(f"customers carrying a churn score: {scored}/{len(rows)}")
+    else:
+        warn(f"/api/flywheel/customers -> {st}")
+
+    st, body = get(BACKEND + "/api/flywheel/models", token)
+    if st == 200:
+        versions = json.loads(body)
+        vs = versions.get("models") or versions.get("versions") or []
+        (ok if vs else warn)(
+            f"churn model versions registered: {len(vs)}"
+            + ("" if vs else "  -> run POST /api/flywheel/features/build then /churn/score")
+        )
+
+    print("\n== 5. endpoint sweep ==")
     st, body = get(BACKEND + "/openapi.json")
     spec = json.loads(body)
     eps = sorted(p for p, m in spec.get("paths", {}).items() if "get" in m and "{" not in p)

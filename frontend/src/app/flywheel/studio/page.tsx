@@ -112,7 +112,16 @@ export default function CampaignStudio() {
       min_churn_probability: form.min_churn_probability, max_size: form.max_size,
     });
     if (result.total === 0) {
-      throw new Error('No customers matched. Lower the churn floor, or seed customers from the Flywheel home page.');
+      // The old copy said "lower the churn floor, or seed customers", which sent
+      // operators down a dead end: the usual cause is that churn has never been
+      // SCORED, and with zero predictions no floor is low enough to match anyone.
+      // Seeding customers alone is not sufficient either — scoring needs feature
+      // snapshots first. Name the actual chain instead.
+      throw new Error(
+        'No customers matched. Eligibility needs churn scores, which are built in ' +
+        'three steps: seed customers (Flywheel home), build features, then score ' +
+        'churn. If scores already exist, lower the churn floor or widen store scope.',
+      );
     }
     setAudience(result);
     setStep(2);
@@ -336,14 +345,24 @@ export default function CampaignStudio() {
                 <label className="block">
                   <span className="text-xs font-medium text-ink-soft">Maximum audience</span>
                   <Input type="number" min="10" max="5000" value={form.max_size}
-                         onChange={(e) => set('max_size', Number(e.target.value))} className="mt-1" />
+                         onChange={(e) => set('max_size', Number(e.target.value))}
+                         onBlur={(e) => { e.currentTarget.value = String(form.max_size); }}
+                         className="mt-1" />
                 </label>
                 <label className="block">
                   <span className="text-xs font-medium text-ink-soft">
                     Control group %
                   </span>
                   <Input type="number" min="0" max="50" value={form.control_group_pct}
-                         onChange={(e) => set('control_group_pct', Number(e.target.value))} className="mt-1" />
+                         onChange={(e) => set('control_group_pct', Number(e.target.value))}
+                         onBlur={(e) => {
+                           // Number('') is 0, so clearing the field snaps it to "0"
+                           // and the next keystrokes append to that zero — which is
+                           // how this renders as "010" for a value of 10. Rewrite the
+                           // DOM to the canonical number once editing finishes.
+                           e.currentTarget.value = String(form.control_group_pct);
+                         }}
+                         className="mt-1" />
                   <span className="mt-1 block text-[11px] text-ink-muted">
                     Held back entirely — no offers, still measured.
                   </span>
