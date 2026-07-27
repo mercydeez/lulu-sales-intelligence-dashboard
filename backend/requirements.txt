@@ -7,7 +7,7 @@ uvicorn[standard]==0.27.0
 gunicorn==21.2.0
 # E2-2: SFTP transport for scheduled imports. IMAP uses the stdlib (imaplib).
 paramiko==3.4.0
-sqlalchemy[asyncio]==2.0.25
+sqlalchemy[asyncio]==2.0.51
 alembic==1.13.1
 asyncpg==0.29.0
 # psycopg2 is used ONLY by Alembic (sync driver — runs multi-statement DDL/DO
