@@ -42,7 +42,7 @@ sse-starlette==2.0.0
 # the whole stack. langgraph only activates when USE_SAGE_V3=true.
 langgraph==0.1.19
 langgraph-checkpoint==1.0.12
-langchain-core==0.2.43
+langchain-core==1.5.1
 # (optional) langfuse tracing is env-gated and added in Phase 5 to avoid pulling
 # heavier deps before they're needed:
 # langfuse==2.*
