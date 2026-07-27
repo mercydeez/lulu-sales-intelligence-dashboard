@@ -51,9 +51,63 @@ _RELATION_RE = re.compile(r'\b(?:from|join)\s+("?[a-zA-Z_][\w$]*"?)', re.IGNOREC
 # Extracts CTE names from `WITH name AS (` / `, name AS (`.
 _CTE_RE = re.compile(r'(?:\bwith\b|,)\s*("?[a-zA-Z_][\w$]*"?)\s+as\s*\(', re.IGNORECASE)
 
+# A single-quoted SQL string, tolerating the doubled-quote ('') escape.
+_STRING_RE = re.compile(r"'(?:[^']|'')*'")
+# Dollar-quoting ($$...$$ / $tag$...$tag$) can hide anything from a lexical scan
+# and has no place in an analytical SELECT, so it is refused outright.
+_DOLLAR_QUOTE_RE = re.compile(r"\$[a-zA-Z_]*\$")
+
+# `EXTRACT(MONTH FROM date)` and `SUBSTRING(x FROM 1)` put a NON-relation token in
+# FROM position. Without this the guard reads `date` as a table name and rejects
+# "sales by month" — one of the most ordinary questions Sage will ever be asked.
+# Only fixed SQL date-part keywords are skipped; a real table can never be one,
+# and the sage_ro grants remain the backstop either way.
+_NON_RELATION_TOKENS = frozenset({
+    "year", "quarter", "month", "week", "day", "hour", "minute", "second",
+    "dow", "doy", "epoch", "isodow", "isoyear", "millisecond", "microsecond",
+    "century", "decade", "millennium", "timezone", "timezone_hour",
+    "timezone_minute", "both", "leading", "trailing",
+})
+
 
 def _strip_quotes(ident: str) -> str:
     return ident.strip().strip('"').lower()
+
+
+_FUNC_FROM_RE = re.compile(
+    r"\b(extract|substring|trim|overlay)\s*\(([^()]*?)\bfrom\b", re.IGNORECASE
+)
+
+
+def _neutralize_func_from(sql: str) -> str:
+    """Drop the FROM that lives *inside* EXTRACT/SUBSTRING/TRIM/OVERLAY.
+
+    In `EXTRACT(MONTH FROM date)` the token after FROM is the column `date`, not a
+    table, but the relation regex cannot tell the difference and rejected the
+    query as "relation 'date' is not in the allow-list". That killed the single
+    most ordinary analytical question there is — sales grouped by month. Only the
+    inner FROM is removed; the statement's real FROM clause is untouched.
+    """
+    prev = None
+    while prev != sql:
+        prev = sql
+        sql = _FUNC_FROM_RE.sub(lambda m: f"{m.group(1)}({m.group(2)} ", sql)
+    return sql
+
+
+def _mask_literals(sql: str) -> str:
+    """Blank the contents of string literals so lexical checks see only SQL.
+
+    The checks below scan the raw statement for keywords, comment markers and
+    forbidden fragments. Run against the original text they also scan DATA, so a
+    perfectly ordinary query was rejected because a literal contained the letters
+    'do' ("do not ship"), 'set', 'create', 'into', or '--'. Masking removes that
+    entire class of false rejection without weakening anything: a quoted literal
+    is a value, never an executable statement, and the structural checks
+    (SELECT/WITH-only, no statement stacking, relation allow-list) all still run
+    on the masked text.
+    """
+    return _STRING_RE.sub("''", sql)
 
 
 def validate_sql(sql: str, max_rows: int) -> str:
@@ -63,17 +117,32 @@ def validate_sql(sql: str, max_rows: int) -> str:
 
     cleaned = sql.strip()
 
+    # Dollar-quoted bodies would survive literal masking and hide arbitrary text.
+    if _DOLLAR_QUOTE_RE.search(cleaned):
+        raise SqlGuardError("dollar-quoted strings are not allowed")
+
+    # Every lexical check below runs against `scan`, where string literals are
+    # emptied, so query DATA can never trip a keyword rule. Structure is
+    # unaffected: masking preserves the statement's shape exactly.
+    scan = _mask_literals(cleaned)
+
+    # An unpaired quote means the literals did not mask cleanly — refuse rather
+    # than scan text we may have mis-parsed.
+    if "'" in scan.replace("''", ""):
+        raise SqlGuardError("unbalanced string literal")
+
     # Strip a single trailing semicolon; any *interior* one means statement stacking.
-    if cleaned.endswith(";"):
-        cleaned = cleaned[:-1].rstrip()
-    if ";" in cleaned:
+    if scan.rstrip().endswith(";"):
+        scan = scan.rstrip()[:-1].rstrip()
+        cleaned = cleaned.rstrip()[:-1].rstrip()
+    if ";" in scan:
         raise SqlGuardError("multiple statements are not allowed")
 
     # No comments — they're a classic guard-bypass vector.
-    if "--" in cleaned or "/*" in cleaned or "*/" in cleaned:
+    if "--" in scan or "/*" in scan or "*/" in scan:
         raise SqlGuardError("SQL comments are not allowed")
 
-    lowered = cleaned.lower()
+    lowered = scan.lower()
 
     # Must be a read query.
     if not (lowered.startswith("select") or lowered.startswith("with")):
@@ -90,8 +159,14 @@ def validate_sql(sql: str, max_rows: int) -> str:
             raise SqlGuardError(f"forbidden reference: {frag}")
 
     # Relation allow-list: every FROM/JOIN target must be a sage_* view or a CTE.
-    cte_names = {_strip_quotes(m) for m in _CTE_RE.findall(cleaned)}
-    targets = [_strip_quotes(m) for m in _RELATION_RE.findall(cleaned)]
+    # Read from the masked text so a table-like word inside a literal is not
+    # mistaken for a relation.
+    rel_scan = _neutralize_func_from(scan)
+    cte_names = {_strip_quotes(m) for m in _CTE_RE.findall(rel_scan)}
+    targets = [_strip_quotes(m) for m in _RELATION_RE.findall(rel_scan)]
+    # Drop date-part keywords: these come from EXTRACT(MONTH FROM date) and
+    # friends, not from a real FROM clause.
+    targets = [t for t in targets if t not in _NON_RELATION_TOKENS]
     if not targets:
         raise SqlGuardError("query reads no allowed relation")
     for t in targets:
