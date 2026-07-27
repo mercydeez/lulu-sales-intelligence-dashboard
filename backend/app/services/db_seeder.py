@@ -147,6 +147,29 @@ async def run_seed():
     await _seed_history()
 
 
+async def _refresh_date_shift():
+    """Re-anchor history so its latest day is yesterday. No-op when already fresh.
+
+    _DATE_SHIFT_SQL is a no-op when shift_days = 0, so on a same-day restart this
+    costs one MAX(date) scan. It only rewrites rows when the data has actually
+    drifted, which is exactly when the demo would otherwise show a month-old cliff
+    in every trend chart.
+    """
+    try:
+        async with engine.begin() as conn:
+            stale = (await conn.execute(text(
+                "SELECT (CURRENT_DATE - 1) - MAX(date) FROM sales_historical"
+            ))).scalar()
+            if not stale:
+                return
+            from app.services.database import exempt_statement_timeout
+            await exempt_statement_timeout(conn)  # ~900k-row UPDATE when drifted
+            await conn.execute(text(_DATE_SHIFT_SQL))
+        logger.info("History re-anchored: shifted %s day(s) so latest day is yesterday", stale)
+    except Exception as exc:  # never block startup on a demo-freshness nicety
+        logger.warning("Could not re-anchor history dates (%s): %s", type(exc).__name__, exc)
+
+
 async def _seed_history():
     """Bulk-load train.csv into sales_historical when empty. Idempotent.
 
@@ -157,6 +180,12 @@ async def _seed_history():
         count = (await conn.execute(text("SELECT COUNT(*) FROM sales_historical"))).scalar()
     if count and count > 0:
         logger.info("sales_historical already populated (%s rows) — skipping CSV load", count)
+        # The date shift used to run ONLY on the initial CSV load, so a database
+        # seeded N days ago serves history that ends N days ago. Found at 36 days
+        # stale: every "today"/"this week" KPI was computed from the thin live
+        # generator stream alone, which is why sales_today and sales_week were
+        # byte-identical. Re-assert it on every boot so the demo self-heals.
+        await _refresh_date_shift()
         return
 
     csv_path = _first_existing(_CSV_CANDIDATES)

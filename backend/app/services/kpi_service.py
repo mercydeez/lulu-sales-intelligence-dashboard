@@ -109,8 +109,24 @@ async def compute_and_cache_kpis(db: AsyncSession, allowed_stores: Optional[List
                 COALESCE(SUM(s.revenue_aed) FILTER (WHERE s.date >= :week_ago), 0)::numeric as revenue_week,
                 COALESCE(SUM(s.revenue_aed) FILTER (WHERE s.date >= :month_ago), 0)::numeric as revenue_month,
 
-                ROUND(AVG(s.units)::numeric, 2) as avg_daily_sales,
-                ROUND(AVG(s.revenue_aed)::numeric, 2) as avg_daily_revenue,
+                -- TRUE per-DAY averages: total over the window / number of days in it.
+                -- These were AVG(s.units) / AVG(s.revenue_aed), which average a single
+                -- store-item-day ROW (~516 rows/day), not a day. The dashboard renders
+                -- them as "Avg: N units/day" and "AED N/day", so that understated daily
+                -- volume by roughly 500x (52 units/day shown against ~26,866 actual).
+                -- Window is the last 30 completed days: it matches the month figures on
+                -- the same card, and excluding today avoids a partial day dragging the
+                -- mean down mid-demo.
+                COALESCE(
+                    SUM(s.units) FILTER (WHERE s.date >= :month_ago AND s.date < :today)::numeric
+                    / NULLIF(COUNT(DISTINCT s.date) FILTER (WHERE s.date >= :month_ago AND s.date < :today), 0),
+                    0
+                )::numeric(18,2) as avg_daily_sales,
+                COALESCE(
+                    SUM(s.revenue_aed) FILTER (WHERE s.date >= :month_ago AND s.date < :today)
+                    / NULLIF(COUNT(DISTINCT s.date) FILTER (WHERE s.date >= :month_ago AND s.date < :today), 0),
+                    0
+                )::numeric(18,2) as avg_daily_revenue,
                 COUNT(DISTINCT s.store_id) as unique_stores,
                 COUNT(DISTINCT s.item_id) as unique_items,
                 MIN(s.date) FILTER (WHERE s.is_streaming = false) as data_start,
