@@ -53,27 +53,35 @@ exceptions; **0** `NaN`/`undefined` reaching the screen; **0** routes over 3s
 
 ## ⚠️ Known issues and workarounds
 
-### 1. Sage answers from rules, not an LLM — **BLOCKED ON YOUR API KEY**
-No LLM provider is configured, so Sage falls back to deterministic rules. It will
-misroute questions: "how much stock is expiring and from which store" fell through
-to a **greeting template**.
+### 1. Sage — ✅ WORKING (key installed)
+Provider chain is `['OpenAIProvider']`. Verified end to end.
 
-- **To fix:** paste the key into `.env` → `OPENAI_API_KEY=`, keep
-  `ENABLE_EXTERNAL_AI=true` (already set), then `docker compose up -d backend`.
-- **If not fixed — demo workaround:** do not ask Sage open-ended analytical
-  questions. Use it only to show the *interface* and the reasoning trace, or skip
-  the Sage step. Do **not** promise natural-language querying live.
-- **If it breaks live:** Sage returns a canned greeting with quick stats. Move on
-  to `/insights`, which delivers the same analytical value from real data and is
-  the strongest page in the app.
+**Ask it questions with a clear window and subject.** These are verified:
+- *"What were the total units sold yesterday across all stores?"* → **26,420**,
+  which matches the database exactly.
+- *"What were the total units sold by each store in the last 30 days?"* → correct
+  per-store breakdown, `grounded=True`, `confidence 1.00`.
 
-### 2. Sage's SQL guardrail has never executed
-`nl2sql/guard.py` is strict on paper — single statement, SELECT/WITH only,
-relation allow-list of curated `sage_*` views, hard row cap, least-privilege
-`sage_ro` role. But **no SQL has ever reached it**, because no LLM has ever
-generated any. **Do not claim "the SQL is verified read-only" on stage** — it is
-designed to be, but untested. If asked, say the guardrail is allow-list based and
-you can walk them through the code.
+**Behaviour to expect:** vague questions trigger a clarifying question rather than
+a guess — that is by design and demos well ("it asks rather than hallucinates").
+Your original *"how much stock is getting expired in total and from which store?"*
+still asks "which store?" first. Either answer it, or phrase it as *"expiring
+stock by store"*.
+
+⚠️ **On phrasing "last 30 days":** Sage's window can differ from the dashboard's
+by a day or two, so a Sage figure may not tie exactly to a KPI card. Prefer
+"yesterday" or an explicit date range when you want the two to match on screen.
+
+### 2. Sage read-only safety — what you can and cannot claim
+**You CAN say:** queries run as a least-privilege `sage_ro` Postgres role that is
+verified to have no INSERT/UPDATE/DELETE/DROP/CREATE grant and no read access to
+base tables like `users`; generated SQL is additionally allow-listed to a fixed
+set of read-only `sage_*` views with a hard row cap. This is enforced by the
+database, not by string matching. Injection attempts were tested and refused.
+
+**Lead with the database role, not the regex** — that is the layer that holds even
+if everything above it is bypassed. If pressed for detail, `AUDIT.md` has the
+four-layer table with the evidence for each.
 
 ### 3. Restarting the backend alone can wedge it
 Fixed and verified (7s restart under load), but if you ever see
