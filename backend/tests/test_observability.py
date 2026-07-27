@@ -5,6 +5,7 @@ Metrics are recorded per request and contain no secrets; structured logs carry
 request/tenant/user correlation context.
 """
 import logging
+import re
 
 from app.services.metrics import get_metrics
 from app.config import JsonLogFormatter, log_tenant_ctx, log_user_ctx, request_id_ctx
@@ -21,7 +22,11 @@ class TestMetrics:
         assert "/123" not in out
 
     def test_export_has_no_secrets(self):
-        out = get_metrics().export_prometheus().lower()
+        # Route labels (e.g. path="/api/auth/reset-password") legitimately name
+        # auth endpoints and would otherwise false-positive on "password"/"secret".
+        # Strip label VALUES, not just path=, so the check still catches a real
+        # secret leaking into any other label (header, query, etc).
+        out = re.sub(r'="[^"]*"', '=""', get_metrics().export_prometheus()).lower()
         for needle in ("password", "secret", "jwt", "bearer", "salespass", "connection_enc"):
             assert needle not in out
 

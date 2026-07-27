@@ -230,7 +230,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Boot Postgres (init.sql runs on the fresh volume)
+      - name: Boot Postgres (fresh volume, no entrypoint init.sql — db_seeder applies schema)
         run: docker compose up -d postgres
 
       - name: Wait for Postgres healthy
@@ -244,6 +244,9 @@ jobs:
 
       - name: Build backend image (for the migrate one-shot)
         run: docker compose build backend
+
+      - name: Seed base schema (init.sql) — numbered migrations assume it already exists
+        run: docker compose run --rm -e DEMO_MODE=true -e RUN_MIGRATIONS_ON_STARTUP=false backend python -m app.commands.seed
 
       - name: Apply migrations on a FRESH DB
         run: docker compose run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend python -m app.commands.migrate
