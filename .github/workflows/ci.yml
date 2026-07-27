@@ -108,6 +108,7 @@ jobs:
           JWT_SECRET_KEY: ci-test-secret-key-minimum-32-chars-long
           SECRET_KEY: ci-test-app-secret-key-minimum-32-characters
           CORS_ORIGINS: https://example.com
+          NEXT_PUBLIC_API_URL: https://example.com
         run: docker compose -f docker-compose.production.yml config -q
 
       - name: Backup/restore scripts parse (bash -n)
@@ -459,7 +460,12 @@ jobs:
           bash -n scripts/deploy-compose.sh
           bash -n scripts/smoke-deploy.sh
 
+      - name: Generate self-signed TLS material (staging/smoke only — D2 blocker check needs the files present)
+        run: bash scripts/gen-self-signed-ssl.sh ci.example.com
+
       - name: Validate production compose (no demo/seed; E0-2 wired; /health/ready)
+        env:
+          NEXT_PUBLIC_API_URL: https://example.com
         run: bash scripts/validate-production-compose.sh
 
       - name: deploy-compose.sh dry-run
