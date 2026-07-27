@@ -101,12 +101,21 @@ async def compute_and_cache_kpis(db: AsyncSession, allowed_stores: Optional[List
                 COUNT(*) FILTER (WHERE s.is_streaming = false) as historical_count,
                 COUNT(*) FILTER (WHERE s.is_streaming = true) as streaming_count,
                 COALESCE(SUM(s.units) FILTER (WHERE s.date = :today), 0)::integer as sales_today,
-                COALESCE(SUM(s.units) FILTER (WHERE s.date >= :week_ago), 0)::integer as sales_week,
+                -- "Last 7 days" = 7 COMPLETED days, excluding today. This used to
+                -- include today, so the landing page showed two different 7-day
+                -- figures side by side: the Sage hero (briefing.py, which excludes
+                -- today) said AED 3,050,411 while the card beside it said
+                -- AED 3,521,075 -- the gap being today's partial sales. The trend
+                -- comparison below already excluded today, so this was also
+                -- internally inconsistent. Excluding today additionally keeps the
+                -- number stable while presenting instead of drifting as the live
+                -- generator writes.
+                COALESCE(SUM(s.units) FILTER (WHERE s.date >= :week_ago AND s.date < :today), 0)::integer as sales_week,
                 COALESCE(SUM(s.units) FILTER (WHERE s.date >= :month_ago), 0)::integer as sales_month,
 
                 -- Revenue = units * unit_price_aed, defined once in metric_sales_fact (E6-1)
                 COALESCE(SUM(s.revenue_aed) FILTER (WHERE s.date = :today), 0)::numeric as revenue_today,
-                COALESCE(SUM(s.revenue_aed) FILTER (WHERE s.date >= :week_ago), 0)::numeric as revenue_week,
+                COALESCE(SUM(s.revenue_aed) FILTER (WHERE s.date >= :week_ago AND s.date < :today), 0)::numeric as revenue_week,
                 COALESCE(SUM(s.revenue_aed) FILTER (WHERE s.date >= :month_ago), 0)::numeric as revenue_month,
 
                 -- TRUE per-DAY averages: total over the window / number of days in it.
