@@ -17,7 +17,7 @@ redis==5.0.1
 pydantic[email]==2.5.3
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
-email-validator==2.1.0
+email-validator==2.3.0
 pandas==2.1.4
 # Excel import (E1-3). openpyxl reads .xlsx; xlrd 2.x reads ONLY legacy .xls.
 # Used directly (not via pandas.read_excel) so the parser stays pure + streamable.
