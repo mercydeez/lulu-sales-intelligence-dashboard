@@ -34,7 +34,7 @@ scikit-learn==1.5.2
 # to drop the LSTM tier (the engine falls back to classical + LightGBM safely).
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.2.2
-httpx==0.26.0
+httpx==0.28.1
 sse-starlette==2.0.0
 # Sage v3 multi-agent graph (Phase 0). Pinned to the 0.1.x line on purpose: it
 # depends on langchain-core 0.2.x, which keeps pydantic at the pinned 2.5.3 —
