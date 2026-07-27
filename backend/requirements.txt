@@ -1,5 +1,5 @@
 fastapi==0.109.0
-uvicorn[standard]==0.27.0
+uvicorn[standard]==0.51.0
 # gunicorn is the process MANAGER; uvicorn.workers.UvicornWorker is the ASGI
 # worker. uvicorn's own --workers supervisor (Multiprocess) does NOT restart a
 # dead worker — a crashed/OOM'd worker silently reduces capacity while /health
