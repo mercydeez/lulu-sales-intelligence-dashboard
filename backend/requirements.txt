@@ -35,7 +35,7 @@ scikit-learn==1.5.2
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.2.2
 httpx==0.26.0
-sse-starlette==2.0.0
+sse-starlette==3.4.6
 # Sage v3 multi-agent graph (Phase 0). Pinned to the 0.1.x line on purpose: it
 # depends on langchain-core 0.2.x, which keeps pydantic at the pinned 2.5.3 —
 # the 0.2.x/langchain-core-0.3 line would force a pydantic 2.13 upgrade across
