@@ -8,6 +8,7 @@ access. Live-DB key persistence/auth is exercised by the integration suite.
 from fastapi.testclient import TestClient
 
 from app.services import api_key_service as keys
+from tests.conftest import registered_paths
 
 
 def test_generate_key_roundtrip():
@@ -38,7 +39,7 @@ def test_authenticate_rejects_non_lsk_without_db():
 
 def test_public_api_and_management_routes_registered():
     from app.main import app
-    paths = {r.path for r in app.routes}
+    paths = registered_paths(app)
     assert "/api/public/v1/kpis" in paths
     assert "/api/public/v1/ai/ask" in paths
     assert "/api/public/v1/forecast/projection" in paths
@@ -47,7 +48,7 @@ def test_public_api_and_management_routes_registered():
 
 def test_branding_routes_registered():
     from app.main import app
-    paths = {r.path for r in app.routes}
+    paths = registered_paths(app)
     assert "/api/public/v1/branding" in paths   # public, key-auth (B4 white-label)
     assert "/api/tenants/branding" in paths      # admin update
 

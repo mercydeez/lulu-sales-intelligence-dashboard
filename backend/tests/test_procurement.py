@@ -10,6 +10,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from app.services import procurement_service as proc
+from tests.conftest import registered_paths
 
 
 def _session_with_po(status: str, total: float):
@@ -107,7 +108,7 @@ async def test_three_way_match_missing_invoice_raises():
 
 def test_procurement_routes_registered():
     from app.main import app
-    paths = {r.path for r in app.routes}
+    paths = registered_paths(app)
     assert "/api/procurement/suppliers" in paths
     assert "/api/procurement/purchase-orders/generate" in paths
     assert "/api/procurement/purchase-orders" in paths

@@ -195,7 +195,7 @@ jobs:
           # Sage's least-privilege role, reachable on the runner's published port.
           SAGE_DATABASE_URL: postgresql+asyncpg://sage_ro:sage_ro_dev_pass@localhost:5432/salesdb
         run: |
-          pip install pytest pytest-asyncio asyncpg sqlalchemy
+          pip install pytest pytest-asyncio asyncpg sqlalchemy pydantic-settings pydantic[email]
           # Integration suites (need the live stack). Static guards run in the backend job.
           pytest backend/tests/test_golden_numbers.py backend/tests/test_nl2sql_pipeline.py -v --tb=short
 

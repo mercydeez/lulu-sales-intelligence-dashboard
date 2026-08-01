@@ -11,6 +11,7 @@ import datetime
 import pytest
 
 from app.services import forecast_service as fs
+from tests.conftest import registered_paths
 from app.services.predictor import SeasonalTrendModel
 
 
@@ -45,7 +46,7 @@ def test_predictor_powers_baseline_forecast():
 
 def test_forecast_endpoints_registered():
     from app.main import app
-    paths = {r.path for r in app.routes}
+    paths = registered_paths(app)
     assert "/api/kpis/projection" in paths
     assert "/api/inventory/reorder-suggestions" in paths
     assert "/api/promotions/uplift-baseline" in paths

@@ -14,7 +14,11 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # Copy requirements first for caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Upgrade pip's own toolchain first — the base image's pip/setuptools/wheel ship
+# with CVE-2026-24049 (wheel) / CVE-2026-23949 (jaraco.context, vendored by
+# setuptools) baked in, and they land in the final image's site-packages.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .

@@ -6,6 +6,7 @@ are registered and reject unauthenticated access.
 from fastapi.testclient import TestClient
 
 from app.services import webhook_service as wh
+from tests.conftest import registered_paths
 
 
 def test_sign_and_verify_roundtrip():
@@ -39,7 +40,7 @@ def test_event_subscription_matching():
 
 def test_webhook_routes_registered():
     from app.main import app
-    paths = {r.path for r in app.routes}
+    paths = registered_paths(app)
     assert "/api/webhooks" in paths
     assert "/api/webhooks/test" in paths
     assert "/api/webhooks/{webhook_id}" in paths

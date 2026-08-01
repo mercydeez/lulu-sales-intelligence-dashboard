@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.services import tenant_provisioning as prov
+from tests.conftest import registered_paths
 
 
 def test_slugify_is_url_safe():
@@ -40,7 +41,7 @@ async def test_invite_rejects_bad_role_before_db():
 
 def test_onboarding_routes_registered():
     from app.main import app
-    paths = {r.path for r in app.routes}
+    paths = registered_paths(app)
     assert "/api/auth/signup" in paths
     assert "/api/auth/invite" in paths
     assert "/api/auth/onboarding" in paths
