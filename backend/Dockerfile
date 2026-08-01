@@ -17,8 +17,13 @@ COPY requirements.txt .
 # Upgrade pip's own toolchain first — the base image's pip/setuptools/wheel ship
 # with CVE-2026-24049 (wheel) / CVE-2026-23949 (jaraco.context, vendored by
 # setuptools) baked in, and they land in the final image's site-packages.
+# Upgraded AGAIN after requirements.txt: some pinned dep (transitively) caps
+# setuptools/msgpack lower, so installing requirements can silently downgrade
+# the first upgrade — CVE-2025-47273 (setuptools path traversal) and
+# GHSA-6v7p-g79w-8964 (msgpack out-of-bounds read) need the final word.
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir --upgrade setuptools msgpack
 
 # Copy application code
 COPY . .
