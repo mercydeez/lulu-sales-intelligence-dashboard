@@ -11,11 +11,12 @@ from decimal import Decimal
 from fastapi.testclient import TestClient
 
 from app.services import data_rights_service as dr
+from tests.conftest import registered_paths
 
 
 def test_data_rights_routes_registered():
     from app.main import app
-    paths = {r.path for r in app.routes}
+    paths = registered_paths(app)
     assert "/api/data-rights/export" in paths
     assert "/api/data-rights/requests" in paths
 

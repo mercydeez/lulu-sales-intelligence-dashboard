@@ -4631,18 +4631,6 @@ CREATE SEQUENCE public.sales_stream_raw_id_seq
 
 ALTER SEQUENCE public.sales_stream_raw_id_seq OWNED BY public.sales_stream_raw.id;
 
-CREATE TABLE public.sales_stream_raw_2026_07 (
-    id integer DEFAULT nextval('public.sales_stream_raw_id_seq'::regclass) NOT NULL,
-    event_id uuid NOT NULL,
-    "timestamp" timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    store_id integer NOT NULL,
-    item_id integer NOT NULL,
-    sales integer NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    tenant_id integer DEFAULT 1 NOT NULL,
-    is_synthetic boolean DEFAULT false NOT NULL
-);
-
 CREATE TABLE public.sales_stream_raw_2026_08 (
     id integer DEFAULT nextval('public.sales_stream_raw_id_seq'::regclass) NOT NULL,
     event_id uuid NOT NULL,
@@ -4668,6 +4656,18 @@ CREATE TABLE public.sales_stream_raw_2026_09 (
 );
 
 CREATE TABLE public.sales_stream_raw_2026_10 (
+    id integer DEFAULT nextval('public.sales_stream_raw_id_seq'::regclass) NOT NULL,
+    event_id uuid NOT NULL,
+    "timestamp" timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    store_id integer NOT NULL,
+    item_id integer NOT NULL,
+    sales integer NOT NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    tenant_id integer DEFAULT 1 NOT NULL,
+    is_synthetic boolean DEFAULT false NOT NULL
+);
+
+CREATE TABLE public.sales_stream_raw_2026_11 (
     id integer DEFAULT nextval('public.sales_stream_raw_id_seq'::regclass) NOT NULL,
     event_id uuid NOT NULL,
     "timestamp" timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -5569,13 +5569,13 @@ CREATE SEQUENCE public.webhook_deliveries_id_seq
 
 ALTER SEQUENCE public.webhook_deliveries_id_seq OWNED BY public.webhook_deliveries.id;
 
-ALTER TABLE ONLY public.sales_stream_raw ATTACH PARTITION public.sales_stream_raw_2026_07 FOR VALUES FROM ('2026-07-01 00:00:00+00') TO ('2026-08-01 00:00:00+00');
-
 ALTER TABLE ONLY public.sales_stream_raw ATTACH PARTITION public.sales_stream_raw_2026_08 FOR VALUES FROM ('2026-08-01 00:00:00+00') TO ('2026-09-01 00:00:00+00');
 
 ALTER TABLE ONLY public.sales_stream_raw ATTACH PARTITION public.sales_stream_raw_2026_09 FOR VALUES FROM ('2026-09-01 00:00:00+00') TO ('2026-10-01 00:00:00+00');
 
 ALTER TABLE ONLY public.sales_stream_raw ATTACH PARTITION public.sales_stream_raw_2026_10 FOR VALUES FROM ('2026-10-01 00:00:00+00') TO ('2026-11-01 00:00:00+00');
+
+ALTER TABLE ONLY public.sales_stream_raw ATTACH PARTITION public.sales_stream_raw_2026_11 FOR VALUES FROM ('2026-11-01 00:00:00+00') TO ('2026-12-01 00:00:00+00');
 
 ALTER TABLE ONLY public.sales_stream_raw ATTACH PARTITION public.sales_stream_raw_default DEFAULT;
 
@@ -6293,17 +6293,11 @@ ALTER TABLE ONLY public.sales_rollup_daily
 ALTER TABLE ONLY public.sales_stream_raw
     ADD CONSTRAINT sales_stream_raw_event_id_key UNIQUE (event_id, "timestamp");
 
-ALTER TABLE ONLY public.sales_stream_raw_2026_07
-    ADD CONSTRAINT sales_stream_raw_new_2026_07_event_id_timestamp_key UNIQUE (event_id, "timestamp");
+ALTER TABLE ONLY public.sales_stream_raw_2026_08
+    ADD CONSTRAINT sales_stream_raw_new_2026_08_event_id_timestamp_key UNIQUE (event_id, "timestamp");
 
 ALTER TABLE ONLY public.sales_stream_raw
     ADD CONSTRAINT sales_stream_raw_pkey PRIMARY KEY (id, "timestamp");
-
-ALTER TABLE ONLY public.sales_stream_raw_2026_07
-    ADD CONSTRAINT sales_stream_raw_new_2026_07_pkey PRIMARY KEY (id, "timestamp");
-
-ALTER TABLE ONLY public.sales_stream_raw_2026_08
-    ADD CONSTRAINT sales_stream_raw_new_2026_08_event_id_timestamp_key UNIQUE (event_id, "timestamp");
 
 ALTER TABLE ONLY public.sales_stream_raw_2026_08
     ADD CONSTRAINT sales_stream_raw_new_2026_08_pkey PRIMARY KEY (id, "timestamp");
@@ -6319,6 +6313,12 @@ ALTER TABLE ONLY public.sales_stream_raw_2026_10
 
 ALTER TABLE ONLY public.sales_stream_raw_2026_10
     ADD CONSTRAINT sales_stream_raw_new_2026_10_pkey PRIMARY KEY (id, "timestamp");
+
+ALTER TABLE ONLY public.sales_stream_raw_2026_11
+    ADD CONSTRAINT sales_stream_raw_new_2026_11_event_id_timestamp_key UNIQUE (event_id, "timestamp");
+
+ALTER TABLE ONLY public.sales_stream_raw_2026_11
+    ADD CONSTRAINT sales_stream_raw_new_2026_11_pkey PRIMARY KEY (id, "timestamp");
 
 ALTER TABLE ONLY public.sales_stream_raw_default
     ADD CONSTRAINT sales_stream_raw_new_default_event_id_timestamp_key UNIQUE (event_id, "timestamp");
@@ -7134,14 +7134,6 @@ CREATE INDEX ix_value_realizations_disputed ON public.value_realizations USING b
 
 CREATE INDEX ix_value_realizations_tenant ON public.value_realizations USING btree (tenant_id, status, confirmed_at DESC);
 
-CREATE INDEX sales_stream_raw_new_2026_07_store_id_item_id_idx ON public.sales_stream_raw_2026_07 USING btree (store_id, item_id);
-
-CREATE INDEX sales_stream_raw_new_2026_07_tenant_id_idx ON public.sales_stream_raw_2026_07 USING btree (tenant_id);
-
-CREATE INDEX sales_stream_raw_new_2026_07_tenant_id_timestamp_idx ON public.sales_stream_raw_2026_07 USING btree (tenant_id, "timestamp") WHERE is_synthetic;
-
-CREATE INDEX sales_stream_raw_new_2026_07_timestamp_idx ON public.sales_stream_raw_2026_07 USING btree ("timestamp");
-
 CREATE INDEX sales_stream_raw_new_2026_08_store_id_item_id_idx ON public.sales_stream_raw_2026_08 USING btree (store_id, item_id);
 
 CREATE INDEX sales_stream_raw_new_2026_08_tenant_id_idx ON public.sales_stream_raw_2026_08 USING btree (tenant_id);
@@ -7166,6 +7158,14 @@ CREATE INDEX sales_stream_raw_new_2026_10_tenant_id_timestamp_idx ON public.sale
 
 CREATE INDEX sales_stream_raw_new_2026_10_timestamp_idx ON public.sales_stream_raw_2026_10 USING btree ("timestamp");
 
+CREATE INDEX sales_stream_raw_new_2026_11_store_id_item_id_idx ON public.sales_stream_raw_2026_11 USING btree (store_id, item_id);
+
+CREATE INDEX sales_stream_raw_new_2026_11_tenant_id_idx ON public.sales_stream_raw_2026_11 USING btree (tenant_id);
+
+CREATE INDEX sales_stream_raw_new_2026_11_tenant_id_timestamp_idx ON public.sales_stream_raw_2026_11 USING btree (tenant_id, "timestamp") WHERE is_synthetic;
+
+CREATE INDEX sales_stream_raw_new_2026_11_timestamp_idx ON public.sales_stream_raw_2026_11 USING btree ("timestamp");
+
 CREATE INDEX sales_stream_raw_new_default_store_id_item_id_idx ON public.sales_stream_raw_default USING btree (store_id, item_id);
 
 CREATE INDEX sales_stream_raw_new_default_tenant_id_idx ON public.sales_stream_raw_default USING btree (tenant_id);
@@ -7189,18 +7189,6 @@ CREATE UNIQUE INDEX uq_operations_runs_live_finding ON public.operations_runs US
 CREATE UNIQUE INDEX uq_scim_external_users_tenant_extid ON public.scim_external_users USING btree (tenant_id, external_id) WHERE (external_id IS NOT NULL);
 
 CREATE UNIQUE INDEX ux_subscriptions_tenant ON public.subscriptions USING btree (tenant_id);
-
-ALTER INDEX public.sales_stream_raw_event_id_key ATTACH PARTITION public.sales_stream_raw_new_2026_07_event_id_timestamp_key;
-
-ALTER INDEX public.sales_stream_raw_pkey ATTACH PARTITION public.sales_stream_raw_new_2026_07_pkey;
-
-ALTER INDEX public.idx_sales_stream_store_item ATTACH PARTITION public.sales_stream_raw_new_2026_07_store_id_item_id_idx;
-
-ALTER INDEX public.idx_sales_stream_raw_tenant ATTACH PARTITION public.sales_stream_raw_new_2026_07_tenant_id_idx;
-
-ALTER INDEX public.idx_sales_stream_synthetic ATTACH PARTITION public.sales_stream_raw_new_2026_07_tenant_id_timestamp_idx;
-
-ALTER INDEX public.idx_sales_stream_timestamp ATTACH PARTITION public.sales_stream_raw_new_2026_07_timestamp_idx;
 
 ALTER INDEX public.sales_stream_raw_event_id_key ATTACH PARTITION public.sales_stream_raw_new_2026_08_event_id_timestamp_key;
 
@@ -7237,6 +7225,18 @@ ALTER INDEX public.idx_sales_stream_raw_tenant ATTACH PARTITION public.sales_str
 ALTER INDEX public.idx_sales_stream_synthetic ATTACH PARTITION public.sales_stream_raw_new_2026_10_tenant_id_timestamp_idx;
 
 ALTER INDEX public.idx_sales_stream_timestamp ATTACH PARTITION public.sales_stream_raw_new_2026_10_timestamp_idx;
+
+ALTER INDEX public.sales_stream_raw_event_id_key ATTACH PARTITION public.sales_stream_raw_new_2026_11_event_id_timestamp_key;
+
+ALTER INDEX public.sales_stream_raw_pkey ATTACH PARTITION public.sales_stream_raw_new_2026_11_pkey;
+
+ALTER INDEX public.idx_sales_stream_store_item ATTACH PARTITION public.sales_stream_raw_new_2026_11_store_id_item_id_idx;
+
+ALTER INDEX public.idx_sales_stream_raw_tenant ATTACH PARTITION public.sales_stream_raw_new_2026_11_tenant_id_idx;
+
+ALTER INDEX public.idx_sales_stream_synthetic ATTACH PARTITION public.sales_stream_raw_new_2026_11_tenant_id_timestamp_idx;
+
+ALTER INDEX public.idx_sales_stream_timestamp ATTACH PARTITION public.sales_stream_raw_new_2026_11_timestamp_idx;
 
 ALTER INDEX public.sales_stream_raw_event_id_key ATTACH PARTITION public.sales_stream_raw_new_default_event_id_timestamp_key;
 

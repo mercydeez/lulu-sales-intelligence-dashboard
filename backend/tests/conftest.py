@@ -17,6 +17,17 @@ os.environ.pop("OPENAI_API_KEY", None)
 os.environ.pop("DEEPGRAM_API_KEY", None)
 
 
+def registered_paths(app) -> set:
+    """Every path the app actually serves, as a flat set of strings.
+
+    FastAPI >=0.13x wraps `include_router()`'d routes in a lazy `_IncludedRouter`
+    that has no `.path` of its own, so walking `app.routes` directly and reading
+    `.path` breaks. The OpenAPI schema is the stable, public way to get the
+    fully-resolved path set regardless of that internal representation.
+    """
+    return set(app.openapi()["paths"].keys())
+
+
 class _FakeRedis:
     """A tiny in-memory async Redis stand-in — just enough for the app's usage
     (get/set with ex+nx, delete, keys). Lets tests exercise the Redis-backed

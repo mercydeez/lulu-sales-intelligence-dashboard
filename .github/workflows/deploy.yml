@@ -77,7 +77,12 @@ jobs:
           fi
           echo "OK: upstreams re-resolve and forward the full request URI."
 
+      - name: Generate self-signed TLS material (staging/smoke only — D2 blocker check needs the files present)
+        run: bash scripts/gen-self-signed-ssl.sh ci.example.com
+
       - name: Validate production compose (no demo/seed artifacts; E0-2 wired)
+        env:
+          NEXT_PUBLIC_API_URL: https://example.com
         run: bash scripts/validate-production-compose.sh
 
       - name: deploy-compose.sh dry-run (no mode configured is OK)

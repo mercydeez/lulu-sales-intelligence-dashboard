@@ -9,6 +9,7 @@ suite (test_tenant_isolation.py) — these run with no Postgres.
 from fastapi.testclient import TestClient
 
 from app.services.uae_profile import validate_profile, EMIRATES
+from tests.conftest import registered_paths
 
 
 def test_valid_partial_profile_passes():
@@ -83,7 +84,7 @@ def test_unknown_keys_ignored():
 
 def test_billing_profile_routes_registered():
     from app.main import app
-    paths = {r.path for r in app.routes}
+    paths = registered_paths(app)
     assert "/api/tenants/billing-profile" in paths
 
 
