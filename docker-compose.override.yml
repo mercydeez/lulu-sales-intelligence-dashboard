@@ -6,9 +6,13 @@
 # until a full rebuild. This override enables live reload.
 #
 # Frontend: the production image serves a pre-built standalone bundle, so the
-# ./frontend/src mount has no effect. For frontend development run the dev
-# server on the host against the containerized backend:
+# ./frontend/src mount has no effect. Tried running `next dev` in-container for
+# hot reload, but on-demand page compilation over a Windows bind mount took 70s+
+# per route on first visit — unusable for a demo. For frontend development run
+# the dev server on the host against the containerized backend:
 #   cd frontend && npm install --legacy-peer-deps && npm run dev
+# The container always serves the fast prebuilt bundle (`docker compose up -d --build`
+# after any frontend change) for demo-stable performance.
 
 services:
   backend:

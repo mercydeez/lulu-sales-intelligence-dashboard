@@ -52,3 +52,5 @@ venv/
 # `docker cp backend/app <container>:/app/app` silently creates this nested
 # duplicate when the destination already exists. It is never real source.
 backend/app/app/
+
+.techybara/
